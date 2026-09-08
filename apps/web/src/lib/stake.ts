@@ -63,6 +63,24 @@ export function stakeStage(view: TreasuryView | null | undefined): StakeStage {
   return view.mandate.present && !view.mandate.problem ? 'ready' : 'authorise';
 }
 
+/**
+ * Why a mandate the player just signed was NOT accepted.
+ *
+ * `stakeStage` collapses a rejected mandate back into `authorise`, which is right for what to do next
+ * but loses the reason — so the screen silently returned to "One thing left…" and the player had no
+ * idea anything had been refused. That is exactly the dead end that got reported: "it shows the
+ * correct dollars and goes home but won't get past it." The server's sentence names the mismatch
+ * precisely; it was written to be read, and nobody was reading it.
+ *
+ * Null when there is nothing to explain: no mandate attempted, or one that was accepted.
+ */
+export function stakeProblem(view: TreasuryView | null | undefined): string | null {
+  const problem = view?.mandate?.problem;
+  if (typeof problem !== 'string') return null;
+  const said = problem.trim();
+  return said === '' ? null : said;
+}
+
 /** What a player is shown instead of an address: the treasury's name, else nothing at all. */
 export function stakeName(view: TreasuryView | null | undefined): string | null {
   const name = view?.chosenName?.trim();

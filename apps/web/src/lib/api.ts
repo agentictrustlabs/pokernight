@@ -109,6 +109,9 @@ export interface HomeAuthBody {
   authOrigin: string;
   nonce: string;
   state: string;
+  /** What the person asked to be called, from the field on the way in. A DISPLAY name the card room
+   *  keeps — no Faithnet handle is claimed for it. Absent when they did not give one. */
+  profileName?: string;
 }
 
 /** What the browser hands the Worker after `connectAsQuickConnect`. The Worker verifies the id_token

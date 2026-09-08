@@ -16,7 +16,7 @@ import { SELF, env, fetchMock } from 'cloudflare:test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { verifyHomeSession } from '../src/auth.js';
 import type { Env } from '../src/env.js';
-import { isAllowedHomeOrigin, shortAddress } from '../src/home.js';
+import { cleanProfileName, isAllowedHomeOrigin, shortAddress } from '../src/home.js';
 
 const HOME = 'http://localhost:3000';
 const KID = 'test-broker-01';
@@ -249,6 +249,48 @@ describe('POST /auth/home', () => {
     expect(r.status).toBe(200);
     expect(r.body.name).toBe(shortAddress(PERSON.toLowerCase()));
     expect(r.body.agentName).toBeUndefined();
+  });
+
+  /**
+   * The profile name: a DISPLAY name the person typed on the sign-in page, so a nameless account is
+   * not shown to the table as `0x4514…4c90`. It is not identity and it is not a Faithnet handle — an
+   * asserted `agent_name` still wins, and nothing here claims a name in the naming service.
+   */
+  it('calls a nameless person what they asked to be called', async () => {
+    mockHome(await signIdToken(claimsFor({ agent_name: undefined })));
+    const r = await postHome(goodRequest({ profileName: '  Rich  Pedersen ' }));
+    expect(r.status).toBe(200);
+    expect(r.body.name).toBe('Rich Pedersen');
+    // Still nameless in the naming service: no handle was claimed for it.
+    expect(r.body.agentName).toBeUndefined();
+    // And the session itself carries the name, so the table and the log say it too.
+    const session = await verifyHomeSession(env, String(r.body.token));
+    expect(session?.name).toBe('Rich Pedersen');
+  });
+
+  it('lets a name the Home actually asserted win over the typed one', async () => {
+    mockHome(await signIdToken(claimsFor()));
+    const r = await postHome(goodRequest({ profileName: 'Somebody Else' }));
+    expect(r.status).toBe(200);
+    expect(r.body.name).toBe('richard.me');
+  });
+
+  it('refuses a display name that would let a seat pass itself off as an address', async () => {
+    mockHome(await signIdToken(claimsFor({ agent_name: undefined })));
+    const r = await postHome(goodRequest({ profileName: '0x2a5ae595cc5009c8517780e78a20a34e653c2747' }));
+    expect(r.status).toBe(200);
+    expect(r.body.name).toBe(shortAddress(PERSON.toLowerCase()));
+  });
+
+  it('keeps a display name to one short line, whatever arrives', async () => {
+    expect(cleanProfileName('  Rich\n\nPedersen  ')).toBe('Rich Pedersen');
+    expect(cleanProfileName('a'.repeat(80))).toHaveLength(24);
+    expect(cleanProfileName('\u200b\u2028')).toBe('');
+    expect(cleanProfileName(undefined)).toBe('');
+    // A name is optional, and a blank one is treated as none at all.
+    mockHome(await signIdToken(claimsFor({ agent_name: undefined })));
+    const r = await postHome(goodRequest({ profileName: '   ' }));
+    expect(r.body.name).toBe(shortAddress(PERSON.toLowerCase()));
   });
 });
 

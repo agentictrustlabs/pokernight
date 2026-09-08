@@ -2,14 +2,22 @@ import { useState } from 'react';
 import type { AuthState } from '../App';
 import type { AppSession, Session } from '../lib/types';
 import { api } from '../lib/api';
+import { PROFILE_NAME_MAX, toProfileName } from '../lib/home';
 
 /**
- * The way in. ONE action, and two things folded away behind it.
+ * The way in. ONE question, ONE action, and two things folded away behind them.
  *
  * The headline is the door a stranger actually uses: their Home, where they sign in with a phone
  * number, an email address or a social account. What happens after they press it — the OIDC
  * ceremony, their Smart Agent signing a site-login delegation, the card room verifying it against
  * their Home — is true and is not their problem, so this says what they get rather than how.
+ *
+ * The question above it is what to call them, and it is a PROFILE name — not a Faithnet handle. It
+ * is what the seat plate, the hand log and the header say instead of a truncated address, and it is
+ * kept by the card room; nothing claims `<label>.me` in the naming service for it, so a person can
+ * be "Rich Pedersen" here and nameless there. It is OPTIONAL, and blank has to keep working: a Home
+ * may know somebody as nothing but a phone number, and making a stranger invent a word before they
+ * can sit down is the wrong trade.
  *
  * Below it, collapsed, the two doors that are not for a new player:
  *   A DEMO USER the Home lends out. A real Smart Agent verified exactly like a redirect sign-in,
@@ -24,6 +32,7 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
   const { config, configError, busy, error } = auth;
   const homeHost = config?.home.origin ? safeHost(config.home.origin) : null;
   const personas = auth.personas;
+  const [name, setName] = useState('');
 
   return (
     <div className="signin">
@@ -55,7 +64,24 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
       ) : (
         <>
           <div className="signin-primary">
-            <button className="primary big" type="button" onClick={auth.signInWithHome} disabled={busy}>
+            <label className="signin-name">
+              What should we call you?
+              <input
+                type="text"
+                value={name}
+                maxLength={PROFILE_NAME_MAX}
+                autoComplete="given-name"
+                placeholder="optional"
+                aria-describedby="signin-name-hint"
+                onChange={(e) => setName(toProfileName(e.target.value))}
+                disabled={busy}
+              />
+            </label>
+            <p className="hint" id="signin-name-hint">
+              A first name or a full name — it is what other players see at the table, and what this room calls you.
+              Leave it blank if you would rather not: you will play as &ldquo;Seat 4&rdquo;.
+            </p>
+            <button className="primary big" type="button" onClick={() => auth.signInWithHome(name)} disabled={busy}>
               {busy ? 'Signing in…' : 'Sign in to play'}
             </button>
             <p className="hint">

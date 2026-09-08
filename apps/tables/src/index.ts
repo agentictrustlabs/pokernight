@@ -36,6 +36,7 @@ import { a2aTimeoutMs, allowedOrigins, isDevAuth, type Env } from './env.js';
 import {
   BUY_IN_TEMPLATE,
   HomeAuthError,
+  cleanProfileName,
   completeDemoSignIn,
   completeHomeSignIn,
   completeMandateCeremony,
@@ -108,6 +109,15 @@ const HomeAuthRequestSchema = z.object({
   authOrigin: z.string().min(1).max(512),
   nonce: z.string().min(1).max(512),
   state: z.string().min(1).max(512),
+  /**
+   * What the person asked to be called, from the field on the sign-in page. A DISPLAY name and
+   * nothing more: it names their seat, their line in the hand log and the header, in place of a
+   * truncated Smart Agent address. It is NOT a Faithnet handle — these accounts stay nameless in
+   * the naming service on purpose — and it is not identity: the id_token decides who this is, and
+   * this string cannot change that. Bounded here and cleaned in `cleanProfileName` because it is
+   * shown to OTHER players, which is the only reason a browser-supplied string needs any care.
+   */
+  profileName: z.string().max(200).optional(),
 });
 
 /**
@@ -127,7 +137,7 @@ app.post('/auth/home', async (c) => {
     console.error('home sign-in', e);
     return c.json({ error: 'home sign-in failed' }, 401);
   }
-  return issueHomeSession(c, identity);
+  return issueHomeSession(c, identity, parsed.data.profileName);
 });
 
 const DemoAuthRequestSchema = z.object({
@@ -166,15 +176,27 @@ app.post('/auth/home/demo', async (c) => {
  * delegation, Home origin) plus a bearer token that carries claims only. Shared by both Home routes
  * so a session established either way is indistinguishable downstream.
  */
-async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIdentity): Promise<Response> {
+async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIdentity, profileName?: string): Promise<Response> {
   const playerId = homePlayerId(identity.address);
   // The session never outlives the assertion it rests on.
   const exp = Math.min(Date.now() + HOME_SESSION_TTL_MS, identity.expiresAt);
+  // What to call this person, in order of who has the better claim to know:
+  //   1. a Faithnet handle the Home actually asserted (`agent_name`) — a name in the naming service,
+  //      so it wins, and it is also what a Home-supplied PROFILE name should slot in ahead of once
+  //      one exists (a `profile_name`-style id_token claim would be read in `verifyHomeIdToken` and
+  //      arrive here as part of the identity, never as something the browser sent);
+  //   2. the profile name the person typed on the way in — this room's own display name;
+  //   3. a truncated address, which is what `identity.name` already falls back to.
+  // Ordered this way so the two cannot fight: whatever the Home says is authoritative, and the field
+  // is what fills the silence rather than something that overrides an asserted name.
+  const chosen = cleanProfileName(profileName);
+  const name = identity.agentName ? identity.name : chosen || identity.name;
   const record: SessionRecord = {
     playerId,
-    name: identity.name,
+    name,
     address: identity.address,
     agentName: identity.agentName,
+    ...(chosen ? { profileName: chosen } : {}),
     homeOrigin: identity.homeOrigin,
     delegation: identity.delegation,
     idToken: identity.idToken,
@@ -189,12 +211,12 @@ async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIde
   }
   let token: string;
   try {
-    token = await mintHomeSessionToken(c.env, playerId, identity.name, exp);
+    token = await mintHomeSessionToken(c.env, playerId, name, exp);
   } catch (e) {
     console.error('mint home session', e);
     return c.json({ error: 'the card room cannot issue sessions right now (SESSION_SECRET is not configured)' }, 500);
   }
-  return c.json({ token, playerId, name: identity.name, agentName: identity.agentName, address: identity.address });
+  return c.json({ token, playerId, name, agentName: identity.agentName, address: identity.address });
 }
 
 /**

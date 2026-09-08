@@ -266,6 +266,28 @@ export async function completeDemoSignIn(env: Env, req: DemoAuthRequest, now = D
 }
 
 
+/**
+ * A display name, made safe to put in front of other players: one line, no control or zero-width
+ * characters, collapsed whitespace, short enough for a seat plate — and never something that reads
+ * as a Smart Agent address, because a player able to call themselves `0x…` could pass their seat off
+ * as somebody else's. Returns '' for anything that survives none of that, which the caller treats
+ * exactly like no name at all.
+ */
+export function cleanProfileName(input: string | undefined): string {
+  const clean = (input ?? '')
+    // Whitespace FIRST, so a newline becomes a space and does not weld two words together; then the
+    // characters that have no business in a name at all.
+    .replace(/\s+/g, ' ')
+    /* eslint-disable-next-line no-control-regex */
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff]/g, '')
+    .trim()
+    .slice(0, PROFILE_NAME_MAX);
+  return /^0x[0-9a-fA-F]/.test(clean) ? '' : clean;
+}
+
+/** As long as a display name may be. A seat plate is narrow, and this is a name, not a sentence. */
+export const PROFILE_NAME_MAX = 24;
+
 /* ------------------------------------------------------- the buy-in authorisation */
 
 /** The delegation template this card room asks a player's Home to run for a buy-in mandate. */

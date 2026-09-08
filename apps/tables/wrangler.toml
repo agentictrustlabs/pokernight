@@ -183,4 +183,10 @@ HOUSE_TREASURY_SA = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # Legacy alias kept for src/settlement.ts; identical to HOUSE_TREASURY_SA.
 HOUSE_SA = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # Phase 3: the delegate address players' poker-buyin delegations are scoped to. Not provisioned yet.
-HOUSE_DELEGATE = "0x0347e808a0bB7a7a7086a29d853E799f351C04DD"
+# The account that REDEEMS a buy-in mandate — and it must equal the mandate's delegate.
+# A `pull` payment mandate names the PAYEE as its delegate (the Home's onboarding.ts:889:
+# `mode === 'pull' ? payment.payee : OPEN_DELEGATION`), and the payee registered for this client is
+# the house TREASURY. So the treasury redeems its own incoming buy-in, which is coherent: the money
+# lands in the same account that spent the authority to collect it. Pointing this at the service
+# agent instead made every mandate fail its delegate check with nothing wrong on the player's side.
+HOUSE_DELEGATE = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"

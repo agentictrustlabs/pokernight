@@ -21,6 +21,14 @@ export interface SessionRecord {
   /** Person's Smart Agent address, lowercased. Also encoded in `playerId`, so it is re-derivable. */
   address: string;
   agentName?: string;
+  /**
+   * The display name the person typed on the sign-in page, when they gave one. Kept apart from
+   * `agentName` on purpose: that is a Faithnet handle the Home asserted, this is a name this card
+   * room calls them by, and these accounts are meant to stay nameless in the naming service. A
+   * Home-supplied profile name, once one rides the id_token, takes precedence over this — see
+   * `issueHomeSession`.
+   */
+  profileName?: string;
   /** The Home origin that minted the id_token (== its `iss`). */
   homeOrigin: string;
   /** SA-signed scoped delegation to the relying delegate. Phase 3 spends against it. */

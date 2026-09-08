@@ -3,7 +3,7 @@ import type { AppSession } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { startBuyInMandate, type AuthConfig } from '../lib/home';
 import { rememberReturn } from '../lib/routes';
-import { progressLine, readyLine, stakeBalance, stakeFailed, stakeName, stakeStage, type StakeResult } from '../lib/stake';
+import { progressLine, readyLine, stakeBalance, stakeFailed, stakeName, stakeProblem, stakeStage, type StakeResult } from '../lib/stake';
 import type { TreasuryView } from '../lib/treasury';
 import { TreasuryPanel } from './TreasuryPanel';
 
@@ -56,6 +56,7 @@ export function StartPanel({
   const watchUntil = useRef(0);
 
   const stage = stakeStage(treasury);
+  const refused = stakeProblem(treasury);
   const token = session.token;
 
   const run = useCallback(async (): Promise<StakeResult | null> => {
@@ -158,6 +159,14 @@ export function StartPanel({
             </>
           ) : stage === 'authorise' ? (
             <>
+              {/* A mandate that came back and was REFUSED must say so. Without this the screen just
+                  returned to the sentence below, and a player who had already been to their Home and
+                  approved the caps saw no reason why nothing had changed. */}
+              {refused ? (
+                <p className="start-refused" role="alert">
+                  Your Home signed it, but the card room could not accept it: {refused}
+                </p>
+              ) : null}
               <p className="hint">
                 One thing left: your say-so for how much a table may take from your money when you sit down. Your Home asks you that and
                 signs it — the card room never can — and you can undo it there whenever you like.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession } from './lib/types';
 import { ApiError, api, loadSession, saveSession, setUnauthorizedHandler } from './lib/api';
-import { startHomeSignIn, takeHomeCallback, takeMandateCallback, type AuthConfig } from './lib/home';
+import { startHomeSignIn, takeHomeCallback, takeMandateCallback, takeProfileName, type AuthConfig } from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
 import { HOME_HASH, goTo, route, takeReturn } from './lib/routes';
@@ -23,7 +23,9 @@ export interface AuthState {
   busy: boolean;
   /** Something went wrong and the person needs to see it and be able to try again. */
   error: string | null;
-  signInWithHome: () => void;
+  /** Start a Home sign-in. `name` is the PROFILE name the person asked to be called — a display name
+   *  this card room keeps, never a Faithnet handle. Blank is a perfectly good way to be signed in. */
+  signInWithHome: (name?: string) => void;
   dismissError: () => void;
   /** Demo users the Home offers. Empty when it offers none, or cannot be reached. */
   personas: DemoPersona[];
@@ -165,6 +167,10 @@ export function App() {
       return;
     }
     setBusy(true);
+    // What they typed before they left for their Home. Handed over WITH the code so the session is
+    // named the moment it exists, rather than the person seeing a truncated address once and then a
+    // name. Empty when they chose not to give one, which is a supported way to play.
+    const profileName = takeProfileName();
     api
       .homeLogin({
         code: outcome.code,
@@ -172,6 +178,7 @@ export function App() {
         authOrigin: outcome.authOrigin,
         nonce: outcome.nonce,
         state: outcome.state,
+        ...(profileName ? { profileName } : {}),
       })
       .then((r) => login({ token: r.token, playerId: r.playerId, name: r.name, via: 'home', address: r.address, agentName: r.agentName }))
       .catch((e: unknown) =>
@@ -180,11 +187,11 @@ export function App() {
       .finally(() => setBusy(false));
   }, [login]);
 
-  const signInWithHome = useCallback(() => {
+  const signInWithHome = useCallback((name?: string) => {
     if (!config) return;
     setBusy(true);
     setError(null);
-    startHomeSignIn(config)
+    startHomeSignIn(config, name ?? '')
       .then((url) => {
         location.href = url;
       })

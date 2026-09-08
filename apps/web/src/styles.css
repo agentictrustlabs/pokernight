@@ -2640,6 +2640,33 @@ details.dev-login .form .hint {
   margin-top: 0.6rem;
 }
 
+/* One question above the one action. The field is optional, so it is quiet: a stranger who has no
+   name in mind must be able to read straight past it to the button. */
+.signin-name {
+  margin-bottom: 0.15rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.signin-name > input {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface, #fff);
+  font-family: var(--font-mono, monospace);
+}
+.signin-name > input:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
+}
+.signin-name-refused {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+}
+.signin-name-refused .hint {
+  margin-top: 0;
+}
+
 /* A lobby column must be allowed to shrink, or a wide table pushes the side panel off the page. */
 .lobby > * {
   min-width: 0;
@@ -2702,4 +2729,16 @@ a.button.primary:hover {
 }
 .start a.button.primary {
   margin-top: 0.2rem;
+}
+
+/* A mandate the player's Home signed but this room refused. Not a toast: it belongs beside the
+   action that failed, and it must survive the panel re-rendering back to the authorise state. */
+.panel.start .start-refused {
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-left: 3px solid var(--card-red);
+  background: var(--card-red-soft);
+  color: var(--ink);
+  font-size: 0.92rem;
+  border-radius: 0 3px 3px 0;
 }

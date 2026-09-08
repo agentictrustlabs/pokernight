@@ -111,6 +111,15 @@ describe('sign-in render', () => {
   });
   const signIn = (a: AuthState): string => renderToStaticMarkup(createElement(Lobby, { session: null, auth: a, onLogin: () => {} }));
 
+  it('asks what to call you, optionally, and says what the name is for', () => {
+    const html = signIn(auth());
+    expect(html).toContain('What should we call you?');
+    expect(html).toContain('optional');
+    expect(html).toContain('other players see');
+    // A nameless player has to be able to read straight past it: the copy says what blank means.
+    expect(html).toContain('Leave it blank');
+  });
+
   it('offers Home sign-in, naming the Home', () => {
     const html = signIn(auth());
     expect(html).toContain('Sign in to play');

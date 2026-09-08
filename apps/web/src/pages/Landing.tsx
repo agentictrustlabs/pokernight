@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AuthState } from '../App';
 import type { AppSession, TableSummary } from '../lib/types';
 import { api } from '../lib/api';
-import { fmtChips } from '../lib/format';
+import { fmtChips, seatLabel } from '../lib/format';
 import { dualAmount, tableRate } from '../lib/money';
 import { SettlementTag } from '../components/SettlementTag';
 import { describeMoment, fmtSeats, pickFeaturedTable, summarizeLobby, summarizeRoster, type TableDetail } from '../lib/lobby';
@@ -216,7 +216,10 @@ function LiveRoom({ live }: { live: LiveLobby }) {
                   .sort((a, b) => a.seat - b.seat)
                   .map((s) => {
                     const info = live.featured?.players?.[s.playerId];
-                    const name = info?.name ?? live.featured?.names?.[s.playerId] ?? `Seat ${s.seat + 1}`;
+                    // `seatLabel`, not the raw name: a player with no name of their own carries a
+                    // truncated Smart Agent address as one, and the PUBLIC landing page is the last
+                    // place that belongs — the table itself has always said "Seat 4" instead.
+                    const name = seatLabel(info?.name ?? live.featured?.names?.[s.playerId], s.seat);
                     const kind = info?.kind === 'agent' ? (info.agentKind ?? 'agent') : 'person';
                     const stack = dualAmount(s.stack, featuredRate);
                     return (

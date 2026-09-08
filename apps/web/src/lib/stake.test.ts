@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { progressLine, readyLine, stakeBalance, stakeFailed, stakeName, stakeStage, type StakeResult, type StakeStep } from './stake';
+import { progressLine, readyLine, stakeBalance, stakeFailed, stakeName, stakeStage, type StakeResult, type StakeStep, stakeProblem } from './stake';
 import type { TreasuryView } from './treasury';
 
 const view = (over: Partial<TreasuryView> = {}): TreasuryView => ({
@@ -121,5 +121,14 @@ describe('readyLine', () => {
 
   it('claims nothing while the set-up is unfinished', () => {
     expect(readyLine(result({ ready: false, balance: '10000000000' }))).toBeNull();
+  });
+
+  it('surfaces a refused mandate, because the stage collapses back to authorise and loses the reason', () => {
+    const refusal = 'the buy-in mandate is delegated to 0xf6F4…5671, but this card room redeems as 0x0347…04DD';
+    expect(stakeProblem({ mandate: { problem: refusal } } as never)).toBe(refusal);
+    // Nothing to explain: no attempt, an accepted mandate, or an empty string.
+    expect(stakeProblem({ mandate: { problem: null } } as never)).toBeNull();
+    expect(stakeProblem({ mandate: { problem: '   ' } } as never)).toBeNull();
+    expect(stakeProblem(null)).toBeNull();
   });
 });

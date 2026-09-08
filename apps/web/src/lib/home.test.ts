@@ -17,8 +17,13 @@ import {
   isAllowedHomeOrigin,
   parseCallback,
   readStash,
+  PROFILE_NAME_KEY,
+  finishProfileName,
   startBuyInMandate,
+  startHomeSignIn,
   stripAuthParams,
+  takeProfileName,
+  toProfileName,
   writeStash,
   type AuthConfig,
   type StorageLike, readTreasuryReturn } from './home';
@@ -240,5 +245,80 @@ describe('startBuyInMandate', () => {
     expect(stripAuthParams(href)).toBe('https://poker.example/');
     expect(readTreasuryReturn('https://poker.example/?treasury_error=denied&state=s1')).toEqual({ error: 'denied' });
     expect(readTreasuryReturn('https://poker.example/')).toBeNull();
+  });
+});
+
+/**
+ * The name a person types on the way in.
+ *
+ * It is a PROFILE name and not a Faithnet handle, and that distinction is the whole of this: putting
+ * it on the authorize request as `agent_name` makes the Home claim `<label>.me` and hop the ceremony
+ * to that subdomain, which is exactly what these accounts must not do. So the authorize request stays
+ * name-deferred and the name is carried across the redirect on this origin instead.
+ */
+describe('the name on the way in', () => {
+  const config: AuthConfig = {
+    devAuth: false,
+    home: {
+      clientId: 'pokernight',
+      origin: 'https://www.faithnet.me',
+      zone: 'faithnet.me',
+      delegate: `0x${'de'.repeat(20)}`,
+      redirectUri: 'https://poker.faithnet.io/',
+    },
+  };
+
+  it('keeps a typed name as typed, only making it safe to show to other players', () => {
+    expect(finishProfileName('Rich Pedersen')).toBe('Rich Pedersen');
+    expect(finishProfileName('  Rowan  ')).toBe('Rowan');
+    expect(finishProfileName('a\u200bb\nc')).toBe('ab c');
+    expect(finishProfileName('x'.repeat(60))).toHaveLength(24);
+    expect(finishProfileName('')).toBe('');
+    // A trailing space is a name being typed THROUGH, so the FIELD keeps it — trim on every keystroke
+    // and "Rich Pedersen" could never be typed at all.
+    expect(toProfileName('Rich ')).toBe('Rich ');
+    expect(toProfileName('  Rich')).toBe('Rich');
+  });
+
+  it('does NOT ask the Home to claim a handle — the enrolment stays name-deferred', async () => {
+    const store = fakeStore();
+    const url = new URL(await startHomeSignIn(config, 'Rich Pedersen', store));
+    expect(url.searchParams.get('agent_name')).toBe('');
+    expect(url.origin).toBe('https://www.faithnet.me');
+    // It waits here instead, on this origin, for the return leg to hand to the card room.
+    expect(store.map.get(PROFILE_NAME_KEY)).toBe('Rich Pedersen');
+  });
+
+  it('hands the name over once, then forgets it, so a later sign-in cannot inherit it', async () => {
+    const store = fakeStore();
+    await startHomeSignIn(config, 'Rowan', store);
+    expect(takeProfileName(store)).toBe('Rowan');
+    expect(takeProfileName(store)).toBe('');
+  });
+
+  it('signs a nameless person in exactly as before, and remembers nothing', async () => {
+    const store = fakeStore();
+    const url = new URL(await startHomeSignIn(config, '', store));
+    expect(url.searchParams.get('agent_name')).toBe('');
+    expect(store.map.has(PROFILE_NAME_KEY)).toBe(false);
+    expect(takeProfileName(store)).toBe('');
+    // And with no argument at all, which is what a caller with no name to pass does.
+    expect(new URL(await startHomeSignIn(config, undefined, fakeStore())).searchParams.get('agent_name')).toBe('');
+  });
+
+  it('a browser that will not keep the name still signs the person in', async () => {
+    const blocked = fakeStore();
+    blocked.setItem = () => {
+      throw new Error('blocked');
+    };
+    // writeStash is what actually fails first on such a store, and that IS fatal — the PKCE verifier
+    // is a secret the ceremony turns on. What must not happen is a display name causing a new failure.
+    await expect(startHomeSignIn(config, 'Rowan', blocked)).rejects.toThrow(/will not let the site keep/);
+    expect(takeProfileName(blocked)).toBe('');
+  });
+
+  it('refuses to send anyone to a Home this deployment does not trust, named or not', async () => {
+    const rogue: AuthConfig = { ...config, home: { ...config.home, origin: 'https://evil.example' } };
+    await expect(startHomeSignIn(rogue, 'Rowan', fakeStore())).rejects.toThrow(/not a trusted Home/);
   });
 });

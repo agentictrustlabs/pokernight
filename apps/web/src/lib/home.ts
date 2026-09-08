@@ -227,10 +227,87 @@ export function homeClient(config: AuthConfig): ConnectClient {
 }
 
 /**
+ * A PROFILE name — what a person is called at this table — cleaned up but not reshaped.
+ *
+ * This is deliberately NOT a Faithnet handle. A handle is claimed by putting `agent_name` on the
+ * authorize request, which makes the Home mint `<label>.me`, hop the ceremony to that subdomain, and
+ * bind the person to a name in the naming service forever. These accounts are meant to stay nameless
+ * there. So the name a person types here is a display name the card room keeps, and nothing else
+ * claims anything: "Rich Pedersen" stays "Rich Pedersen" rather than becoming `rich-pedersen.me`.
+ *
+ * All this does is make it safe to show to other players: one line, no control or zero-width
+ * characters, collapsed whitespace, and short enough to fit on a seat plate.
+ */
+export function toProfileName(input: string): string {
+  return input
+    // Whitespace FIRST, so a newline becomes a space and does not weld two words together; then the
+    // characters that have no business in a name at all.
+    .replace(/\s+/g, ' ')
+    /* eslint-disable-next-line no-control-regex */
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff]/g, '')
+    .replace(/^ +/, '')
+    .slice(0, PROFILE_NAME_MAX);
+}
+
+/**
+ * The same name, settled: the version that is stored and shown.
+ *
+ * The trailing space a person is mid-way through typing has to survive the FIELD — trim on every
+ * keystroke and "Rich Pedersen" can never be typed at all — so it is trimmed once, here, on the way
+ * out. The card room trims again server-side: nothing about a display name rests on the browser.
+ */
+export function finishProfileName(input: string): string {
+  return toProfileName(input).trim();
+}
+
+/** As long as a name may be. A seat plate is narrow, and this is a name, not a sentence. */
+export const PROFILE_NAME_MAX = 24;
+
+/** Where the profile name waits while the person is away at their Home. */
+export const PROFILE_NAME_KEY = 'pokernight.profileName';
+
+/**
+ * Keep the typed name across the redirect. The ceremony leaves this origin entirely, so a name held
+ * only in React state would not survive it. Separate from the PKCE stash on purpose: the stash is a
+ * secret the ceremony turns on, and this is a display string — losing it must cost a name, never a
+ * sign-in, which is why a storage that refuses the write is not an error here.
+ */
+export function rememberProfileName(store: StorageLike | null, name: string): void {
+  const clean = finishProfileName(name);
+  try {
+    if (clean) store?.setItem(PROFILE_NAME_KEY, clean);
+    else store?.removeItem(PROFILE_NAME_KEY);
+  } catch {
+    /* a browser that will not keep a display name still signs the person in */
+  }
+}
+
+/** Take the remembered name, once. Returns '' when there is none. */
+export function takeProfileName(store: StorageLike | null = sessionStore()): string {
+  let raw: string | null = null;
+  try {
+    raw = store?.getItem(PROFILE_NAME_KEY) ?? null;
+    store?.removeItem(PROFILE_NAME_KEY);
+  } catch {
+    return '';
+  }
+  return finishProfileName(raw ?? '');
+}
+
+/**
  * Start the ceremony: build the authorize URL, persist the stash, then navigate. Throws with a
  * message worth showing if the Home origin is untrusted or the browser will not keep the stash.
+ *
+ * `name` is the person's PROFILE name and it never goes on the authorize request — see
+ * {@link toProfileName}. It is remembered on this origin and handed to the card room on the return
+ * leg. The enrolment itself stays name-deferred, which is what keeps the account nameless in the
+ * naming service, and is also exactly what this flow did before there was a field at all.
  */
-export async function startHomeSignIn(config: AuthConfig, store: StorageLike | null = sessionStore()): Promise<string> {
+export async function startHomeSignIn(
+  config: AuthConfig,
+  name = '',
+  store: StorageLike | null = sessionStore(),
+): Promise<string> {
   if (!config.home.clientId || !config.home.origin) throw new Error('This deployment has no Home configured.');
   if (!isAllowedHomeOrigin(config.home.zone, config.home.origin)) {
     throw new Error(`Refusing to sign in at ${config.home.origin}: it is not a trusted Home for this site.`);
@@ -239,6 +316,7 @@ export async function startHomeSignIn(config: AuthConfig, store: StorageLike | n
   if (!writeStash(store, stash)) {
     throw new Error('This browser will not let the site keep a sign-in secret (session storage is blocked), so sign-in cannot complete.');
   }
+  rememberProfileName(store, name);
   return url;
 }
 

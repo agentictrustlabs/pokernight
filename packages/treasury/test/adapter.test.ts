@@ -19,6 +19,7 @@ import {
   type Delegation,
   type PlayerFunding,
   type TreasuryClient,
+  checkBuyInMandate,
 } from '../src/index.js';
 
 const ASSET = '0x00000000000000000000000000000000000000a5' as Address;
@@ -309,5 +310,59 @@ describe('orderNonce', () => {
     expect(orderNonce('t1:p:0:1700000000000')).toBe(orderNonce('t1:p:0:1700000000000'));
     expect(orderNonce('t1:p:0:1700000000000')).not.toBe(orderNonce('t1:p:0:1700000000001'));
     expect(orderNonce('x')).toBeGreaterThan(0n);
+  });
+});
+
+describe('a pull mandate from the Home', () => {
+  it('accepts a pull mandate whose delegate is the payee, which is what the Home mints', () => {
+    // A `pull` payment mandate names the PAYEE as its delegate, not the open sentinel. The house
+    // treasury is both the payee and the redeemer, so houseDelegate must equal houseTreasury or
+    // every mandate fails its delegate check with nothing wrong on the player's side.
+    const treasury = '0x00000000000000000000000000000000000000f6' as const;
+    const checked = checkBuyInMandate(
+      {
+        delegator: '0x00000000000000000000000000000000000000b1',
+        delegate: treasury,
+        authority: `0x${'ff'.repeat(32)}`,
+        caveats: [],
+        salt: 1n,
+        signature: '0x00',
+      } as never,
+      {
+        treasury: '0x00000000000000000000000000000000000000b1',
+        houseDelegate: treasury,
+        payee: treasury,
+        asset: '0x00000000000000000000000000000000000000aa',
+        paymentEnforcer: '0x00000000000000000000000000000000000000ee',
+        amount: 1_000_000n,
+        now: Date.now(),
+      } as never,
+    );
+    // Not refused for naming the wrong redeemer: the only thing left to say about this stub is that
+    // it carries no payment caveat.
+    expect(checked).toBe('the buy-in mandate has no payment caveat, so nothing on chain caps what the card room could take');
+  });
+
+  it('still refuses one delegated to an account this deployment does not redeem as', () => {
+    const refused = checkBuyInMandate(
+      {
+        delegator: '0x00000000000000000000000000000000000000b1',
+        delegate: '0x00000000000000000000000000000000000000f6',
+        authority: `0x${'ff'.repeat(32)}`,
+        caveats: [],
+        salt: 1n,
+        signature: '0x00',
+      } as never,
+      {
+        treasury: '0x00000000000000000000000000000000000000b1',
+        houseDelegate: '0x00000000000000000000000000000000000000c7',
+        payee: '0x00000000000000000000000000000000000000f6',
+        asset: '0x00000000000000000000000000000000000000aa',
+        paymentEnforcer: '0x00000000000000000000000000000000000000ee',
+        amount: 1_000_000n,
+        now: Date.now(),
+      } as never,
+    );
+    expect(refused).toMatch(/is delegated to 0x00000000000000000000000000000000000000f6/);
   });
 });
