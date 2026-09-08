@@ -16,6 +16,12 @@ export interface HomeApiConfig {
   origin: string;
   /** The OIDC `client_id` this deployment is registered under. */
   clientId: string;
+  /**
+   * The redirect URI registered for `clientId`, byte-identical to the registry entry — the Home
+   * compares it exactly, so a missing trailing slash is refused. Absent ⇒ the treasury ceremony
+   * cannot be addressed and callers fall back to the Home's own treasuries page.
+   */
+  redirectUri?: string;
 }
 
 /** A refusal from the Home, with the status and whatever it said, so a caller can quote it. */
@@ -373,14 +379,48 @@ export async function recordPersonTreasury(cfg: HomeApiConfig, homeSession: stri
   );
 }
 
+/** What the Home's treasury ceremony sends back on the query string. */
+export const TREASURY_RETURN_PARAMS = {
+  treasury: 'treasury',
+  status: 'treasury_status',
+  error: 'treasury_error',
+  state: 'state',
+} as const;
+
 /**
- * Where to send a REAL player to make a treasury.
+ * Where to send a REAL player to get a treasury.
  *
  * The Home's bootstrap endpoint needs a custody-grade session minted by the Home's own credential
  * ceremony; a relying app's id_token can never be one, so there is nothing for this app to call. The
- * honest move is to hand the person to their Home's portal, which creates and CUSTODIES the account,
- * and to have them come back to a page that re-runs discovery.
+ * person's Home creates and CUSTODIES the account — that boundary is the point, not a limitation.
+ *
+ * This addresses the Home's FOCUSED ceremony (`/choose-treasury`), which asks one question and comes
+ * back: pick an account you have, or open one. The old destination was `/treasuries`, the full
+ * stewardship dashboard — trust graph, attestations, org treasuries — where a person had to find one
+ * button among a page of concepts they had not met yet. Same ownership boundary, one question.
+ *
+ * `redirect_uri` must match the registry byte-for-byte (the Home compares exactly, by design), which
+ * is why it is configuration rather than something derived from the request.
+ */
+export function chooseTreasuryUrl(cfg: HomeApiConfig, opts?: { state?: string; label?: string }): string | null {
+  if (!cfg.redirectUri) return null;
+  const u = new URL(`${base(cfg)}/choose-treasury`);
+  u.searchParams.set('client_id', cfg.clientId);
+  u.searchParams.set('redirect_uri', cfg.redirectUri);
+  if (opts?.state) u.searchParams.set('state', opts.state);
+  if (opts?.label) u.searchParams.set('label', opts.label);
+  return u.toString();
+}
+
+/**
+ * Where to send a player when the focused ceremony cannot be addressed (no registered redirect URI
+ * configured). The dashboard is worse but it is not a dead end, so it stays as the fallback.
  */
 export function managedAgentsUrl(cfg: HomeApiConfig): string {
   return `${base(cfg)}/treasuries`;
+}
+
+/** The ceremony URL when it can be addressed, else the dashboard. Never null, so no caller dead-ends. */
+export function treasuryHandoffUrl(cfg: HomeApiConfig, opts?: { state?: string; label?: string }): string {
+  return chooseTreasuryUrl(cfg, opts) ?? managedAgentsUrl(cfg);
 }

@@ -192,7 +192,10 @@ export function homeApi(env: Env): HomeApiConfig {
   const clientId = (env.HOME_CLIENT_ID ?? '').trim();
   if (!origin) throw new TreasuryConfigError('HOME_ORIGIN', 'HOME_ORIGIN is not set, so the card room cannot reach a Home');
   if (!clientId) throw new TreasuryConfigError('HOME_CLIENT_ID', 'HOME_CLIENT_ID is not set, so the Home would not recognise this card room');
-  return { origin, clientId };
+  // The registered redirect URI, passed through byte-for-byte: the Home's treasury ceremony compares
+  // it exactly against the registry, so trimming or normalising it here would break the match.
+  const redirectUri = (env.HOME_REDIRECT_URI ?? '').trim();
+  return { origin, clientId, ...(redirectUri ? { redirectUri } : {}) };
 }
 
 /** What the optional `<label>.treasury` claim needs. Absent, a treasury is created nameless. */

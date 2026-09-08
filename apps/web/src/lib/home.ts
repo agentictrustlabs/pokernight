@@ -38,7 +38,38 @@ export interface AuthConfig {
 }
 
 /** Query parameters the ceremony puts on the return URL; all are stripped once consumed. */
-const CALLBACK_PARAMS = ['code', 'state', 'error', 'error_description', 'error_uri', 'iss', 'session_state', 'ac_relay', 'ac_iss'];
+// `treasury`, `treasury_status` and `treasury_error` come back from the Home's treasury ceremony,
+// which returns to this SAME redirect URI. They are stripped with the rest so a player never sees a
+// raw account address sitting in their address bar, and a refresh cannot replay a finished ceremony.
+const CALLBACK_PARAMS = [
+  'code',
+  'state',
+  'error',
+  'error_description',
+  'error_uri',
+  'iss',
+  'session_state',
+  'ac_relay',
+  'ac_iss',
+  'treasury',
+  'treasury_status',
+  'treasury_error',
+];
+
+/** What the Home's treasury ceremony said, if this load is a return from it. */
+export function readTreasuryReturn(href: string = location.href): { treasury?: string; status?: string; error?: string } | null {
+  let u: URL;
+  try {
+    u = new URL(href);
+  } catch {
+    return null;
+  }
+  const treasury = u.searchParams.get('treasury') ?? undefined;
+  const status = u.searchParams.get('treasury_status') ?? undefined;
+  const error = u.searchParams.get('treasury_error') ?? undefined;
+  if (!treasury && !error) return null;
+  return { ...(treasury ? { treasury } : {}), ...(status ? { status } : {}), ...(error ? { error } : {}) };
+}
 
 export const STASH_KEY = 'pokernight.home.stash';
 /** A separate stash, because a buy-in authorisation and a sign-in return to the SAME redirect URI and

@@ -46,6 +46,7 @@ import {
   demoSignIn,
   listRelatedAgents,
   managedAgentsUrl,
+  treasuryHandoffUrl,
   personTreasuries,
   personaSignDigest,
   type DemoPersona,
@@ -329,7 +330,7 @@ export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Respo
   try {
     create = {
       mode: persona ? 'server' : 'home-portal',
-      portalUrl: persona ? null : managedAgentsUrl(homeApi(c.env)),
+      portalUrl: persona ? null : treasuryHandoffUrl(homeApi(c.env)),
       canName: treasuryNaming(c.env) !== null,
     };
   } catch {
@@ -528,7 +529,7 @@ export async function createTreasury(c: Ctx, session: SessionClaims, label: stri
         error:
           'your Home creates and custodies your treasury, not this card room — it is your money and your key. ' +
           'Open your Home, create a personal treasury there, then come back and check again.',
-        portalUrl: managedAgentsUrl(config),
+        portalUrl: treasuryHandoffUrl(config),
         mode: 'home-portal',
       },
       409,
@@ -869,7 +870,7 @@ export async function quickStart(c: Ctx, session: SessionClaims): Promise<Respon
   const persona = await personaFor(c.env, person);
   let portalUrl: string | null = null;
   try {
-    portalUrl = managedAgentsUrl(homeApi(c.env));
+    portalUrl = treasuryHandoffUrl(homeApi(c.env));
   } catch {
     /* named below by whichever step needs it */
   }
@@ -998,7 +999,12 @@ export async function quickStart(c: Ctx, session: SessionClaims): Promise<Respon
     return answer(false, chosen, match.name, null, { action: 'retry', said: 'Try again in a moment.' });
   }
 
-  if (balance > 0n) {
+  // The invariant is a floor, not "is it empty". A treasury the player CHOSE can hold less than a
+  // buy-in, and a player who arrives with 3 USDC at a table with a 40 USDC minimum is stuck with no
+  // way forward — which is the same dead end as having no treasury at all. So top up to the floor
+  // whenever they are under it, and only say "kept" when they already clear it.
+  const floor = parseUsdc(SEED_USDC);
+  if (balance >= floor) {
     steps.push({ step: 'stake', status: 'kept', said: `You already have ${formatMoney(balance)} USDC to play with.` });
   } else {
     // Gated on the ASSET saying it is a mock, not on a flag: a real stablecoin is never minted, and
@@ -1008,15 +1014,17 @@ export async function quickStart(c: Ctx, session: SessionClaims): Promise<Respon
       steps.push({ step: 'stake', status: 'blocked', said: `Nothing was added: ${faucet.reason}` });
     } else {
       try {
-        const amount = parseUsdc(SEED_USDC);
-        const txHash = await custodialTreasury(c.env).mintTestAsset(chosen as Address, amount);
+        // Mint the SHORTFALL, so a partly-funded treasury lands exactly on the floor rather than
+        // being handed another full seed on top of what it already had.
+        const shortfall = floor - balance;
+        const txHash = await custodialTreasury(c.env).mintTestAsset(chosen as Address, shortfall);
         balance = await readOnlyTreasury(c.env)
           .readUsdcBalance(chosen as Address)
-          .catch(() => amount);
+          .catch(() => floor);
         steps.push({
           step: 'stake',
           status: 'done',
-          said: `You're set up with ${formatMoney(amount)} USDC to play with.`,
+          said: `You're set up with ${formatMoney(balance)} USDC to play with.`,
           detail: txHash,
         });
       } catch (e) {

@@ -21,8 +21,7 @@ import {
   stripAuthParams,
   writeStash,
   type AuthConfig,
-  type StorageLike,
-} from './home';
+  type StorageLike, readTreasuryReturn } from './home';
 
 /** A `Storage`-shaped map. `throwOn` simulates private-mode storage, which throws on write. */
 function fakeStore(throwOn?: 'set' | 'get'): StorageLike & { map: Map<string, string> } {
@@ -232,5 +231,14 @@ describe('startBuyInMandate', () => {
 
   it('will not navigate when the browser refuses to keep the secret it would need on the way back', async () => {
     await expect(startBuyInMandate(config, null, fakeStore('set'))).rejects.toThrow(/session storage is blocked/);
+  });
+
+  it('reads and then strips the treasury ceremony return', () => {
+    const href = 'https://poker.example/?treasury=0xabc&treasury_status=created&state=s1';
+    expect(readTreasuryReturn(href)).toEqual({ treasury: '0xabc', status: 'created' });
+    // Stripped so a raw account address never sits in the address bar and a refresh cannot replay it.
+    expect(stripAuthParams(href)).toBe('https://poker.example/');
+    expect(readTreasuryReturn('https://poker.example/?treasury_error=denied&state=s1')).toEqual({ error: 'denied' });
+    expect(readTreasuryReturn('https://poker.example/')).toBeNull();
   });
 });

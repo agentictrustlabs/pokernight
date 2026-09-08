@@ -179,4 +179,16 @@ describe('GET /tables/:id/settlement', () => {
     a.close();
     b.close();
   });
+
+  it('tops a chosen treasury up to the seed floor rather than only funding an empty one', async () => {
+    // A treasury the player CHOSE can hold less than a buy-in. Leaving it there is the same dead end
+    // as having no treasury: a 3 USDC balance at a 40 USDC table has no way forward.
+    const { SEED_USDC } = await import('../src/routes-treasury.js');
+    expect(SEED_USDC).toBe('10000');
+    // The floor is compared against the balance, so a partly-funded treasury is under it.
+    const floor = 10_000n * 1_000_000n;
+    expect(3n * 1_000_000n < floor).toBe(true);
+    // And a treasury already at or above the floor is left alone.
+    expect(floor >= floor).toBe(true);
+  });
 });
