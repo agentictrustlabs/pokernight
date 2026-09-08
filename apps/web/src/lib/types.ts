@@ -18,3 +18,18 @@ export type {
   WsErrorCode,
 } from '@pokernight/protocol';
 export type { Card, HandResult, HandRank, Pot, PotAward, SeatView, Street, ActionRecord } from '@pokernight/engine';
+
+import type { Session } from '@pokernight/protocol';
+
+/**
+ * The session as the client holds it. `Session` (token/playerId/name) is the wire contract every
+ * route already speaks; the extra fields are display-only and come from `POST /auth/home`.
+ */
+export interface AppSession extends Session {
+  /** Which door this session came through. */
+  via: 'home' | 'dev';
+  /** Person's Smart Agent address, lowercased (Home sessions only). */
+  address?: string;
+  /** The `agent_name` the Home asserted, e.g. `richard.me` (Home sessions only). */
+  agentName?: string;
+}

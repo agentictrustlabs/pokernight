@@ -1,21 +1,40 @@
 /**
  * Session tokens.
  *
- * Phase 1 (DEV_AUTH=true): the Worker mints a token for any name. The token is
+ * BOTH sign-in paths mint the SAME token, so nothing downstream cares which one you used:
  *   base64url(JSON payload) "." base64url(HMAC-SHA256(SESSION_SECRET, `${playerId}.${name}.${exp}`))
- * and is verified with the same HMAC via WebCrypto. playerId = `dev:<slug(name)>`.
+ * verified with the same HMAC via WebCrypto.
  *
- * Phase 2/3: `verifyHomeSession` (below) validates a session established through the Home OIDC
- * flow (HOME_ORIGIN) and maps the subject to a Smart Agent address. Not implemented yet.
+ *   dev  (DEV_AUTH=true)  playerId = `dev:<slug(name)>`   — any name, no proof. Localhost only.
+ *   home (Home OIDC)      playerId = `home:0x<sa address>` — minted only after the Worker itself has
+ *                         exchanged the code and verified the id_token (`home.ts`). The browser's
+ *                         claim about who it is never reaches this file.
+ *
+ * A `home:` token additionally has a server-side record in `SessionDO` carrying the person's Smart
+ * Agent address and the SA-signed delegation the Home issued (phase 3 spends against it). The token
+ * stays small: the delegation never rides on the wire, and the address is re-derivable from
+ * `playerId`. `verifyHomeSession` below is the accessor for that record, and the record's existence
+ * is what makes sign-out a real revocation.
  */
 
 import type { Env } from './env.js';
+import { isHomePlayerId } from './home.js';
+import type { SessionRecord } from './session-do.js';
 
 export interface SessionClaims {
   playerId: string;
   name: string;
   /** Absolute ms expiry. */
   exp: number;
+}
+
+/** A resolved Home session: the token claims plus the parts kept server-side. */
+export interface HomeSessionClaims extends SessionClaims {
+  address: string;
+  agentName?: string;
+  homeOrigin: string;
+  /** Opaque SA-signed delegation. Phase 3 reads it; nothing here interprets it. */
+  delegation?: unknown;
 }
 
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
@@ -107,25 +126,93 @@ export async function mintDevSession(env: Env, name: string, now = Date.now()): 
 }
 
 /**
- * Resolve a bearer/query token to a session. Tries the HMAC token first, then the Home session
- * extension point. Returns null for spectators (no or invalid token).
+ * Mint the session for a person who has just proved themselves at their Home (see `home.ts`).
+ *
+ * Refuses the INSECURE_DEV_SECRET fallback for a real Home. That fallback exists so `wrangler dev`
+ * works with no `.dev.vars`, but its value is in this file — a deployment that reached a real Home and
+ * then signed the session with it would be handing out forgeable identities. Failing loudly here is
+ * the only way an operator finds out before a player does.
+ */
+export async function mintHomeSessionToken(env: Env, playerId: string, name: string, exp: number): Promise<string> {
+  const localHome = (env.HOME_ZONE ?? '').trim().toLowerCase() === 'localhost';
+  if (!env.SESSION_SECRET && !localHome) throw new Error('SESSION_SECRET is not configured');
+  const secret = sessionSecret(env);
+  if (!secret) throw new Error('SESSION_SECRET is not configured');
+  return mintSessionToken(secret, { playerId, name, exp });
+}
+
+/** How long a Home session lasts. Capped by the id_token's own expiry at the call site. */
+export const HOME_SESSION_TTL_MS = DEFAULT_TTL_MS;
+
+/**
+ * Resolve a bearer/query token to a session. The HMAC is the whole trust decision; a `home:` token is
+ * then hydrated from its `SessionDO` record so callers see the Smart Agent address and delegation and
+ * so a signed-out session stops working immediately. Returns null for spectators.
  */
 export async function resolveSession(env: Env, token: string | null | undefined): Promise<SessionClaims | null> {
   if (!token) return null;
   const secret = sessionSecret(env);
   if (secret) {
     const claims = await verifySessionToken(secret, token);
-    if (claims) return claims;
+    if (claims) return isHomePlayerId(claims.playerId) ? hydrateHomeSession(env, claims) : claims;
   }
   return verifyHomeSession(env, token);
 }
 
 /**
- * EXTENSION POINT (phase 2/3): validate a session issued by the Home OIDC flow at HOME_ORIGIN and map
- * it to `{ playerId: <smart agent address or name>, name }`. Until then every non-HMAC token is rejected.
+ * Validate a session established through the Home OIDC flow and return it with everything the flow
+ * learned: the person's Smart Agent address, their agent name, and the SA-signed delegation the Home
+ * issued to this site's delegate. Returns null for anything that is not a live Home session.
  */
-export async function verifyHomeSession(env: Env, token: string): Promise<SessionClaims | null> {
-  void env;
-  void token;
-  return null;
+export async function verifyHomeSession(env: Env, token: string): Promise<HomeSessionClaims | null> {
+  const secret = sessionSecret(env);
+  if (!secret) return null;
+  const claims = await verifySessionToken(secret, token);
+  if (!claims || !isHomePlayerId(claims.playerId)) return null;
+  return hydrateHomeSession(env, claims);
+}
+
+/**
+ * Attach the server-side record to already-verified claims.
+ *
+ * A MISSING record means the session was signed out (or has expired) — fail closed. A record store
+ * that is unreachable is a different thing: the token's HMAC already proved the session, so we
+ * degrade to the bare claims rather than logging every player out mid-hand.
+ */
+async function hydrateHomeSession(env: Env, claims: SessionClaims): Promise<HomeSessionClaims | null> {
+  let res: Response;
+  try {
+    res = await sessionStub(env, claims.playerId).fetch('https://session/record');
+  } catch {
+    return { ...claims, address: claims.playerId.slice('home:'.length), homeOrigin: env.HOME_ORIGIN };
+  }
+  if (res.status === 404) return null;
+  if (!res.ok) return { ...claims, address: claims.playerId.slice('home:'.length), homeOrigin: env.HOME_ORIGIN };
+  const rec = (await res.json()) as SessionRecord;
+  return {
+    ...claims,
+    address: rec.address,
+    agentName: rec.agentName,
+    homeOrigin: rec.homeOrigin,
+    delegation: rec.delegation,
+  };
+}
+
+export function sessionStub(env: Env, playerId: string): DurableObjectStub<import('./session-do.js').SessionDO> {
+  return env.SESSIONS.get(env.SESSIONS.idFromName(playerId));
+}
+
+/** Write (or replace) the server-side record for a Home session. */
+export async function putSessionRecord(env: Env, rec: SessionRecord): Promise<void> {
+  const res = await sessionStub(env, rec.playerId).fetch('https://session/record', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(rec),
+  });
+  if (!res.ok) throw new Error(`could not store the session record (${res.status})`);
+}
+
+/** Sign-out: drop the server-side record so the token stops resolving. */
+export async function dropSessionRecord(env: Env, playerId: string): Promise<void> {
+  await sessionStub(env, playerId).fetch('https://session/record', { method: 'DELETE' });
 }

@@ -8,6 +8,7 @@
 # Bindings and vars are repeated per env on purpose (wrangler does not inherit vars / DO bindings into envs).
 #   TABLES   — PokerTableDO namespace (one instance per table id)
 #   LOBBIES  — LobbyDO namespace (one instance per circle; "default" in phase 1)
+#   SESSIONS — SessionDO namespace (one instance per playerId; the server-side half of a Home session)
 #
 # Secrets (NEVER in [vars]; see .dev.vars.example):
 #   SESSION_SECRET — HMAC key for session tokens (`wrangler secret put SESSION_SECRET --env <env>`)
@@ -25,6 +26,7 @@ local_protocol = "http"
 bindings = [
   { name = "TABLES", class_name = "PokerTableDO" },
   { name = "LOBBIES", class_name = "LobbyDO" },
+  { name = "SESSIONS", class_name = "SessionDO" },
 ]
 
 # Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
@@ -32,6 +34,10 @@ bindings = [
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionDO"]
 
 # Local dev (Anvil on :8545, Vite on :5173). DEV_AUTH=true enables POST /dev/session.
 [vars]
@@ -42,8 +48,16 @@ DEV_AUTH = "true"
 ALLOW_AGENT_ENDPOINT = "true"
 ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 CHIP_VALUE = "10000"
+# Home sign-in (OIDC). The ONLY registered redirect_uri for client `pokernight` is
+# https://poker.faithnet.io/ — there is no localhost redirect, so the real ceremony CANNOT run
+# against the live Home from `wrangler dev`. Local dev signs in through POST /dev/session instead.
+# These values keep the config shape identical in both universes and let the unit tests exercise the
+# server half against a stubbed Home on localhost.
 HOME_ORIGIN = "http://localhost:3000"
 HOME_ZONE = "localhost"
+HOME_CLIENT_ID = "pokernight"
+HOME_DELEGATE = "0x89d13c596c45e4ee80af5ae06c727fe9a820ffd0"
+HOME_REDIRECT_URI = "http://localhost:5173/"
 # Agent seats: `agentName` resolves to `<label>.<AGENT_CARD_ZONE>` (http under a localhost zone,
 # https otherwise). In local dev seat an agent with an explicit `endpoint` instead, e.g. the agent
 # worker on http://localhost:8788/?agent=sharkbot.svc.
@@ -62,23 +76,39 @@ routes = [{ pattern = "tables.faithnet.io", custom_domain = true }]
 bindings = [
   { name = "TABLES", class_name = "PokerTableDO" },
   { name = "LOBBIES", class_name = "LobbyDO" },
+  { name = "SESSIONS", class_name = "SessionDO" },
 ]
 
 [[env.faithnet.migrations]]
 tag = "v1"
 new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
 
+[[env.faithnet.migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionDO"]
+
 [env.faithnet.vars]
 CHAIN_ID = "34348"
 RPC_URL = "https://rpc.faithnet.io"
 HOME_ORIGIN = "https://www.faithnet.me"
 HOME_ZONE = "faithnet.me"
+# OIDC client registered at the Home (GET https://www.faithnet.me/connect/client-info?client_id=pokernight):
+# redirect_uris ["https://poker.faithnet.io/"], scopes "openid agent" (NOT profile),
+# delegation templates site-login / org-create. HOME_DELEGATE is the delegate the Home scopes its
+# grant to; it must match the registration or the Home refuses the authorize request.
+HOME_CLIENT_ID = "pokernight"
+HOME_DELEGATE = "0x89d13c596c45e4ee80af5ae06c727fe9a820ffd0"
+# Byte-identical to the registered redirect_uri, at authorize AND at /token.
+HOME_REDIRECT_URI = "https://poker.faithnet.io/"
 # `sharkbot.svc` → https://sharkbot-svc.faithnet.ai (DESIGN.md §4).
 AGENT_CARD_ZONE = "faithnet.ai"
 # Poker personas are served from one host, selected by path. Overrides host-per-agent resolution.
 AGENT_BASE_URL = "https://agents.faithnet.io"
 A2A_TIMEOUT_MS = "20000"
-# Dev sessions stay on until Home OIDC login (phase 2) replaces them. Play-money only.
+# Home sign-in (POST /auth/home) is live. Dev name-only sessions stay ON for now as a fallback; turn
+# this off (DEV_AUTH = "false") once a real person has confirmed Home sign-in works end to end on
+# https://poker.faithnet.io — at which point the dev name box disappears from the UI too, because the
+# client reads GET /auth/config rather than a build flag.
 DEV_AUTH = "true"
 ALLOWED_ORIGINS = "https://poker.faithnet.io"
 CHIP_VALUE = "10000"

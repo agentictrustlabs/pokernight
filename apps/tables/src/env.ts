@@ -1,10 +1,13 @@
 import type { LobbyDO } from './lobby-do.js';
+import type { SessionDO } from './session-do.js';
 import type { PokerTableDO } from './table-do.js';
 
 /** Worker bindings. Vars come from wrangler.toml `[vars]` / `[env.<name>.vars]`; secrets from `.dev.vars` or `wrangler secret put`. */
 export interface Env {
   TABLES: DurableObjectNamespace<PokerTableDO>;
   LOBBIES: DurableObjectNamespace<LobbyDO>;
+  /** One instance per playerId; holds the server-side half of a Home session (see session-do.ts). */
+  SESSIONS: DurableObjectNamespace<SessionDO>;
 
   CHAIN_ID: string;
   RPC_URL: string;
@@ -16,8 +19,17 @@ export interface Env {
   ALLOWED_ORIGINS: string;
   /** Asset base units per chip (default 10000 = 0.01 USDC at 6 decimals). */
   CHIP_VALUE: string;
+  /** The person's Home (OIDC issuer). Sign-in redirects here; the Worker exchanges the code here. */
   HOME_ORIGIN: string;
+  /** Zone the Home lives under. The issuer allowlist accepts the apex and single-label subdomains. */
   HOME_ZONE: string;
+  /** OIDC `client_id` registered with the Home (= the id_token `aud`). */
+  HOME_CLIENT_ID: string;
+  /** The relying-site delegate the Home scopes its grant TO. Address, from the client registration. */
+  HOME_DELEGATE: string;
+  /** The registered redirect URI, byte-identical at authorize and at /token. Defaults to the first
+   *  ALLOWED_ORIGINS entry + "/" so `wrangler dev` needs no extra config. */
+  HOME_REDIRECT_URI?: string;
   AGENT_CARD_ZONE: string;
   /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
   A2A_TIMEOUT_MS?: string;

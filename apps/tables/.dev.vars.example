@@ -1,8 +1,15 @@
 # Copy to .dev.vars (gitignored) for `wrangler dev`. Production values are set with
 # `wrangler secret put <NAME> --env faithnet` and never live in wrangler.toml.
 
-# HMAC-SHA256 key for session tokens minted by POST /dev/session (and, later, Home OIDC sessions).
+# HMAC-SHA256 key for the session tokens BOTH sign-in paths mint (POST /dev/session and POST
+# /auth/home). Without it `wrangler dev` falls back to a fixed insecure dev secret; a deployment must
+# set it (`wrangler secret put SESSION_SECRET --env faithnet`).
 SESSION_SECRET=change-me-to-a-long-random-string
+
+# Home sign-in needs no secret: the OIDC client `pokernight` is public and PKCE-bound, and its
+# client_id / delegate / redirect_uri are vars in wrangler.toml. Note the ONLY registered redirect_uri
+# is https://poker.faithnet.io/, so the real ceremony cannot complete against www.faithnet.me from
+# localhost — local dev uses POST /dev/session.
 
 # chain-rpc-gateway app token for the tables Worker (phase 3, mandate-transfer settlement). Unused in phase 1.
 RPC_TOKEN=

@@ -3,6 +3,10 @@
  *
  * Routes
  *   GET  /health
+ *   GET  /auth/config                   → {devAuth, home:{clientId, origin, zone, delegate, redirectUri}}
+ *   POST /auth/home {code, codeVerifier, authOrigin, nonce, state}
+ *                                       → {token, playerId, name, agentName?, address?}  (Home OIDC)
+ *   POST /auth/signout                  → {ok} (auth required; drops the server-side session record)
  *   POST /dev/session {name}            → {token, playerId, name}   (DEV_AUTH=true only)
  *   GET  /tables                        → TableSummary[]            (LobbyDO "default", or ?circle=)
  *   POST /tables CreateTableRequest     → TableSummary (201)
@@ -15,14 +19,18 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { z } from 'zod';
 import { CreateTableRequestSchema, DevSessionRequestSchema, POKER_ACT_SKILL, SeatAgentRequestSchema } from '@pokernight/protocol';
 import { agentKindFromCard, fetchAgentCard, hasPokerActSkill, resolveAgentBase } from './a2a.js';
-import { mintDevSession, resolveSession } from './auth.js';
+import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aTimeoutMs, allowedOrigins, isDevAuth, type Env } from './env.js';
+import { HomeAuthError, completeHomeSignIn, homePlayerId, homeRedirectUri } from './home.js';
+import type { SessionRecord } from './session-do.js';
 import type { SeatAgentBody } from './table-do.js';
 
 export { PokerTableDO } from './table-do.js';
 export { LobbyDO } from './lobby-do.js';
+export { SessionDO } from './session-do.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -37,6 +45,93 @@ const corsMiddleware = cors({
 app.use('*', (c, next) => (c.req.header('upgrade')?.toLowerCase() === 'websocket' ? next() : corsMiddleware(c, next)));
 
 app.get('/health', (c) => c.json({ ok: true, service: 'pokernight-tables', chainId: c.env.CHAIN_ID }));
+
+/**
+ * What the client needs to draw the sign-in screen, so the SPA does not need a build-time flag: on
+ * localhost `devAuth` is true and the dev name box appears; in production only Home sign-in does.
+ * Everything here is public (the same values the Home publishes at /connect/client-info).
+ */
+app.get('/auth/config', (c) => {
+  let redirectUri: string | null = null;
+  try {
+    redirectUri = homeRedirectUri(c.env);
+  } catch {
+    redirectUri = null;
+  }
+  return c.json({
+    devAuth: isDevAuth(c.env),
+    home: {
+      clientId: c.env.HOME_CLIENT_ID ?? '',
+      origin: c.env.HOME_ORIGIN ?? '',
+      zone: c.env.HOME_ZONE ?? '',
+      delegate: c.env.HOME_DELEGATE ?? '',
+      redirectUri,
+    },
+  });
+});
+
+const HomeAuthRequestSchema = z.object({
+  code: z.string().min(1).max(4096),
+  codeVerifier: z.string().min(1).max(512),
+  authOrigin: z.string().min(1).max(512),
+  nonce: z.string().min(1).max(512),
+  state: z.string().min(1).max(512),
+});
+
+/**
+ * Finish a Home sign-in. The browser ran the front half and holds `?code&state`; it hands us the code
+ * plus the PKCE verifier and the nonce it generated. WE exchange the code at the Home and verify the
+ * id_token — the browser's word for who the person is never enters the decision. See home.ts.
+ */
+app.post('/auth/home', async (c) => {
+  const parsed = HomeAuthRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+
+  let identity;
+  try {
+    identity = await completeHomeSignIn(c.env, parsed.data);
+  } catch (e) {
+    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
+    console.error('home sign-in', e);
+    return c.json({ error: 'home sign-in failed' }, 401);
+  }
+
+  const playerId = homePlayerId(identity.address);
+  // The session never outlives the assertion it rests on.
+  const exp = Math.min(Date.now() + HOME_SESSION_TTL_MS, identity.expiresAt);
+  const record: SessionRecord = {
+    playerId,
+    name: identity.name,
+    address: identity.address,
+    agentName: identity.agentName,
+    homeOrigin: identity.homeOrigin,
+    delegation: identity.delegation,
+    issuedAt: Date.now(),
+    expiresAt: exp,
+  };
+  try {
+    await putSessionRecord(c.env, record);
+  } catch (e) {
+    console.error('session record', e);
+    return c.json({ error: 'could not store the session' }, 500);
+  }
+  let token: string;
+  try {
+    token = await mintHomeSessionToken(c.env, playerId, identity.name, exp);
+  } catch (e) {
+    console.error('mint home session', e);
+    return c.json({ error: 'the card room cannot issue sessions right now (SESSION_SECRET is not configured)' }, 500);
+  }
+  return c.json({ token, playerId, name: identity.name, agentName: identity.agentName, address: identity.address });
+});
+
+/** Sign out: drop the server-side record so the bearer token stops resolving straight away. */
+app.post('/auth/signout', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ ok: true });
+  await dropSessionRecord(c.env, session.playerId);
+  return c.json({ ok: true });
+});
 
 app.post('/dev/session', async (c) => {
   if (!isDevAuth(c.env)) return c.json({ error: 'dev auth disabled' }, 404);

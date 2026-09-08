@@ -106,6 +106,9 @@ importers:
       '@agenticprimitives/connect-auth':
         specifier: link:../../../agenticprimitives/packages/connect-auth
         version: link:../../../agenticprimitives/packages/connect-auth
+      '@agenticprimitives/connect-client':
+        specifier: link:../../../agenticprimitives/packages/connect-client
+        version: link:../../../agenticprimitives/packages/connect-client
       '@agenticprimitives/contracts':
         specifier: link:../../../agenticprimitives/packages/contracts
         version: link:../../../agenticprimitives/packages/contracts
@@ -155,6 +158,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@agenticprimitives/connect-client':
+        specifier: link:../../../agenticprimitives/packages/connect-client
+        version: link:../../../agenticprimitives/packages/connect-client
       '@pokernight/engine':
         specifier: workspace:*
         version: link:../../packages/engine

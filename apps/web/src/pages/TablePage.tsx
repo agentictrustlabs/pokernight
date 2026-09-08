@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ClientCommand, Session } from '../lib/types';
+import type { AppSession, ClientCommand } from '../lib/types';
 import { api, tableSocketUrl } from '../lib/api';
 import { TableSocket, dismissError, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
+import { Identity } from '../components/Identity';
 import { LogPanel } from '../components/LogPanel';
 import { Table } from '../components/Table';
 import { Toast } from '../components/Toast';
 
-export function TablePage({ tableId, session }: { tableId: string; session: Session | null }) {
+export function TablePage({ tableId, session, onSignOut }: { tableId: string; session: AppSession | null; onSignOut: () => void }) {
   const [state, setState] = useState<TableState>(initialState);
   const [tableName, setTableName] = useState<string | null>(null);
   const sockRef = useRef<TableSocket | null>(null);
@@ -70,7 +71,7 @@ export function TablePage({ tableId, session }: { tableId: string; session: Sess
         <span className="spacer" />
         <span className="meta">
           <span className={`conn ${state.connection}`}>{state.connection}</span>
-          {session ? <span>{session.name}</span> : <a href="#/">log in</a>}
+          {session ? <Identity session={session} onSignOut={onSignOut} /> : <a href="#/">sign in</a>}
         </span>
       </div>
       <div className="page table-page">

@@ -28,3 +28,7 @@ not_found_handling = "single-page-application"
 [env.faithnet.vars]
 # Build-time only (see header). Mirrored in .env.faithnet.
 VITE_API_BASE = "https://tables.faithnet.io"
+# Home sign-in needs NO VITE_ var. The client reads GET /auth/config from the tables Worker at
+# runtime (client_id, Home origin, Home zone, delegate, redirect_uri, and whether dev auth is on), so
+# the same bundle serves localhost and production and flipping DEV_AUTH does not need a rebuild.
+# Anything that DID become a VITE_ value here would be baked at `vite build` time, not read at runtime.

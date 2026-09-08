@@ -15,6 +15,7 @@
     "@agenticprimitives/a2a": "link:../../../agenticprimitives/packages/a2a",
     "@agenticprimitives/agent-account": "link:../../../agenticprimitives/packages/agent-account",
     "@agenticprimitives/connect-auth": "link:../../../agenticprimitives/packages/connect-auth",
+    "@agenticprimitives/connect-client": "link:../../../agenticprimitives/packages/connect-client",
     "@agenticprimitives/contracts": "link:../../../agenticprimitives/packages/contracts",
     "@agenticprimitives/delegation": "link:../../../agenticprimitives/packages/delegation",
     "@agenticprimitives/payments": "link:../../../agenticprimitives/packages/payments",

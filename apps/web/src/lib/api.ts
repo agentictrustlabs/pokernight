@@ -1,17 +1,26 @@
 import type { CreateTableRequest, Session, TableSummary, TableView } from '@pokernight/protocol';
+import type { AppSession } from './types';
+import type { AuthConfig } from './home';
 
 /** Base URL of the tables API. `/api` is proxied by Vite in dev; baked at build otherwise. */
 export const API_BASE: string = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/+$/, '');
 
 const SESSION_KEY = 'pokernight.session';
 
-export function loadSession(): Session | null {
+export function loadSession(): AppSession | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
-    const s = JSON.parse(raw) as Partial<Session>;
+    const s = JSON.parse(raw) as Partial<AppSession>;
     if (typeof s.token === 'string' && typeof s.playerId === 'string' && typeof s.name === 'string') {
-      return { token: s.token, playerId: s.playerId, name: s.name };
+      return {
+        token: s.token,
+        playerId: s.playerId,
+        name: s.name,
+        via: s.via === 'home' || s.playerId.startsWith('home:') ? 'home' : 'dev',
+        address: typeof s.address === 'string' ? s.address : undefined,
+        agentName: typeof s.agentName === 'string' ? s.agentName : undefined,
+      };
     }
     return null;
   } catch {
@@ -19,7 +28,7 @@ export function loadSession(): Session | null {
   }
 }
 
-export function saveSession(session: Session | null): void {
+export function saveSession(session: AppSession | null): void {
   try {
     if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     else localStorage.removeItem(SESSION_KEY);
@@ -62,7 +71,27 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   return body as T;
 }
 
+/** What `POST /auth/home` answers with. A superset of `Session`; the extras are display-only. */
+export interface HomeSessionResponse extends Session {
+  agentName?: string;
+  address?: string;
+}
+
+/** What the browser hands the Worker on the return leg. The Worker trusts none of it as identity —
+ *  it exchanges the code and verifies the id_token itself. */
+export interface HomeAuthBody {
+  code: string;
+  codeVerifier: string;
+  authOrigin: string;
+  nonce: string;
+  state: string;
+}
+
 export const api = {
+  authConfig: () => request<AuthConfig>('/auth/config'),
+  homeLogin: (body: HomeAuthBody) => request<HomeSessionResponse>('/auth/home', { method: 'POST', body: JSON.stringify(body) }),
+  /** Best effort: drops the server-side session record so the token stops resolving straight away. */
+  signOut: (token: string) => request<{ ok: boolean }>('/auth/signout', { method: 'POST', body: '{}' }, token).catch(() => ({ ok: false })),
   devLogin: (name: string) => request<Session>('/dev/session', { method: 'POST', body: JSON.stringify({ name }) }),
   listTables: (token?: string) => request<TableSummary[]>('/tables', {}, token),
   createTable: (req: CreateTableRequest, token?: string) =>

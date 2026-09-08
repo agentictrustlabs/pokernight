@@ -388,6 +388,42 @@ label > select {
   max-width: 420px;
   margin: 3rem auto;
 }
+.login > .primary {
+  width: 100%;
+}
+.login .form-error {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.login .form-error p {
+  margin: 0;
+}
+
+/* The dev-name box: present only where GET /auth/config reports DEV_AUTH, and deliberately quieter
+   than the Home button above it. */
+.dev-login {
+  margin-top: 1.25rem;
+}
+.dev-login hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+/* Signed-in identity in the topbar: display name, then the agent name or truncated SA address. */
+.identity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+.identity-sub {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
 
 .tables {
   width: 100%;

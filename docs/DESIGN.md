@@ -37,7 +37,7 @@ cash games. Details in the project memory note `pokerth-evaluation`.
 
 | Concern | Where | Value |
 |---|---|---|
-| Humans, login, consent | faithnet.me (Home, Vercel) | OIDC issuer `https://www.faithnet.me`, PKCE, scopes `openid profile agent` |
+| Humans, login, consent | faithnet.me (Home, Vercel) | OIDC issuer `https://www.faithnet.me`, PKCE, scopes `openid agent` |
 | Web client + API | faithnet.io (Cloudflare Workers) | `poker.faithnet.io` |
 | Table service (Durable Objects) | faithnet.io | `tables.faithnet.io` |
 | House agent card | faithnet.ai | `pokernight-treasury.faithnet.ai` (on-chain name `pokernight.treasury`) |
