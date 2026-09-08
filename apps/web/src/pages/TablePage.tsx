@@ -4,12 +4,14 @@ import { api, tableSocketUrl } from '../lib/api';
 import { TableSocket, dismissError, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
 import { Identity } from '../components/Identity';
 import { LogPanel } from '../components/LogPanel';
+import { MoneyPanel } from '../components/MoneyPanel';
 import { Table } from '../components/Table';
 import { Toast } from '../components/Toast';
 
 export function TablePage({ tableId, session, onSignOut }: { tableId: string; session: AppSession | null; onSignOut: () => void }) {
   const [state, setState] = useState<TableState>(initialState);
   const [tableName, setTableName] = useState<string | null>(null);
+  const [settlement, setSettlement] = useState<string>('play-money');
   const sockRef = useRef<TableSocket | null>(null);
   const token = session?.token ?? null;
 
@@ -33,7 +35,10 @@ export function TablePage({ tableId, session, onSignOut }: { tableId: string; se
     api
       .listTables(token ?? undefined)
       .then((ts) => {
-        if (alive) setTableName(ts.find((t) => t.tableId === tableId)?.name ?? null);
+        if (!alive) return;
+        const summary = ts.find((t) => t.tableId === tableId);
+        setTableName(summary?.name ?? null);
+        setSettlement(summary?.settlement ?? 'play-money');
       })
       .catch(() => {});
     return () => {
@@ -77,6 +82,7 @@ export function TablePage({ tableId, session, onSignOut }: { tableId: string; se
       <div className="page table-page">
         <Table state={state} session={session} send={send} />
         <aside className="side">
+          <MoneyPanel tableId={tableId} settlement={settlement} session={session} />
           <LogPanel log={state.log} ctx={ctx} canChat={session != null} onChat={(text) => send({ type: 'chat', text })} />
         </aside>
       </div>

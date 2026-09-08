@@ -15,12 +15,15 @@
     "dev:web": "pnpm --filter pokernight-web dev",
     "dev:agents": "pnpm --filter pokernight-agent-worker dev",
     "bench": "pnpm --filter @pokernight/engine bench",
-    "provision:house": "tsx scripts/provision-house.mts"
+    "provision:house": "tsx scripts/provision-house.mts",
+    "settle:demo": "tsx scripts/settle-demo.mts"
   },
   "devDependencies": {
     "@agenticprimitives/agent-account": "link:../agenticprimitives/packages/agent-account",
     "@agenticprimitives/contracts": "link:../agenticprimitives/packages/contracts",
+    "@agenticprimitives/delegation": "link:../agenticprimitives/packages/delegation",
     "@agenticprimitives/payments": "link:../agenticprimitives/packages/payments",
+    "@pokernight/engine": "workspace:*",
     "@pokernight/treasury": "workspace:*",
     "@types/node": "^24.0.0",
     "tsx": "^4.19.0",

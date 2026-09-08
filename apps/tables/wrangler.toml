@@ -139,9 +139,9 @@ SMART_AGENT_PAYMASTER = "0xbd93fEC6910ffD74F14709188b5a9B6C6965b2a7"
 # HOUSE_CUSTODIAN_KEY secret (see .dev.vars.example) — never a var, never in git.
 #   service  — the Poker Site acting as an agent (A2A identity, receipts, future delegate).
 #   treasury — the table bankroll. Buy-ins land here; cash-outs leave here.
-HOUSE_SERVICE_SA = "0x7c8F694181c0c7378aCFEA779647A0eA4B85e54f"
-HOUSE_TREASURY_SA = "0x71937d23206876cf65FD06a21D6E1B68FAA93e4C"
+HOUSE_SERVICE_SA = "0x0347e808a0bB7a7a7086a29d853E799f351C04DD"
+HOUSE_TREASURY_SA = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # Legacy alias kept for src/settlement.ts; identical to HOUSE_TREASURY_SA.
-HOUSE_SA = "0x71937d23206876cf65FD06a21D6E1B68FAA93e4C"
+HOUSE_SA = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # Phase 3: the delegate address players' poker-buyin delegations are scoped to. Not provisioned yet.
-HOUSE_DELEGATE = ""
+HOUSE_DELEGATE = "0x0347e808a0bB7a7a7086a29d853E799f351C04DD"

@@ -31,6 +31,15 @@ export interface LedgerEntry {
   receipt?: SettlementReceipt;
 }
 
+/**
+ * Where a money movement has got to.
+ *
+ * `settled` is the only state that means the asset moved. A row with no `status` is a settled row
+ * written before this field existed (every play-money row is one), so the absent value reads as
+ * `settled` and nothing has to be migrated.
+ */
+export type SettlementStatus = 'pending' | 'settled' | 'failed';
+
 export interface SettlementReceipt {
   mode: 'play-money' | 'mandate-transfer' | 'table-escrow';
   /** Stable order id, e.g. hash(tableId, seatSession, index). */
@@ -38,9 +47,52 @@ export interface SettlementReceipt {
   /** Asset base units moved (chips × chipValue). */
   amount: string;
   asset: string;
-  /** Transaction hash or local reference. */
+  /** Transaction hash or local reference. Empty while the movement is still pending or has failed. */
   ref: string;
   at: number;
+  /** Absent means `settled` — see {@link SettlementStatus}. */
+  status?: SettlementStatus;
+  /**
+   * Why a `failed` row failed, in words that name the thing that broke. A settlement that cannot say
+   * what went wrong is worse than no settlement at all, so this is never a generic sentence.
+   */
+  error?: string;
+  /** How many times the host has tried to move the asset for this order. */
+  attempts?: number;
+}
+
+/** The state a receipt actually reports, treating a legacy row with no `status` as settled. */
+export function receiptStatus(receipt: SettlementReceipt | null | undefined): SettlementStatus | null {
+  if (!receipt) return null;
+  return receipt.status ?? 'settled';
+}
+
+/** A receipt for a movement that has been accepted but not yet landed on chain. */
+export function pendingReceipt(args: { mode: SettlementReceipt['mode']; orderId: string; amount: string; asset: string; at?: number }): SettlementReceipt {
+  return { mode: args.mode, orderId: args.orderId, amount: args.amount, asset: args.asset, ref: '', at: args.at ?? Date.now(), status: 'pending' };
+}
+
+/** A receipt for a movement that will not happen, carrying the reason it will not. */
+export function failedReceipt(args: {
+  mode: SettlementReceipt['mode'];
+  orderId: string;
+  amount: string;
+  asset: string;
+  error: string;
+  attempts?: number;
+  at?: number;
+}): SettlementReceipt {
+  return {
+    mode: args.mode,
+    orderId: args.orderId,
+    amount: args.amount,
+    asset: args.asset,
+    ref: '',
+    at: args.at ?? Date.now(),
+    status: 'failed',
+    error: args.error,
+    ...(args.attempts === undefined ? {} : { attempts: args.attempts }),
+  };
 }
 
 export interface BuyInRequest {

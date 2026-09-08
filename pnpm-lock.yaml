@@ -14,9 +14,15 @@ importers:
       '@agenticprimitives/contracts':
         specifier: link:../agenticprimitives/packages/contracts
         version: link:../agenticprimitives/packages/contracts
+      '@agenticprimitives/delegation':
+        specifier: link:../agenticprimitives/packages/delegation
+        version: link:../agenticprimitives/packages/delegation
       '@agenticprimitives/payments':
         specifier: link:../agenticprimitives/packages/payments
         version: link:../agenticprimitives/packages/payments
+      '@pokernight/engine':
+        specifier: workspace:*
+        version: link:packages/engine
       '@pokernight/treasury':
         specifier: workspace:*
         version: link:packages/treasury
@@ -148,6 +154,9 @@ importers:
       '@pokernight/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@pokernight/treasury':
+        specifier: workspace:*
+        version: link:../../packages/treasury
       hono:
         specifier: ^4.6.14
         version: 4.13.7
@@ -279,6 +288,9 @@ importers:
       '@agenticprimitives/agent-account':
         specifier: link:../../../agenticprimitives/packages/agent-account
         version: link:../../../agenticprimitives/packages/agent-account
+      '@agenticprimitives/delegation':
+        specifier: link:../../../agenticprimitives/packages/delegation
+        version: link:../../../agenticprimitives/packages/delegation
       '@agenticprimitives/payments':
         specifier: link:../../../agenticprimitives/packages/payments
         version: link:../../../agenticprimitives/packages/payments

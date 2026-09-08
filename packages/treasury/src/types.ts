@@ -17,7 +17,13 @@ export type TreasuryErrorCode =
   | 'bad-amount'
   | 'bad-chip-value'
   | 'chips-overflow'
-  | 'transfer-reverted';
+  | 'transfer-reverted'
+  /** The payer's treasury does not hold enough of the asset to cover the movement. */
+  | 'insufficient-balance'
+  /** No signed payment mandate for this payer, so there is no authority to move their money. */
+  | 'no-mandate'
+  /** A mandate exists but does not authorise this movement (wrong payee, asset, amount or window). */
+  | 'bad-mandate';
 
 export class TreasuryError extends Error {
   constructor(
@@ -43,6 +49,20 @@ export interface TreasuryDeployments {
   agentAccountFactory: Address;
   /** Paymaster that sponsors the UserOp gas. */
   paymaster: Address;
+  /**
+   * DelegationManager — where a signed payment mandate is redeemed. Only the buy-in path needs it
+   * (a cash-out is the house spending its own funds, which is a plain transfer), so it is optional
+   * and its absence is reported as a named configuration failure rather than a crash.
+   */
+  delegationManager?: Address;
+  /** PaymentEnforcer — the stateful caveat that caps a mandate's spend, frequency and nonce. */
+  paymentEnforcer?: Address;
+  /** TimestampEnforcer — the mandate's expiry caveat. */
+  timestampEnforcer?: Address;
+  /** AllowedTargetsEnforcer — pins the mandate to the asset contract. */
+  allowedTargetsEnforcer?: Address;
+  /** AllowedMethodsEnforcer — pins the mandate to `transfer`. */
+  allowedMethodsEnforcer?: Address;
 }
 
 /**
@@ -62,8 +82,12 @@ export interface TreasuryClientOpts {
   rpcUrl: string;
   chainId: number;
   deployments: TreasuryDeployments;
-  /** Custodian of the Smart Agents this client moves money out of. */
-  signer: TreasurySigner;
+  /**
+   * Custodian of the Smart Agents this client moves money out of. OPTIONAL: reading balances and
+   * custody needs no key, and a host that only reads should not have to hold one. Every method that
+   * MOVES money refuses by name when it is absent.
+   */
+  signer?: TreasurySigner;
   /**
    * Account that broadcasts the EntryPoint `handleOps` transaction and receives the
    * bundler reward. Defaults to `signer`. On a zero-gas chain any funded-or-not EOA
@@ -85,4 +109,16 @@ export interface TransferUsdcRequest {
 export interface TransferUsdcResult {
   txHash: Hex;
   receipt: TransactionReceipt;
+}
+
+/** A single call to make from a Smart Agent this client custodies. */
+export interface ExecuteCallRequest {
+  /** Smart Agent that makes the call (must be deployed and custodied by `signer`). */
+  from: Address;
+  to: Address;
+  value?: bigint;
+  data: Hex;
+  /** Overrides the client's default gas for the inner call. A delegation redemption runs several
+   *  enforcers plus an ERC-20 transfer, so it needs more than a bare transfer does. */
+  callGasLimit?: bigint;
 }

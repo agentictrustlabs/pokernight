@@ -2,6 +2,7 @@ import type { CreateTableRequest, Session, TableSummary } from '@pokernight/prot
 import type { AppSession } from './types';
 import type { AuthConfig } from './home';
 import type { TableDetail } from './lobby';
+import type { FundTreasuryResult, SelectTreasuryResult, TableSettlement, TreasuryView } from './treasury';
 
 /** Base URL of the tables API. `/api` is proxied by Vite in dev; baked at build otherwise. */
 export const API_BASE: string = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/+$/, '');
@@ -122,6 +123,18 @@ export const api = {
   createTable: (req: CreateTableRequest, token?: string) =>
     request<TableSummary>('/tables', { method: 'POST', body: JSON.stringify(req) }, token),
   getTable: (id: string, token?: string) => request<TableDetail>(`/tables/${encodeURIComponent(id)}`, {}, token),
+
+  /** The treasury that funds this session's play, its live balance, and what else it could be. */
+  getTreasury: (token: string) => request<TreasuryView>('/treasury', {}, token),
+  /** Ask the card room to fund play from `address`. It checks custody on chain before agreeing. */
+  selectTreasury: (address: string, token: string) =>
+    request<SelectTreasuryResult>('/treasury/select', { method: 'POST', body: JSON.stringify({ address }) }, token),
+  /** Mint test USDC into the chosen treasury. Test assets only; the Worker refuses anything else. */
+  fundTreasury: (amount: string, token: string) =>
+    request<FundTreasuryResult>('/treasury/fund', { method: 'POST', body: JSON.stringify({ amount }) }, token),
+  /** Where this player's money at a table has got to. Scoped to the caller by the Worker. */
+  getTableSettlement: (id: string, token: string) =>
+    request<TableSettlement>(`/tables/${encodeURIComponent(id)}/settlement`, {}, token),
 };
 
 /** WebSocket URL for a table, derived from API_BASE (relative or absolute). */

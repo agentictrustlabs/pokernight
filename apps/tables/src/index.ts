@@ -16,7 +16,11 @@
  *   GET  /tables/:id/hands/:handNo      → stored hand record (seed reveal, actions, agent calls, result)
  *   POST /tables/:id/seat-agent SeatAgentRequest → seats an A2A agent (auth required) → PlayerInfo (201)
  *   DELETE /tables/:id/seat-agent/:seat → stands that agent up and cashes it out (auth required)
+ *   GET  /tables/:id/settlement         → this player's money rows at a table (auth required)
  *   GET  /tables/:id/ws?token=...       → WebSocket to the table DO (no/invalid token = spectator)
+ *   GET  /treasury                      → chosen treasury + balance + candidates (auth required)
+ *   POST /treasury/select {address}     → choose the treasury that funds play (auth required)
+ *   POST /treasury/fund {amount}        → mint test USDC into it (auth required; test assets only)
  */
 
 import { Hono, type Context } from 'hono';
@@ -27,6 +31,7 @@ import { agentKindFromCard, fetchAgentCard, hasPokerActSkill, resolveAgentBase }
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aTimeoutMs, allowedOrigins, isDevAuth, type Env } from './env.js';
 import { HomeAuthError, completeDemoSignIn, completeHomeSignIn, homePlayerId, homeRedirectUri, type HomeIdentity } from './home.js';
+import { FundTreasurySchema, SelectTreasurySchema, fundTreasury, getTreasury, selectTreasury } from './routes-treasury.js';
 import type { SessionRecord } from './session-do.js';
 import type { SeatAgentBody } from './table-do.js';
 
@@ -259,6 +264,44 @@ app.delete('/tables/:id/seat-agent/:seat', async (c) => {
   const seat = Number(c.req.param('seat'));
   if (!Number.isInteger(seat) || seat < 0 || seat > 8) return c.json({ error: 'bad seat' }, 400);
   return passthrough(await table(c.env, c.req.param('id')).fetch(`https://table/seat-agent/${seat}`, { method: 'DELETE' }));
+});
+
+/**
+ * The treasury a player funds their night from. Chosen once per connect and held on the SERVER
+ * session, so the table can read it without the browser ever naming an address money moves to.
+ */
+app.get('/treasury', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  return getTreasury(c, session);
+});
+
+app.post('/treasury/select', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const parsed = SelectTreasurySchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  return selectTreasury(c, session, parsed.data.address);
+});
+
+app.post('/treasury/fund', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const parsed = FundTreasurySchema.safeParse((await c.req.json().catch(() => null)) ?? {});
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  return fundTreasury(c, session, parsed.data.amount);
+});
+
+/**
+ * Where this player's money at this table has got to: pending, settled with a tx reference, or
+ * failed with the reason. Scoped to the caller — a settlement state is nobody else's business, and
+ * the DO is asked for THIS session's playerId, never one supplied on the query string.
+ */
+app.get('/tables/:id/settlement', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const url = `https://table/ledger?playerId=${encodeURIComponent(session.playerId)}`;
+  return passthrough(await table(c.env, c.req.param('id')).fetch(url));
 });
 
 app.get('/tables/:id/ws', async (c) => {

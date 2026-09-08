@@ -20,6 +20,7 @@ import {
 } from 'viem';
 import {
   AgentAccountClient,
+  buildExecuteCallData,
   readErc20Balance,
   type AgentAccountSpec,
 } from '@agenticprimitives/agent-account';
@@ -31,11 +32,13 @@ import {
 import {
   TreasuryError,
   type Address,
+  type ExecuteCallRequest,
   type Hex,
   type TransferUsdcRequest,
   type TransferUsdcResult,
   type TreasuryClientOpts,
   type TreasuryDeployments,
+  type TreasurySigner,
 } from './types.js';
 
 /**
@@ -61,7 +64,8 @@ const USER_OPERATION_EVENT_ABI = [
 
 export interface TreasuryClient {
   readonly deployments: TreasuryDeployments;
-  readonly custodian: Address;
+  /** The custodian this client signs as, or null when it was built read-only. */
+  readonly custodian: Address | null;
 
   /** Base units of the settlement asset held by any address (EOA or Smart Agent). */
   readUsdcBalance(address: Address): Promise<bigint>;
@@ -72,6 +76,14 @@ export interface TreasuryClient {
    * custodian, or the UserOp lands but reverts.
    */
   transferUsdc(req: TransferUsdcRequest): Promise<TransferUsdcResult>;
+
+  /**
+   * Make ANY call from a Smart Agent this client's signer custodies, on the same proven rail as
+   * {@link transferUsdc}: `AgentAccount.execute` wrapped in a paymaster-sponsored UserOp. The buy-in
+   * path uses it to call `DelegationManager.redeemDelegation` as the house — the one movement whose
+   * authority comes from the player rather than from the house.
+   */
+  executeCall(req: ExecuteCallRequest): Promise<TransferUsdcResult>;
 
   /** CREATE2 address for a spec — pure derivation, no deploy. */
   deriveAgentAccount(spec: AgentAccountSpec): Promise<Address>;
@@ -103,6 +115,14 @@ export function createTreasuryClient(opts: TreasuryClientOpts): TreasuryClient {
   const relayer = opts.relayer ?? signer;
   const callGasLimit = opts.callGasLimit ?? 200_000n;
 
+  /** Every money movement needs a key; a read-only client says which one it is missing. */
+  function requireSigner(what: string): TreasurySigner {
+    if (!signer) {
+      throw new TreasuryError('not-configured', `${what} needs the custodian signer, and this treasury client was built read-only`);
+    }
+    return signer;
+  }
+
   const publicClient: PublicClient = createPublicClient({ transport: http(rpcUrl) });
   const accounts = new AgentAccountClient({
     rpcUrl,
@@ -123,22 +143,35 @@ export function createTreasuryClient(opts: TreasuryClientOpts): TreasuryClient {
     if (req.amount <= 0n) {
       throw new TreasuryError('bad-amount', `amount must be > 0, got ${req.amount}`);
     }
-    if (!(await accounts.isDeployed(req.from))) {
-      throw new TreasuryError('not-deployed', `${req.from} has no code — deploy the Smart Agent first`);
+    return submitFromAgent(req.from, buildUsdcTransferCallData(deployments.asset, req.to, req.amount));
+  }
+
+  async function executeCall(req: ExecuteCallRequest): Promise<TransferUsdcResult> {
+    return submitFromAgent(
+      req.from,
+      buildExecuteCallData({ to: req.to, value: req.value ?? 0n, data: req.data }),
+      req.callGasLimit,
+    );
+  }
+
+  /** The one movement rail: assert custody, build the UserOp, sign the hash, submit, verify the event. */
+  async function submitFromAgent(from: Address, callData: Hex, gasLimit?: bigint): Promise<TransferUsdcResult> {
+    const key = requireSigner(`moving the asset out of ${from}`);
+    if (!(await accounts.isDeployed(from))) {
+      throw new TreasuryError('not-deployed', `${from} has no code — deploy the Smart Agent first`);
     }
-    if (!(await accounts.isCustodian(req.from, signer.address))) {
-      throw new TreasuryError('not-custodian', `${signer.address} is not a custodian of ${req.from}`);
+    if (!(await accounts.isCustodian(from, key.address))) {
+      throw new TreasuryError('not-custodian', `${key.address} is not a custodian of ${from}`);
     }
 
-    const callData = buildUsdcTransferCallData(deployments.asset, req.to, req.amount);
     const { userOp, userOpHash } = await accounts.buildCallUserOp({
-      sender: req.from,
+      sender: from,
       callData,
       paymaster: deployments.paymaster,
-      callGasLimit,
+      callGasLimit: gasLimit ?? callGasLimit,
     });
 
-    const signature = await signer.signMessage({ message: { raw: userOpHash } });
+    const signature = await key.signMessage({ message: { raw: userOpHash } });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { receipt } = await accounts.submitCallUserOp({ ...userOp, signature }, relayer as any);
 
@@ -151,7 +184,7 @@ export function createTreasuryClient(opts: TreasuryClientOpts): TreasuryClient {
 
   async function mintTestAsset(to: Address, amount: bigint, minterAccount?: unknown): Promise<Hex> {
     if (amount <= 0n) throw new TreasuryError('bad-amount', `amount must be > 0, got ${amount}`);
-    const account = (minterAccount ?? relayer) as never;
+    const account = (minterAccount ?? relayer ?? requireSigner(`minting the test asset to ${to}`)) as never;
     const wallet = createWalletClient({ account, transport: http(rpcUrl) });
     const hash = await wallet.writeContract({
       address: deployments.asset,
@@ -172,12 +205,13 @@ export function createTreasuryClient(opts: TreasuryClientOpts): TreasuryClient {
 
   return {
     deployments,
-    custodian: signer.address,
+    custodian: signer?.address ?? null,
     readUsdcBalance,
     transferUsdc,
+    executeCall,
     deriveAgentAccount: (spec) => accounts.getAddressForAgentAccount(spec),
     deployAgentAccount: (spec, deployerAccount) =>
-      accounts.createAgentAccountFromAccount(spec, deployerAccount ?? relayer),
+      accounts.createAgentAccountFromAccount(spec, deployerAccount ?? relayer ?? requireSigner('deploying a Smart Agent')),
     isDeployed: (account) => accounts.isDeployed(account),
     isCustodian: (account, address) => accounts.isCustodian(account, address),
     mintTestAsset,

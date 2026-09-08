@@ -46,7 +46,8 @@ import {
   type TableState,
   type TableView,
 } from '@pokernight/engine';
-import type { SettlementAdapter, SettlementReceipt } from '@pokernight/ledger';
+import { failedReceipt, pendingReceipt, type SettlementAdapter, type SettlementReceipt } from '@pokernight/ledger';
+import type { PlayerFunding } from '@pokernight/treasury';
 import {
   parseClientCommand,
   type ChatEvent,
@@ -61,6 +62,7 @@ import {
   type TableSummary,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, callPokerAct, resolveAgentBase } from './a2a.js';
+import { readSessionRecord } from './auth.js';
 import type { Env } from './env.js';
 import { createSettlementAdapter } from './settlement.js';
 
@@ -110,6 +112,14 @@ export interface SeatRecord {
   endpoint?: string;
   /** Agents: short strategy label from the agent card, e.g. "rules" or "claude". */
   agentKind?: string;
+  /**
+   * On a settled table: the treasury Smart Agent this seat's money comes from and goes back to,
+   * resolved from the player's session when they sat down and pinned here.
+   *
+   * Pinned, rather than re-read at cash-out, because a session can end long before a player stands
+   * up — and a stack with nowhere to be paid is the one way this table could lose someone's money.
+   */
+  treasury?: string;
 }
 
 /** Body of `POST /seat-agent`: the Worker has already resolved and validated the agent card. */
@@ -157,8 +167,21 @@ interface CashOutPayload {
   tableId: string;
   seat: number;
   playerId: string;
+  /** The treasury the payout goes to, pinned at sit-down. */
+  playerAddress?: string;
   chips: number;
   historyDigest: string;
+  orderId: string;
+}
+
+/** A buy-in whose asset movement is still owed. Play money never produces one: it settles inline. */
+interface BuyInPayload {
+  ledgerId: string;
+  tableId: string;
+  seat: number;
+  playerId: string;
+  playerAddress?: string;
+  chips: number;
   orderId: string;
 }
 
@@ -219,6 +242,13 @@ CREATE TABLE IF NOT EXISTS agent_calls (
 const HAND_START_DELAY_MS = 1500;
 const NEXT_HAND_DELAY_MS = 3000;
 const OUTBOX_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000] as const;
+/**
+ * After this many failures a settlement op stops retrying and the ledger row is marked failed with
+ * the reason. Retrying forever hides a movement that can never succeed (an unfunded treasury, a
+ * mandate that was never signed) behind a queue nobody reads; a failed row with a sentence in it is
+ * something a player and an operator can both act on.
+ */
+const MAX_OUTBOX_ATTEMPTS = 6;
 const MAX_TIMEOUTS_BEFORE_SIT_OUT = 2;
 /** Subtracted from an agent's turn budget so a reply that lands on the deadline is still applied. */
 const AGENT_DEADLINE_HEADROOM_MS = 1000;
@@ -289,6 +319,9 @@ export class PokerTableDO extends DurableObject<Env> {
     if (request.method === 'GET' && path === '/summary') {
       return json(this.summary());
     }
+    if (request.method === 'GET' && path === '/ledger') {
+      return json(this.ledgerFor(url.searchParams.get('playerId')));
+    }
     if (request.method === 'GET' && path.startsWith('/hand/')) {
       const n = Number(path.slice('/hand/'.length));
       if (!Number.isInteger(n) || n < 1) return json({ error: 'bad hand number' }, 400);
@@ -311,9 +344,11 @@ export class PokerTableDO extends DurableObject<Env> {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
     const meta: TableMeta = { tableId: body.tableId, name: body.name, settlement: body.settlement, createdAt: body.createdAt ?? Date.now() };
-    // Adapter must exist for this mode before we accept the table.
+    // Adapter must exist for this mode before we accept the table — a table that cannot settle must
+    // fail here, not at someone's cash-out. Built with the same funding resolver `settlement()` uses,
+    // so the instance cached by this call behaves identically to one built later.
     try {
-      this.adapter = createSettlementAdapter(meta.settlement, this.env);
+      this.adapter = createSettlementAdapter(meta.settlement, this.env, (req) => this.playerFunding(req.playerId));
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
@@ -451,14 +486,31 @@ export class PokerTableDO extends DurableObject<Env> {
     switch (cmd.type) {
       case 'join': {
         const orderId = `${meta.tableId}:${playerId}:${cmd.seat}:${now}`;
-        const auth = await this.settlement().authorizeBuyIn({ tableId: meta.tableId, seat: cmd.seat, playerId, chips: cmd.buyIn, orderId });
+        const funding = this.settles ? await this.playerFunding(playerId) : null;
+        const auth = await this.settlement().authorizeBuyIn({
+          tableId: meta.tableId,
+          seat: cmd.seat,
+          playerId,
+          chips: cmd.buyIn,
+          orderId,
+          ...(funding?.treasury ? { playerAddress: funding.treasury } : {}),
+        });
         if (!auth.ok) return sendError(ws, 'settlement-failed', auth.reason);
         const next = sitDown(state, cmd.seat, playerId, cmd.buyIn);
-        // Play-money settles inline; on-chain modes (phase 3) will enqueue settleBuyIn to the outbox
-        // and credit the seat on receipt instead.
-        const receipt = await this.settlement().settleBuyIn({ tableId: meta.tableId, seat: cmd.seat, playerId, chips: cmd.buyIn, orderId });
-        this.writeLedger({ seat: cmd.seat, playerId, kind: 'buy-in', chips: cmd.buyIn, handNo: null, at: now, receipt });
-        await this.putPlayer({ playerId, name, kind: 'human', transport: 'ws' });
+        // Play money settles inline (nothing leaves the DO). A settled table queues the movement and
+        // never blocks the seat on it — the money path must not be able to stall a hand.
+        await this.settleBuyInOrQueue({
+          tableId: meta.tableId,
+          seat: cmd.seat,
+          playerId,
+          chips: cmd.buyIn,
+          orderId,
+          kind: 'buy-in',
+          handNo: null,
+          at: now,
+          ...(funding?.treasury ? { playerAddress: funding.treasury } : {}),
+        });
+        await this.putPlayer({ playerId, name, kind: 'human', transport: 'ws', ...(funding?.treasury ? { treasury: funding.treasury } : {}) });
         this.setAttachmentSeat(playerId, cmd.seat);
         const stack = next.seats.find((s) => s.seat === cmd.seat)?.stack ?? cmd.buyIn;
         const ev: SeatEvent = { type: 'seat-joined', seat: cmd.seat, playerId, name, stack, status: 'active', kind: 'human' };
@@ -484,11 +536,28 @@ export class PokerTableDO extends DurableObject<Env> {
         const seat = this.seatOf(playerId);
         if (seat === null) throw new EngineError('not-seated', 'you are not seated');
         const orderId = `${meta.tableId}:${playerId}:${seat}:add:${now}`;
-        const auth = await this.settlement().authorizeBuyIn({ tableId: meta.tableId, seat, playerId, chips: cmd.amount, orderId });
+        const treasury = this.players[playerId]?.treasury;
+        const auth = await this.settlement().authorizeBuyIn({
+          tableId: meta.tableId,
+          seat,
+          playerId,
+          chips: cmd.amount,
+          orderId,
+          ...(treasury ? { playerAddress: treasury } : {}),
+        });
         if (!auth.ok) return sendError(ws, 'settlement-failed', auth.reason);
         const next = addChips(state, seat, cmd.amount);
-        const receipt = await this.settlement().settleBuyIn({ tableId: meta.tableId, seat, playerId, chips: cmd.amount, orderId });
-        this.writeLedger({ seat, playerId, kind: 'add-chips', chips: cmd.amount, handNo: state.hand?.handNo ?? null, at: now, receipt });
+        await this.settleBuyInOrQueue({
+          tableId: meta.tableId,
+          seat,
+          playerId,
+          chips: cmd.amount,
+          orderId,
+          kind: 'add-chips',
+          handNo: state.hand?.handNo ?? null,
+          at: now,
+          ...(treasury ? { playerAddress: treasury } : {}),
+        });
         await this.commit(next, [], [this.seatStatus(next, seat, playerId, name)], seatsBefore);
         return;
       }
@@ -538,8 +607,16 @@ export class PokerTableDO extends DurableObject<Env> {
     }
     const auth = await this.settlement().authorizeBuyIn({ tableId: meta.tableId, seat: body.seat, playerId, chips: body.buyIn, orderId });
     if (!auth.ok) return json({ error: auth.reason, code: 'settlement-failed' }, 402);
-    const receipt = await this.settlement().settleBuyIn({ tableId: meta.tableId, seat: body.seat, playerId, chips: body.buyIn, orderId });
-    this.writeLedger({ seat: body.seat, playerId, kind: 'buy-in', chips: body.buyIn, handNo: null, at: now, receipt });
+    await this.settleBuyInOrQueue({
+      tableId: meta.tableId,
+      seat: body.seat,
+      playerId,
+      chips: body.buyIn,
+      orderId,
+      kind: 'buy-in',
+      handNo: null,
+      at: now,
+    });
     await this.putPlayer({
       playerId,
       name,
@@ -583,7 +660,19 @@ export class PokerTableDO extends DurableObject<Env> {
     const meta = this.meta as TableMeta;
     const { state: next, cashOut, events } = standUp(state, seat);
     const ledgerId = crypto.randomUUID();
-    this.writeLedger({ id: ledgerId, seat, playerId, kind: 'cash-out', chips: -cashOut, handNo: state.hand?.handNo ?? null, at: now });
+    const orderId = `${meta.tableId}:${playerId}:${seat}:out:${now}`;
+    this.writeLedger({
+      id: ledgerId,
+      seat,
+      playerId,
+      kind: 'cash-out',
+      chips: -cashOut,
+      handNo: state.hand?.handNo ?? null,
+      at: now,
+      // A settled table owes this player real money from this instant; say so until it has moved.
+      ...(this.settles ? { receipt: this.pending(orderId, cashOut, now) } : {}),
+    });
+    const treasury = this.players[playerId]?.treasury;
     const payload: CashOutPayload = {
       ledgerId,
       tableId: meta.tableId,
@@ -591,7 +680,8 @@ export class PokerTableDO extends DurableObject<Env> {
       playerId,
       chips: cashOut,
       historyDigest: this.historyDigest(),
-      orderId: `${meta.tableId}:${playerId}:${seat}:out:${now}`,
+      orderId,
+      ...(treasury ? { playerAddress: treasury } : {}),
     };
     this.ctx.storage.sql.exec(
       'INSERT INTO outbox (id, kind, payload_json, attempts, next_at, done_at) VALUES (?, ?, ?, 0, ?, NULL)',
@@ -806,8 +896,16 @@ export class PokerTableDO extends DurableObject<Env> {
         this.ctx.storage.sql.exec('UPDATE outbox SET done_at = ?, attempts = attempts + 1 WHERE id = ?', Date.now(), row.id);
       } catch (e) {
         const attempts = row.attempts + 1;
-        const backoff = OUTBOX_BACKOFF_MS[Math.min(attempts, OUTBOX_BACKOFF_MS.length) - 1] ?? 120_000;
+        const reason = e instanceof Error ? e.message : String(e);
         console.warn(`outbox ${row.kind} ${row.id} failed (attempt ${attempts})`, e);
+        if (attempts >= MAX_OUTBOX_ATTEMPTS) {
+          // Give up, but never silently: the ledger row keeps the reason so the player is told what
+          // failed rather than watching a receipt that never arrives.
+          this.ctx.storage.sql.exec('UPDATE outbox SET attempts = ?, done_at = ? WHERE id = ?', attempts, Date.now(), row.id);
+          this.recordSettlementFailure(row, reason, attempts);
+          continue;
+        }
+        const backoff = OUTBOX_BACKOFF_MS[Math.min(attempts, OUTBOX_BACKOFF_MS.length) - 1] ?? 120_000;
         this.ctx.storage.sql.exec('UPDATE outbox SET attempts = ?, next_at = ? WHERE id = ?', attempts, Date.now() + backoff, row.id);
       }
     }
@@ -824,6 +922,20 @@ export class PokerTableDO extends DurableObject<Env> {
           chips: p.chips,
           historyDigest: p.historyDigest,
           orderId: p.orderId,
+          ...(p.playerAddress ? { playerAddress: p.playerAddress } : {}),
+        });
+        this.ctx.storage.sql.exec('UPDATE ledger SET receipt_json = ? WHERE id = ?', JSON.stringify(receipt), p.ledgerId);
+        return;
+      }
+      case 'settleBuyIn': {
+        const p = JSON.parse(row.payload_json) as BuyInPayload;
+        const receipt = await this.settlement().settleBuyIn({
+          tableId: p.tableId,
+          seat: p.seat,
+          playerId: p.playerId,
+          chips: p.chips,
+          orderId: p.orderId,
+          ...(p.playerAddress ? { playerAddress: p.playerAddress } : {}),
         });
         this.ctx.storage.sql.exec('UPDATE ledger SET receipt_json = ? WHERE id = ?', JSON.stringify(receipt), p.ledgerId);
         return;
@@ -831,6 +943,27 @@ export class PokerTableDO extends DurableObject<Env> {
       default:
         throw new Error(`unknown outbox kind ${row.kind}`);
     }
+  }
+
+  /** Write the reason a settlement gave up onto the ledger row it was going to receipt. */
+  private recordSettlementFailure(row: OutboxRow, reason: string, attempts: number): void {
+    let payload: { ledgerId?: string; orderId?: string; chips?: number };
+    try {
+      payload = JSON.parse(row.payload_json) as { ledgerId?: string; orderId?: string; chips?: number };
+    } catch {
+      return;
+    }
+    if (!payload.ledgerId) return;
+    const adapter = this.settlement();
+    const receipt = failedReceipt({
+      mode: adapter.mode,
+      orderId: payload.orderId ?? row.id,
+      amount: (BigInt(payload.chips ?? 0) * adapter.chipValue).toString(),
+      asset: adapter.asset,
+      error: reason,
+      attempts,
+    });
+    this.ctx.storage.sql.exec('UPDATE ledger SET receipt_json = ? WHERE id = ?', JSON.stringify(receipt), payload.ledgerId);
   }
 
   /* --------------------------------------------------------------- commit */
@@ -971,8 +1104,32 @@ export class PokerTableDO extends DurableObject<Env> {
   }
 
   private settlement(): SettlementAdapter {
-    if (!this.adapter) this.adapter = createSettlementAdapter((this.meta as TableMeta).settlement, this.env);
+    if (!this.adapter) {
+      this.adapter = createSettlementAdapter((this.meta as TableMeta).settlement, this.env, (req) => this.playerFunding(req.playerId));
+    }
     return this.adapter;
+  }
+
+  /**
+   * Whose money is this, and what authorises moving it?
+   *
+   * Answered from the SERVER-side session record, never from anything the socket said. A seat that
+   * has already sat down has its treasury pinned on its `SeatRecord`, so a cash-out still knows
+   * where to pay after the session that opened it has expired.
+   */
+  private async playerFunding(playerId: string): Promise<PlayerFunding | null> {
+    const pinned = this.players[playerId]?.treasury;
+    const rec = await readSessionRecord(this.env, playerId);
+    const treasury = (rec?.treasury ?? pinned ?? '').trim();
+    if (!treasury) return null;
+    const funding: PlayerFunding = { treasury: treasury as `0x${string}` };
+    if (rec?.buyInMandate) funding.mandate = rec.buyInMandate as PlayerFunding['mandate'];
+    return funding;
+  }
+
+  /** True when this table moves a real asset, so buy-ins go through the outbox instead of inline. */
+  private get settles(): boolean {
+    return (this.meta as TableMeta).settlement !== 'play-money';
   }
 
   private seatOf(playerId: string): number | null {
@@ -998,6 +1155,74 @@ export class PokerTableDO extends DurableObject<Env> {
     return { type: 'seat-status', seat, playerId, name, stack: s?.stack, status: s?.status };
   }
 
+  /**
+   * Settle a buy-in, or promise to.
+   *
+   * Play money settles inline because there is nothing to settle: the receipt is local and instant,
+   * and this path must stay byte-for-byte what it was. A settled table writes a PENDING ledger row
+   * and hands the movement to the outbox, so a slow chain — or a chain that is down — delays a
+   * receipt and never a hand. `authorizeBuyIn` has already refused anything that cannot pay, so a
+   * seat credited here is a seat whose money exists.
+   */
+  private async settleBuyInOrQueue(args: {
+    tableId: string;
+    seat: number;
+    playerId: string;
+    playerAddress?: string;
+    chips: number;
+    orderId: string;
+    kind: 'buy-in' | 'add-chips';
+    handNo: number | null;
+    at: number;
+  }): Promise<SettlementReceipt> {
+    const req = {
+      tableId: args.tableId,
+      seat: args.seat,
+      playerId: args.playerId,
+      chips: args.chips,
+      orderId: args.orderId,
+      ...(args.playerAddress ? { playerAddress: args.playerAddress } : {}),
+    };
+    if (!this.settles) {
+      const receipt = await this.settlement().settleBuyIn(req);
+      this.writeLedger({ seat: args.seat, playerId: args.playerId, kind: args.kind, chips: args.chips, handNo: args.handNo, at: args.at, receipt });
+      return receipt;
+    }
+
+    const ledgerId = crypto.randomUUID();
+    const receipt = this.pending(args.orderId, args.chips, args.at);
+    this.writeLedger({ id: ledgerId, seat: args.seat, playerId: args.playerId, kind: args.kind, chips: args.chips, handNo: args.handNo, at: args.at, receipt });
+    const payload: BuyInPayload = {
+      ledgerId,
+      tableId: args.tableId,
+      seat: args.seat,
+      playerId: args.playerId,
+      chips: args.chips,
+      orderId: args.orderId,
+      ...(args.playerAddress ? { playerAddress: args.playerAddress } : {}),
+    };
+    this.ctx.storage.sql.exec(
+      'INSERT INTO outbox (id, kind, payload_json, attempts, next_at, done_at) VALUES (?, ?, ?, 0, ?, NULL)',
+      crypto.randomUUID(),
+      'settleBuyIn',
+      JSON.stringify(payload),
+      args.at,
+    );
+    return receipt;
+  }
+
+  /** The "we owe this, it has not moved yet" receipt, in the units the adapter settles in. */
+  private pending(orderId: string, chips: number, at: number): SettlementReceipt {
+    const adapter = this.settlement();
+    return pendingReceipt({
+      mode: adapter.mode,
+      orderId,
+      amount: (BigInt(chips) * adapter.chipValue).toString(),
+      asset: adapter.asset,
+      at,
+    });
+  }
+
   private writeLedger(e: { id?: string; seat: number; playerId: string; kind: string; chips: number; handNo: number | null; at: number; receipt?: SettlementReceipt }): void {
     this.ctx.storage.sql.exec(
       'INSERT INTO ledger (id, seat, player_id, kind, chips, hand_no, at, receipt_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1010,6 +1235,42 @@ export class PokerTableDO extends DurableObject<Env> {
       e.at,
       e.receipt ? JSON.stringify(e.receipt) : null,
     );
+  }
+
+  /**
+   * The money rows for one player at this table: what was bought in, what was cashed out, and where
+   * each movement has got to. The Worker gates this on the caller BEING that player — a settlement
+   * state is nobody else's business, and a `playerId` is not a credential.
+   */
+  private ledgerFor(playerId: string | null): {
+    tableId: string;
+    settlement: SettlementMode;
+    treasury: string | null;
+    entries: Array<{ id: string; seat: number; kind: string; chips: number; handNo: number | null; at: number; receipt: SettlementReceipt | null }>;
+  } {
+    const meta = this.meta as TableMeta;
+    const base = { tableId: meta.tableId, settlement: meta.settlement, treasury: null as string | null, entries: [] as never[] };
+    if (!playerId) return base;
+    const rows = this.ctx.storage.sql
+      .exec<{ id: string; seat: number; kind: string; chips: number; hand_no: number | null; at: number; receipt_json: string | null }>(
+        'SELECT id, seat, kind, chips, hand_no, at, receipt_json FROM ledger WHERE player_id = ? ORDER BY at DESC, rowid DESC LIMIT 50',
+        playerId,
+      )
+      .toArray();
+    return {
+      tableId: meta.tableId,
+      settlement: meta.settlement,
+      treasury: this.players[playerId]?.treasury ?? null,
+      entries: rows.map((r) => ({
+        id: r.id,
+        seat: r.seat,
+        kind: r.kind,
+        chips: r.chips,
+        handNo: r.hand_no,
+        at: r.at,
+        receipt: r.receipt_json ? (JSON.parse(r.receipt_json) as SettlementReceipt) : null,
+      })),
+    };
   }
 
   /** Cheap digest of the hand history a cash-out settles against (phase 3 binds this on-chain). */

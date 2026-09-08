@@ -3,6 +3,7 @@ import type { AuthState } from '../App';
 import type { AppSession, CreateTableRequest, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { fmtChips } from '../lib/format';
+import { TreasuryPanel } from '../components/TreasuryPanel';
 import { SignInPage } from './SignInPage';
 
 const POLL_MS = 5000;
@@ -19,7 +20,12 @@ export function Lobby({ session, auth, onLogin }: { session: AppSession | null; 
   return (
     <div className="lobby">
       <TableList session={session} />
-      <CreateTable session={session} />
+      <div className="lobby-side">
+        {/* Chosen once per connect, before a settled seat is possible — so it sits above the form
+            that can open a settled table. */}
+        <TreasuryPanel session={session} />
+        <CreateTable session={session} />
+      </div>
     </div>
   );
 }
@@ -108,6 +114,7 @@ function TableList({ session }: { session: AppSession }) {
 
 function CreateTable({ session }: { session: AppSession }) {
   const [name, setName] = useState('');
+  const [settlement, setSettlement] = useState<'play-money' | 'mandate-transfer'>('play-money');
   const [seats, setSeats] = useState(6);
   const [sb, setSb] = useState(1);
   const [bb, setBb] = useState(2);
@@ -128,7 +135,7 @@ function CreateTable({ session }: { session: AppSession }) {
         setErr(null);
         const req: CreateTableRequest = {
           name: name.trim(),
-          settlement: 'play-money',
+          settlement,
           config: { seats, smallBlind: sb, bigBlind: bb, minBuyIn: minBuy, maxBuyIn: maxBuy },
         };
         try {
@@ -178,10 +185,18 @@ function CreateTable({ session }: { session: AppSession }) {
       </div>
       <label>
         Settlement
-        <select value="play-money" disabled>
-          <option value="play-money">play-money</option>
+        <select value={settlement} onChange={(e) => setSettlement(e.target.value as 'play-money' | 'mandate-transfer')}>
+          <option value="play-money">play money</option>
+          <option value="mandate-transfer">USDC (mandate transfer)</option>
         </select>
       </label>
+      {settlement === 'mandate-transfer' ? (
+        <p className="hint">
+          Buy-ins and cash-outs move USDC between Smart Agent treasuries on faithchain. Every player needs a treasury with
+          the money in it; a buy-in also needs a signed mandate from their Home, which this estate cannot issue yet — so a
+          seat here will be refused with that reason rather than quietly played for nothing.
+        </p>
+      ) : null}
       {err ? <div className="form-error">{err}</div> : null}
       <button className="primary" type="submit" disabled={busy || !valid}>
         {busy ? 'Opening…' : 'Open table'}

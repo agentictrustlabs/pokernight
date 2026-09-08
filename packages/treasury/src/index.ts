@@ -17,6 +17,7 @@ export {
   type Address,
   type Hex,
   type TransactionReceipt,
+  type ExecuteCallRequest,
   type TransferUsdcRequest,
   type TransferUsdcResult,
   type TreasuryClientOpts,
@@ -44,6 +45,25 @@ export {
   type ContractCall,
   type TransferPlan,
 } from './calls.js';
+
+export {
+  createTreasuryTransferAdapter,
+  orderNonce,
+  type PlayerFunding,
+  type TreasuryTransferAdapterOpts,
+} from './adapter.js';
+
+export {
+  buildBuyInMandateCaveats,
+  buildBuyInRedemption,
+  describeBuyInMandate,
+  type BuyInMandateTerms,
+  type BuyInRedemptionInput,
+  type Caveat,
+  type Delegation,
+  type MandateEnforcers,
+  type PaymentMandate,
+} from './mandate.js';
 
 export {
   TREASURY_SETTLEMENT_MODE,

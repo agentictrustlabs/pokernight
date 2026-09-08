@@ -25,6 +25,21 @@ export interface SessionRecord {
   homeOrigin: string;
   /** SA-signed scoped delegation to the relying delegate. Phase 3 spends against it. */
   delegation?: unknown;
+  /**
+   * The treasury Smart Agent this player chose to fund their play with, lowercased. Chosen once per
+   * connect (`POST /treasury/select`) and verified there — the custodian check happens before it is
+   * written, so anything stored here is a treasury this person actually custodies.
+   *
+   * It lives on the SERVER because a seat that pays out to an address the browser supplied would be
+   * a browser deciding where money goes. The table reads it from here, never from the wire.
+   */
+  treasury?: string;
+  /**
+   * The signed `poker-buyin` mandate delegation, when the player has one. Opaque JSON; only
+   * `@pokernight/treasury` interprets it. Absent today, because the Home has not curated the
+   * template — which is exactly why a mandate-transfer buy-in refuses instead of guessing.
+   */
+  buyInMandate?: unknown;
   issuedAt: number;
   /** Absolute ms; the record self-deletes at this point. */
   expiresAt: number;
@@ -43,6 +58,24 @@ export class SessionDO extends DurableObject<Env> {
       // Self-cleaning: the record is worthless once the session it describes has expired.
       await this.ctx.storage.setAlarm(Math.max(rec.expiresAt, Date.now() + 1000));
       return json({ ok: true });
+    }
+
+    if (request.method === 'POST') {
+      // Partial update: the treasury choice must not require re-writing (and so risk losing) the
+      // identity half of the record.
+      const patch = (await request.json()) as { treasury?: string | null; buyInMandate?: unknown };
+      const rec = await this.ctx.storage.get<SessionRecord>(KEY);
+      if (!rec) return json({ error: 'no session' }, 404);
+      if (rec.expiresAt <= Date.now()) {
+        await this.ctx.storage.deleteAll();
+        return json({ error: 'session expired' }, 404);
+      }
+      const next: SessionRecord = { ...rec };
+      if (patch.treasury === null) delete next.treasury;
+      else if (typeof patch.treasury === 'string') next.treasury = patch.treasury.toLowerCase();
+      if ('buyInMandate' in patch) next.buyInMandate = patch.buyInMandate;
+      await this.ctx.storage.put(KEY, next);
+      return json(next);
     }
 
     if (request.method === 'DELETE') {

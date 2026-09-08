@@ -8,6 +8,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { AuthState } from './App';
 import { Identity } from './components/Identity';
+import { MoneyPanel } from './components/MoneyPanel';
+import { TreasuryPanel } from './components/TreasuryPanel';
 import { Table } from './components/Table';
 import { WinnerBanner } from './components/WinnerBanner';
 import { Lobby } from './pages/Lobby';
@@ -182,5 +184,40 @@ describe('landing and sign-in surfaces', () => {
     const html = renderToStaticMarkup(createElement(SignInPage, { auth: auth({ notice: SESSION_ENDED_NOTICE }), onLogin: () => {} }));
     expect(html).toContain(SESSION_ENDED_NOTICE);
     expect(html).toContain('Sign in with your Home');
+  });
+});
+
+/**
+ * The money surfaces. `renderToStaticMarkup` runs the FIRST render only — no effects, so no fetch —
+ * which is exactly the state a person sees for the first few hundred milliseconds. It has to say
+ * something true then too, rather than rendering an empty box while it decides.
+ */
+describe('money render', () => {
+  const moneySession = { token: 't', playerId: 'home:0xabc', name: 'Alice', via: 'home' as const, address: '0xabc' };
+
+  it('says it is loading the treasury rather than showing an empty panel', () => {
+    const html = renderToStaticMarkup(createElement(TreasuryPanel, { session: moneySession }));
+    expect(html).toContain('Your treasury');
+    expect(html).toContain('Loading…');
+  });
+
+  it('draws nothing at all on a play-money table — there is no money to show', () => {
+    const html = renderToStaticMarkup(createElement(MoneyPanel, { tableId: 't1', settlement: 'play-money', session: moneySession }));
+    expect(html).toBe('');
+  });
+
+  it('asks a signed-out visitor at a settled table to sign in, and says why', () => {
+    const html = renderToStaticMarkup(createElement(MoneyPanel, { tableId: 't1', settlement: 'mandate-transfer', session: null }));
+    expect(html).toContain('This table settles in USDC');
+    expect(html).toContain('Sign in to see your treasury');
+  });
+
+  it('tells a seated player with no treasury where to fix that', () => {
+    const html = renderToStaticMarkup(createElement(MoneyPanel, { tableId: 't1', settlement: 'mandate-transfer', session: moneySession }));
+    // On the very first render the treasury read has not answered yet, so the panel says it is
+    // still checking rather than asserting the player has nothing.
+    expect(html).toContain('Checking which treasury funds your play');
+    expect(html).toContain('pick one in the lobby');
+    expect(html).toContain('Nothing has moved yet');
   });
 });

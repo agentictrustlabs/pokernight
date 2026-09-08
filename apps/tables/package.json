@@ -23,6 +23,7 @@
     "@pokernight/engine": "workspace:*",
     "@pokernight/ledger": "workspace:*",
     "@pokernight/protocol": "workspace:*",
+    "@pokernight/treasury": "workspace:*",
     "hono": "^4.6.14",
     "viem": "^2.52.2",
     "zod": "^3.24.0"

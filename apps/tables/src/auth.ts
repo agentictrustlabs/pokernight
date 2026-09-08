@@ -35,6 +35,10 @@ export interface HomeSessionClaims extends SessionClaims {
   homeOrigin: string;
   /** Opaque SA-signed delegation. Phase 3 reads it; nothing here interprets it. */
   delegation?: unknown;
+  /** The treasury Smart Agent this session chose to fund play with, lowercased (see session-do.ts). */
+  treasury?: string;
+  /** The signed poker-buyin mandate, when the player has one. Opaque. */
+  buyInMandate?: unknown;
 }
 
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
@@ -195,6 +199,8 @@ async function hydrateHomeSession(env: Env, claims: SessionClaims): Promise<Home
     agentName: rec.agentName,
     homeOrigin: rec.homeOrigin,
     delegation: rec.delegation,
+    treasury: rec.treasury,
+    buyInMandate: rec.buyInMandate,
   };
 }
 
@@ -210,6 +216,38 @@ export async function putSessionRecord(env: Env, rec: SessionRecord): Promise<vo
     body: JSON.stringify(rec),
   });
   if (!res.ok) throw new Error(`could not store the session record (${res.status})`);
+}
+
+/**
+ * Record the treasury this session funds play from. Patch, not replace: the identity half of the
+ * record is the part a re-write could lose, and this is called mid-session.
+ *
+ * Returns false when there is no live record to patch — a signed-out or expired session must not be
+ * able to leave a treasury choice behind it.
+ */
+export async function setSessionTreasury(env: Env, playerId: string, treasury: string | null): Promise<boolean> {
+  const res = await sessionStub(env, playerId).fetch('https://session/record', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ treasury }),
+  });
+  return res.ok;
+}
+
+/**
+ * Read the server-side record straight, without the token dance. The table DO uses this: it already
+ * knows the playerId of a socket the Worker authenticated, and it needs the parts of the session a
+ * token never carries (the chosen treasury, the buy-in mandate).
+ */
+export async function readSessionRecord(env: Env, playerId: string): Promise<SessionRecord | null> {
+  let res: Response;
+  try {
+    res = await sessionStub(env, playerId).fetch('https://session/record');
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  return (await res.json()) as SessionRecord;
 }
 
 /** Sign-out: drop the server-side record so the token stops resolving. */

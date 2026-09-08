@@ -3,10 +3,12 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "House money layer: read and move the settlement asset (6-decimal USDC) from Smart Agents the house custodies. No domains, no addresses, no keys — everything is injected.",
+  "description": "House money layer: read and move the settlement asset (6-decimal USDC) from Smart Agents the house custodies. No domains, no addresses, no keys \u2014 everything is injected.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -14,6 +16,7 @@
   },
   "dependencies": {
     "@agenticprimitives/agent-account": "link:../../../agenticprimitives/packages/agent-account",
+    "@agenticprimitives/delegation": "link:../../../agenticprimitives/packages/delegation",
     "@agenticprimitives/payments": "link:../../../agenticprimitives/packages/payments",
     "@pokernight/ledger": "workspace:*",
     "viem": "^2.52.2"
