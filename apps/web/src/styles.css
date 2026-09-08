@@ -1,0 +1,765 @@
+/* Pokernight — card-room ledger. Tokens first, then layout. */
+
+:root {
+  color-scheme: light dark;
+  --paper: #f2f4f1;
+  --surface: #fafbf9;
+  --ink: #1c2420;
+  --ink-soft: #55635b;
+  --felt: #1f6b4a;
+  --felt-deep: #185539;
+  --felt-soft: #dcebe2;
+  --card-red: #a6392e;
+  --card-face: #fffefb;
+  --rule: #d3dad4;
+  --warn: #9a6b1c;
+  --danger: #a6392e;
+  --focus: #2b8a5f;
+  --shadow: 0 1px 2px rgba(28, 36, 32, 0.08), 0 4px 16px rgba(28, 36, 32, 0.06);
+  --font-body: 'Public Sans', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --radius: 6px;
+  --card-w: 44px;
+  --card-h: 62px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0f1512;
+    --surface: #161e19;
+    --ink: #e4eae5;
+    --ink-soft: #9aa89f;
+    --felt: #2b8a5f;
+    --felt-deep: #1f6b4a;
+    --felt-soft: #1c2f25;
+    --card-red: #d8584a;
+    --card-face: #f4f2ea;
+    --rule: #2a3630;
+    --warn: #d5a44a;
+    --danger: #d8584a;
+    --focus: #5fc48f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--felt);
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.5rem;
+}
+h1 {
+  font-size: 1.35rem;
+}
+h2 {
+  font-size: 1.05rem;
+}
+h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.mono,
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+button:hover:not(:disabled) {
+  border-color: var(--felt);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+button.primary {
+  background: var(--felt);
+  border-color: var(--felt);
+  color: #fff;
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) {
+  background: var(--felt-deep);
+}
+button.danger {
+  color: var(--danger);
+}
+button.quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-soft);
+}
+button.quiet:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--rule);
+}
+button.small {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.85rem;
+}
+
+input[type='text'],
+input[type='number'] {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.6rem;
+  min-width: 0;
+}
+input[type='number'] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+label > input,
+label > select {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.hint {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+/* --------------------------------------------------------------- shell */
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+}
+.topbar .brand {
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.topbar .brand::before {
+  content: '♠ ';
+  color: var(--felt);
+}
+.topbar .spacer {
+  flex: 1;
+}
+.topbar .meta {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+.conn::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-soft);
+}
+.conn.open::before {
+  background: var(--felt);
+}
+.conn.reconnecting::before,
+.conn.connecting::before {
+  background: var(--warn);
+}
+.conn.closed::before {
+  background: var(--danger);
+}
+
+.page {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------- lobby */
+
+.lobby {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1rem;
+}
+@media (max-width: 800px) {
+  .lobby {
+    grid-template-columns: 1fr;
+  }
+}
+
+.login {
+  max-width: 420px;
+  margin: 3rem auto;
+}
+
+.tables {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.tables th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--rule);
+  padding: 0.4rem 0.5rem;
+}
+.tables td {
+  padding: 0.55rem 0.5rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+}
+.tables tr:last-child td {
+  border-bottom: 0;
+}
+.tables .num {
+  text-align: right;
+}
+.tables-wrap {
+  overflow-x: auto;
+}
+
+.form {
+  display: grid;
+  gap: 0.7rem;
+}
+.form .pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.form-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* --------------------------------------------------------------- table */
+
+.table-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .table-page {
+    grid-template-columns: 1fr;
+  }
+}
+
+.arena {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  min-height: 420px;
+}
+
+.felt {
+  position: absolute;
+  inset: 12% 14%;
+  background: radial-gradient(ellipse at 50% 40%, var(--felt) 0%, var(--felt-deep) 100%);
+  border-radius: 50% / 50%;
+  border: 6px solid var(--surface);
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #fff;
+  padding: 1rem;
+}
+.felt .hand-no {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.felt .pots {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.pot {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+.pot .lbl {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  opacity: 0.8;
+  margin-right: 0.35rem;
+}
+.felt .idle {
+  font-size: 0.9rem;
+  opacity: 0.85;
+  text-align: center;
+}
+
+.board {
+  display: flex;
+  gap: 6px;
+}
+.board .slot {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: 4px;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+}
+
+.seats {
+  position: absolute;
+  inset: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+.seat {
+  position: absolute;
+  left: calc(var(--x) * 1%);
+  top: calc(var(--y) * 1%);
+  transform: translate(-50%, -50%);
+  width: 150px;
+  pointer-events: auto;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.4rem 0.55rem;
+  font-size: 0.85rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.seat.to-act {
+  border-color: var(--felt);
+  box-shadow: 0 0 0 2px var(--felt), var(--shadow);
+}
+.seat.folded,
+.seat.sitting-out {
+  opacity: 0.65;
+}
+.seat.you .name::after {
+  content: ' · you';
+  color: var(--felt);
+  font-weight: 500;
+}
+.seat .head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+.seat .name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seat .stack {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+.seat .cards {
+  display: flex;
+  gap: 4px;
+  margin-top: 0.35rem;
+  min-height: var(--card-h);
+  align-items: flex-end;
+}
+.seat .foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  min-height: 1.2em;
+}
+.seat .status {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+}
+.seat .status.all-in {
+  color: var(--card-red);
+  font-weight: 600;
+}
+.bet {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  background: var(--felt-soft);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0 0.5rem;
+}
+.dealer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.65rem;
+  font-weight: 700;
+  flex: none;
+}
+.seat.empty {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border-style: dashed;
+  text-align: center;
+  color: var(--ink-soft);
+}
+.seat.empty .sit {
+  width: 100%;
+}
+.clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--felt);
+  font-weight: 600;
+}
+.clock.urgent {
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .arena {
+    aspect-ratio: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .felt {
+    position: relative;
+    inset: auto;
+    border-radius: 24px;
+    min-height: 160px;
+  }
+  .seats {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.5rem;
+  }
+  .seat {
+    position: static;
+    transform: none;
+    width: auto;
+  }
+}
+
+/* ----------------------------------------------------------- action bar */
+
+.actions {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+.actions .buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.actions .buttons button {
+  min-width: 96px;
+  font-weight: 600;
+}
+.actions .clockbar {
+  height: 4px;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.actions .clockbar > div {
+  height: 100%;
+  background: var(--felt);
+  transition: width 0.25s linear;
+}
+.actions .clockbar.urgent > div {
+  background: var(--danger);
+}
+.sizing {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+.sizing input[type='range'] {
+  width: 100%;
+  accent-color: var(--felt);
+}
+.sizing input[type='number'] {
+  width: 110px;
+}
+.sizing .quick {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.controls {
+  margin-top: 0.75rem;
+}
+
+/* ----------------------------------------------------------- seat picker */
+
+.picker {
+  margin-top: 0.75rem;
+  border-color: var(--felt);
+}
+
+/* --------------------------------------------------------------- side */
+
+.side {
+  display: grid;
+  gap: 1rem;
+}
+.log {
+  height: 360px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  padding: 0.25rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.log .line {
+  padding: 0.15rem 0.25rem;
+  border-bottom: 1px dotted color-mix(in srgb, var(--rule) 60%, transparent);
+}
+.log .line.chat {
+  color: var(--felt);
+}
+.log .line.hand {
+  color: var(--ink-soft);
+  font-weight: 600;
+  margin-top: 0.35rem;
+}
+.log .line.street,
+.log .line.win {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+.log .line.win {
+  color: var(--felt);
+  font-weight: 600;
+}
+.chatbox {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.chatbox input {
+  flex: 1;
+}
+
+/* ----------------------------------------------------------- seed / tip */
+
+.seed {
+  position: relative;
+  font-size: 0.72rem;
+  opacity: 0.85;
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.seed code {
+  font-family: var(--font-mono);
+}
+.seed .tipbtn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 0;
+  color: inherit;
+  border-radius: 999px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 0.7rem;
+  line-height: 18px;
+}
+.seed .tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 260px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.6rem 0.7rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-align: left;
+  z-index: 5;
+}
+.seed .tip code {
+  word-break: break-all;
+  font-size: 0.72rem;
+}
+.seed .tip p {
+  margin: 0 0 0.4rem;
+}
+.seed .tip p:last-child {
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- toast */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.6rem 0.8rem 0.6rem 1rem;
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  max-width: min(520px, calc(100vw - 2rem));
+  z-index: 10;
+}
+.toast code {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+.toast button {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: inherit;
+}
+
+/* --------------------------------------------------------------- cards */
+
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  display: block;
+  flex: none;
+}
+.card .face {
+  fill: var(--card-face);
+  stroke: var(--rule);
+}
+.card .ink {
+  fill: var(--ink);
+}
+.card.red .ink {
+  fill: var(--card-red);
+}
+.card .back {
+  fill: var(--felt);
+  stroke: var(--surface);
+}
+.card .hatch {
+  stroke: rgba(255, 255, 255, 0.35);
+}
+.card.lg {
+  --card-w: 56px;
+  --card-h: 79px;
+}

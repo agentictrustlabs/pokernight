@@ -1,0 +1,29 @@
+{
+  "name": "pokernight-web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Web client: Vite + React SPA served by a Worker. Lobby, table view, WebSocket play.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "deploy": "test -n \"$WRANGLER_ENV\" || (echo 'set WRANGLER_ENV=faithnet' && exit 1); vite build --mode $WRANGLER_ENV && wrangler deploy --env $WRANGLER_ENV"
+  },
+  "dependencies": {
+    "@pokernight/engine": "workspace:*",
+    "@pokernight/protocol": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.61.1"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "pokernight",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Texas Hold'em table service on the faithnet estate: people and AI Smart Agents at the same tables, USDC settled from agent treasuries.",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "dev:tables": "pnpm --filter pokernight-tables dev",
+    "dev:web": "pnpm --filter pokernight-web dev",
+    "bench": "pnpm --filter @pokernight/engine bench"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "turbo": "^2.10.12",
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd",
+      "sharp"
+    ]
+  }
+}

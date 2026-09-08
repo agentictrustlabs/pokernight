@@ -1,0 +1,36 @@
+{
+  "name": "pokernight-tables",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Table service: Cloudflare Worker with one PokerTableDO per table (WebSockets, SQLite, alarms) and a LobbyDO.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "test -n \"$WRANGLER_ENV\" || (echo 'set WRANGLER_ENV=faithnet' && exit 1); wrangler deploy --env $WRANGLER_ENV",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@agenticprimitives/a2a": "link:../../../agenticprimitives/packages/a2a",
+    "@agenticprimitives/agent-account": "link:../../../agenticprimitives/packages/agent-account",
+    "@agenticprimitives/connect-auth": "link:../../../agenticprimitives/packages/connect-auth",
+    "@agenticprimitives/contracts": "link:../../../agenticprimitives/packages/contracts",
+    "@agenticprimitives/delegation": "link:../../../agenticprimitives/packages/delegation",
+    "@agenticprimitives/payments": "link:../../../agenticprimitives/packages/payments",
+    "@agenticprimitives/types": "link:../../../agenticprimitives/packages/types",
+    "@pokernight/engine": "workspace:*",
+    "@pokernight/ledger": "workspace:*",
+    "@pokernight/protocol": "workspace:*",
+    "hono": "^4.6.14",
+    "viem": "^2.52.2",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.0",
+    "@cloudflare/workers-types": "^5.20260907.1",
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.61.1"
+  }
+}

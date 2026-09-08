@@ -1,0 +1,8 @@
+# Copy to .dev.vars (gitignored) for `wrangler dev`. Production values are set with
+# `wrangler secret put <NAME> --env faithnet` and never live in wrangler.toml.
+
+# HMAC-SHA256 key for session tokens minted by POST /dev/session (and, later, Home OIDC sessions).
+SESSION_SECRET=change-me-to-a-long-random-string
+
+# chain-rpc-gateway app token for the tables Worker (phase 3, mandate-transfer settlement). Unused in phase 1.
+RPC_TOKEN=

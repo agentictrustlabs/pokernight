@@ -1,0 +1,30 @@
+# pokernight-web — static SPA served by Workers Assets.
+#
+# The client is a Vite build. Anything prefixed VITE_ is read by Vite at BUILD
+# time and inlined into the bundle; it is NOT a runtime Worker variable. The
+# `[env.faithnet.vars]` block below documents the value so it lives next to the
+# other per-universe config, but `vite build --mode faithnet` reads it from
+# `.env.faithnet` (same value). Change both together.
+#
+#   pnpm --filter pokernight-web deploy   (WRANGLER_ENV=faithnet)
+
+name = "pokernight-web"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./dist"
+# Hash routes (#/t/<id>) never reach the server, but a hard reload on a
+# non-root path should still serve the app.
+not_found_handling = "single-page-application"
+
+[env.faithnet]
+name = "pokernight-web-faithnet"
+routes = [{ pattern = "poker.faithnet.io", custom_domain = true }]
+
+[env.faithnet.assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+
+[env.faithnet.vars]
+# Build-time only (see header). Mirrored in .env.faithnet.
+VITE_API_BASE = "https://tables.faithnet.io"

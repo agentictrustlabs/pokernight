@@ -1,0 +1,87 @@
+# pokernight-tables — the table service: one PokerTableDO per table (hibernatable WebSockets, SQLite,
+# alarms) plus a LobbyDO that lists and creates tables.
+#
+# The BARE name below is for `wrangler dev` only. `pnpm run deploy` refuses without `WRANGLER_ENV=<env>`;
+# never deploy this file without `--env` — that would publish a NEW Worker called `pokernight-tables`
+# instead of updating the live one. A second deployment universe is another `[env.<name>]` block.
+#
+# Bindings and vars are repeated per env on purpose (wrangler does not inherit vars / DO bindings into envs).
+#   TABLES   — PokerTableDO namespace (one instance per table id)
+#   LOBBIES  — LobbyDO namespace (one instance per circle; "default" in phase 1)
+#
+# Secrets (NEVER in [vars]; see .dev.vars.example):
+#   SESSION_SECRET — HMAC key for session tokens (`wrangler secret put SESSION_SECRET --env <env>`)
+#   RPC_TOKEN      — chain-rpc-gateway app token for the tables Worker (phase 3)
+name = "pokernight-tables"
+main = "src/index.ts"
+compatibility_date = "2026-05-19"
+compatibility_flags = ["nodejs_compat"]
+
+[dev]
+port = 8787
+local_protocol = "http"
+
+[durable_objects]
+bindings = [
+  { name = "TABLES", class_name = "PokerTableDO" },
+  { name = "LOBBIES", class_name = "LobbyDO" },
+]
+
+# Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
+# renamed or reordered; add a new tag for every schema/class change.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
+
+# Local dev (Anvil on :8545, Vite on :5173). DEV_AUTH=true enables POST /dev/session.
+[vars]
+CHAIN_ID = "31337"
+RPC_URL = "http://127.0.0.1:8545"
+DEV_AUTH = "true"
+ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+CHIP_VALUE = "10000"
+HOME_ORIGIN = "http://localhost:3000"
+HOME_ZONE = "localhost"
+AGENT_CARD_ZONE = "localhost"
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# faithnet deployment universe (DESIGN.md §9). Worker name: pokernight-tables-faithnet.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+[env.faithnet]
+name = "pokernight-tables-faithnet"
+routes = [{ pattern = "tables.faithnet.io", custom_domain = true }]
+
+[env.faithnet.durable_objects]
+bindings = [
+  { name = "TABLES", class_name = "PokerTableDO" },
+  { name = "LOBBIES", class_name = "LobbyDO" },
+]
+
+[[env.faithnet.migrations]]
+tag = "v1"
+new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
+
+[env.faithnet.vars]
+CHAIN_ID = "34348"
+RPC_URL = "https://rpc.faithnet.io"
+HOME_ORIGIN = "https://www.faithnet.me"
+HOME_ZONE = "faithnet.me"
+AGENT_CARD_ZONE = "faithnet.ai"
+# Dev sessions stay on until Home OIDC login (phase 2) replaces them. Play-money only.
+DEV_AUTH = "true"
+ALLOWED_ORIGINS = "https://poker.faithnet.io"
+CHIP_VALUE = "10000"
+# MockUSDC on faithchain (6 decimals). Only this var changes if the chain ever bridges a real USDC.
+ASSET = "0xdaE09066A2cc32f6203605619137dcF01A9B49Ae"
+# Contract addresses (phase 3): copy from ~/agenticprimitives/packages/contracts/deployments-faithchain.json
+# (keys: entryPoint, agentAccountFactory, delegationManager, paymentEnforcer, digestBindingEnforcer,
+# paymentReceiptRegistry). HOUSE_SA / HOUSE_DELEGATE come from the pokernight.treasury Smart Agent
+# provisioned as an operator prerequisite (DESIGN.md §10).
+ENTRY_POINT = "0xf7855250B3363AB7649B10957d8908A9AFcdD4B5"
+AGENT_ACCOUNT_FACTORY = "0x464eEe7518c3c97DA570592481329E0627E9a3B8"
+DELEGATION_MANAGER = "0x710cb1bF08C234Df397e0910331e0A29710EF4F7"
+PAYMENT_ENFORCER = "0x07fA0aE59FdE4B7ce8962d6fE7a1d648ec3DD5CE"
+DIGEST_BINDING_ENFORCER = "0xA3bb9BCC9b2F6F2419E1aBe5ED6Fd5399b9E68e1"
+PAYMENT_RECEIPT_REGISTRY = "0x5FfDd6186C1bBc4628187B1c4C1fDaA39F870d43"
+HOUSE_SA = ""
+HOUSE_DELEGATE = ""

@@ -1,0 +1,20 @@
+{
+  "name": "@pokernight/agent-kit",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Helpers for writing a Pokernight agent: view parsing, pot odds, legal-action helpers, and a rules-based baseline strategy.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@pokernight/engine": "workspace:*",
+    "@pokernight/protocol": "workspace:*"
+  },
+  "devDependencies": { "typescript": "^5.6.3", "vitest": "^3.2.4" }
+}

@@ -1,0 +1,25 @@
+import { useEffect, useState } from 'react';
+
+/** Re-renders every `intervalMs` while `active`; returns Date.now(). */
+export function useNow(active: boolean, intervalMs = 250): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const h = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(h);
+  }, [active, intervalMs]);
+  return now;
+}
+
+/** Current `location.hash` (without the '#'), kept in sync with hashchange. */
+export function useHash(): string {
+  const read = () => location.hash.replace(/^#/, '') || '/';
+  const [hash, setHash] = useState(read);
+  useEffect(() => {
+    const on = () => setHash(read());
+    addEventListener('hashchange', on);
+    return () => removeEventListener('hashchange', on);
+  }, []);
+  return hash;
+}
