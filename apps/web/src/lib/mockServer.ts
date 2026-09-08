@@ -6,7 +6,7 @@
  * Not shipped: only imported from *.test.ts.
  */
 import type { SocketLike } from './tableSocket';
-import type { Card, ClientCommand, LegalActions, SeatView, ServerMessage, TableConfig, TableEvent, TableView } from './types';
+import type { Card, ClientCommand, LegalActions, PlayerInfo, SeatView, ServerMessage, TableConfig, TableEvent, TableView } from './types';
 
 export const CONFIG: TableConfig = {
   seats: 6,
@@ -21,7 +21,7 @@ export const CONFIG: TableConfig = {
 export const EMPTY_LEGAL: LegalActions = { fold: false, check: false, call: null, bet: null, raise: null, allIn: 0 };
 
 export function seat(n: number, playerId: string, stack: number, extra: Partial<SeatView> = {}): SeatView {
-  return { seat: n, playerId, stack, status: 'active', ...extra };
+  return { seat: n, playerId, stack, status: 'active', waitingForBigBlind: false, ...extra };
 }
 
 export function emptyView(seats: SeatView[] = [], viewerSeat: number | null = null): TableView {
@@ -45,6 +45,8 @@ export function flopView(viewerSeat: number | null = 0): TableView {
     hand: {
       handNo: 7,
       seedCommit: '3f9a2c5e7b1d4a6f3f9a2c5e7b1d4a6f3f9a2c5e7b1d4a6f3f9a2c5e7b1d4a6f',
+      smallBlindSeat: 0,
+      bigBlindSeat: 1,
       street: 'flop',
       board: ['Ah', '7d', '2c'],
       pots: [{ amount: 4, eligible: [0, 1] }],
@@ -59,8 +61,15 @@ export function flopView(viewerSeat: number | null = 0): TableView {
 
 export const NAMES: Record<string, string> = { 'p-alice': 'Alice', 'p-bob': 'Bob', 'p-carol': 'Carol' };
 
+/** Richer seat records: Carol is a rules bot sitting at the same table as two people. */
+export const PLAYERS: Record<string, PlayerInfo> = {
+  'p-alice': { playerId: 'p-alice', name: 'Alice', kind: 'human' },
+  'p-bob': { playerId: 'p-bob', name: 'Bob', kind: 'human' },
+  'p-carol': { playerId: 'p-carol', name: 'Carol', kind: 'agent', agentName: 'sharkbot.svc', agentKind: 'rules' },
+};
+
 export function welcome(view: TableView, playerId: string | null = 'p-alice'): ServerMessage {
-  return { type: 'welcome', tableId: 't-1', playerId, view, names: { ...NAMES } };
+  return { type: 'welcome', tableId: 't-1', playerId, view, names: { ...NAMES }, players: { ...PLAYERS } };
 }
 
 export function event(ev: TableEvent, view: TableView): ServerMessage {

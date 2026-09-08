@@ -11,7 +11,8 @@ substrate (`~/agenticprimitives`). Design: `docs/DESIGN.md` (read it before chan
 - `packages/agent-kit` helpers and a rules-based baseline strategy for agents.
 - `apps/tables`       Cloudflare Worker: `PokerTableDO` (WebSockets, SQLite, alarms) + `LobbyDO`. hono routes.
 - `apps/web`          Vite + React client.
-- `apps/agent`        reference bots (WebSocket bot now, A2A skill in phase 2).
+- `apps/agent`        reference WebSocket bot (`pnpm --filter pokernight-agent bot`).
+- `apps/agent-worker` Cloudflare Worker hosting the A2A agent personas (`poker.act`, standard profile).
 
 ## Rules
 - Money in the engine is chips (integers). Chip → asset conversion is the ledger's job only.
@@ -27,11 +28,11 @@ substrate (`~/agenticprimitives`). Design: `docs/DESIGN.md` (read it before chan
 
 ## Commands
 - `pnpm install` · `pnpm test` · `pnpm typecheck`
-- `pnpm dev:tables` (wrangler dev on :8787) · `pnpm dev:web` (vite on :5173)
+- `pnpm dev:tables` (wrangler dev on :8787) · `pnpm dev:web` (vite on :5173) · `pnpm dev:agents` (wrangler dev on :8788)
 - `pnpm --filter pokernight-agent bot -- --table <id> --seat 3` (rules-based bot)
 
 ## Agentic Primitives linkage
-`apps/tables` and `apps/agent` depend on `@agenticprimitives/*` via `link:../../../agenticprimitives/packages/<name>`
+`apps/tables`, `apps/agent` and `apps/agent-worker` depend on `@agenticprimitives/*` via `link:../../../agenticprimitives/packages/<name>`
 (the local checkout at `~/agenticprimitives`, NOT the npm alpha). Those packages resolve from their `dist/`
 folders, so after pulling platform changes run `pnpm -r build` (or the package's build) in `~/agenticprimitives`.
 `viem` is a peer of all of them and is declared in each consuming app. Deployment addresses come from

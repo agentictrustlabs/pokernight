@@ -60,6 +60,7 @@ export function makeView(spec: ViewSpec): TableView {
     playerId: `p${s.seat}`,
     stack: s.stack,
     status: 'active' as const,
+    waitingForBigBlind: false,
     ...(spec.noHand || s.out
       ? {}
       : {
@@ -84,6 +85,8 @@ export function makeView(spec: ViewSpec): TableView {
       : {
           handNo: 7,
           seedCommit: 'deadbeef',
+          smallBlindSeat: null,
+          bigBlindSeat: null,
           street: spec.street ?? 'preflop',
           board: spec.board ?? [],
           pots: [{ amount: spec.potAmount ?? 0, eligible }],

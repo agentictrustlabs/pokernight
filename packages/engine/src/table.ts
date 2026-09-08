@@ -723,7 +723,13 @@ export function setActionDeadline(state: TableState, deadline: number | null): T
 export function viewFor(state: TableState, viewerSeat: number | null): TableView {
   const hand = state.hand;
   const seats: SeatView[] = state.seats.map((s) => {
-    const sv: SeatView = { seat: s.seat, playerId: s.playerId, stack: s.stack, status: s.status };
+    const sv: SeatView = {
+      seat: s.seat,
+      playerId: s.playerId,
+      stack: s.stack,
+      status: s.status,
+      waitingForBigBlind: s.waitingForBigBlind,
+    };
     const hs = hand ? handSeat(hand, s.seat) : undefined;
     if (hs) {
       sv.inHand = { streetBet: hs.streetBet, totalBet: hs.totalBet, folded: hs.folded, allIn: hs.allIn };
@@ -737,6 +743,8 @@ export function viewFor(state: TableState, viewerSeat: number | null): TableView
     handView = {
       handNo: hand.handNo,
       seedCommit: hand.seedCommit,
+      smallBlindSeat: hand.smallBlindSeat,
+      bigBlindSeat: hand.bigBlindSeat,
       street: hand.street,
       board: hand.board.slice(),
       pots: clonePots(hand.pots),

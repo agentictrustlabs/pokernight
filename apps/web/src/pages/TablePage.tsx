@@ -45,8 +45,16 @@ export function TablePage({ tableId, session }: { tableId: string; session: Sess
 
   const ctx = useMemo(() => {
     const bySeat = new Map<number, string>();
-    for (const s of state.view?.seats ?? []) bySeat.set(s.seat, state.names[s.playerId] ?? s.playerId.slice(0, 8));
-    return { seatName: (seat: number) => bySeat.get(seat) ?? `Seat ${seat + 1}`, viewerSeat: state.view?.viewerSeat ?? null };
+    const seatOfPlayer = new Map<string, number>();
+    for (const s of state.view?.seats ?? []) {
+      bySeat.set(s.seat, state.names[s.playerId] ?? s.playerId.slice(0, 8));
+      seatOfPlayer.set(s.playerId, s.seat);
+    }
+    return {
+      seatName: (seat: number) => bySeat.get(seat) ?? `Seat ${seat + 1}`,
+      viewerSeat: state.view?.viewerSeat ?? null,
+      seatOf: (playerId: string) => seatOfPlayer.get(playerId) ?? null,
+    };
   }, [state.view, state.names]);
 
   return (

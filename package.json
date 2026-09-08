@@ -13,6 +13,7 @@
     "typecheck": "turbo run typecheck",
     "dev:tables": "pnpm --filter pokernight-tables dev",
     "dev:web": "pnpm --filter pokernight-web dev",
+    "dev:agents": "pnpm --filter pokernight-agent-worker dev",
     "bench": "pnpm --filter @pokernight/engine bench"
   },
   "devDependencies": {

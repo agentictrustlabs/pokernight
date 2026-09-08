@@ -1,20 +1,49 @@
-import type { Card as CardCode, SeatView } from '../lib/types';
-import { fmtChips, secondsLeft } from '../lib/format';
+import type { CSSProperties } from 'react';
+import type { ActionRecord, Card as CardCode, PlayerInfo, SeatView } from '../lib/types';
+import { actionBadge, fmtDelta } from '../lib/format';
 import { Card } from './Card';
+import { ChipStack } from './ChipStack';
+import { TurnClock } from './TurnClock';
+
+/** Initials for the monogram avatar: "Alice" → "A", "Ada L" → "AL". */
+export function monogram(name: string): string {
+  const parts = name.trim().split(/[\s._-]+/).filter(Boolean);
+  const first = parts[0]?.[0] ?? '?';
+  const second = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? '' : '';
+  return (first + second).toUpperCase().slice(0, 2);
+}
 
 export interface SeatProps {
   seatNo: number;
   seat: SeatView | null;
   name: string;
+  player?: PlayerInfo;
+  bigBlind: number;
   isYou: boolean;
   isButton: boolean;
+  isSmallBlind: boolean;
+  isBigBlind: boolean;
   toAct: boolean;
   /** Absolute deadline for this seat's action, if known. */
   deadline: number | null;
+  /** Full turn clock, for the arc. */
+  timeoutMs: number;
   now: number;
   inHand: boolean;
+  /** Hand number, so a new deal remounts the cards and replays the entrance. */
+  handKey: number;
   /** Cards known for this seat (own, or shown at showdown). */
   known?: CardCode[];
+  /** Cards belonging to the winning five, drawn in gold. */
+  winCards?: Set<CardCode>;
+  /** This seat took a pot in the hand that just ended. */
+  isWinner?: boolean;
+  /** Fade this seat's cards: the hand is over and it did not win. */
+  dimmed?: boolean;
+  /** Net chips for the finished hand, floated above the seat. */
+  delta?: number | null;
+  /** Last action this seat took on the current street. */
+  last?: ActionRecord;
   /** Position on the oval, in percent. */
   x: number;
   y: number;
@@ -23,62 +52,131 @@ export interface SeatProps {
 }
 
 export function Seat(p: SeatProps) {
-  const style = { '--x': p.x, '--y': p.y } as React.CSSProperties;
+  const style = { '--x': p.x, '--y': p.y, '--seat-hue': `var(--seat-${p.seatNo % 9})` } as CSSProperties;
+
   if (!p.seat) {
+    // An open seat is a gap in the ring, not a peer of a player: no shadow, no
+    // fill, small type. The whole card is the button so the target stays large.
     return (
-      <li className="seat empty" style={style} aria-label={`Seat ${p.seatNo + 1}, empty`}>
-        <div className="hint">Seat {p.seatNo + 1}</div>
+      <li className="seat empty" style={style}>
         {p.canSit ? (
-          <button className="small sit" onClick={() => p.onSit(p.seatNo)}>
-            Sit here
+          <button className="sit" onClick={() => p.onSit(p.seatNo)} aria-label={`Sit at seat ${p.seatNo + 1}`}>
+            <span className="seat-no">Seat {p.seatNo + 1}</span>
+            <span className="sit-cta">Sit here</span>
           </button>
         ) : (
-          <div className="hint">open</div>
+          <span className="sit-open" aria-label={`Seat ${p.seatNo + 1}, empty`}>
+            <span className="seat-no">Seat {p.seatNo + 1}</span>
+            <span className="sit-cta">open</span>
+          </span>
         )}
       </li>
     );
   }
+
   const s = p.seat;
   const ih = s.inHand;
   const folded = ih?.folded ?? false;
   const dealt = p.inHand && ih != null && !folded;
-  const cards: (CardCode | undefined)[] = dealt ? (p.known ?? ih.holeCards ?? [undefined, undefined]) : [];
-  const cls = ['seat', p.isYou ? 'you' : '', p.toAct ? 'to-act' : '', folded ? 'folded' : '', s.status === 'sitting-out' ? 'sitting-out' : '']
+  const revealed = p.known ?? [];
+  // Dealt in: two cards, face down unless we know them. Not dealt in but known:
+  // a showdown we are still looking at after the hand state was cleared.
+  const cards: (CardCode | undefined)[] = dealt
+    ? (revealed.length ? revealed : (ih?.holeCards ?? [undefined, undefined]))
+    : revealed;
+  const isAgent = p.player?.kind === 'agent';
+  const thinking = p.toAct && isAgent;
+  // `waitingForBigBlind` is on the engine's seat but not (yet) on the redacted
+  // SeatView; read it defensively so the badge lights up when it arrives.
+  const waiting = (s as SeatView & { waitingForBigBlind?: boolean }).waitingForBigBlind === true;
+
+  const cls = [
+    'seat',
+    'taken',
+    p.isYou ? 'you' : '',
+    p.toAct ? 'to-act' : '',
+    folded ? 'folded' : '',
+    s.status === 'sitting-out' ? 'sitting-out' : '',
+    p.isWinner ? 'winner' : '',
+  ]
     .filter(Boolean)
     .join(' ');
-  let status: { text: string; cls?: string } | null = null;
-  if (s.status === 'sitting-out') status = { text: 'Sitting out' };
-  else if (folded) status = { text: 'Folded' };
-  else if (ih?.allIn) status = { text: 'All-in', cls: 'all-in' };
-  const secs = p.toAct && p.deadline != null ? secondsLeft(p.deadline, p.now) : null;
+
+  const tags: { key: string; text: string; cls: string }[] = [];
+  if (s.status === 'sitting-out') tags.push({ key: 'out', text: 'Sitting out', cls: 'muted' });
+  else if (folded) tags.push({ key: 'fold', text: 'Folded', cls: 'muted' });
+  else if (ih?.allIn) tags.push({ key: 'allin', text: 'All-in', cls: 'allin' });
+  if (waiting) tags.push({ key: 'wait', text: 'Waiting for BB', cls: 'muted' });
+  if (p.last && !folded) tags.push({ key: 'last', text: actionBadge(p.last), cls: 'last' });
+
+  const puck = p.isButton ? { t: 'D', title: 'Dealer button' } : p.isSmallBlind ? { t: 'SB', title: 'Small blind' } : p.isBigBlind ? { t: 'BB', title: 'Big blind' } : null;
 
   return (
     <li className={cls} style={style} aria-label={`Seat ${p.seatNo + 1}, ${p.name}`}>
-      <div className="head">
+      {p.delta != null && p.delta !== 0 ? (
+        <span className={`delta num ${p.delta > 0 ? 'up' : 'down'}`} aria-hidden="true">
+          {fmtDelta(p.delta)}
+        </span>
+      ) : null}
+
+      {/* The name owns a full-width line of its own: a card room calls people by
+          name, so it must never be clipped at the default seat width. */}
+      <div className="seat-name">
         <span className="name" title={p.name}>
           {p.name}
         </span>
-        {p.isButton ? (
-          <span className="dealer" title="Dealer button">
-            D
+      </div>
+
+      <div className="seat-top">
+        <span className="avatar-wrap">
+          <span className="avatar" aria-hidden="true">
+            {monogram(p.name)}
           </span>
-        ) : null}
+          {p.toAct ? <TurnClock deadline={p.deadline} totalMs={p.timeoutMs} now={p.now} /> : null}
+          {puck ? (
+            <span className={`puck ${puck.t.toLowerCase()}`} title={puck.title} aria-label={puck.title}>
+              {puck.t}
+            </span>
+          ) : null}
+        </span>
+        <span className="seat-id">
+          {isAgent ? (
+            <span className="agent" title={`Agent · ${p.player?.agentName ?? p.player?.agentKind ?? 'a2a'}`}>
+              <span className="agent-tag">Agent</span>
+              <span className="agent-name">{p.player?.agentName ?? p.player?.agentKind ?? 'a2a'}</span>
+            </span>
+          ) : null}
+          <ChipStack amount={s.stack} bigBlind={p.bigBlind} label="Stack" size="sm" maxColumns={4} className="seat-stack" />
+        </span>
       </div>
-      <div className="stack">{fmtChips(s.stack)}</div>
-      <div className="cards">
-        {cards.map((c, i) => (
-          <Card key={i} card={c} />
-        ))}
-      </div>
-      <div className="foot">
-        {ih && ih.streetBet > 0 ? <span className="bet">{fmtChips(ih.streetBet)}</span> : <span />}
-        {secs != null ? (
-          <span className={`clock${secs <= 5 ? ' urgent' : ''}`}>{secs}s</span>
-        ) : status ? (
-          <span className={`status ${status.cls ?? ''}`}>{status.text}</span>
-        ) : p.toAct ? (
-          <span className="status">to act</span>
-        ) : null}
+
+      <div className="seat-foot">
+        <div className="seat-cards">
+          {cards.map((c, i) => (
+            <Card
+              key={`${p.handKey}-${i}`}
+              card={c}
+              size="sm"
+              enter="deal"
+              delayMs={i * 70}
+              win={c != null && p.winCards?.has(c) === true}
+              muted={p.dimmed === true && !(c != null && p.winCards?.has(c) === true)}
+            />
+          ))}
+        </div>
+
+        <div className="seat-tags">
+          {thinking ? (
+            <span className="tag thinking" title="Agent is deciding">
+              <i /> <i /> <i /> thinking
+            </span>
+          ) : null}
+          {tags.map((t) => (
+            <span key={t.key} className={`tag ${t.cls}`}>
+              {t.text}
+            </span>
+          ))}
+        </div>
       </div>
     </li>
   );

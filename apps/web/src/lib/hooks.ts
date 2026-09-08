@@ -23,3 +23,19 @@ export function useHash(): string {
   }, []);
   return hash;
 }
+
+/** True when the viewer asked for reduced motion. Static after mount is fine; we watch anyway. */
+export function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(() => {
+    if (typeof matchMedia !== 'function') return false;
+    return matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const mq = matchMedia('(prefers-reduced-motion: reduce)');
+    const on = () => setReduced(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return reduced;
+}

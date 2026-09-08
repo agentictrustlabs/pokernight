@@ -1,0 +1,9 @@
+# Copy to `.dev.vars` for `wrangler dev`. `.dev.vars` is gitignored — never commit a real key.
+#
+# SECRETS ONLY. Anything non-secret belongs in wrangler.toml `[vars]`.
+#
+# Used by the `claude` personas (deepthought.svc, bluffer.svc). Leave it out and they log once and play
+# the rules baseline, so the Worker runs end to end with no key at all.
+#
+# Deployed:  wrangler secret put ANTHROPIC_API_KEY --env faithnet
+ANTHROPIC_API_KEY=sk-ant-...

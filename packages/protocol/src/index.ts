@@ -80,6 +80,19 @@ export const TableSummarySchema = z.object({
 });
 export type TableSummary = z.infer<typeof TableSummarySchema>;
 
+/** Seat an A2A agent at a table. The table resolves the agent card, then calls `poker.act` on its turn. */
+export const SeatAgentRequestSchema = z.object({
+  seat: z.number().int().min(0).max(8),
+  buyIn: z.number().int().positive(),
+  /** Agent name, e.g. "sharkbot.svc". Resolved to a host via the table's AGENT_CARD_ZONE. */
+  agentName: z.string().min(1).max(128),
+  /** Explicit base URL, overriding name resolution. Used in local dev. */
+  endpoint: z.string().url().optional(),
+  /** Display name at the table; defaults to the agent card's name. */
+  displayName: z.string().min(1).max(32).optional(),
+});
+export type SeatAgentRequest = z.infer<typeof SeatAgentRequestSchema>;
+
 /** Dev-only login (DEV_AUTH=true). Production uses the Home OIDC flow. */
 export const DevSessionRequestSchema = z.object({ name: z.string().min(1).max(32) });
 export const SessionSchema = z.object({ token: z.string(), playerId: z.string(), name: z.string() });
@@ -108,6 +121,10 @@ export interface SeatEvent {
   name?: string;
   stack?: number;
   status?: 'active' | 'sitting-out';
+  /** Carried on seat-joined so a client can badge an agent seated mid-session, before any snapshot. */
+  kind?: 'human' | 'agent';
+  agentName?: string;
+  agentKind?: string;
 }
 
 export interface ChatEvent {
@@ -120,9 +137,20 @@ export interface ChatEvent {
 
 export type TableEvent = EngineEvent | SeatEvent | ChatEvent;
 
+/** Who occupies a seat. `names` stays for compatibility; `players` carries the richer record. */
+export interface PlayerInfo {
+  playerId: string;
+  name: string;
+  kind: 'human' | 'agent';
+  /** For agents: the A2A agent name, e.g. "sharkbot.svc". */
+  agentName?: string;
+  /** For agents: a short label for the strategy behind it, e.g. "rules" or "claude". */
+  agentKind?: string;
+}
+
 export type ServerMessage =
-  | { type: 'welcome'; tableId: string; playerId: string | null; view: TableView; names: Record<string, string> }
-  | { type: 'snapshot'; view: TableView; names: Record<string, string> }
+  | { type: 'welcome'; tableId: string; playerId: string | null; view: TableView; names: Record<string, string>; players?: Record<string, PlayerInfo> }
+  | { type: 'snapshot'; view: TableView; names: Record<string, string>; players?: Record<string, PlayerInfo> }
   /** One event plus the fresh view after it. `event` is already redacted for this viewer. */
   | { type: 'event'; event: TableEvent; view: TableView }
   /** It is the viewer's turn. `deadline` is an absolute ms timestamp. */
@@ -172,4 +200,47 @@ export type PokerActOutput = z.infer<typeof PokerActOutputSchema>;
 export function parseClientCommand(raw: unknown): ClientCommand | { error: string } {
   const r = ClientCommandSchema.safeParse(raw);
   return r.success ? r.data : { error: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') };
+}
+
+/* ------------------------------------------------- A2A standard transport */
+
+/**
+ * Pokernight speaks the STANDARD A2A profile from `@agenticprimitives/a2a/standard`,
+ * not the delegation profile. `SendMessage` there is synchronous: the agent replies
+ * with a message and no task, which is what a turn clock needs. Authorization is
+ * added in phase 3, when a seat can move money.
+ */
+export const A2A_JSONRPC_PATH = '/api/a2a';
+export const A2A_AGENT_CARD_PATH = '/.well-known/agent-card.json';
+export const A2A_SEND_MESSAGE = 'SendMessage';
+
+/** Map an agent name to its card host: `sharkbot.svc` in zone `faithnet.ai` → `sharkbot-svc.faithnet.ai`. */
+export function agentNameToHost(agentName: string, zone: string): string {
+  const label = agentName.trim().toLowerCase().replace(/\./g, '-');
+  return `${label}.${zone}`;
+}
+
+/** The turn request as A2A message parts: one data part carrying PokerActInput. */
+export function encodePokerActParts(input: PokerActInput): Array<{ kind: 'data'; data: Record<string, unknown> }> {
+  return [{ kind: 'data', data: { skill: POKER_ACT_SKILL, input: input as unknown as Record<string, unknown> } }];
+}
+
+/** Pull a PokerActOutput out of an A2A reply. Accepts a data part, or a text part holding JSON. */
+export function decodePokerActReply(parts: unknown): PokerActOutput | { error: string } {
+  if (!Array.isArray(parts)) return { error: 'reply has no parts' };
+  for (const part of parts) {
+    if (!part || typeof part !== 'object') continue;
+    const p = part as { kind?: string; data?: unknown; text?: string };
+    let candidate: unknown;
+    if (p.kind === 'data' && p.data && typeof p.data === 'object') {
+      const d = p.data as Record<string, unknown>;
+      candidate = 'action' in d ? d : d['output'];
+    } else if (p.kind === 'text' && typeof p.text === 'string') {
+      try { candidate = JSON.parse(p.text); } catch { continue; }
+    }
+    if (!candidate) continue;
+    const r = PokerActOutputSchema.safeParse(candidate);
+    if (r.success) return r.data;
+  }
+  return { error: 'no valid poker.act output in reply' };
 }

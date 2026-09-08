@@ -1,0 +1,29 @@
+{
+  "name": "pokernight-agent-worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker hosting poker agent personas that speak the STANDARD A2A profile (poker.act) so they can be seated at Pokernight tables.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "test -n \"$WRANGLER_ENV\" || (echo 'set WRANGLER_ENV=faithnet' && exit 1); wrangler deploy --env $WRANGLER_ENV",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@agenticprimitives/a2a": "link:../../../agenticprimitives/packages/a2a",
+    "@anthropic-ai/sdk": "^0.124.0",
+    "@pokernight/agent-kit": "workspace:*",
+    "@pokernight/engine": "workspace:*",
+    "@pokernight/protocol": "workspace:*",
+    "viem": "^2.52.2"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.0",
+    "@cloudflare/workers-types": "^5.20260907.1",
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.61.1"
+  }
+}

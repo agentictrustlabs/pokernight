@@ -4,7 +4,8 @@
  * Storage layout
  *   KV  `meta`          TableMeta (tableId, name, settlement, createdAt)
  *   KV  `state`         engine TableState (authoritative; includes deck + hole cards, never sent raw)
- *   KV  `names`         Record<playerId, display name>
+ *   KV  `names`         Record<playerId, display name> (kept for compatibility)
+ *   KV  `players`       Record<playerId, SeatRecord> — who occupies a seat and how it is reached
  *   KV  `seed`          hex seed of the running hand; deleted on hand-ended (never sent while a hand runs)
  *   KV  `next-hand-at`  absolute ms when the next hand should start (auto-start / inter-hand delay)
  *   SQL `hands`         one row per hand: commit at start, reveal + result at end
@@ -12,6 +13,7 @@
  *   SQL `events`        every engine event per hand (unredacted; served only after the hand ends)
  *   SQL `ledger`        buy-in / add-chips / cash-out / hand-result rows (chips, signed for the player)
  *   SQL `outbox`        settlement ops drained by the alarm with backoff
+ *   SQL `agent_calls`   one row per A2A turn call to an agent seat (request, reply, why it was dropped)
  *
  * Connections use the WebSocket Hibernation API; each socket's attachment is {playerId, name, seat}.
  * The engine is pure: every mutation is `state = f(state)`, persisted, then broadcast.
@@ -39,6 +41,7 @@ import {
   type Action,
   type EngineEvent,
   type HandResult,
+  type LegalActions,
   type TableConfig,
   type TableState,
   type TableView,
@@ -48,12 +51,16 @@ import {
   parseClientCommand,
   type ChatEvent,
   type ClientCommand,
+  type PlayerInfo,
+  type PokerActInput,
+  type PokerActOutput,
   type SeatEvent,
   type ServerMessage,
   type SettlementMode,
   type TableEvent,
   type TableSummary,
 } from '@pokernight/protocol';
+import { a2aTimeoutMs, callPokerAct, resolveAgentBase } from './a2a.js';
 import type { Env } from './env.js';
 import { createSettlementAdapter } from './settlement.js';
 
@@ -86,6 +93,46 @@ interface Attachment {
  * agent's `poker.act` skill over A2A with the redacted view and a deadline.
  */
 export type SeatTransport = 'ws' | 'a2a';
+
+/**
+ * Who occupies a seat, and how the DO reaches them. Persisted in the `players` KV key (a table
+ * written before phase 2 has no such key: it is rebuilt from `names` as all-human/all-ws on load).
+ * `PlayerInfo` (the wire shape) is the public projection of this — `endpoint` never leaves the DO.
+ */
+export interface SeatRecord {
+  playerId: string;
+  name: string;
+  kind: 'human' | 'agent';
+  transport: SeatTransport;
+  /** Agents: the A2A agent name, e.g. "sharkbot.svc". */
+  agentName?: string;
+  /** Agents: resolved base URL (`<base>/api/a2a`, `<base>/.well-known/agent-card.json`). */
+  endpoint?: string;
+  /** Agents: short strategy label from the agent card, e.g. "rules" or "claude". */
+  agentKind?: string;
+}
+
+/** Body of `POST /seat-agent`: the Worker has already resolved and validated the agent card. */
+export interface SeatAgentBody {
+  seat: number;
+  buyIn: number;
+  agentName: string;
+  /** Resolved base URL (the Worker always fills this in). */
+  endpoint?: string;
+  displayName?: string;
+  agentKind?: string;
+}
+
+type AgentCallRow = {
+  hand_no: number;
+  seat: number;
+  requested_at: number;
+  responded_at: number | null;
+  ok: number | null;
+  action_json: string | null;
+  note: string | null;
+  error: string | null;
+}
 
 type HandRow = {
   hand_no: number;
@@ -156,12 +203,25 @@ CREATE TABLE IF NOT EXISTS outbox (
   done_at      INTEGER
 );
 CREATE INDEX IF NOT EXISTS outbox_pending ON outbox (done_at, next_at);
+CREATE TABLE IF NOT EXISTS agent_calls (
+  hand_no      INTEGER NOT NULL,
+  seat         INTEGER NOT NULL,
+  requested_at INTEGER NOT NULL,
+  responded_at INTEGER,
+  ok           INTEGER,
+  action_json  TEXT,
+  note         TEXT,
+  error        TEXT,
+  PRIMARY KEY (hand_no, seat, requested_at)
+);
 `;
 
 const HAND_START_DELAY_MS = 1500;
 const NEXT_HAND_DELAY_MS = 3000;
 const OUTBOX_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000] as const;
 const MAX_TIMEOUTS_BEFORE_SIT_OUT = 2;
+/** Subtracted from an agent's turn budget so a reply that lands on the deadline is still applied. */
+const AGENT_DEADLINE_HEADROOM_MS = 1000;
 
 /* --------------------------------------------------------------------- DO */
 
@@ -169,7 +229,15 @@ export class PokerTableDO extends DurableObject<Env> {
   private meta: TableMeta | null = null;
   private state: TableState | null = null;
   private names: Record<string, string> = {};
+  private players: Record<string, SeatRecord> = {};
   private adapter: SettlementAdapter | null = null;
+  /**
+   * Turn calls to agent seats that are still on the wire, keyed `handNo:seat:deadline` (one turn
+   * instant). A commit that re-announces the same turn must not call the agent twice. Purely
+   * in-memory: if the DO is evicted mid-call the set is lost with it, and the turn-clock alarm —
+   * which is persisted — still applies the default.
+   */
+  private inFlightTurns = new Set<string>();
   /** Serializes command/alarm processing so engine transitions never interleave across awaits. */
   private chain: Promise<void> = Promise.resolve();
 
@@ -177,10 +245,13 @@ export class PokerTableDO extends DurableObject<Env> {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(SCHEMA);
-      const kv = await ctx.storage.get<unknown>(['meta', 'state', 'names']);
+      const kv = await ctx.storage.get<unknown>(['meta', 'state', 'names', 'players']);
       this.meta = (kv.get('meta') as TableMeta | undefined) ?? null;
       this.state = (kv.get('state') as TableState | undefined) ?? null;
       this.names = (kv.get('names') as Record<string, string> | undefined) ?? {};
+      // Migration: a table created before phase 2 has `names` but no `players`. Everyone in it was a
+      // human on a WebSocket, so the record is derivable; it is persisted on the next seat change.
+      this.players = (kv.get('players') as Record<string, SeatRecord> | undefined) ?? migratePlayers(this.names);
     });
   }
 
@@ -197,7 +268,23 @@ export class PokerTableDO extends DurableObject<Env> {
     if (!this.meta || !this.state) return json({ error: 'table not initialized' }, 404);
 
     if (request.method === 'GET' && path === '/view') {
-      return json({ tableId: this.meta.tableId, name: this.meta.name, settlement: this.meta.settlement, view: viewFor(this.state, null), names: this.names });
+      return json({
+        tableId: this.meta.tableId,
+        name: this.meta.name,
+        settlement: this.meta.settlement,
+        view: viewFor(this.state, null),
+        names: this.names,
+        players: this.publicPlayers(),
+      });
+    }
+    if (request.method === 'POST' && path === '/seat-agent') {
+      const body = (await request.json()) as SeatAgentBody;
+      return this.serial(() => this.seatAgent(body));
+    }
+    if (request.method === 'DELETE' && path.startsWith('/seat-agent/')) {
+      const seat = Number(path.slice('/seat-agent/'.length));
+      if (!Number.isInteger(seat) || seat < 0) return json({ error: 'bad seat' }, 400);
+      return this.serial(() => this.unseatAgent(seat));
     }
     if (request.method === 'GET' && path === '/summary') {
       return json(this.summary());
@@ -230,10 +317,11 @@ export class PokerTableDO extends DurableObject<Env> {
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
-    await this.ctx.storage.put({ meta, state, names: {} });
+    await this.ctx.storage.put({ meta, state, names: {}, players: {} });
     this.meta = meta;
     this.state = state;
     this.names = {};
+    this.players = {};
     return json(this.summary());
   }
 
@@ -266,6 +354,7 @@ export class PokerTableDO extends DurableObject<Env> {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       actions,
+      agentCalls: this.agentCalls(handNo, ended),
     };
     if (ended) {
       // Public once the hand is over: reveal, full event log (hole cards included) and the result.
@@ -298,6 +387,7 @@ export class PokerTableDO extends DurableObject<Env> {
       playerId,
       view: viewFor(state, attachment.seat),
       names: this.names,
+      players: this.publicPlayers(),
     };
     send(server, welcome);
     return new Response(null, { status: 101, webSocket: client });
@@ -368,39 +458,18 @@ export class PokerTableDO extends DurableObject<Env> {
         // and credit the seat on receipt instead.
         const receipt = await this.settlement().settleBuyIn({ tableId: meta.tableId, seat: cmd.seat, playerId, chips: cmd.buyIn, orderId });
         this.writeLedger({ seat: cmd.seat, playerId, kind: 'buy-in', chips: cmd.buyIn, handNo: null, at: now, receipt });
-        this.names[playerId] = name;
-        await this.ctx.storage.put('names', this.names);
+        await this.putPlayer({ playerId, name, kind: 'human', transport: 'ws' });
         this.setAttachmentSeat(playerId, cmd.seat);
         const stack = next.seats.find((s) => s.seat === cmd.seat)?.stack ?? cmd.buyIn;
-        const ev: SeatEvent = { type: 'seat-joined', seat: cmd.seat, playerId, name, stack, status: 'active' };
+        const ev: SeatEvent = { type: 'seat-joined', seat: cmd.seat, playerId, name, stack, status: 'active', kind: 'human' };
         await this.commit(next, [], [ev], seatsBefore);
         return;
       }
       case 'leave': {
         const seat = this.seatOf(playerId);
         if (seat === null) throw new EngineError('not-seated', 'you are not seated');
-        const { state: next, cashOut, events } = standUp(state, seat);
-        const ledgerId = crypto.randomUUID();
-        this.writeLedger({ id: ledgerId, seat, playerId, kind: 'cash-out', chips: -cashOut, handNo: state.hand?.handNo ?? null, at: now });
-        const payload: CashOutPayload = {
-          ledgerId,
-          tableId: meta.tableId,
-          seat,
-          playerId,
-          chips: cashOut,
-          historyDigest: this.historyDigest(),
-          orderId: `${meta.tableId}:${playerId}:${seat}:out:${now}`,
-        };
-        this.ctx.storage.sql.exec(
-          'INSERT INTO outbox (id, kind, payload_json, attempts, next_at, done_at) VALUES (?, ?, ?, 0, ?, NULL)',
-          crypto.randomUUID(),
-          'settleCashOut',
-          JSON.stringify(payload),
-          now,
-        );
+        await this.standUpSeat(seat, playerId, name, seatsBefore, now);
         this.setAttachmentSeat(playerId, null);
-        const ev: SeatEvent = { type: 'seat-left', seat, playerId, name, stack: cashOut };
-        await this.commit(next, events, [ev], seatsBefore);
         return;
       }
       case 'sit-out':
@@ -440,6 +509,224 @@ export class PokerTableDO extends DurableObject<Env> {
       case 'ping':
         return; // handled before serialization
     }
+  }
+
+  /* --------------------------------------------------------- agent seats */
+
+  /**
+   * Seat an A2A agent. The Worker has already resolved the base URL and checked that the agent card
+   * advertises `poker.act`; this is the same path as a human `join` (authorize, sit down, settle the
+   * buy-in, announce) with a synthetic playerId and an 'a2a' seat record.
+   */
+  private async seatAgent(body: SeatAgentBody): Promise<Response> {
+    const state = this.state as TableState;
+    const meta = this.meta as TableMeta;
+    const agentName = body.agentName.trim();
+    if (!agentName) return json({ error: 'agentName is required' }, 400);
+    const playerId = agentPlayerId(agentName);
+    const name = (body.displayName ?? agentName).slice(0, 32);
+    const seatsBefore = seatMap(state);
+    const now = Date.now();
+    const orderId = `${meta.tableId}:${playerId}:${body.seat}:${now}`;
+
+    let next: TableState;
+    try {
+      next = sitDown(state, body.seat, playerId, body.buyIn);
+    } catch (e) {
+      if (e instanceof EngineError) return json({ error: e.message, code: e.code }, 409);
+      throw e;
+    }
+    const auth = await this.settlement().authorizeBuyIn({ tableId: meta.tableId, seat: body.seat, playerId, chips: body.buyIn, orderId });
+    if (!auth.ok) return json({ error: auth.reason, code: 'settlement-failed' }, 402);
+    const receipt = await this.settlement().settleBuyIn({ tableId: meta.tableId, seat: body.seat, playerId, chips: body.buyIn, orderId });
+    this.writeLedger({ seat: body.seat, playerId, kind: 'buy-in', chips: body.buyIn, handNo: null, at: now, receipt });
+    await this.putPlayer({
+      playerId,
+      name,
+      kind: 'agent',
+      transport: 'a2a',
+      agentName,
+      endpoint: body.endpoint,
+      agentKind: body.agentKind,
+    });
+    const stack = next.seats.find((s) => s.seat === body.seat)?.stack ?? body.buyIn;
+    const ev: SeatEvent = {
+      type: 'seat-joined',
+      seat: body.seat,
+      playerId,
+      name,
+      stack,
+      status: 'active',
+      // Carried inline so a client already connected badges the seat now, without waiting for a snapshot.
+      kind: 'agent',
+      agentName,
+      ...(body.agentKind ? { agentKind: body.agentKind } : {}),
+    };
+    await this.commit(next, [], [ev], seatsBefore);
+    return json({ seat: body.seat, stack, player: this.publicPlayers()[playerId] }, 201);
+  }
+
+  /** Stand an agent up (cash-out through the outbox, like a human `leave`). Refuses human seats. */
+  private async unseatAgent(seat: number): Promise<Response> {
+    const state = this.state as TableState;
+    const occupant = state.seats.find((s) => s.seat === seat);
+    if (!occupant) return json({ error: `seat ${seat} is empty`, code: 'not-seated' }, 404);
+    const record = this.players[occupant.playerId];
+    if (record?.transport !== 'a2a') return json({ error: `seat ${seat} is not an agent seat`, code: 'not-an-agent' }, 400);
+    await this.standUpSeat(seat, occupant.playerId, record.name, seatMap(state), Date.now());
+    return json({ seat, playerId: occupant.playerId });
+  }
+
+  /** Shared stand-up: engine standUp, cash-out ledger row, settlement outbox op, `seat-left`. */
+  private async standUpSeat(seat: number, playerId: string, name: string, seatsBefore: Map<number, string>, now: number): Promise<void> {
+    const state = this.state as TableState;
+    const meta = this.meta as TableMeta;
+    const { state: next, cashOut, events } = standUp(state, seat);
+    const ledgerId = crypto.randomUUID();
+    this.writeLedger({ id: ledgerId, seat, playerId, kind: 'cash-out', chips: -cashOut, handNo: state.hand?.handNo ?? null, at: now });
+    const payload: CashOutPayload = {
+      ledgerId,
+      tableId: meta.tableId,
+      seat,
+      playerId,
+      chips: cashOut,
+      historyDigest: this.historyDigest(),
+      orderId: `${meta.tableId}:${playerId}:${seat}:out:${now}`,
+    };
+    this.ctx.storage.sql.exec(
+      'INSERT INTO outbox (id, kind, payload_json, attempts, next_at, done_at) VALUES (?, ?, ?, 0, ?, NULL)',
+      crypto.randomUUID(),
+      'settleCashOut',
+      JSON.stringify(payload),
+      now,
+    );
+    const ev: SeatEvent = { type: 'seat-left', seat, playerId, name, stack: cashOut };
+    await this.commit(next, events, [ev], seatsBefore);
+  }
+
+  /* ----------------------------------------------------------- agent turn */
+
+  /**
+   * Fire the `poker.act` call for an agent seat. Detached on purpose: the serial queue stays free so
+   * WebSocket commands and — crucially — the turn-clock alarm can run while the agent thinks.
+   * `ctx.waitUntil` asks the runtime to keep the DO alive for it; if the DO is evicted anyway, the
+   * persisted alarm still fires at the deadline and applies the default action.
+   */
+  private startAgentTurn(state: TableState, handNo: number, seat: number, deadline: number, record: SeatRecord): void {
+    const key = `${handNo}:${seat}:${deadline}`;
+    if (this.inFlightTurns.has(key)) return; // a re-announced turn must not call the agent twice
+    this.inFlightTurns.add(key);
+    const input: PokerActInput = {
+      tableId: (this.meta as TableMeta).tableId,
+      handNo,
+      seat,
+      view: viewFor(state, seat),
+      legal: legalActions(state, seat),
+      deadlineMs: Math.max(500, deadline - Date.now() - AGENT_DEADLINE_HEADROOM_MS),
+    };
+    const done = this.runAgentTurn(key, record, input, deadline).catch((e) => {
+      this.inFlightTurns.delete(key);
+      console.error('agent turn crashed', key, e);
+    });
+    try {
+      this.ctx.waitUntil(done);
+    } catch {
+      /* waitUntil is unavailable in some test runtimes; the promise still runs */
+    }
+  }
+
+  private async runAgentTurn(key: string, record: SeatRecord, input: PokerActInput, deadline: number): Promise<void> {
+    const requestedAt = Date.now();
+    // Bounded by whichever is nearer: the configured A2A budget or the turn clock itself.
+    const budget = Math.max(250, Math.min(a2aTimeoutMs(this.env), deadline - requestedAt));
+    this.ctx.storage.sql.exec(
+      'INSERT OR REPLACE INTO agent_calls (hand_no, seat, requested_at) VALUES (?, ?, ?)',
+      input.handNo,
+      input.seat,
+      requestedAt,
+    );
+    let base: string;
+    try {
+      base = record.endpoint ?? resolveAgentBase(this.env, record.agentName ?? record.playerId);
+    } catch (e) {
+      this.finishAgentCall(input, requestedAt, false, null, e instanceof Error ? e.message : String(e));
+      this.inFlightTurns.delete(key);
+      return;
+    }
+    let result;
+    try {
+      result = await callPokerAct(base, input, budget);
+    } finally {
+      this.inFlightTurns.delete(key);
+    }
+    if (!result.ok) {
+      // Nothing to apply: the turn clock alarm owns the default, and two of these in a row sit the
+      // seat out through the same MAX_TIMEOUTS_BEFORE_SIT_OUT path a silent human hits.
+      console.warn(`agent seat ${input.seat} hand ${input.handNo}: ${result.error}`);
+      this.finishAgentCall(input, requestedAt, false, null, result.error);
+      return;
+    }
+    const output = result.output;
+    await this.serial(() => this.applyAgentAction(record, input, output, requestedAt));
+  }
+
+  /** Re-validate against the CURRENT state before applying: the world moved while the agent thought. */
+  private async applyAgentAction(record: SeatRecord, input: PokerActInput, output: PokerActOutput, requestedAt: number): Promise<void> {
+    const drop = (why: string): void => {
+      console.warn(`dropping agent action for seat ${input.seat} hand ${input.handNo}: ${why}`);
+      this.finishAgentCall(input, requestedAt, false, output, why);
+    };
+    const state = this.state;
+    if (!state) return drop('table not initialized');
+    const hand = state.hand;
+    if (!hand || hand.result !== undefined || hand.handNo !== input.handNo) return drop(`hand ${input.handNo} is no longer running`);
+    if (hand.toAct !== input.seat) return drop(`seat ${input.seat} is no longer to act`);
+    const occupant = state.seats.find((s) => s.seat === input.seat);
+    if (!occupant || occupant.playerId !== record.playerId) return drop(`seat ${input.seat} changed hands`);
+    if (!isLegalAction(legalActions(state, input.seat), output.action)) return drop(`illegal action ${JSON.stringify(output.action)}`);
+
+    const seatsBefore = seatMap(state);
+    let applied: { state: TableState; events: EngineEvent[] };
+    try {
+      applied = applyAction(state, input.seat, output.action);
+    } catch (e) {
+      return drop(e instanceof EngineError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
+    }
+    this.finishAgentCall(input, requestedAt, true, output, null);
+    await this.commit(applied.state, applied.events, [], seatsBefore);
+  }
+
+  private finishAgentCall(input: PokerActInput, requestedAt: number, ok: boolean, output: PokerActOutput | null, error: string | null): void {
+    this.ctx.storage.sql.exec(
+      'UPDATE agent_calls SET responded_at = ?, ok = ?, action_json = ?, note = ?, error = ? WHERE hand_no = ? AND seat = ? AND requested_at = ?',
+      Date.now(),
+      ok ? 1 : 0,
+      output ? JSON.stringify(output.action) : null,
+      output?.note ?? null,
+      error,
+      input.handNo,
+      input.seat,
+      requestedAt,
+    );
+  }
+
+  /**
+   * The A2A exchanges for one hand, in request order (served with the hand record). An agent's `note`
+   * is its private rationale (DESIGN.md §6): it is withheld until the hand is over, like the seed.
+   */
+  private agentCalls(handNo: number, includeNotes: boolean): unknown[] {
+    return this.ctx.storage.sql
+      .exec<AgentCallRow>('SELECT * FROM agent_calls WHERE hand_no = ? ORDER BY requested_at', handNo)
+      .toArray()
+      .map((r) => ({
+        seat: r.seat,
+        requestedAt: r.requested_at,
+        respondedAt: r.responded_at,
+        ok: r.ok === null ? null : r.ok === 1,
+        action: r.action_json ? (JSON.parse(r.action_json) as unknown) : null,
+        note: includeNotes ? r.note : null,
+        error: r.error,
+      }));
   }
 
   /* ---------------------------------------------------------------- alarm */
@@ -644,11 +931,11 @@ export class PokerTableDO extends DurableObject<Env> {
   private notifyTurn(state: TableState, seat: number, deadline: number): void {
     const hand = state.hand;
     if (!hand) return;
-    const transport = this.transportFor(seat);
-    if (transport === 'a2a') {
-      // TODO(phase 2): resolve the seat's A2A target and send `poker.act`
-      // { tableId, handNo, seat, view: viewFor(state, seat), legal, deadlineMs } as the house; apply the
-      // reply if it arrives before the alarm, else the alarm applies the default action.
+    const record = this.recordForSeat(state, seat);
+    if (record?.transport === 'a2a') {
+      // Out of band: the A2A call must never hold the serial queue, or the table would stall for the
+      // whole agent budget and the turn-clock alarm could not preempt it.
+      this.startAgentTurn(state, hand.handNo, seat, deadline, record);
       return;
     }
     const legal = legalActions(state, seat);
@@ -660,9 +947,27 @@ export class PokerTableDO extends DurableObject<Env> {
 
   /* -------------------------------------------------------------- helpers */
 
-  private transportFor(seat: number): SeatTransport {
-    void seat;
-    return 'ws'; // phase 2: 'a2a' for seats occupied by service agents
+  private recordForSeat(state: TableState | null, seat: number): SeatRecord | undefined {
+    const playerId = state?.seats.find((s) => s.seat === seat)?.playerId;
+    return playerId ? this.players[playerId] : undefined;
+  }
+
+  /** The public projection of `players`: no endpoints, no transport internals. */
+  private publicPlayers(): Record<string, PlayerInfo> {
+    const out: Record<string, PlayerInfo> = {};
+    for (const [id, p] of Object.entries(this.players)) {
+      const info: PlayerInfo = { playerId: p.playerId, name: p.name, kind: p.kind };
+      if (p.agentName) info.agentName = p.agentName;
+      if (p.agentKind) info.agentKind = p.agentKind;
+      out[id] = info;
+    }
+    return out;
+  }
+
+  private async putPlayer(record: SeatRecord): Promise<void> {
+    this.players[record.playerId] = record;
+    this.names[record.playerId] = record.name;
+    await this.ctx.storage.put({ names: this.names, players: this.players });
   }
 
   private settlement(): SettlementAdapter {
@@ -730,6 +1035,43 @@ export class PokerTableDO extends DurableObject<Env> {
 function nextIdx(sql: SqlStorage, table: 'events' | 'actions', handNo: number): number {
   const row = sql.exec<{ n: number | null }>(`SELECT MAX(idx) AS n FROM ${table} WHERE hand_no = ?`, handNo).toArray()[0];
   return row && row.n !== null ? row.n + 1 : 0;
+}
+
+/** Synthetic playerId for an agent seat: agents never hold a session token. */
+export function agentPlayerId(agentName: string): string {
+  return `agent:${agentName.trim().toLowerCase()}`;
+}
+
+/** Pre-phase-2 tables stored only `names`; everyone in them was a human on a WebSocket. */
+function migratePlayers(names: Record<string, string>): Record<string, SeatRecord> {
+  const out: Record<string, SeatRecord> = {};
+  for (const [playerId, name] of Object.entries(names)) {
+    out[playerId] = { playerId, name, kind: 'human', transport: 'ws' };
+  }
+  return out;
+}
+
+/**
+ * Re-check an agent's reply against the legal set the CURRENT state offers. `applyAction` would also
+ * refuse, but this keeps "why it was dropped" precise in `agent_calls` instead of an engine code.
+ */
+function isLegalAction(legal: LegalActions, action: Action): boolean {
+  switch (action.type) {
+    case 'fold':
+      return legal.fold;
+    case 'check':
+      return legal.check;
+    case 'call':
+      return legal.call !== null;
+    case 'bet':
+      return legal.bet !== null && action.amount >= legal.bet.min && action.amount <= legal.bet.max;
+    case 'raise':
+      return legal.raise !== null && action.amount >= legal.raise.min && action.amount <= legal.raise.max;
+    case 'all-in':
+      return legal.allIn > 0;
+    default:
+      return false;
+  }
 }
 
 function seatMap(state: TableState): Map<number, string> {

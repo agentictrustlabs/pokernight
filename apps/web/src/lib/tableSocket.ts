@@ -5,7 +5,7 @@
  * `reduce` is pure and fully tested in node; `TableSocket` wraps a browser
  * WebSocket with reconnect/backoff and is injectable for tests.
  */
-import type { ClientCommand, HandResult, LegalActions, ServerMessage, TableEvent, TableView } from './types';
+import type { Card, ClientCommand, HandResult, LegalActions, PlayerInfo, ServerMessage, TableEvent, TableView } from './types';
 
 /* ------------------------------------------------------------------ state */
 
@@ -22,6 +22,8 @@ export interface LastHand {
   seedCommit: string;
   seedReveal?: string;
   result?: HandResult;
+  /** Board as it stood when the hand ended, so the winner moment survives `hand` going null. */
+  board: Card[];
 }
 
 export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'closed';
@@ -32,6 +34,8 @@ export interface TableState {
   playerId: string | null;
   view: TableView | null;
   names: Record<string, string>;
+  /** Who occupies each player id: human or agent, with the agent's name. */
+  players: Record<string, PlayerInfo>;
   /** Latest events, oldest first, capped at LOG_LIMIT. */
   log: TableEvent[];
   /** Set while it is the viewer's turn. */
@@ -49,6 +53,7 @@ export const initialState: TableState = {
   playerId: null,
   view: null,
   names: {},
+  players: {},
   log: [],
   turn: null,
   error: null,
@@ -82,8 +87,24 @@ function reconcileTurn(turn: TurnState | null, view: TableView): TurnState | nul
 
 function lastHandFromView(view: TableView, prev: LastHand | null): LastHand | null {
   const h = view.hand;
-  if (h?.result) return { handNo: h.handNo, seedCommit: h.seedCommit, seedReveal: h.seedReveal, result: h.result };
+  if (h?.result) {
+    return { handNo: h.handNo, seedCommit: h.seedCommit, seedReveal: h.seedReveal, result: h.result, board: h.board };
+  }
   return prev;
+}
+
+
+/**
+ * Seed the log from a view. Joining a table mid-session, the socket has no history, so the log
+ * would read "Waiting for the first hand" while a hand is visibly in progress. The view carries
+ * this hand's action records, so replay them as log lines to show what has already happened.
+ */
+export function seedLog(view: TableView): TableEvent[] {
+  const hand = view.hand;
+  if (!hand) return [];
+  const seeded: TableEvent[] = [{ type: 'hand-started', handNo: hand.handNo, seedCommit: hand.seedCommit, button: view.button ?? 0, seats: view.seats.map((s) => s.seat) }];
+  for (const record of hand.actions) seeded.push({ type: 'action', record });
+  return seeded.slice(-LOG_LIMIT);
 }
 
 /** Pure: `state` is never mutated. */
@@ -96,8 +117,11 @@ export function reduce(state: TableState, msg: ServerMessage): TableState {
         playerId: msg.playerId,
         view: msg.view,
         names: { ...state.names, ...msg.names },
+        players: { ...state.players, ...msg.players },
         turn: turnFromView(msg.view),
         lastHand: lastHandFromView(msg.view, state.lastHand),
+        // Only seed on a first join; a reconnect keeps whatever the client already saw.
+        log: state.log.length === 0 ? seedLog(msg.view) : state.log,
         connection: 'open',
       };
     case 'snapshot':
@@ -105,16 +129,37 @@ export function reduce(state: TableState, msg: ServerMessage): TableState {
         ...state,
         view: msg.view,
         names: { ...state.names, ...msg.names },
+        players: { ...state.players, ...msg.players },
         turn: turnFromView(msg.view) ?? reconcileTurn(state.turn, msg.view),
         lastHand: lastHandFromView(msg.view, state.lastHand),
       };
     case 'event': {
       const ev = msg.event;
       let names = state.names;
+      let players = state.players;
       if ((ev.type === 'seat-joined' || ev.type === 'seat-status' || ev.type === 'seat-left') && ev.name) {
         names = { ...names, [ev.playerId]: ev.name };
       } else if (ev.type === 'chat' && state.names[ev.playerId] !== ev.name) {
         names = { ...names, [ev.playerId]: ev.name };
+      }
+      // A seat-joined carries who took the seat, so an agent seated mid-session is badged
+      // immediately rather than waiting for the next snapshot.
+      if (ev.type === 'seat-joined' && ev.kind) {
+        players = {
+          ...players,
+          [ev.playerId]: {
+            playerId: ev.playerId,
+            name: ev.name ?? state.names[ev.playerId] ?? ev.playerId,
+            kind: ev.kind,
+            ...(ev.agentName ? { agentName: ev.agentName } : {}),
+            ...(ev.agentKind ? { agentKind: ev.agentKind } : {}),
+          },
+        };
+      }
+      if (ev.type === 'seat-left' && players[ev.playerId]) {
+        const rest = { ...players };
+        delete rest[ev.playerId];
+        players = rest;
       }
       let lastHand = state.lastHand;
       if (ev.type === 'hand-started') lastHand = null;
@@ -124,6 +169,7 @@ export function reduce(state: TableState, msg: ServerMessage): TableState {
           seedCommit: msg.view.hand?.seedCommit ?? state.view?.hand?.seedCommit ?? '',
           seedReveal: ev.seedReveal,
           result: ev.result,
+          board: msg.view.hand?.board ?? state.view?.hand?.board ?? [],
         };
       }
       let turn = reconcileTurn(state.turn, msg.view);
@@ -132,7 +178,7 @@ export function reduce(state: TableState, msg: ServerMessage): TableState {
       if (ev.type === 'turn' && msg.view.hand && msg.view.viewerSeat === ev.seat && ev.seat === msg.view.hand.toAct) {
         turn = { handNo: msg.view.hand.handNo, seat: ev.seat, legal: ev.legal, deadline: msg.view.hand.actionDeadline };
       }
-      return { ...state, view: msg.view, names, log: appendLog(state.log, ev), turn, lastHand };
+      return { ...state, view: msg.view, names, players, log: appendLog(state.log, ev), turn, lastHand };
     }
     case 'turn':
       return { ...state, turn: { handNo: msg.handNo, seat: msg.seat, legal: msg.legal, deadline: msg.deadline } };

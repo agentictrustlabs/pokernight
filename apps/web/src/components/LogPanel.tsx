@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { TableEvent } from '../lib/types';
-import { formatEvent, type FormatContext } from '../lib/format';
+import { eventActor, formatEvent, type FormatContext } from '../lib/format';
 
+/** Line flavour: the log reads as a ledger, so each kind of entry gets its own weight. */
 function lineClass(ev: TableEvent): string {
   switch (ev.type) {
     case 'chat':
@@ -9,10 +10,15 @@ function lineClass(ev: TableEvent): string {
     case 'hand-started':
       return 'hand';
     case 'street':
-    case 'showdown':
       return 'street';
+    case 'showdown':
+      return 'showdown';
     case 'hand-ended':
       return 'win';
+    case 'blind-posted':
+      return 'blind';
+    case 'action':
+      return `act act-${ev.record.action.type}`;
     default:
       return '';
   }
@@ -34,17 +40,19 @@ export function LogPanel({ log, ctx, canChat, onChat }: { log: TableEvent[]; ctx
   };
 
   return (
-    <section className="panel" aria-label="Table log">
+    <section className="panel log-panel" aria-label="Table log">
       <h3>Log</h3>
-      <div className="log" ref={ref} role="log" aria-live="polite">
+      <div className="log" ref={ref} role="log">
         {log.length === 0 ? <div className="hint line">Waiting for the first hand.</div> : null}
-        {log.map((ev, i) =>
-          formatEvent(ev, ctx).map((line, j) => (
-            <div key={`${i}-${j}`} className={`line ${lineClass(ev)}`}>
+        {log.map((ev, i) => {
+          const actor = eventActor(ev, ctx);
+          const style = actor != null ? ({ '--seat-hue': `var(--seat-${actor % 9})` } as CSSProperties) : undefined;
+          return formatEvent(ev, ctx).map((line, j) => (
+            <div key={`${i}-${j}`} className={`line ${lineClass(ev)}${actor != null ? ' by' : ''}`} style={style}>
               {line}
             </div>
-          )),
-        )}
+          ));
+        })}
       </div>
       <form
         className="chatbox"

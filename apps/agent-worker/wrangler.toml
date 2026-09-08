@@ -1,0 +1,49 @@
+# pokernight-agent-worker — the poker personas. One Worker hosts all of them; which one answers is
+# decided per request from the Host label (`sharkbot-svc.faithnet.ai`), a `?agent=` query param, or a
+# leading path segment (`/sharkbot.svc/api/a2a`). See src/personas.ts.
+#
+# The BARE name below is for `wrangler dev` only. `pnpm run deploy` refuses without `WRANGLER_ENV=<env>`;
+# never deploy this file without `--env` — that would publish a NEW Worker called
+# `pokernight-agent-worker` instead of updating the live one.
+#
+# Secrets (NEVER in [vars]; see .dev.vars.example):
+#   ANTHROPIC_API_KEY — for the `claude` personas.
+#                       `wrangler secret put ANTHROPIC_API_KEY --env <env>`
+#                       Absent is fine: those personas log once and play the rules baseline.
+name = "pokernight-agent-worker"
+main = "src/index.ts"
+compatibility_date = "2026-05-19"
+compatibility_flags = ["nodejs_compat"]
+
+[dev]
+port = 8788
+local_protocol = "http"
+
+# Vars are repeated per env on purpose (wrangler does not inherit vars into envs).
+[vars]
+AGENT_CARD_ZONE = "localhost"
+PUBLIC_ORIGIN = "http://localhost:8788"
+DEFAULT_STRATEGY = "rules"
+LLM_MODEL = "claude-opus-5"
+LLM_EFFORT = "low"
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# faithnet deployment universe (DESIGN.md §9). Worker name: pokernight-agent-worker-faithnet.
+#
+# The route is a WILDCARD, so every persona host lands here without a per-persona DNS record or a
+# per-persona Worker. A wildcard route is `pattern` + `zone_name`; `custom_domain = true` is only for a
+# single exact hostname and would be rejected for `*.faithnet.ai/*`.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+[env.faithnet]
+name = "pokernight-agent-worker-faithnet"
+# One dedicated host, NOT a wildcard on faithnet.ai: `*.faithnet.ai/*` is already claimed by the
+# estate's demo-a2a worker, and a second claim would fight that deployment. Personas are selected
+# by path here (`/sharkbot.svc/api/a2a`), which the resolver already supports.
+routes = [{ pattern = "agents.faithnet.io", custom_domain = true }]
+
+[env.faithnet.vars]
+AGENT_CARD_ZONE = "faithnet.ai"
+PUBLIC_ORIGIN = "https://agents.faithnet.io"
+DEFAULT_STRATEGY = "rules"
+LLM_MODEL = "claude-opus-5"
+LLM_EFFORT = "low"

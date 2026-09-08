@@ -10,6 +10,8 @@ export interface Env {
   RPC_URL: string;
   /** "true" enables POST /dev/session. Never true in a deployed env. */
   DEV_AUTH: string;
+  ALLOW_AGENT_ENDPOINT?: string;
+  AGENT_BASE_URL?: string;
   /** Comma-separated list of allowed browser origins. */
   ALLOWED_ORIGINS: string;
   /** Asset base units per chip (default 10000 = 0.01 USDC at 6 decimals). */
@@ -17,6 +19,8 @@ export interface Env {
   HOME_ORIGIN: string;
   HOME_ZONE: string;
   AGENT_CARD_ZONE: string;
+  /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
+  A2A_TIMEOUT_MS?: string;
 
   /** Phase 3 contract addresses; empty in dev. */
   ASSET?: string;
@@ -43,4 +47,31 @@ export function allowedOrigins(env: Env): string[] {
 
 export function isDevAuth(env: Env): boolean {
   return env.DEV_AUTH === 'true';
+}
+
+/**
+ * Whether `seat-agent` accepts a caller-supplied `endpoint`. Deliberately SEPARATE from DEV_AUTH:
+ * dev auth governs who may log in, this governs which hosts the table will fetch every turn.
+ * Defaults to false, so a deployment has to opt in.
+ */
+/**
+ * Operator-configured base for agent personas served from ONE host, e.g.
+ * `https://agents.faithnet.io` + `/sharkbot.svc`. Set, it wins over per-agent host resolution.
+ * This is deployment config, never caller input, so it is not part of the SSRF surface.
+ */
+export function agentBaseUrl(env: Env): string | null {
+  const v = (env.AGENT_BASE_URL ?? '').trim();
+  return v === '' ? null : v.replace(/\/+$/, '');
+}
+
+export function allowAgentEndpoint(env: Env): boolean {
+  return env.ALLOW_AGENT_ENDPOINT === 'true';
+}
+
+/** Default wall clock for one A2A request. The turn clock always bounds it further. */
+export const DEFAULT_A2A_TIMEOUT_MS = 20_000;
+
+export function a2aTimeoutMs(env: Env): number {
+  const n = Number(env.A2A_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_A2A_TIMEOUT_MS;
 }

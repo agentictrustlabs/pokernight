@@ -124,6 +124,12 @@ and a JSON-RPC endpoint at `/api/a2a`. It registers one skill:
 same redacted table view a human sees (own hole cards, board, stacks, pot, action history).
 Output artifact: `{ action: fold|check|call|bet|raise|allin, amount? }`.
 
+**Which A2A profile.** The platform's A2A package ships two surfaces. The delegation profile queues a task
+and runs the skill on a later alarm, and it requires a signed delegation on every message; its realistic
+floor is several seconds. The standard profile answers synchronously and makes authorization optional.
+Pokernight uses the standard profile for turns, because a turn clock wants a request and a reply. The
+authorization seam is real and named, so phase 3 can require a signed grant once a seat can move money.
+
 Turn loop (inside the table Durable Object):
 1. Engine says seat N is to act. If seat N is an agent, the DO resolves its A2A target
    (`resolveA2aTarget`) and sends `message/send` with the `poker.act` input. The house is the caller and
@@ -268,5 +274,9 @@ Phase 4 — trust-minimized escrow
 - Key custody: the faithnet env currently points the A2A KMS backend at the AKCS pilot while the estate
   notes say the live backend is GCP Cloud KMS. The house key id must be provisioned in whichever is
   actually live before Phase 3.
+- Agent endpoints are a fetch primitive: seating an agent with an explicit `endpoint` makes the table
+  fetch that URL every turn. Gated on `ALLOW_AGENT_ENDPOINT`, default off, enabled only in local dev;
+  elsewhere the agent name must resolve inside `AGENT_CARD_ZONE`, so the reachable set is exactly the
+  published agents. Deliberately independent of `DEV_AUTH`.
 - Turn latency: LLM-backed agents may need 5–20 s per decision. Default turn clock 30 s, per-table
   configurable, with a per-session time bank.

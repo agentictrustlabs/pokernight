@@ -38,11 +38,18 @@ new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
 CHAIN_ID = "31337"
 RPC_URL = "http://127.0.0.1:8545"
 DEV_AUTH = "true"
+# Local dev points agents at localhost:8788; a public deployment must NOT enable this.
+ALLOW_AGENT_ENDPOINT = "true"
 ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 CHIP_VALUE = "10000"
 HOME_ORIGIN = "http://localhost:3000"
 HOME_ZONE = "localhost"
+# Agent seats: `agentName` resolves to `<label>.<AGENT_CARD_ZONE>` (http under a localhost zone,
+# https otherwise). In local dev seat an agent with an explicit `endpoint` instead, e.g. the agent
+# worker on http://localhost:8788/?agent=sharkbot.svc.
 AGENT_CARD_ZONE = "localhost"
+# Wall clock for one A2A request (agent card fetch, poker.act turn). The turn clock bounds it further.
+A2A_TIMEOUT_MS = "20000"
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 # faithnet deployment universe (DESIGN.md §9). Worker name: pokernight-tables-faithnet.
@@ -66,7 +73,11 @@ CHAIN_ID = "34348"
 RPC_URL = "https://rpc.faithnet.io"
 HOME_ORIGIN = "https://www.faithnet.me"
 HOME_ZONE = "faithnet.me"
+# `sharkbot.svc` → https://sharkbot-svc.faithnet.ai (DESIGN.md §4).
 AGENT_CARD_ZONE = "faithnet.ai"
+# Poker personas are served from one host, selected by path. Overrides host-per-agent resolution.
+AGENT_BASE_URL = "https://agents.faithnet.io"
+A2A_TIMEOUT_MS = "20000"
 # Dev sessions stay on until Home OIDC login (phase 2) replaces them. Play-money only.
 DEV_AUTH = "true"
 ALLOWED_ORIGINS = "https://poker.faithnet.io"

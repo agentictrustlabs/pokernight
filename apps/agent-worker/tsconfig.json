@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilationNotes": "types are workers-types + the vitest workers pool (for cloudflare:test in test/); src/globals.d.ts shims globalThis.crypto for the engine and the A2A server",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers"],
+    "lib": ["ES2022"]
+  },
+  "include": ["src", "test"]
+}

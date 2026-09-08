@@ -211,6 +211,8 @@ export interface SeatView {
   playerId: string;
   stack: number;
   status: SeatStatus;
+  /** Seated but not yet dealt in: waiting for the big blind to reach them. */
+  waitingForBigBlind: boolean;
   /** Only present in a hand. */
   inHand?: {
     streetBet: number;
@@ -231,6 +233,9 @@ export interface TableView {
     handNo: number;
     seedCommit: string;
     seedReveal?: string;
+    /** Blind positions for this hand, so a client draws the pucks from fact, not inference. */
+    smallBlindSeat: number | null;
+    bigBlindSeat: number | null;
     street: Street;
     board: Card[];
     pots: Pot[];

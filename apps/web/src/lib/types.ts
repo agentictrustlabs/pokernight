@@ -8,6 +8,7 @@ export type {
   CreateTableRequest,
   EngineEvent,
   LegalActions,
+  PlayerInfo,
   ServerMessage,
   Session,
   TableConfig,
@@ -16,4 +17,4 @@ export type {
   TableView,
   WsErrorCode,
 } from '@pokernight/protocol';
-export type { Card, HandResult, HandRank, Pot, SeatView, Street, ActionRecord } from '@pokernight/engine';
+export type { Card, HandResult, HandRank, Pot, PotAward, SeatView, Street, ActionRecord } from '@pokernight/engine';

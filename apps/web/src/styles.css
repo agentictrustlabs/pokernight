@@ -1,21 +1,66 @@
-/* Pokernight — card-room ledger. Tokens first, then layout. */
+/* Pokernight — a private card room kept by people who care.
+   Tokens first, then shell, then the table. Every colour is declared on bare
+   :root and only re-pointed inside the dark block. */
 
 :root {
   color-scheme: light dark;
+
+  /* paper and ink */
   --paper: #f2f4f1;
   --surface: #fafbf9;
   --ink: #1c2420;
   --ink-soft: #55635b;
+  --rule: #d3dad4;
+  --shadow: 0 1px 2px rgba(28, 36, 32, 0.08), 0 4px 16px rgba(28, 36, 32, 0.06);
+
+  /* the table itself. The felt surface keeps its own tokens so the UI accent
+     (--felt) can brighten in dark mode without bleaching the table. */
   --felt: #1f6b4a;
   --felt-deep: #185539;
   --felt-soft: #dcebe2;
+  --table-felt: #1f6b4a;
+  --table-felt-deep: #164f36;
+  --table-felt-hi: #2a7d58;
+  --rail: #e8e4db;
+  --rail-edge: #cfc9bb;
+
+  /* accents */
   --card-red: #a6392e;
   --card-face: #fffefb;
-  --rule: #d3dad4;
+  /* Card faces stay paper-white in both themes, so their ink stays dark. */
+  --card-ink: #191f1c;
+  --card-edge: #b9c1bb;
   --warn: #9a6b1c;
   --danger: #a6392e;
   --focus: #2b8a5f;
-  --shadow: 0 1px 2px rgba(28, 36, 32, 0.08), 0 4px 16px rgba(28, 36, 32, 0.06);
+  --brass: #a97c2e;
+  --brass-soft: #f2e5cb;
+  --gold: #96751f;
+  --gold-soft: #f6ecd0;
+
+  /* chip denominations: face and the colour of its edge spots */
+  --chip-white: #f7f6f1;
+  --chip-white-ink: #6f7c74;
+  --chip-red: #a6392e;
+  --chip-red-ink: #f7ebe7;
+  --chip-green: #1f6b4a;
+  --chip-green-ink: #e0f0e7;
+  --chip-slate: #2a332e;
+  --chip-slate-ink: #d3dbd5;
+  --chip-purple: #5b4a86;
+  --chip-purple-ink: #e8e1f5;
+
+  /* one muted hue per seat: avatars, log lines */
+  --seat-0: #2f6f52;
+  --seat-1: #8c5a2b;
+  --seat-2: #3a5f8a;
+  --seat-3: #7a3f6b;
+  --seat-4: #4e6b2f;
+  --seat-5: #8a4034;
+  --seat-6: #2f6b72;
+  --seat-7: #5b4a86;
+  --seat-8: #7a6a2e;
+
   --font-body: 'Public Sans', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --radius: 6px;
@@ -29,16 +74,50 @@
     --surface: #161e19;
     --ink: #e4eae5;
     --ink-soft: #9aa89f;
-    --felt: #2b8a5f;
-    --felt-deep: #1f6b4a;
-    --felt-soft: #1c2f25;
-    --card-red: #d8584a;
-    --card-face: #f4f2ea;
     --rule: #2a3630;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+
+    --felt: #2b8a5f;
+    --felt-deep: #17503a;
+    --felt-soft: #1c2f25;
+    --table-felt: #1b5b3f;
+    --table-felt-deep: #113626;
+    --table-felt-hi: #226b49;
+    --rail: #1d241f;
+    --rail-edge: #2c352e;
+
+    --card-red: #a6392e;
+    --card-face: #f4f2ea;
+    --card-ink: #191f1c;
+    --card-edge: #9aa39c;
     --warn: #d5a44a;
     --danger: #d8584a;
     --focus: #5fc48f;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+    --brass: #d2a75a;
+    --brass-soft: #3a3222;
+    --gold: #d8b45c;
+    --gold-soft: #3b3325;
+
+    --chip-white: #e9eae4;
+    --chip-white-ink: #5d6a62;
+    --chip-red: #b8483b;
+    --chip-red-ink: #fbeeea;
+    --chip-green: #2b8a5f;
+    --chip-green-ink: #e3f2e9;
+    --chip-slate: #39443d;
+    --chip-slate-ink: #dbe2dc;
+    --chip-purple: #6f5da0;
+    --chip-purple-ink: #ece6fa;
+
+    --seat-0: #6bbd93;
+    --seat-1: #d3a06a;
+    --seat-2: #82a8d6;
+    --seat-3: #c58bb4;
+    --seat-4: #a3c274;
+    --seat-5: #d98d7e;
+    --seat-6: #77bfc6;
+    --seat-7: #a99ada;
+    --seat-8: #ccb977;
   }
 }
 
@@ -93,6 +172,18 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 button,
 input,
 select {
@@ -112,14 +203,17 @@ button:hover:not(:disabled) {
   border-color: var(--felt);
 }
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+  border-radius: var(--radius);
 }
 button.primary {
   background: var(--felt);
@@ -129,6 +223,11 @@ button.primary {
 }
 button.primary:hover:not(:disabled) {
   background: var(--felt-deep);
+}
+button.primary:disabled {
+  background: var(--surface);
+  border-color: var(--rule);
+  color: var(--ink);
 }
 button.danger {
   color: var(--danger);
@@ -145,6 +244,17 @@ button.quiet:hover:not(:disabled) {
 button.small {
   padding: 0.2rem 0.55rem;
   font-size: 0.85rem;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 input[type='text'],
@@ -184,6 +294,7 @@ label > select {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-x: clip;
 }
 
 .topbar {
@@ -322,87 +433,293 @@ label > select {
   font-size: 0.85rem;
 }
 
-/* --------------------------------------------------------------- table */
+/* ----------------------------------------------------------- table page */
 
 .table-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }
-@media (max-width: 960px) {
-  .table-page {
-    grid-template-columns: 1fr;
+.table-main {
+  min-width: 0;
+}
+
+/* Wide enough for the log to stand beside the table: the page then takes the
+   whole window, the arena grows into whatever height the shell does not use,
+   and the log runs the full height of its column instead of stopping short. */
+@media (min-width: 1280px) {
+  .page.table-page {
+    width: min(1340px, 100%);
+    flex: 1 1 auto;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    align-items: stretch;
+    min-height: 0;
+  }
+  .table-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-height: 0;
+  }
+  /* basis 0, not auto: the arena claims the height the rest of the column does
+     not want, and gives it straight back when the action bar appears. */
+  .table-main > .arena {
+    flex: 1 1 0;
+    margin: 0;
+  }
+  .side {
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .log-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .log-panel .log {
+    flex: 1 1 auto;
+    height: auto;
   }
 }
 
+/* ------------------------------------------------------------ status bar */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+.statusbar .sb-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+.statusbar .sb-key {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-soft);
+}
+.statusbar .sb-val {
+  font-weight: 600;
+}
+.statusbar .sb-spacer {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- arena */
+
 .arena {
   position: relative;
-  aspect-ratio: 16 / 10;
-  min-height: 420px;
+  aspect-ratio: 16 / 10.5;
+  min-height: 430px;
+  max-height: min(80vh, 820px);
+  margin: 0.75rem 0;
+  container-type: size;
 }
 
 .felt {
   position: absolute;
-  inset: 12% 14%;
-  background: radial-gradient(ellipse at 50% 40%, var(--felt) 0%, var(--felt-deep) 100%);
+  inset: 15% 12%;
+  background:
+    radial-gradient(ellipse at 50% 38%, var(--table-felt-hi) 0%, var(--table-felt) 46%, var(--table-felt-deep) 100%);
   border-radius: 50% / 50%;
-  border: 6px solid var(--surface);
-  box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  border: 8px solid var(--rail);
+  outline: 1px solid var(--rail-edge);
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 14px 40px rgba(0, 0, 0, 0.16);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.85rem;
   color: #fff;
   padding: 1rem;
-}
-.felt .hand-no {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.8;
-}
-.felt .pots {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.pot {
-  background: rgba(0, 0, 0, 0.22);
-  border-radius: 999px;
-  padding: 0.15rem 0.7rem;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.9rem;
-}
-.pot .lbl {
-  font-family: var(--font-body);
-  font-size: 0.72rem;
-  opacity: 0.8;
-  margin-right: 0.35rem;
-}
-.felt .idle {
-  font-size: 0.9rem;
-  opacity: 0.85;
   text-align: center;
 }
+.felt .felt-street {
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.felt .middle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 46px;
+  justify-content: center;
+  max-width: 100%;
+}
+.felt .idle {
+  font-size: 0.88rem;
+  opacity: 0.85;
+}
+.felt .chip-amount {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.winner-banner .chip-amount {
+  color: var(--ink);
+  text-shadow: none;
+}
+.pots {
+  display: flex;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+}
 
+/* The board is the one thing every player looks at, so it is drawn a size up
+   from the hole cards and given room to sit in the middle of the felt. */
 .board {
   display: flex;
-  gap: 6px;
+  gap: 8px;
+  perspective: 800px;
+  --card-w: 56px;
+  --card-h: 79px;
 }
-.board .slot {
+.card.slot {
+  display: block;
   width: var(--card-w);
   height: var(--card-h);
   border-radius: 4px;
-  border: 1px dashed rgba(255, 255, 255, 0.35);
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  flex: none;
 }
+
+/* ----------------------------------------------------------- chip stacks */
+
+.chips {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  line-height: 1.1;
+}
+.chip-art {
+  display: block;
+  overflow: visible;
+}
+.chip-amount {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+.chips-xs .chip-amount {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+.chip-label {
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.72;
+  font-weight: 500;
+}
+
+.chip-col.tone-white {
+  --chip-face: var(--chip-white);
+  --chip-ink: var(--chip-white-ink);
+}
+.chip-col.tone-red {
+  --chip-face: var(--chip-red);
+  --chip-ink: var(--chip-red-ink);
+}
+.chip-col.tone-green {
+  --chip-face: var(--chip-green);
+  --chip-ink: var(--chip-green-ink);
+}
+.chip-col.tone-slate {
+  --chip-face: var(--chip-slate);
+  --chip-ink: var(--chip-slate-ink);
+}
+.chip-col.tone-purple {
+  --chip-face: var(--chip-purple);
+  --chip-ink: var(--chip-purple-ink);
+}
+.chip-top {
+  fill: var(--chip-face);
+}
+.chip-side {
+  fill: color-mix(in srgb, var(--chip-face) 64%, #06120c);
+}
+.chip-stripe {
+  fill: color-mix(in srgb, var(--chip-ink) 78%, var(--chip-face));
+}
+.chip-pip {
+  fill: none;
+  stroke: color-mix(in srgb, var(--chip-ink) 55%, var(--chip-face));
+  stroke-width: 0.7;
+}
+
+/* ----------------------------------------------------------- bets + pot fly */
+
+.bets,
+.fly {
+  position: absolute;
+  inset: 7% 9%;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+.bet-chips {
+  position: absolute;
+  left: calc(var(--x) * 1%);
+  top: calc(var(--y) * 1%);
+  transform: translate(-50%, -50%);
+  --bdx: calc((var(--sx) - var(--x)) * 1cqw);
+  --bdy: calc((var(--sy) - var(--y)) * 1cqh);
+  animation: bet-slide 0.34s ease-out backwards;
+}
+.bet-chips .chip-amount {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+@keyframes bet-slide {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--bdx), var(--bdy));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+.fly-chips {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: left 0.75s cubic-bezier(0.4, 0, 0.2, 1), top 0.75s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease-in 0.5s;
+  z-index: 3;
+}
+.fly-chips.go {
+  left: calc(var(--tx) * 1%);
+  top: calc(var(--ty) * 1%);
+  opacity: 0;
+}
+
+/* ---------------------------------------------------------------- seats */
 
 .seats {
   position: absolute;
-  inset: 0;
+  inset: 7% 9%;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -413,137 +730,456 @@ label > select {
   left: calc(var(--x) * 1%);
   top: calc(var(--y) * 1%);
   transform: translate(-50%, -50%);
-  width: 150px;
+  /* Kept proportional to the ring: the no-overlap guarantee in `seatLayout` is
+     a ratio, so the card has to scale with the oval it sits on. */
+  width: clamp(126px, 18%, 164px);
+  --dx: calc((50 - var(--x)) * 1cqw);
+  --dy: calc((50 - var(--y)) * 1cqh);
   pointer-events: auto;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 0.4rem 0.55rem;
-  font-size: 0.85rem;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.8rem;
+  transition: border-color 0.15s, box-shadow 0.15s, opacity 0.2s;
+}
+.seat.taken {
+  display: grid;
+  gap: 0.2rem;
 }
 .seat.to-act {
-  border-color: var(--felt);
-  box-shadow: 0 0 0 2px var(--felt), var(--shadow);
+  border-color: var(--brass);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brass) 45%, transparent), var(--shadow);
 }
-.seat.folded,
-.seat.sitting-out {
-  opacity: 0.65;
+.seat.winner {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold), 0 0 22px color-mix(in srgb, var(--gold) 45%, transparent), var(--shadow);
+  background: color-mix(in srgb, var(--gold-soft) 60%, var(--surface));
+}
+/* Fade what is in the card, not the card itself: a translucent seat lets the
+   felt show through and stops reading as a nameplate resting on the rail. */
+.seat.folded > *,
+.seat.sitting-out > * {
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.seat.you {
+  border-color: color-mix(in srgb, var(--felt) 55%, var(--rule));
 }
 .seat.you .name::after {
   content: ' · you';
   color: var(--felt);
   font-weight: 500;
 }
-.seat .head {
+
+/* An open seat is a gap in the ring: no fill, no shadow, small type. It reads
+   as room to sit down, not as another player. */
+.seat.empty {
+  width: clamp(92px, 12.5%, 122px);
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.seat.empty .sit,
+.seat.empty .sit-open {
+  display: grid;
+  gap: 0.05rem;
+  justify-items: center;
+  width: 100%;
+  padding: 0.35rem 0.3rem;
+  /* Opaque enough to stay readable where the plate crosses the rail, but flat:
+     no shadow, no solid border, and half the type size of a seated player. */
+  background: var(--paper);
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius);
+  box-shadow: none;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  text-align: center;
+}
+.seat.empty .seat-no {
+  font-size: 0.6rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.seat.empty .sit-cta {
+  font-weight: 600;
+}
+.seat.empty .sit:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--felt);
+}
+.seat.empty .sit:hover:not(:disabled) .sit-cta {
+  color: var(--felt);
+}
+
+.seat-name {
+  min-width: 0;
+}
+.seat-top {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 0.4rem;
+  min-width: 0;
+}
+.avatar-wrap {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--seat-hue) 18%, var(--surface));
+  color: color-mix(in srgb, var(--seat-hue) 78%, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--seat-hue) 40%, var(--rule));
+}
+.clock-arc {
+  position: absolute;
+  inset: -5px;
+  width: 42px;
+  height: 42px;
+  pointer-events: none;
+}
+.clock-arc .track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--rule) 80%, transparent);
+  stroke-width: 3;
+}
+.clock-arc .sweep {
+  fill: none;
+  stroke: var(--brass);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.25s linear;
+}
+.clock-arc.amber .sweep {
+  stroke: var(--warn);
+}
+.clock-arc.red .sweep {
+  stroke: var(--danger);
+}
+.clock-badge {
+  position: absolute;
+  top: -7px;
+  right: -9px;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--brass);
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+.clock-badge.amber {
+  background: var(--warn);
+}
+.clock-badge.red {
+  background: var(--danger);
+}
+.puck {
+  position: absolute;
+  bottom: -4px;
+  left: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 2px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--rail-edge);
+}
+.puck.d {
+  background: var(--brass);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--brass) 60%, #000);
+}
+.puck.sb,
+.puck.bb {
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.seat-id {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1;
 }
 .seat .name {
+  display: block;
   font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: -0.005em;
+  line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.seat .stack {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-soft);
-}
-.seat .cards {
+.seat .agent {
   display: flex;
-  gap: 4px;
-  margin-top: 0.35rem;
-  min-height: var(--card-h);
-  align-items: flex-end;
-}
-.seat .foot {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.3rem;
-  font-size: 0.78rem;
-  color: var(--ink-soft);
-  min-height: 1.2em;
+  gap: 0.25rem;
+  min-width: 0;
 }
-.seat .status {
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 0.7rem;
-}
-.seat .status.all-in {
-  color: var(--card-red);
-  font-weight: 600;
-}
-.bet {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  background: var(--felt-soft);
-  color: var(--ink);
-  border-radius: 999px;
-  padding: 0 0.5rem;
-}
-.dealer {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: var(--paper);
-  font-size: 0.65rem;
+.agent-tag {
+  font-size: 0.56rem;
   font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--brass);
+  border: 1px solid color-mix(in srgb, var(--brass) 45%, transparent);
+  border-radius: 3px;
+  padding: 0 0.2rem;
   flex: none;
 }
-.seat.empty {
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
-  border-style: dashed;
-  text-align: center;
-  color: var(--ink-soft);
-}
-.seat.empty .sit {
-  width: 100%;
-}
-.clock {
+.agent-name {
   font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--felt);
-  font-weight: 600;
+  font-size: 0.6rem;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.clock.urgent {
-  color: var(--danger);
+.seat-stack {
+  align-items: flex-start;
+}
+.seat-stack .chip-amount {
+  color: var(--ink);
 }
 
-@media (max-width: 720px) {
-  .arena {
-    aspect-ratio: auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+/* Cards and status share one line: the cards set its height, the tags stack up
+   the right-hand side inside it, so a badge never makes the card taller. */
+.seat-foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.seat-cards {
+  display: flex;
+  gap: 3px;
+  min-height: 44px;
+  align-items: flex-end;
+  flex: none;
+}
+/* Out of the hand: no cards, and no reserved hole for them either. */
+.seat-cards:empty {
+  min-height: 0;
+}
+.seat.taken .seat-tags {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 1.15em;
+}
+.tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 0 0.28rem;
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+  background: var(--paper);
+}
+.tag.last {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--felt) 35%, var(--rule));
+  background: var(--felt-soft);
+}
+.tag.allin {
+  color: var(--card-red);
+  border-color: color-mix(in srgb, var(--card-red) 45%, transparent);
+  background: transparent;
+}
+.tag.thinking {
+  color: var(--brass);
+  border-color: color-mix(in srgb, var(--brass) 40%, transparent);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.tag.thinking i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  animation: think 1.1s ease-in-out infinite;
+}
+.tag.thinking i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.tag.thinking i:nth-child(3) {
+  animation-delay: 0.32s;
+  margin-right: 0.25rem;
+}
+@keyframes think {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
   }
-  .felt {
-    position: relative;
-    inset: auto;
-    border-radius: 24px;
-    min-height: 160px;
+  35% {
+    opacity: 1;
   }
-  .seats {
-    position: static;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.5rem;
+}
+
+.delta {
+  position: absolute;
+  top: -0.85rem;
+  right: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0 0.3rem;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  animation: float-up 0.45s ease-out backwards;
+  z-index: 4;
+}
+.delta.up {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+}
+.delta.down {
+  color: var(--ink-soft);
+}
+@keyframes float-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
-  .seat {
-    position: static;
+  to {
+    opacity: 1;
     transform: none;
-    width: auto;
   }
+}
+
+/* --------------------------------------------------------- winner banner */
+
+.winner-banner {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  color: var(--ink);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  padding: 0.5rem 0.7rem;
+  max-width: min(392px, 100%);
+  animation: banner-in 0.35s ease-out backwards;
+}
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.wb-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.wb-headline {
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+.wb-detail {
+  color: var(--gold);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.wb-detail.quiet {
+  color: var(--ink-soft);
+  font-weight: 500;
+  font-style: italic;
+}
+.wb-board {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+.wb-rows {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0.4rem 0 0;
+  border-top: 1px solid var(--rule);
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+}
+.wb-rows li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+}
+.wb-rows li.won .wb-name {
+  font-weight: 700;
+}
+.wb-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-cards {
+  display: flex;
+  gap: 2px;
+}
+.wb-rank {
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-net {
+  font-weight: 600;
+}
+.wb-net.up {
+  color: var(--gold);
+}
+.wb-net.down {
+  color: var(--ink-soft);
+}
+.wb-rake {
+  margin-top: 0.3rem;
 }
 
 /* ----------------------------------------------------------- action bar */
@@ -551,7 +1187,71 @@ label > select {
 .actions {
   margin-top: 0.75rem;
   display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem;
+}
+.actions.live {
+  border-color: color-mix(in srgb, var(--felt) 45%, var(--rule));
+}
+.act-head {
+  display: flex;
+  align-items: baseline;
   gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.act-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.actions:not(.live) .act-title {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.act-spacer {
+  flex: 1;
+}
+.odds {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.shortcuts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+}
+.shortcuts kbd {
+  margin-left: 0.35rem;
+}
+.clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--felt);
+  font-weight: 600;
+}
+.clock.amber {
+  color: var(--warn);
+}
+.clock.red {
+  color: var(--danger);
+}
+.clockbar {
+  height: 4px;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.clockbar > div {
+  height: 100%;
+  background: var(--felt);
+  transition: width 0.25s linear;
+}
+.clockbar.amber > div {
+  background: var(--warn);
+}
+.clockbar.red > div {
+  background: var(--danger);
 }
 .actions .buttons {
   display: flex;
@@ -560,26 +1260,12 @@ label > select {
   align-items: center;
 }
 .actions .buttons button {
-  min-width: 96px;
+  min-width: 104px;
   font-weight: 600;
-}
-.actions .clockbar {
-  height: 4px;
-  background: var(--rule);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.actions .clockbar > div {
-  height: 100%;
-  background: var(--felt);
-  transition: width 0.25s linear;
-}
-.actions .clockbar.urgent > div {
-  background: var(--danger);
 }
 .sizing {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.5rem 0.75rem;
   align-items: center;
 }
@@ -595,13 +1281,15 @@ label > select {
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+  align-items: center;
+}
+.range-hint {
+  margin-left: auto;
 }
 
 .controls {
   margin-top: 0.75rem;
 }
-
-/* ----------------------------------------------------------- seat picker */
 
 .picker {
   margin-top: 0.75rem;
@@ -613,9 +1301,13 @@ label > select {
 .side {
   display: grid;
   gap: 1rem;
+  min-width: 0;
+}
+.log-panel h3 {
+  margin-bottom: 0.4rem;
 }
 .log {
-  height: 360px;
+  height: 340px;
   overflow-y: auto;
   font-size: 0.85rem;
   padding: 0.25rem 0;
@@ -623,26 +1315,51 @@ label > select {
   border-bottom: 1px solid var(--rule);
 }
 .log .line {
-  padding: 0.15rem 0.25rem;
-  border-bottom: 1px dotted color-mix(in srgb, var(--rule) 60%, transparent);
+  padding: 0.15rem 0.4rem;
+  border-left: 2px solid transparent;
+  border-bottom: 1px dotted color-mix(in srgb, var(--rule) 55%, transparent);
+}
+.log .line.by {
+  border-left-color: color-mix(in srgb, var(--seat-hue) 70%, transparent);
 }
 .log .line.chat {
-  color: var(--felt);
+  color: color-mix(in srgb, var(--seat-hue, var(--felt)) 75%, var(--ink));
 }
 .log .line.hand {
   color: var(--ink-soft);
   font-weight: 600;
   margin-top: 0.35rem;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.07em;
+}
+.log .line.blind,
+.log .line.act {
+  font-family: var(--font-mono);
+  font-size: 0.79rem;
+  font-variant-numeric: tabular-nums;
+}
+.log .line.act-fold {
+  color: var(--ink-soft);
+}
+.log .line.act-raise,
+.log .line.act-bet,
+.log .line.act-all-in {
+  font-weight: 600;
 }
 .log .line.street,
-.log .line.win {
+.log .line.showdown {
   font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
   font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--felt-soft) 60%, transparent);
 }
 .log .line.win {
-  color: var(--felt);
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--gold);
+  font-weight: 700;
 }
 .chatbox {
   display: flex;
@@ -658,31 +1375,31 @@ label > select {
 .seed {
   position: relative;
   font-size: 0.72rem;
-  opacity: 0.85;
+  color: var(--ink-soft);
   display: inline-flex;
   gap: 0.4rem;
   align-items: center;
 }
 .seed code {
   font-family: var(--font-mono);
+  color: var(--ink);
 }
 .seed .tipbtn {
-  background: rgba(255, 255, 255, 0.15);
-  border: 0;
-  color: inherit;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
   border-radius: 999px;
   width: 18px;
   height: 18px;
   padding: 0;
   font-size: 0.7rem;
-  line-height: 18px;
+  line-height: 1;
 }
 .seed .tip {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: 260px;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--rule);
@@ -741,25 +1458,192 @@ label > select {
   height: var(--card-h);
   display: block;
   flex: none;
+  border-radius: 4px;
 }
-.card .face {
-  fill: var(--card-face);
-  stroke: var(--rule);
-}
-.card .ink {
-  fill: var(--ink);
-}
-.card.red .ink {
-  fill: var(--card-red);
-}
-.card .back {
-  fill: var(--felt);
-  stroke: var(--surface);
-}
-.card .hatch {
-  stroke: rgba(255, 255, 255, 0.35);
+.card.sm {
+  --card-w: 34px;
+  --card-h: 48px;
 }
 .card.lg {
   --card-w: 56px;
   --card-h: 79px;
+}
+.card .face {
+  fill: var(--card-face);
+  stroke: var(--card-edge);
+  stroke-width: 1;
+}
+.card .ink {
+  fill: var(--card-ink);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.card .ink.pip,
+.card .ink.centre {
+  font-family: var(--font-body);
+  font-weight: 400;
+}
+.card.red .ink {
+  fill: var(--card-red);
+}
+.card .centre {
+  opacity: 0.9;
+}
+.card .back {
+  fill: var(--table-felt);
+  stroke: var(--rail);
+  stroke-width: 1;
+}
+.card .back-panel {
+  stroke: rgba(255, 255, 255, 0.4);
+  stroke-width: 0.8;
+}
+.card .hatch {
+  stroke: rgba(255, 255, 255, 0.5);
+}
+.card .hatch.thin {
+  stroke: rgba(255, 255, 255, 0.24);
+}
+.card.muted {
+  opacity: 0.5;
+}
+.card.win .face {
+  stroke: var(--gold);
+  stroke-width: 2;
+}
+.card.win .glow {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 5;
+  opacity: 0.35;
+}
+.card.win {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--gold) 65%, transparent));
+}
+
+@keyframes card-deal {
+  from {
+    opacity: 0;
+    transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(0.5) rotate(-8deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.card.deal {
+  animation: card-deal 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+@keyframes card-flip {
+  from {
+    opacity: 0.35;
+    transform: rotateY(88deg) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.card.flip {
+  animation: card-flip 0.42s ease-out backwards;
+  transform-origin: 50% 50%;
+}
+
+/* ------------------------------------------------------------ narrow */
+
+/* The oval needs room to hold nine cards without them touching. Below that the
+   seats become a list under the board, which is the better shape anyway. */
+@media (max-width: 899px) {
+  .arena {
+    aspect-ratio: auto;
+    min-height: 0;
+    max-height: none;
+    container-type: normal;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .felt {
+    position: relative;
+    inset: auto;
+    border-radius: 22px;
+    min-height: 172px;
+    padding: 0.75rem 0.5rem;
+  }
+  .seats {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.5rem;
+  }
+  .seat {
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+    width: auto;
+    --dx: 0px;
+    --dy: 0px;
+  }
+  .seat.empty {
+    width: auto;
+  }
+  /* The viewer reads their own seat first when the oval collapses to a list. */
+  .seat.you {
+    order: -1;
+  }
+  .delta {
+    top: 0.2rem;
+  }
+  .bets,
+  .fly {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .board {
+    gap: 4px;
+  }
+  .card {
+    --card-w: 38px;
+    --card-h: 54px;
+  }
+  .card.sm {
+    --card-w: 30px;
+    --card-h: 42px;
+  }
+  .actions .buttons button {
+    min-width: 0;
+    flex: 1 1 42%;
+  }
+  .shortcuts {
+    display: none;
+  }
+  .range-hint {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .page {
+    padding: 0.6rem;
+  }
+  .statusbar {
+    gap: 0.6rem;
+    font-size: 0.8rem;
+  }
+}
+
+/* ------------------------------------------------------ reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

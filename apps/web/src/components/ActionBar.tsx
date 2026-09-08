@@ -1,14 +1,38 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Action, TableView } from '../lib/types';
+import type { Action, LegalActions, TableView } from '../lib/types';
 import type { TurnState } from '../lib/tableSocket';
-import { fmtChips, secondsLeft } from '../lib/format';
+import { fmtChips, potOdds, secondsLeft } from '../lib/format';
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-export function ActionBar({ turn, view, now, onAct }: { turn: TurnState; view: TableView; now: number; onAct: (a: Action) => void }) {
-  const legal = turn.legal;
+const NOTHING_LEGAL: LegalActions = { fold: false, check: false, call: null, bet: null, raise: null, allIn: 0 };
+
+/** True when a keystroke belongs to whatever the viewer is typing in. */
+function typingIn(el: Element | null): boolean {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el as HTMLElement).isContentEditable === true;
+}
+
+export interface ActionBarProps {
+  /** Null when it is not the viewer's turn: the bar stays put, disabled. */
+  turn: TurnState | null;
+  view: TableView;
+  now: number;
+  onAct: (a: Action) => void;
+  /** Who the table is waiting on, for the idle caption. */
+  waitingOn?: string | null;
+}
+
+/**
+ * Fold / check / call / bet with sizing. Always rendered — disabled off-turn, so
+ * the page never jumps when the action comes round.
+ */
+export function ActionBar({ turn, view, now, onAct, waitingOn }: ActionBarProps) {
+  const live = turn != null;
+  const legal = turn?.legal ?? NOTHING_LEGAL;
   const range = legal.raise ?? legal.bet;
   const kind: 'raise' | 'bet' = legal.raise ? 'raise' : 'bet';
 
@@ -17,9 +41,9 @@ export function ActionBar({ turn, view, now, onAct }: { turn: TurnState; view: T
     const hand = view.hand;
     const pots = hand?.pots.reduce((a, p) => a + p.amount, 0) ?? 0;
     const street = view.seats.reduce((a, s) => a + (s.inHand?.streetBet ?? 0), 0);
-    const me = view.seats.find((s) => s.seat === turn.seat)?.inHand?.streetBet ?? 0;
+    const me = view.seats.find((s) => s.seat === (turn?.seat ?? view.viewerSeat))?.inHand?.streetBet ?? 0;
     return { pot: pots + street, myStreetBet: me };
-  }, [view, turn.seat]);
+  }, [view, turn?.seat]);
   const toCall = legal.call ?? 0;
   const sizeTo = (fraction: number) => {
     if (!range) return 0;
@@ -33,7 +57,7 @@ export function ActionBar({ turn, view, now, onAct }: { turn: TurnState; view: T
     const v = range?.min ?? 0;
     setAmount(v);
     setText(String(v));
-  }, [turn.handNo, turn.seat, range?.min, range?.max]);
+  }, [turn?.handNo, turn?.seat, range?.min, range?.max]);
 
   const setBoth = (v: number) => {
     if (!range) return;
@@ -43,88 +67,146 @@ export function ActionBar({ turn, view, now, onAct }: { turn: TurnState; view: T
   };
 
   const total = view.config.actionTimeoutMs;
-  const left = turn.deadline != null ? Math.max(0, turn.deadline - now) : null;
-  const secs = turn.deadline != null ? secondsLeft(turn.deadline, now) : null;
-  const urgent = secs != null && secs <= 5;
+  const left = turn?.deadline != null ? Math.max(0, turn.deadline - now) : null;
+  const secs = turn?.deadline != null ? secondsLeft(turn.deadline, now) : null;
+  const tone = secs == null ? '' : secs <= 5 ? ' red' : secs <= 10 ? ' amber' : '';
+
+  const canCheck = live && legal.check;
+  const canCall = live && legal.call != null && legal.call > 0;
+  const canFold = live && legal.fold;
+  const canRaise = live && range != null;
+  const canAllIn = live && legal.allIn > 0;
+
+  /* Keyboard: F fold, C or Space check/call, R raise/bet, A all-in. */
+  useEffect(() => {
+    if (!live) return;
+    const on = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (typingIn(document.activeElement)) return;
+      const k = e.key.toLowerCase();
+      // Space already activates a focused button; do not act twice.
+      if (k === ' ' && document.activeElement?.tagName === 'BUTTON') return;
+      if (k === 'f' && canFold) {
+        e.preventDefault();
+        onAct({ type: 'fold' });
+      } else if ((k === 'c' || k === ' ') && (canCheck || canCall)) {
+        e.preventDefault();
+        onAct(canCheck ? { type: 'check' } : { type: 'call' });
+      } else if (k === 'r' && canRaise) {
+        e.preventDefault();
+        onAct({ type: kind, amount });
+      } else if (k === 'a' && canAllIn) {
+        e.preventDefault();
+        onAct({ type: 'all-in' });
+      }
+    };
+    addEventListener('keydown', on);
+    return () => removeEventListener('keydown', on);
+  }, [live, canFold, canCheck, canCall, canRaise, canAllIn, kind, amount, onAct]);
+
+  const odds = live ? potOdds(toCall, pot) : null;
 
   return (
-    <section className="actions panel" aria-label="Your action">
+    <section className={`actions panel${live ? ' live' : ''}`} aria-label="Your action">
+      <div className="act-head">
+        <strong className="act-title">
+          {live ? 'Your turn' : waitingOn ? `Waiting for ${waitingOn}` : 'Not your turn'}
+          {secs != null ? <span className={`clock num${tone}`}>{secs}s</span> : null}
+        </strong>
+        {odds ? <span className="odds">{odds}</span> : null}
+        <span className="act-spacer" />
+        <span className="shortcuts hint" aria-hidden="true">
+          <kbd>F</kbd> fold <kbd>C</kbd> check/call <kbd>R</kbd> {kind} <kbd>A</kbd> all-in
+        </span>
+      </div>
+
       {left != null ? (
-        <div className={`clockbar${urgent ? ' urgent' : ''}`} aria-hidden="true">
+        <div className={`clockbar${tone}`} aria-hidden="true">
           <div style={{ width: `${Math.min(100, (left / total) * 100)}%` }} />
         </div>
-      ) : null}
-      <div className="buttons">
-        <strong>Your turn{secs != null ? <span className={`clock${urgent ? ' urgent' : ''}`}> · {secs}s</span> : null}</strong>
-        {legal.fold ? (
-          <button className="danger" onClick={() => onAct({ type: 'fold' })}>
-            Fold
-          </button>
-        ) : null}
-        {legal.check ? (
-          <button className="primary" onClick={() => onAct({ type: 'check' })}>
-            Check
-          </button>
-        ) : null}
-        {legal.call != null && legal.call > 0 ? (
-          <button className="primary" onClick={() => onAct({ type: 'call' })}>
-            Call <span className="num">{fmtChips(legal.call)}</span>
-          </button>
-        ) : null}
-        {range ? (
-          <button className="primary" onClick={() => onAct({ type: kind, amount })}>
-            {kind === 'raise' ? 'Raise to' : 'Bet'} <span className="num">{fmtChips(amount)}</span>
-          </button>
-        ) : null}
-        {legal.allIn > 0 ? (
-          <button onClick={() => onAct({ type: 'all-in' })}>
-            All-in <span className="num">{fmtChips(legal.allIn)}</span>
-          </button>
-        ) : null}
-      </div>
-      {range ? (
-        <div className="sizing">
-          <input
-            type="range"
-            min={range.min}
-            max={range.max}
-            step={1}
-            value={amount}
-            onChange={(e) => setBoth(Number(e.target.value))}
-            aria-label={`${kind} amount`}
-          />
-          <input
-            type="number"
-            min={range.min}
-            max={range.max}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              const n = Number(e.target.value);
-              if (Number.isFinite(n)) setAmount(clamp(n, range.min, range.max));
-            }}
-            onBlur={() => setBoth(Number(text))}
-            aria-label={`${kind} amount (${range.min}–${range.max})`}
-          />
-          <div className="quick">
-            <button className="small" onClick={() => setBoth(range.min)}>
-              Min
-            </button>
-            <button className="small" onClick={() => setBoth(sizeTo(0.5))}>
-              ½ pot
-            </button>
-            <button className="small" onClick={() => setBoth(sizeTo(1))}>
-              Pot
-            </button>
-            <button className="small" onClick={() => setBoth(range.max)}>
-              Max
-            </button>
-            <span className="hint">
-              {fmtChips(range.min)}–{fmtChips(range.max)} · pot {fmtChips(pot)}
-            </span>
-          </div>
+      ) : (
+        <div className="clockbar idle" aria-hidden="true">
+          <div style={{ width: '0%' }} />
         </div>
-      ) : null}
+      )}
+
+      <div className="buttons">
+        <button className="danger" disabled={!canFold} onClick={() => onAct({ type: 'fold' })}>
+          Fold
+        </button>
+        <button
+          className="primary"
+          disabled={!canCheck && !canCall}
+          onClick={() => onAct(canCheck ? { type: 'check' } : { type: 'call' })}
+        >
+          {canCall ? (
+            <>
+              Call <span className="num">{fmtChips(legal.call ?? 0)}</span>
+            </>
+          ) : (
+            'Check'
+          )}
+        </button>
+        <button className="primary" disabled={!canRaise} onClick={() => onAct({ type: kind, amount })}>
+          {kind === 'raise' ? 'Raise to' : 'Bet'} <span className="num">{canRaise ? fmtChips(amount) : '—'}</span>
+        </button>
+        <button disabled={!canAllIn} onClick={() => onAct({ type: 'all-in' })}>
+          All-in <span className="num">{canAllIn ? fmtChips(legal.allIn) : '—'}</span>
+        </button>
+      </div>
+
+      <div className="sizing">
+        <input
+          type="range"
+          min={range?.min ?? 0}
+          max={range?.max ?? 0}
+          step={1}
+          value={amount}
+          disabled={!canRaise}
+          onChange={(e) => setBoth(Number(e.target.value))}
+          aria-label={`${kind} amount`}
+        />
+        <input
+          type="number"
+          min={range?.min ?? 0}
+          max={range?.max ?? 0}
+          value={text}
+          disabled={!canRaise}
+          onChange={(e) => {
+            setText(e.target.value);
+            const n = Number(e.target.value);
+            if (Number.isFinite(n) && range) setAmount(clamp(n, range.min, range.max));
+          }}
+          onBlur={() => setBoth(Number(text))}
+          aria-label={`${kind} amount${range ? ` (${range.min}–${range.max})` : ''}`}
+        />
+        <div className="quick">
+          <button className="small" disabled={!canRaise} onClick={() => setBoth(range?.min ?? 0)}>
+            Min
+          </button>
+          <button className="small" disabled={!canRaise} onClick={() => setBoth(sizeTo(1 / 3))}>
+            ⅓ pot
+          </button>
+          <button className="small" disabled={!canRaise} onClick={() => setBoth(sizeTo(0.5))}>
+            ½ pot
+          </button>
+          <button className="small" disabled={!canRaise} onClick={() => setBoth(sizeTo(1))}>
+            Pot
+          </button>
+          <button className="small" disabled={!canRaise} onClick={() => setBoth(range?.max ?? 0)}>
+            Max
+          </button>
+          <span className="hint range-hint">
+            {range ? (
+              <>
+                {fmtChips(range.min)}–{fmtChips(range.max)} · pot <span className="num">{fmtChips(pot)}</span>
+              </>
+            ) : (
+              <>pot <span className="num">{fmtChips(pot)}</span></>
+            )}
+          </span>
+        </div>
+      </div>
     </section>
   );
 }

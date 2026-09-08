@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { fmtChips, formatEvent, formatResult, secondsLeft, shortHex } from './format';
+import {
+  actionBadge,
+  eventActor,
+  fmtChips,
+  fmtDelta,
+  formatEvent,
+  formatResult,
+  joinNames,
+  potOdds,
+  secondsLeft,
+  shortHex,
+  streetLabel,
+  summarizeResult,
+} from './format';
 import type { HandRank } from './types';
 
 const names: Record<number, string> = { 0: 'Alice', 1: 'Bob', 3: 'Carol' };
@@ -74,5 +87,118 @@ describe('helpers', () => {
   it('counts down without going negative', () => {
     expect(secondsLeft(10_000, 7_400)).toBe(3);
     expect(secondsLeft(10_000, 12_000)).toBe(0);
+  });
+});
+
+describe('summarizeResult', () => {
+  const winCtx = { seatName: (s: number) => names[s] ?? `Seat ${s + 1}`, viewerSeat: 0 };
+
+  it('names the hand at showdown', () => {
+    const s = summarizeResult(
+      { awards: [{ potIndex: 0, amount: 34, seat: 1, rank: twoPair }], net: { 0: -17, 1: 17 }, shown: [], rake: 0 },
+      winCtx,
+    );
+    expect(s.headline).toBe('Bob wins 34');
+    expect(s.detail).toBe('Two pair, aces and eights');
+    expect(s.line).toBe('Bob wins 34 with Two pair, aces and eights');
+    expect(s.showdown).toBe(true);
+    expect(s.seats).toEqual([1]);
+  });
+
+  it('never invents a hand for a fold-to-one win', () => {
+    const s = summarizeResult({ awards: [{ potIndex: 0, amount: 12, seat: 1 }], net: {}, shown: [], rake: 0 }, winCtx);
+    expect(s.showdown).toBe(false);
+    expect(s.detail).toBe('uncontested');
+    expect(s.line).toBe('Bob wins 12 (uncontested)');
+  });
+
+  it('reads a split pot as a split', () => {
+    const s = summarizeResult(
+      {
+        awards: [
+          { potIndex: 0, amount: 17, seat: 0, rank: twoPair },
+          { potIndex: 0, amount: 17, seat: 1, rank: twoPair },
+        ],
+        net: {},
+        shown: [],
+        rake: 1,
+      },
+      winCtx,
+    );
+    expect(s.headline).toBe('Alice and Bob split 34');
+    expect(s.entries).toHaveLength(2);
+    expect(s.rake).toBe(1);
+  });
+
+  it('borrows the label from the shown cards when the award has none', () => {
+    const s = summarizeResult(
+      { awards: [{ potIndex: 0, amount: 9, seat: 1 }], net: {}, shown: [{ seat: 1, holeCards: ['8c', '8s'], rank: twoPair }], rake: 0 },
+      winCtx,
+    );
+    expect(s.detail).toBe('Two pair, aces and eights');
+  });
+
+  it('lists both hands when side pots went to different hands', () => {
+    const other: HandRank = { category: 'flush', value: 9, cards: ['Ah', 'Th', '8h', '5h', '2h'], label: 'Flush, ace high' };
+    const s = summarizeResult(
+      {
+        awards: [
+          { potIndex: 0, amount: 20, seat: 1, rank: twoPair },
+          { potIndex: 1, amount: 8, seat: 0, rank: other },
+        ],
+        net: {},
+        shown: [],
+        rake: 0,
+      },
+      winCtx,
+    );
+    expect(s.detail).toBe('Bob: Two pair, aces and eights · Alice: Flush, ace high');
+  });
+});
+
+describe('joinNames', () => {
+  it('reads like a sentence', () => {
+    expect(joinNames([])).toBe('');
+    expect(joinNames(['Alice'])).toBe('Alice');
+    expect(joinNames(['Alice', 'Bob'])).toBe('Alice and Bob');
+    expect(joinNames(['Alice', 'Bob', 'Carol'])).toBe('Alice, Bob and Carol');
+  });
+});
+
+describe('table furniture', () => {
+  it('labels streets', () => {
+    expect(streetLabel('flop')).toBe('Flop');
+    expect(streetLabel('showdown')).toBe('Showdown');
+    expect(streetLabel('nonsense')).toBe('nonsense');
+  });
+
+  it('signs chip deltas', () => {
+    expect(fmtDelta(34)).toBe('+34');
+    expect(fmtDelta(-1234)).toBe('-1,234');
+    expect(fmtDelta(0)).toBe('0');
+  });
+
+  it('badges the last action per seat', () => {
+    expect(actionBadge({ seat: 0, street: 'flop', action: { type: 'fold' }, amount: 0 })).toBe('Fold');
+    expect(actionBadge({ seat: 0, street: 'flop', action: { type: 'check' }, amount: 0 })).toBe('Check');
+    expect(actionBadge({ seat: 0, street: 'flop', action: { type: 'call' }, amount: 6 })).toBe('Call 6');
+    expect(actionBadge({ seat: 0, street: 'flop', action: { type: 'call' }, amount: 0 })).toBe('Call');
+    expect(actionBadge({ seat: 0, street: 'flop', action: { type: 'bet', amount: 8 }, amount: 8 })).toBe('Bet 8');
+    expect(actionBadge({ seat: 0, street: 'flop', action: { type: 'raise', amount: 24 }, amount: 18 })).toBe('Raise to 24');
+    expect(actionBadge({ seat: 0, street: 'flop', action: { type: 'all-in' }, amount: 1500 })).toBe('All-in 1,500');
+  });
+
+  it('quotes pot odds only when there is something to call', () => {
+    expect(potOdds(8, 26)).toBe('call 8 to win 34');
+    expect(potOdds(0, 26)).toBeNull();
+  });
+
+  it('attributes a line to a seat so the log can colour it', () => {
+    const seated = { ...ctx, seatOf: (p: string) => (p === 'p-bob' ? 1 : null) };
+    expect(eventActor({ type: 'action', record: { seat: 3, street: 'flop', action: { type: 'fold' }, amount: 0 } }, seated)).toBe(3);
+    expect(eventActor({ type: 'blind-posted', seat: 1, kind: 'big', amount: 2 }, seated)).toBe(1);
+    expect(eventActor({ type: 'chat', playerId: 'p-bob', name: 'Bob', text: 'nh', at: 0 }, seated)).toBe(1);
+    expect(eventActor({ type: 'chat', playerId: 'p-zed', name: 'Zed', text: 'hi', at: 0 }, seated)).toBeNull();
+    expect(eventActor({ type: 'street', street: 'flop', board: ['Ah', '7d', '2c'] }, seated)).toBeNull();
   });
 });

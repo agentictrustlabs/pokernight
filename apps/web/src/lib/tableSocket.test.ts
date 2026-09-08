@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LOG_LIMIT, TableSocket, dismissError, initialState, parseServerMessage, reduce } from './tableSocket';
 import type { ServerMessage } from './types';
-import { emptyView, endOfHandScript, event, fakeFactory, fakeTimers, flopView, seat, turn, welcome } from './mockServer';
+import { PLAYERS, emptyView, endOfHandScript, event, fakeFactory, fakeTimers, flopView, seat, turn, welcome } from './mockServer';
 
 describe('reduce: welcome', () => {
   it('adopts the view, names and viewer identity', () => {
@@ -17,6 +17,12 @@ describe('reduce: welcome', () => {
   it('derives a pending turn from the view when it is already the viewer to act', () => {
     const s = reduce(initialState, welcome(flopView(0)));
     expect(s.turn).toEqual({ handNo: 7, seat: 0, legal: flopView(0).legal, deadline: 1_700_000_030_000 });
+  });
+
+  it('records who is a person and who is an agent', () => {
+    const s = reduce(initialState, welcome(emptyView([seat(3, 'p-carol', 200)], null)));
+    expect(s.players['p-carol']).toEqual(PLAYERS['p-carol']);
+    expect(s.players['p-alice']?.kind).toBe('human');
   });
 
   it('spectators never get a turn', () => {
@@ -65,8 +71,10 @@ describe('reduce: turn', () => {
 describe('reduce: event', () => {
   it('appends to the log and adopts the fresh view', () => {
     let s = reduce(initialState, welcome(flopView(0)));
+    // The welcome seeds the hand in progress, so the live events follow that seed.
+    const seeded = s.log.map((e) => e.type);
     for (const m of endOfHandScript()) s = reduce(s, m);
-    expect(s.log.map((e) => e.type)).toEqual(['action', 'street', 'street', 'showdown', 'hand-ended']);
+    expect(s.log.map((e) => e.type)).toEqual([...seeded, 'action', 'street', 'street', 'showdown', 'hand-ended']);
     expect(s.view?.hand?.street).toBe('showdown');
   });
 
@@ -78,6 +86,12 @@ describe('reduce: event', () => {
     expect(s.lastHand?.result?.awards[0]?.seat).toBe(0);
     s = reduce(s, event({ type: 'hand-started', handNo: 8, seedCommit: 'abc', button: 3, seats: [0, 1] }, emptyView()));
     expect(s.lastHand).toBeNull();
+  });
+
+  it('keeps the board of the finished hand so the winner moment can point at it', () => {
+    let s = reduce(initialState, welcome(flopView(0)));
+    for (const m of endOfHandScript()) s = reduce(s, m);
+    expect(s.lastHand?.board).toEqual(['Ah', '7d', '2c', 'Kc', '9s']);
   });
 
   it('learns names from seat events and chat', () => {
@@ -183,5 +197,18 @@ describe('TableSocket', () => {
     ff.sockets[0]!.serverDrop(4401, 'bad token');
     expect(received.at(-1)).toEqual({ type: 'error', code: 'unauthenticated', message: 'bad token' });
     expect(sock.status).toBe('closed');
+  });
+
+  it('seeds the log from the hand in progress when joining mid-session', () => {
+    // Joining at hand 422 must not read "waiting for the first hand": the view carries this hand's
+    // actions, so they become log lines.
+    const view = flopView(0);
+    const s = reduce(initialState, welcome(view));
+    expect(s.log.length).toBeGreaterThan(0);
+    expect(s.log[0]).toMatchObject({ type: 'hand-started', handNo: view.hand!.handNo });
+
+    // A reconnect must not duplicate them: an existing log wins.
+    const again = reduce({ ...s, log: s.log }, welcome(view));
+    expect(again.log).toBe(s.log);
   });
 });
