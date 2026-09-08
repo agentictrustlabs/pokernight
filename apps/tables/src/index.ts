@@ -18,8 +18,10 @@
  *   DELETE /tables/:id/seat-agent/:seat → stands that agent up and cashes it out (auth required)
  *   GET  /tables/:id/settlement         → this player's money rows at a table (auth required)
  *   GET  /tables/:id/ws?token=...       → WebSocket to the table DO (no/invalid token = spectator)
- *   GET  /treasury                      → chosen treasury + balance + candidates (auth required)
+ *   GET  /treasury                      → chosen treasury + balance + candidates + mandate (auth required)
  *   POST /treasury/select {address}     → choose the treasury that funds play (auth required)
+ *   POST /treasury/create {label?}      → charter one under the player's person agent (auth required)
+ *   POST /treasury/mandate {delegation?}→ sign or record the buy-in mandate (auth required)
  *   POST /treasury/fund {amount}        → mint test USDC into it (auth required; test assets only)
  */
 
@@ -30,8 +32,27 @@ import { CreateTableRequestSchema, DevSessionRequestSchema, POKER_ACT_SKILL, Sea
 import { agentKindFromCard, fetchAgentCard, hasPokerActSkill, resolveAgentBase } from './a2a.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aTimeoutMs, allowedOrigins, isDevAuth, type Env } from './env.js';
-import { HomeAuthError, completeDemoSignIn, completeHomeSignIn, homePlayerId, homeRedirectUri, type HomeIdentity } from './home.js';
-import { FundTreasurySchema, SelectTreasurySchema, fundTreasury, getTreasury, selectTreasury } from './routes-treasury.js';
+import {
+  BUY_IN_TEMPLATE,
+  HomeAuthError,
+  completeDemoSignIn,
+  completeHomeSignIn,
+  completeMandateCeremony,
+  homePlayerId,
+  homeRedirectUri,
+  type HomeIdentity,
+} from './home.js';
+import {
+  CreateTreasurySchema,
+  FundTreasurySchema,
+  MandateSchema,
+  SelectTreasurySchema,
+  createTreasury,
+  fundTreasury,
+  getTreasury,
+  selectTreasury,
+  signMandate,
+} from './routes-treasury.js';
 import type { SessionRecord } from './session-do.js';
 import type { SeatAgentBody } from './table-do.js';
 
@@ -73,6 +94,8 @@ app.get('/auth/config', (c) => {
       zone: c.env.HOME_ZONE ?? '',
       delegate: c.env.HOME_DELEGATE ?? '',
       redirectUri,
+      /** The delegation template a buy-in authorisation asks the Home to run. */
+      buyInTemplate: BUY_IN_TEMPLATE,
     },
   });
 });
@@ -152,6 +175,7 @@ async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIde
     agentName: identity.agentName,
     homeOrigin: identity.homeOrigin,
     delegation: identity.delegation,
+    idToken: identity.idToken,
     issuedAt: Date.now(),
     expiresAt: exp,
   };
@@ -170,6 +194,44 @@ async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIde
   }
   return c.json({ token, playerId, name: identity.name, agentName: identity.agentName, address: identity.address });
 }
+
+/**
+ * Finish a `poker-buyin` authorisation the player ran at their own Home.
+ *
+ * Requires a live session AND that the ceremony was completed by the same person: an authorisation
+ * that arrived for somebody else is not a mandate this session may spend under. The delegation is
+ * then checked against this session's treasury before it is kept (`signMandate`) — the browser hands
+ * over a signature, never an authority.
+ */
+app.post('/auth/home/mandate', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const parsed = HomeAuthRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+
+  let result;
+  try {
+    result = await completeMandateCeremony(c.env, parsed.data);
+  } catch (e) {
+    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
+    console.error('mandate ceremony', e);
+    return c.json({ error: 'the buy-in authorisation could not be completed' }, 401);
+  }
+  if (homePlayerId(result.identity.address) !== session.playerId) {
+    return c.json({ error: 'that authorisation was completed by a different person than this session' }, 403);
+  }
+  if (!result.paymentDelegation) {
+    return c.json(
+      {
+        error:
+          'your Home completed the authorisation but returned no buy-in mandate, so the card room has been given ' +
+          'nothing it could spend under. Nothing was recorded.',
+      },
+      409,
+    );
+  }
+  return signMandate(c, session, result.paymentDelegation);
+});
 
 /** Sign out: drop the server-side record so the bearer token stops resolving straight away. */
 app.post('/auth/signout', async (c) => {
@@ -282,6 +344,31 @@ app.post('/treasury/select', async (c) => {
   const parsed = SelectTreasurySchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
   return selectTreasury(c, session, parsed.data.address);
+});
+
+/**
+ * Charter a treasury under this player's person agent. A demo persona's Home does it on request; a
+ * real person is handed to their own Home, which is the only place that can create and custody it.
+ */
+app.post('/treasury/create', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const parsed = CreateTreasurySchema.safeParse((await c.req.json().catch(() => null)) ?? {});
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  return createTreasury(c, session, parsed.data.label);
+});
+
+/**
+ * The buy-in mandate. With a `delegation` it records one the player's own Home issued, after checking
+ * it authorises THIS table from THIS session's treasury; without one it asks the Home to sign the
+ * delegation this table would have asked for, which only works for an identity the Home custodies.
+ */
+app.post('/treasury/mandate', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const parsed = MandateSchema.safeParse((await c.req.json().catch(() => null)) ?? {});
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  return signMandate(c, session, parsed.data.delegation);
 });
 
 app.post('/treasury/fund', async (c) => {

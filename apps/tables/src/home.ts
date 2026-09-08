@@ -116,6 +116,11 @@ export interface HomeIdentity {
   delegation?: WireDelegation;
   claims: IdTokenClaims & { iat?: number };
   expiresAt: number;
+  /**
+   * The id_token itself. Held server-side so the Worker can ask the person's Home what agents they
+   * have; never returned to the browser and never put on a pokernight session token.
+   */
+  idToken: string;
 }
 
 /** A failure a caller should turn into a 401 with `reason` shown to the user. */
@@ -201,6 +206,7 @@ export async function verifyHomeIdToken(
     homeOrigin: authOrigin,
     claims,
     expiresAt: claims.exp * 1000,
+    idToken,
   };
 }
 
@@ -257,4 +263,62 @@ export async function completeDemoSignIn(env: Env, req: DemoAuthRequest, now = D
   const identity = await verifyHomeIdToken(env, req.authOrigin, req.idToken, '', now);
   const delegation = req.delegation && typeof req.delegation === 'object' ? (req.delegation as WireDelegation) : undefined;
   return { ...identity, delegation };
+}
+
+
+/* ------------------------------------------------------- the buy-in authorisation */
+
+/** The delegation template this card room asks a player's Home to run for a buy-in mandate. */
+export const BUY_IN_TEMPLATE = 'poker-buyin';
+
+export interface HomeMandateResult {
+  identity: Omit<HomeIdentity, 'delegation'>;
+  /**
+   * The payment mandate the Home issued, when it issued one. Undefined means the ceremony completed
+   * and returned none — which is a fact about that exchange, not an inference about the Home.
+   */
+  paymentDelegation?: unknown;
+}
+
+/**
+ * Finish a `poker-buyin` ceremony: exchange the code and take BOTH halves of the answer.
+ *
+ * `exchangeCode` in `@agenticprimitives/connect-client` returns the id_token and the site-login
+ * delegation and drops everything else, so the token endpoint is called directly here — the payment
+ * mandate is precisely the field it drops. The identity half is then verified by exactly the same
+ * function every other sign-in path uses, so nothing about who the player is rests on this route.
+ */
+export async function completeMandateCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<HomeMandateResult> {
+  if (!isAllowedHomeOrigin(env, req.authOrigin)) {
+    throw new HomeAuthError(`home origin "${req.authOrigin}" is not a trusted issuer for this deployment`);
+  }
+  if (!req.nonce) throw new HomeAuthError('id_token nonce does not match the authorisation request');
+
+  const clientId = (env.HOME_CLIENT_ID ?? '').trim();
+  if (!clientId) throw new HomeAuthError('home sign-in is not configured: HOME_CLIENT_ID is not set');
+
+  let body: { id_token?: string; paymentDelegation?: unknown; error?: string };
+  try {
+    const res = await fetch(new URL('/token', req.authOrigin).toString(), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: req.code,
+        code_verifier: req.codeVerifier,
+        client_id: clientId,
+        redirect_uri: homeRedirectUri(env),
+      }),
+    });
+    body = (await res.json().catch(() => ({}))) as typeof body;
+    if (!res.ok || !body.id_token) {
+      throw new HomeAuthError(`code exchange failed at ${req.authOrigin}: ${body.error ?? `HTTP ${res.status}`}`);
+    }
+  } catch (e) {
+    if (e instanceof HomeAuthError) throw e;
+    throw new HomeAuthError(`code exchange failed at ${req.authOrigin}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  const identity = await verifyHomeIdToken(env, req.authOrigin, body.id_token, req.nonce, now);
+  return { identity, ...(body.paymentDelegation ? { paymentDelegation: body.paymentDelegation } : {}) };
 }

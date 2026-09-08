@@ -76,13 +76,39 @@ faithchain; if the chain ever bridges one, only the env var changes.
 Units: chips are integers in the table ledger. `chipValue` (default 10 000 = 0.01 USDC) converts
 chips to asset base units. Blinds and buy-in limits are configured in chips.
 
+### 5.0 The player's treasury
+
+A treasury is a `treasury`-kind Smart Agent of the player's own, chartered under their person agent at
+their Home. It is NOT the person agent itself: that is their identity, and spending from it would
+conflate who someone is with what they are willing to stake. An early build made exactly that mistake.
+
+One treasury per person, kept across nights and tables, until they choose to switch. A player with none
+is required to create one before sitting at a settled table, and the card room makes that a step in the
+flow rather than an errand elsewhere.
+
+Discovery is `GET /connect/related-orgs` at the Home with the player's own id_token, filtered to
+`kind === 'person-treasury'`. Creation depends on who is playing: the Home's own bootstrap endpoint
+needs a custody-grade session this app can never hold, so a real player is handed to the Home portal's
+"Create personal treasury" and returns, while a demo persona is created server-side on the
+build/sign/submit rail with `/connect/persona-sign` and then recorded back at the Home.
+
+The card room never holds the treasury's key, exactly as it does not hold the house's.
+
 ### 5.1 Buy-in (player → house)
+
+Nothing is credited out of order. A settled seat requires, in this sequence and refused by name at
+each step: a treasury chosen from the person's own Home (never their person agent), enough of the
+asset in it, and a mandate that covers this buy-in from that treasury. `seatBlock` says it in the
+browser and `authorizeBuyIn` says it on the server, in the same words. A settled table never falls
+back to play money.
 
 1. Player's Home shows the `poker-buyin` template. Consent screen text comes from
    `describePaymentMandate`. The player signs a delegation to the house delegate with caveats built by
    `buildPaymentMandateCaveats`: `asset = ASSET`, `maxAmount = max buy-in × rebuys`, `validUntil = end
    of night`, `allowedTargets = [ASSET]`, `allowedMethods = [transfer]`, plus a `frequency` constraint
-   (max redemptions per window) that bounds rebuys.
+   (max redemptions per window) that bounds rebuys. For a demo persona, whose custodian key the Home
+   holds, the card room builds that same delegation and the Home signs its EIP-712 digest. Either way
+   the delegator is the TREASURY, the mandate is bound to it, and switching treasury invalidates it.
 2. To sit, the player (browser or A2A) sends `table.join {seat, buyInChips}` carrying the delegation.
 3. The table Durable Object validates the delegation off-chain (`evaluateCaveats`,
    `verifyLiveDelegation`), then enqueues a settlement op. The house redeems the delegation: one ERC-20

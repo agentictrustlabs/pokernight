@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { Action, Card as CardCode, ClientCommand, Session } from '../lib/types';
 import type { TableState } from '../lib/tableSocket';
+import { seatBlock, type TreasuryView } from '../lib/treasury';
 import { fmtChips, summarizeResult, type FormatContext } from '../lib/format';
 import { awardedTo, blindSeats, lastActions, netBySeat, potTotal, shownCards, winningCards, winningSeats } from '../lib/hand';
 import { useNow, usePrefersReducedMotion } from '../lib/hooks';
@@ -88,7 +89,21 @@ function useWinnerPhase(handNo: number | null, reduced: boolean): WinPhase {
   return phase;
 }
 
-export function Table({ state, session, send }: { state: TableState; session: Session | null; send: (c: ClientCommand) => void }) {
+export function Table({
+  state,
+  session,
+  send,
+  settlement = 'play-money',
+  treasury = null,
+}: {
+  state: TableState;
+  session: Session | null;
+  send: (c: ClientCommand) => void;
+  /** The table's settlement mode. A settled table refuses a seat until the money is in order. */
+  settlement?: string;
+  /** This player's money, as the card room sees it. Null while it is still being read. */
+  treasury?: TreasuryView | null;
+}) {
   const view = state.view;
   const [picking, setPicking] = useState<number | null>(null);
   const [buyIn, setBuyIn] = useState<string>('');
@@ -150,8 +165,13 @@ export function Table({ state, session, send }: { state: TableState; session: Se
     setPicking(seat);
     setBuyIn(String(cfg.maxBuyIn));
   };
+  // What this exact buy-in still needs, if anything. Recomputed as the number changes, so a player
+  // typing 20 000 chips is told they are short before they press the button rather than after.
+  const wanted = Math.min(cfg.maxBuyIn, Math.max(cfg.minBuyIn, Math.round(Number(buyIn) || 0)));
+  const block = seatBlock(settlement, treasury, wanted);
+
   const confirmSit = () => {
-    if (picking == null) return;
+    if (picking == null || block) return;
     const n = Math.round(Number(buyIn));
     if (!Number.isFinite(n)) return;
     send({ type: 'join', seat: picking, buyIn: Math.min(cfg.maxBuyIn, Math.max(cfg.minBuyIn, n)) });
@@ -307,12 +327,31 @@ export function Table({ state, session, send }: { state: TableState; session: Se
             Buy-in ({fmtChips(cfg.minBuyIn)}–{fmtChips(cfg.maxBuyIn)})
             <input type="number" min={cfg.minBuyIn} max={cfg.maxBuyIn} value={buyIn} onChange={(e) => setBuyIn(e.target.value)} autoFocus />
           </label>
-          <button className="primary" type="submit">
+          <button className="primary" type="submit" disabled={block !== null}>
             Sit down
           </button>
           <button type="button" className="quiet" onClick={() => setPicking(null)}>
             Cancel
           </button>
+          {/* A settled table never falls back to play money. If the seat cannot be paid for, it says
+              which of the four things is missing and points at the panel that fixes that one. */}
+          {block ? (
+            <p className={block.action === 'wait' ? 'hint' : 'form-error'}>
+              {block.reason}
+              {block.action === 'wait' || block.action === 'configure' ? null : (
+                <>
+                  {' '}
+                  <a href={block.action === 'create-treasury' || block.action === 'choose-treasury' ? '#/' : '#money'}>
+                    {block.action === 'fund-treasury'
+                      ? 'Fund it in the Money panel →'
+                      : block.action === 'sign-mandate'
+                        ? 'Authorise buy-ins in the Money panel →'
+                        : 'Set your treasury up in the lobby →'}
+                  </a>
+                </>
+              )}
+            </p>
+          ) : null}
         </form>
       ) : null}
 

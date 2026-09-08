@@ -129,6 +129,22 @@ AGENT_ACCOUNT_FACTORY = "0x464eEe7518c3c97DA570592481329E0627E9a3B8"
 DELEGATION_MANAGER = "0x710cb1bF08C234Df397e0910331e0A29710EF4F7"
 PAYMENT_ENFORCER = "0x07fA0aE59FdE4B7ce8962d6fE7a1d648ec3DD5CE"
 DIGEST_BINDING_ENFORCER = "0xA3bb9BCC9b2F6F2419E1aBe5ED6Fd5399b9E68e1"
+# The other three enforcers a payment mandate composes. All four are required to ASK a player to sign
+# a buy-in mandate: a mandate assembled out of three would be a wider authority than the consent
+# screen showed, so the route refuses by name rather than composing a partial one.
+TIMESTAMP_ENFORCER = "0x73A7B878168b7DE48677617179A8bE894f0Dfe96"
+ALLOWED_TARGETS_ENFORCER = "0x2156311097A936de1916a878bF53Bfd43c7b5715"
+ALLOWED_METHODS_ENFORCER = "0xdBb2E47793393C499efB0f3fcbf6Ca8669791a41"
+# Naming, for the OPTIONAL `<label>.treasury` a player may claim when they create a treasury. A
+# treasury is allowed to be nameless and that is the default — the Smart Agent address is its id.
+AGENT_NAME_REGISTRY = "0x60E949D52660A9D4143ecB0fdA56c0457f20aED9"
+TREASURY_SUBREGISTRY = "0xf1df2D9b779C62a8BF5707C799d8E6842382892B"
+# What a night's buy-in mandate may cover. These are the caps the player sees before signing and the
+# ones the on-chain PaymentEnforcer holds: at most 20 000 chips (200 USDC) per buy-in, five buy-ins,
+# and twelve hours. A mandate is one night at a table, not a standing account.
+MANDATE_MAX_BUY_IN_CHIPS = "20000"
+MANDATE_MAX_BUY_INS = "5"
+MANDATE_VALID_SECONDS = "43200"
 PAYMENT_RECEIPT_REGISTRY = "0x5FfDd6186C1bBc4628187B1c4C1fDaA39F870d43"
 # Paymaster that sponsors the house's UserOps. It is in DEV MODE on faithchain (accepts every op)
 # and holds a large EntryPoint deposit, so the house pays no gas of its own.

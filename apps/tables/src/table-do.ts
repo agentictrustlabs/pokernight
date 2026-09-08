@@ -1123,7 +1123,13 @@ export class PokerTableDO extends DurableObject<Env> {
     const treasury = (rec?.treasury ?? pinned ?? '').trim();
     if (!treasury) return null;
     const funding: PlayerFunding = { treasury: treasury as `0x${string}` };
-    if (rec?.buyInMandate) funding.mandate = rec.buyInMandate as PlayerFunding['mandate'];
+    // A mandate authorises ONE account to be spent from. If the player has since moved to another
+    // treasury, the authority does not travel with them: leaving it attached would let a seat spend
+    // from money they never authorised. Absent here means the adapter refuses by name, which is right.
+    const boundTo = (rec?.mandateTreasury ?? '').trim().toLowerCase();
+    if (rec?.buyInMandate && (!boundTo || boundTo === treasury.toLowerCase())) {
+      funding.mandate = rec.buyInMandate as PlayerFunding['mandate'];
+    }
     return funding;
   }
 

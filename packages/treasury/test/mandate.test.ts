@@ -13,8 +13,11 @@ import { ROOT_AUTHORITY } from '@agenticprimitives/delegation';
 import {
   buildBuyInMandateCaveats,
   buildBuyInRedemption,
+  buyInMandateTerms,
+  checkBuyInMandate,
   describeBuyInMandate,
   TreasuryError,
+  unsignedBuyInMandate,
   type Delegation,
 } from '../src/index.js';
 
@@ -128,5 +131,111 @@ describe('buildBuyInRedemption', () => {
 
   it('refuses a non-positive amount', () => {
     expect(() => buildBuyInRedemption({ ...base, amount: 0n, delegation: delegation() })).toThrow(/amount must be > 0/);
+  });
+});
+
+/**
+ * `checkBuyInMandate` is where a stored mandate meets the movement it is supposed to authorise. It
+ * runs off chain, before a seat is credited, so that a refusal names the missing thing instead of
+ * arriving as a reverted UserOp — which means these tests are about the WORDS as much as the answer.
+ */
+describe('checkBuyInMandate', () => {
+  const now = 1_700_000_000_000;
+  const policy = { maxBuyInChips: 20_000, maxBuyIns: 5, windowSeconds: 43_200, validForSeconds: 43_200 };
+  const terms = buyInMandateTerms({ payee: HOUSE, asset: ASSET, enforcers: ENFORCERS, chipValue: 10_000n, policy, now });
+  const signed = (over: Partial<Delegation> = {}): Delegation => ({
+    ...unsignedBuyInMandate({ treasury: PLAYER, houseDelegate: HOUSE_DELEGATE, terms, salt: 1n }),
+    signature: `0x${'ab'.repeat(65)}` as Hex,
+    ...over,
+  });
+  const expect_ = {
+    treasury: PLAYER,
+    houseDelegate: HOUSE_DELEGATE,
+    payee: HOUSE,
+    asset: ASSET,
+    paymentEnforcer: ENFORCERS.payment,
+    now,
+  };
+
+  it('accepts the mandate this table would have asked for', () => {
+    expect(checkBuyInMandate(signed(), { ...expect_, amount: 2_000_000n })).toBeNull();
+  });
+
+  it('survives the round trip through JSON, where a bigint salt becomes a string', () => {
+    const wire = JSON.parse(JSON.stringify({ ...signed(), salt: signed().salt.toString() })) as unknown;
+    expect(checkBuyInMandate(wire, expect_)).toBeNull();
+  });
+
+  it('refuses a mandate signed by a different treasury, naming both', () => {
+    const other = `0x${'b2'.repeat(20)}` as Address;
+    const reason = checkBuyInMandate(signed({ delegator: other }), expect_);
+    expect(reason).toContain(other);
+    expect(reason).toContain(PLAYER);
+  });
+
+  it('accepts the open-delegation sentinel the HOST names, which any redeemer may redeem', () => {
+    // The sentinel is an address, so it is injected rather than known here (`packages/*` rules).
+    const open = '0x0000000000000000000000000000000000000a11' as Address;
+    expect(checkBuyInMandate(signed({ delegate: open }), { ...expect_, openDelegate: open })).toBeNull();
+    // …and without the host naming it, it is just another stranger.
+    expect(checkBuyInMandate(signed({ delegate: open }), expect_)).toContain(open);
+  });
+
+  it('refuses one delegated to somebody else entirely', () => {
+    const stranger = `0x${'de'.repeat(20)}` as Address;
+    expect(checkBuyInMandate(signed({ delegate: stranger }), expect_)).toContain(stranger);
+  });
+
+  it('refuses one that pays a treasury which is not the house’s', () => {
+    const elsewhere = buyInMandateTerms({ payee: `0x${'99'.repeat(20)}` as Address, asset: ASSET, enforcers: ENFORCERS, chipValue: 10_000n, policy, now });
+    const mandate = { ...unsignedBuyInMandate({ treasury: PLAYER, houseDelegate: HOUSE_DELEGATE, terms: elsewhere, salt: 1n }), signature: `0x${'ab'.repeat(65)}` as Hex };
+    expect(checkBuyInMandate(mandate, expect_)).toMatch(/not this card room's treasury/);
+  });
+
+  it('refuses a buy-in bigger than the cap, quoting both amounts', () => {
+    const reason = checkBuyInMandate(signed(), { ...expect_, amount: 500_000_000n });
+    expect(reason).toContain('200.000000');
+    expect(reason).toContain('500.000000');
+  });
+
+  it('refuses an expired mandate, and says when it expired', () => {
+    const later = now + (policy.validForSeconds + 60) * 1000;
+    expect(checkBuyInMandate(signed(), { ...expect_, now: later })).toMatch(/expired at/);
+  });
+
+  it('refuses an unsigned delegation rather than treating it as authority', () => {
+    expect(checkBuyInMandate(signed({ signature: '0x' as Hex }), expect_)).toMatch(/carries no signature/);
+  });
+
+  it('refuses something that is not a delegation at all', () => {
+    expect(checkBuyInMandate({ hello: 'world' }, expect_)).toMatch(/not a delegation/);
+    expect(checkBuyInMandate(null, expect_)).toMatch(/not a delegation/);
+  });
+
+  it('refuses a mandate with no payment caveat — nothing on chain would cap it', () => {
+    expect(checkBuyInMandate(signed({ caveats: [] }), expect_)).toMatch(/no payment caveat/);
+  });
+});
+
+describe('buyInMandateTerms', () => {
+  it('derives the asset caps from chips and the chip value, so one number decides both', () => {
+    const t = buyInMandateTerms({
+      payee: HOUSE,
+      asset: ASSET,
+      enforcers: ENFORCERS,
+      chipValue: 10_000n,
+      policy: { maxBuyInChips: 200, maxBuyIns: 3, windowSeconds: 3600, validForSeconds: 3600 },
+      now: 1_700_000_000_000,
+    });
+    expect(t.maxAmountPerCharge).toBe(2_000_000n);
+    expect(t.maxAggregate).toBe(6_000_000n);
+    expect(t.maxRedemptionsPerWindow).toBe(3);
+    expect(t.validUntil).toBe(1_700_000_000 + 3600);
+  });
+
+  it('refuses to build terms from a nonsense policy rather than capping at zero', () => {
+    const bad = { payee: HOUSE, asset: ASSET, enforcers: ENFORCERS, chipValue: 10_000n, now: 1 };
+    expect(() => buyInMandateTerms({ ...bad, policy: { maxBuyInChips: 0, maxBuyIns: 3, windowSeconds: 60, validForSeconds: 60 } })).toThrow(TreasuryError);
+    expect(() => buyInMandateTerms({ ...bad, policy: { maxBuyInChips: 10, maxBuyIns: 0, windowSeconds: 60, validForSeconds: 60 } })).toThrow(TreasuryError);
   });
 });

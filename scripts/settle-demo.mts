@@ -14,16 +14,14 @@
  *      (`createTreasuryTransferAdapter`), reading both balances either side;
  *   5. then tries the BUY-IN half and reports precisely where it stops.
  *
- * The buy-in cannot complete for a REAL player today and this script does not pretend otherwise: it
- * needs a `poker-buyin` mandate signed at that player's Home, and the Home has not curated that
- * delegation template for the `pokernight` client (docs/HOME-SETUP.md §1). By default the script runs
- * the path anyway and prints the refusal verbatim, because "how far does it get" is the useful answer.
+ * This script's player treasury is a STAND-IN that the script itself custodies, so what it proves is
+ * the rail, not the ceremony: without `--sign-mandate` it runs the buy-in with no mandate and prints
+ * the refusal verbatim, and with it the script signs the mandate as the stand-in's own custodian and
+ * the house redeems it — proving the caveats, the enforcers and `redeemDelegation`.
  *
- * `--sign-mandate` goes one step further and proves the REDEMPTION RAIL itself on chain: the script
- * custodies the stand-in player treasury, so it can sign the very mandate a Home would issue and let
- * the house redeem it. That proves the caveats, the enforcers and `redeemDelegation` all work here.
- * It proves nothing about the Home, and the script says so — the missing piece is a signature from
- * someone who is not us, which is exactly the piece the Home deploy supplies.
+ * For the ceremony as a real person experiences it — a treasury discovered or created at their Home,
+ * and a mandate signed there with a key this repo does not hold — run `pnpm settle:persona`
+ * (scripts/settle-persona.mts). That is the one that proves the authority as well as the rail.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -287,8 +285,8 @@ async function main(): Promise<void> {
     console.log('                                 custodian. The rail is proven; a real player still needs their');
     console.log('                                 Home to issue the mandate (docs/HOME-SETUP.md §1).');
   } else {
-    console.log('  buy-in                         blocked on a poker-buyin mandate the Home cannot yet issue');
-    console.log('                                 (docs/HOME-SETUP.md §1 — curate `pokernight` in the Home whitelabel config)');
+    console.log('  buy-in                         refused: no mandate was signed for the stand-in treasury');
+    console.log('                                 (re-run with --sign-mandate, or `pnpm settle:persona` for the real ceremony)');
   }
 }
 

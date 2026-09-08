@@ -17,6 +17,7 @@ import { createTreasuryTransferAdapter, type PlayerFunding } from '@pokernight/t
 import type { SettlementMode } from '@pokernight/protocol';
 import type { Env } from './env.js';
 import {
+  OPEN_DELEGATE,
   TreasuryConfigError,
   chainId,
   chipValue,
@@ -85,6 +86,7 @@ function createMandateTransferAdapter(env: Env, resolveFunding?: FundingResolver
     houseTreasury: house,
     chipValue: chips,
     chainId: chain,
+    openDelegate: OPEN_DELEGATE,
     resolvePlayer: resolve,
   };
   const delegate = houseDelegate(env);

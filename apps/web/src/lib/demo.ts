@@ -10,10 +10,9 @@
  * Home that does not offer it, an unreachable Home, or anything that is not a Home — so an empty list
  * means "render nothing", and this module never invents a roster to fill the gap.
  *
- * TODAY the roster loads but connecting FAILS: `POST /connect/demo-signin` checks the Home's curated
- * whitelabel registry, and `pokernight` is registered self-service, so it answers
- * `400 {"error":"a registered client_id is required"}`. That is an operator change at the Home, not
- * something this app can do, so the path is built end to end and that one refusal is named plainly
+ * `POST /connect/demo-signin` reads the Home's CURATED client registry rather than its self-service
+ * one, so whether this app may connect as a demo user is the Home's decision too. When it answers
+ * `400 {"error":"a registered client_id is required"}` that one refusal is named plainly
  * (`DEMO_NOT_ENABLED`) instead of being hidden behind a generic failure or an empty list.
  */
 
@@ -59,7 +58,7 @@ export function mapDemoPersonas(list: readonly QuickConnectIdentity[] | null | u
   return out;
 }
 
-/** The Home has the feature, but has not registered this app for it. Operator change, not a bug here. */
+/** The Home refused this client for its demo users. An operator change there, not a bug here. */
 export const DEMO_NOT_ENABLED =
   'Demo sign-in is not enabled for this app yet — the Home has not registered Pokernight for its demo users. Sign in with your own Home instead.';
 

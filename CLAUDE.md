@@ -32,6 +32,9 @@ substrate (`~/agenticprimitives`). Design: `docs/DESIGN.md` (read it before chan
 - `pnpm install` · `pnpm test` · `pnpm typecheck`
 - `pnpm dev:tables` (wrangler dev on :8787) · `pnpm dev:web` (vite on :5173) · `pnpm dev:agents` (wrangler dev on :8788)
 - `pnpm --filter pokernight-agent bot -- --table <id> --seat 3` (rules-based bot)
+- `pnpm settle:persona -- --handle elena --chips 200` (the whole money flow against the LIVE Home and
+  faithchain: sign in as one of the Home's demo people, discover or create their treasury, fund it,
+  have their Home sign a real buy-in mandate, then settle a buy-in and a cash-out on chain.)
 - `pnpm provision:house` (idempotent; deploys the house Smart Agents on faithchain, funds the treasury,
   writes `house.faithchain.json`. Add `--demo-transfer=<usdc>` to also move real USDC treasury → service.
   The custodian key goes to `.house-key.json` — gitignored, mode 0600, never printed.)

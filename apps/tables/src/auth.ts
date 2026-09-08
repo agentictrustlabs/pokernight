@@ -219,19 +219,44 @@ export async function putSessionRecord(env: Env, rec: SessionRecord): Promise<vo
 }
 
 /**
- * Record the treasury this session funds play from. Patch, not replace: the identity half of the
- * record is the part a re-write could lose, and this is called mid-session.
+ * What a mid-session write to the session record may change. Deliberately narrow: the identity half
+ * (who this person is, and the id_token that proves it) is set once at sign-in and never patched.
+ */
+export interface SessionPatch {
+  treasury?: string | null;
+  treasuryName?: string | null;
+  buyInMandate?: unknown;
+  mandateTreasury?: string | null;
+  mandateValidUntil?: number | null;
+}
+
+/**
+ * Patch the session record. Patch, not replace: the identity half of the record is the part a
+ * re-write could lose, and this is called mid-session.
  *
  * Returns false when there is no live record to patch — a signed-out or expired session must not be
- * able to leave a treasury choice behind it.
+ * able to leave a treasury choice or a mandate behind it.
  */
-export async function setSessionTreasury(env: Env, playerId: string, treasury: string | null): Promise<boolean> {
+export async function patchSessionRecord(env: Env, playerId: string, patch: SessionPatch): Promise<boolean> {
   const res = await sessionStub(env, playerId).fetch('https://session/record', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ treasury }),
+    body: JSON.stringify(patch),
   });
   return res.ok;
+}
+
+/** Record the treasury this session funds play from, clearing any mandate bound to the old one. */
+export async function setSessionTreasury(env: Env, playerId: string, treasury: string | null, treasuryName = ''): Promise<boolean> {
+  return patchSessionRecord(env, playerId, {
+    treasury,
+    treasuryName: treasury === null ? null : treasuryName,
+    // A mandate names the account it may be redeemed against. Moving the treasury moves that account,
+    // so the authority stops applying and must be asked for again rather than assumed.
+    buyInMandate: null,
+    mandateTreasury: null,
+    mandateValidUntil: null,
+  });
 }
 
 /**

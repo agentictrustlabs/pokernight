@@ -29,6 +29,11 @@ describe('treasury routes require a session', () => {
   it('refuses every one of them without a token', async () => {
     expect((await get('/treasury')).status).toBe(401);
     expect((await post('/treasury/select', { address: '0x' + '11'.repeat(20) })).status).toBe(401);
+    expect((await post('/treasury/create', {})).status).toBe(401);
+    expect((await post('/treasury/mandate', {})).status).toBe(401);
+    // The Home half of the mandate ceremony is a money route too: it decides what this session may
+    // be spent under, so it is authenticated exactly like the rest.
+    expect((await post('/auth/home/mandate', { code: 'c', codeVerifier: 'v', authOrigin: 'https://h', nonce: 'n', state: 's' })).status).toBe(401);
     expect((await post('/treasury/fund', { amount: '1' })).status).toBe(401);
   });
 
@@ -48,6 +53,18 @@ describe('GET /treasury', () => {
     expect(body.chosen).toBeNull();
     expect(body.candidates).toEqual([]);
   });
+
+  it('offers no candidate at all when there is no Home to ask, rather than the person agent', async () => {
+    const s = await devSession('Treasury Reader Two');
+    const body = (await (await get('/treasury', s.token)).json()) as {
+      person: string | null;
+      candidates: unknown[];
+      discoveryError: string | null;
+    };
+    // The correction this file exists for: a session's own agent is an identity, never a candidate.
+    expect(body.candidates).toEqual([]);
+    expect(body.discoveryError).toMatch(/Home/);
+  });
 });
 
 describe('POST /treasury/select', () => {
@@ -58,11 +75,31 @@ describe('POST /treasury/select', () => {
     expect(((await res.json()) as { error: string }).error).toMatch(/"my-wallet" is not a 20-byte address/);
   });
 
-  it('refuses when the deployment cannot reach a chain to check custody, naming the gap', async () => {
+  it('refuses an address the player’s Home does not list as one of their treasuries', async () => {
     const s = await devSession('Treasury Picker Two');
     const res = await post('/treasury/select', { address: '0x' + 'ab'.repeat(20) }, s.token);
-    expect(res.status).toBe(503);
-    expect(((await res.json()) as { error: string }).error).toMatch(/ASSET/);
+    expect(res.status).toBe(502);
+    // A dev session was never established at a Home, so there is nobody to ask — said as that,
+    // rather than as a chain error, because the missing thing is the Home and not the chain.
+    expect(((await res.json()) as { error: string }).error).toMatch(/Home/);
+  });
+});
+
+describe('POST /treasury/create', () => {
+  it('refuses a session with no person agent, naming what is missing', async () => {
+    const s = await devSession('Treasury Maker');
+    const res = await post('/treasury/create', {}, s.token);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toMatch(/no Smart Agent/);
+  });
+});
+
+describe('POST /treasury/mandate', () => {
+  it('refuses to authorise anything before a treasury is chosen', async () => {
+    const s = await devSession('Mandate Signer');
+    const res = await post('/treasury/mandate', {}, s.token);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toMatch(/choose the treasury/);
   });
 });
 

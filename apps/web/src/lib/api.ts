@@ -2,7 +2,14 @@ import type { CreateTableRequest, Session, TableSummary } from '@pokernight/prot
 import type { AppSession } from './types';
 import type { AuthConfig } from './home';
 import type { TableDetail } from './lobby';
-import type { FundTreasuryResult, SelectTreasuryResult, TableSettlement, TreasuryView } from './treasury';
+import type {
+  CreateTreasuryResult,
+  FundTreasuryResult,
+  MandateResult,
+  SelectTreasuryResult,
+  TableSettlement,
+  TreasuryView,
+} from './treasury';
 
 /** Base URL of the tables API. `/api` is proxied by Vite in dev; baked at build otherwise. */
 export const API_BASE: string = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/+$/, '');
@@ -118,6 +125,10 @@ export const api = {
   /** Best effort: drops the server-side session record so the token stops resolving straight away.
    *  Never reports a 401 upward — we are already on our way out. */
   signOut: (token: string) => request<{ ok: boolean }>('/auth/signout', { method: 'POST', body: '{}' }, token, false).catch(() => ({ ok: false })),
+  /** Finish a `poker-buyin` ceremony the player ran at their Home. The Worker exchanges the code,
+   *  checks the mandate against this session's treasury, and stores it — or says what came back. */
+  homeMandate: (body: HomeAuthBody, token: string) =>
+    request<MandateResult>('/auth/home/mandate', { method: 'POST', body: JSON.stringify(body) }, token),
   devLogin: (name: string) => request<Session>('/dev/session', { method: 'POST', body: JSON.stringify({ name }) }),
   listTables: (token?: string) => request<TableSummary[]>('/tables', {}, token),
   createTable: (req: CreateTableRequest, token?: string) =>
@@ -129,6 +140,13 @@ export const api = {
   /** Ask the card room to fund play from `address`. It checks custody on chain before agreeing. */
   selectTreasury: (address: string, token: string) =>
     request<SelectTreasuryResult>('/treasury/select', { method: 'POST', body: JSON.stringify({ address }) }, token),
+  /** Charter a treasury under this player's person agent. A real player is handed to their own Home. */
+  createTreasury: (label: string | undefined, token: string) =>
+    request<CreateTreasuryResult>('/treasury/create', { method: 'POST', body: JSON.stringify(label ? { label } : {}) }, token),
+  /** Authorise buy-ins from the chosen treasury. Pass a delegation the player's Home issued, or none
+   *  to have a Home-custodied identity sign the terms this table would ask for. */
+  signMandate: (delegation: unknown | undefined, token: string) =>
+    request<MandateResult>('/treasury/mandate', { method: 'POST', body: JSON.stringify(delegation ? { delegation } : {}) }, token),
   /** Mint test USDC into the chosen treasury. Test assets only; the Worker refuses anything else. */
   fundTreasury: (amount: string, token: string) =>
     request<FundTreasuryResult>('/treasury/fund', { method: 'POST', body: JSON.stringify({ amount }) }, token),

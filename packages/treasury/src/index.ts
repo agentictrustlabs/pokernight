@@ -54,15 +54,25 @@ export {
 } from './adapter.js';
 
 export {
+  DEFAULT_BUY_IN_POLICY,
+  asBuyInMandate,
   buildBuyInMandateCaveats,
   buildBuyInRedemption,
+  buyInMandateDigest,
+  buyInMandateTerms,
+  checkBuyInMandate,
   describeBuyInMandate,
+  unsignedBuyInMandate,
+  type BuyInMandateExpectation,
+  type BuyInMandatePolicy,
   type BuyInMandateTerms,
+  type BuyInMandateTermsInput,
   type BuyInRedemptionInput,
   type Caveat,
   type Delegation,
   type MandateEnforcers,
   type PaymentMandate,
+  type UnsignedBuyInMandateInput,
 } from './mandate.js';
 
 export {

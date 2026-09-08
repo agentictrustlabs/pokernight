@@ -196,28 +196,42 @@ describe('money render', () => {
   const moneySession = { token: 't', playerId: 'home:0xabc', name: 'Alice', via: 'home' as const, address: '0xabc' };
 
   it('says it is loading the treasury rather than showing an empty panel', () => {
-    const html = renderToStaticMarkup(createElement(TreasuryPanel, { session: moneySession }));
+    const html = renderToStaticMarkup(createElement(TreasuryPanel, { session: moneySession, config: null }));
     expect(html).toContain('Your treasury');
     expect(html).toContain('Loading…');
   });
 
+  const money = (over: Record<string, unknown> = {}) => ({
+    tableId: 't1',
+    settlement: 'mandate-transfer',
+    session: moneySession,
+    treasury: null,
+    onChanged: () => {},
+    ...over,
+  });
+
   it('draws nothing at all on a play-money table — there is no money to show', () => {
-    const html = renderToStaticMarkup(createElement(MoneyPanel, { tableId: 't1', settlement: 'play-money', session: moneySession }));
+    const html = renderToStaticMarkup(createElement(MoneyPanel, money({ settlement: 'play-money' })));
     expect(html).toBe('');
   });
 
   it('asks a signed-out visitor at a settled table to sign in, and says why', () => {
-    const html = renderToStaticMarkup(createElement(MoneyPanel, { tableId: 't1', settlement: 'mandate-transfer', session: null }));
+    const html = renderToStaticMarkup(createElement(MoneyPanel, money({ session: null })));
     expect(html).toContain('This table settles in USDC');
     expect(html).toContain('Sign in to see your treasury');
   });
 
   it('tells a seated player with no treasury where to fix that', () => {
-    const html = renderToStaticMarkup(createElement(MoneyPanel, { tableId: 't1', settlement: 'mandate-transfer', session: moneySession }));
+    const html = renderToStaticMarkup(createElement(MoneyPanel, money()));
     // On the very first render the treasury read has not answered yet, so the panel says it is
     // still checking rather than asserting the player has nothing.
     expect(html).toContain('Checking which treasury funds your play');
-    expect(html).toContain('pick one in the lobby');
     expect(html).toContain('Nothing has moved yet');
+  });
+
+  it('never offers the player’s own identity as somewhere to spend from', () => {
+    const html = renderToStaticMarkup(createElement(TreasuryPanel, { session: moneySession, config: null }));
+    expect(html).not.toContain('your Smart Agent');
+    expect(html).not.toContain('Another treasury you custody');
   });
 });

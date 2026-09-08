@@ -41,6 +41,14 @@ export interface Env {
   DELEGATION_MANAGER?: string;
   PAYMENT_ENFORCER?: string;
   DIGEST_BINDING_ENFORCER?: string;
+  /** The three enforcers a payment mandate composes besides PAYMENT_ENFORCER. Without them a player
+   *  cannot be ASKED to sign a buy-in mandate, and the treasury routes say so by name. */
+  TIMESTAMP_ENFORCER?: string;
+  ALLOWED_TARGETS_ENFORCER?: string;
+  ALLOWED_METHODS_ENFORCER?: string;
+  /** `AgentNameRegistry` and the `.treasury` subregistry — only the optional label needs them. */
+  AGENT_NAME_REGISTRY?: string;
+  TREASURY_SUBREGISTRY?: string;
   PAYMENT_RECEIPT_REGISTRY?: string;
   /** Paymaster that sponsors the house's UserOps (dev mode on faithchain). */
   SMART_AGENT_PAYMASTER?: string;
@@ -50,6 +58,13 @@ export interface Env {
   /** Alias of HOUSE_TREASURY_SA (see settlement.ts). */
   HOUSE_SA?: string;
   HOUSE_DELEGATE?: string;
+
+  /** The biggest single buy-in a mandate may cover, in chips, and how many of them a night allows.
+   *  Both are the player's exposure ceiling, shown on the consent screen before they sign. */
+  MANDATE_MAX_BUY_IN_CHIPS?: string;
+  MANDATE_MAX_BUY_INS?: string;
+  /** How long a signed mandate lasts, in seconds. One night, not one year. */
+  MANDATE_VALID_SECONDS?: string;
 
   /** Secrets. */
   SESSION_SECRET?: string;

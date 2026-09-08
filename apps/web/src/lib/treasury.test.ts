@@ -5,6 +5,7 @@ import {
   fmtUsdc,
   isTreasuryAddress,
   kindLabel,
+  seatBlock,
   seatBlocker,
   shortRef,
   statusOf,
@@ -126,36 +127,94 @@ describe('shortRef', () => {
   });
 });
 
-describe('seatBlocker', () => {
+describe('seatBlock', () => {
   const view = (over: Partial<TreasuryView> = {}): TreasuryView => ({
     chainId: 34348,
     asset: '0xa5',
     chipValue: '10000',
+    person: `0x${'11'.repeat(20)}`,
+    personName: 'alice.me',
     chosen: null,
+    chosenName: null,
     balance: null,
     balanceUsdc: null,
     candidates: [],
+    discoveryError: null,
+    create: { mode: 'server', portalUrl: null, canName: true },
+    mandate: {
+      present: false,
+      treasury: null,
+      maxPerBuyIn: '200000000',
+      sessionTotal: '1000000000',
+      maxBuyIns: 5,
+      validUntil: 2_000_000_000,
+      payee: `0x${'a0'.repeat(20)}`,
+      asset: '0xa5',
+      problem: null,
+      unavailable: null,
+    },
     faucet: { available: true, asset: 'Mock USD Coin', reason: null },
+    notice: null,
     unavailable: null,
     ...over,
   });
 
-  it('never blocks a play-money seat', () => {
-    expect(seatBlocker('play-money', null)).toBeNull();
-    expect(seatBlocker('play-money', view({ unavailable: 'no ASSET' }))).toBeNull();
-  });
+  const candidate = { address: `0x${'ab'.repeat(20)}`, name: 'alice.treasury', label: 'alice.treasury', balance: '5000000', balanceUsdc: '5.000000' };
+  const ready = (over: Partial<TreasuryView> = {}): TreasuryView =>
+    view({
+      candidates: [candidate],
+      chosen: candidate.address,
+      chosenName: candidate.name,
+      balance: candidate.balance,
+      balanceUsdc: candidate.balanceUsdc,
+      ...over,
+    });
 
-  it('asks for a treasury before a settled seat', () => {
-    expect(seatBlocker('mandate-transfer', view())).toMatch(/Choose the treasury/);
+  it('never blocks a play-money seat', () => {
+    expect(seatBlock('play-money', null)).toBeNull();
+    expect(seatBlock('play-money', view({ unavailable: 'no ASSET' }))).toBeNull();
   });
 
   it('passes the deployment’s own reason through when the money layer is down', () => {
-    expect(seatBlocker('mandate-transfer', view({ unavailable: 'ASSET is not set to an address' }))).toBe(
-      'ASSET is not set to an address',
-    );
+    expect(seatBlock('mandate-transfer', view({ unavailable: 'ASSET is not set to an address' }))).toEqual({
+      reason: 'ASSET is not set to an address',
+      action: 'configure',
+    });
   });
 
-  it('clears once a treasury is chosen', () => {
-    expect(seatBlocker('mandate-transfer', view({ chosen: `0x${'ab'.repeat(20)}` }))).toBeNull();
+  it('asks for a treasury to EXIST before it asks for one to be chosen', () => {
+    const b = seatBlock('mandate-transfer', view());
+    expect(b?.action).toBe('create-treasury');
+    // The whole correction: an identity is named as something that cannot stand in for a treasury.
+    expect(b?.reason).toMatch(/your identity is not one/);
+  });
+
+  it('asks for a choice once there is something to choose', () => {
+    expect(seatBlock('mandate-transfer', view({ candidates: [candidate] }))).toEqual({
+      reason: 'Choose the treasury that funds your play before taking a seat at this table.',
+      action: 'choose-treasury',
+    });
+  });
+
+  it('asks for money before it asks for a signature, and names both amounts', () => {
+    const b = seatBlock('mandate-transfer', ready(), 100_000);
+    expect(b?.action).toBe('fund-treasury');
+    expect(b?.reason).toMatch(/holds 5 USDC and this buy-in costs 1000 USDC/);
+  });
+
+  it('asks for a mandate once the treasury is chosen and funded', () => {
+    const b = seatBlock('mandate-transfer', ready(), 200);
+    expect(b?.action).toBe('sign-mandate');
+    expect(b?.reason).toMatch(/only move USDC out of your treasury under a mandate you sign/);
+  });
+
+  it('carries the mandate’s own problem forward rather than saying "not authorised"', () => {
+    const b = seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, problem: 'the buy-in mandate expired at 2026-01-01' } }), 200);
+    expect(b).toEqual({ reason: 'the buy-in mandate expired at 2026-01-01', action: 'sign-mandate' });
+  });
+
+  it('clears once there is a funded treasury and a mandate that covers it', () => {
+    expect(seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200)).toBeNull();
+    expect(seatBlocker('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200)).toBeNull();
   });
 });

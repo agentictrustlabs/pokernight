@@ -14,7 +14,14 @@
  * complete from localhost. Local dev uses the dev-name login, which `GET /auth/config` advertises.
  */
 
-import { connectViaRedirect, createConnectClient, type ConnectClient, type ConnectStash } from '@agenticprimitives/connect-client';
+import {
+  connectViaRedirect,
+  createConnectClient,
+  generatePkce,
+  randomB64url,
+  type ConnectClient,
+  type ConnectStash,
+} from '@agenticprimitives/connect-client';
 
 /** `GET /auth/config` on the tables Worker. Drives the sign-in UI so there is no build-time flag. */
 export interface AuthConfig {
@@ -25,6 +32,8 @@ export interface AuthConfig {
     zone: string;
     delegate: string;
     redirectUri: string | null;
+    /** The delegation template a buy-in authorisation asks the Home to run. */
+    buyInTemplate?: string;
   };
 }
 
@@ -32,6 +41,9 @@ export interface AuthConfig {
 const CALLBACK_PARAMS = ['code', 'state', 'error', 'error_description', 'error_uri', 'iss', 'session_state', 'ac_relay', 'ac_iss'];
 
 export const STASH_KEY = 'pokernight.home.stash';
+/** A separate stash, because a buy-in authorisation and a sign-in return to the SAME redirect URI and
+ *  must not be mistaken for one another: a mandate ceremony must never mint a new session. */
+export const MANDATE_STASH_KEY = 'pokernight.home.mandate';
 
 /** The slice of `Storage` we use, so the stash round trip is testable without a DOM. */
 export interface StorageLike {
@@ -57,10 +69,10 @@ export function sessionStore(): StorageLike | null {
 
 /** Persist the PKCE stash across the navigation to the Home. Returns false if storage refused it —
  *  the caller must not navigate, because the return leg would have nothing to finish with. */
-export function writeStash(store: StorageLike | null, stash: ConnectStash): boolean {
+export function writeStash(store: StorageLike | null, stash: ConnectStash, key = STASH_KEY): boolean {
   if (!store) return false;
   try {
-    store.setItem(STASH_KEY, JSON.stringify(stash));
+    store.setItem(key, JSON.stringify(stash));
     return true;
   } catch {
     return false;
@@ -68,11 +80,11 @@ export function writeStash(store: StorageLike | null, stash: ConnectStash): bool
 }
 
 /** Read the stash back, or null if it is absent or not the shape we wrote. */
-export function readStash(store: StorageLike | null): ConnectStash | null {
+export function readStash(store: StorageLike | null, key = STASH_KEY): ConnectStash | null {
   if (!store) return null;
   let raw: string | null;
   try {
-    raw = store.getItem(STASH_KEY);
+    raw = store.getItem(key);
   } catch {
     return null;
   }
@@ -96,9 +108,9 @@ export function readStash(store: StorageLike | null): ConnectStash | null {
   }
 }
 
-export function clearStash(store: StorageLike | null): void {
+export function clearStash(store: StorageLike | null, key = STASH_KEY): void {
   try {
-    store?.removeItem(STASH_KEY);
+    store?.removeItem(key);
   } catch {
     /* nothing to do; the stash is single-use and the code is too */
   }
@@ -208,10 +220,10 @@ export type CallbackOutcome =
  * Consume a `?code&state` return, PURELY: validate `state` against the stash and hand back what the
  * Worker needs. Does not touch the network or the URL — the caller does both, so this stays testable.
  */
-export function consumeCallback(href: string, store: StorageLike | null): CallbackOutcome {
+export function consumeCallback(href: string, store: StorageLike | null, key = STASH_KEY): CallbackOutcome {
   const cb = parseCallback(href);
   if (!cb) return { status: 'none' };
-  const stash = readStash(store);
+  const stash = readStash(store, key);
   if (cb.kind === 'error') return { status: 'error', message: describeCallbackError(cb.error, cb.description) };
   if (!stash) {
     return { status: 'error', message: 'This sign-in could not be matched to a request from this browser. Start again.' };
@@ -241,6 +253,84 @@ export function takeHomeCallback(store: StorageLike | null = sessionStore()): Ca
     history.replaceState(null, '', stripAuthParams(location.href));
   } catch {
     /* an unwritable history is not a reason to fail the sign-in */
+  }
+  return outcome;
+}
+
+/* ------------------------------------------------------- the buy-in authorisation */
+
+/**
+ * Ask the player's Home to authorise buy-ins from their treasury.
+ *
+ * The SAME ceremony shape as sign-in, with one parameter changed: `delegation_template=poker-buyin`
+ * instead of `site-login`. That template is the Home's, not ours — it is the Home that shows the
+ * player what they are agreeing to and the Home that signs, which is the entire reason this is a
+ * navigation and not a button that posts something. `pay_amount` tells it the biggest single buy-in
+ * this table would take, in asset base units.
+ *
+ * The mandate comes back on the token exchange, which the Worker runs (`POST /auth/home/mandate`).
+ * If the Home completes the ceremony without issuing one, the Worker says exactly that; this half
+ * neither assumes a mandate nor pretends one arrived.
+ */
+export async function startBuyInMandate(
+  config: AuthConfig,
+  maxAmountBaseUnits: string | null,
+  store: StorageLike | null = sessionStore(),
+): Promise<string> {
+  if (!config.home.clientId || !config.home.origin) throw new Error('This deployment has no Home configured.');
+  if (!isAllowedHomeOrigin(config.home.zone, config.home.origin)) {
+    throw new Error(`Refusing to send you to ${config.home.origin}: it is not a trusted Home for this site.`);
+  }
+  const client = homeClient(config);
+  const pkce = await generatePkce();
+  const stash: ConnectStash = {
+    name: '',
+    state: randomB64url(16),
+    authOrigin: config.home.origin,
+    codeVerifier: pkce.verifier,
+    nonce: randomB64url(16),
+  };
+  if (!writeStash(store, stash, MANDATE_STASH_KEY)) {
+    throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the authorisation cannot complete.');
+  }
+  const url = new URL(
+    client.buildAuthorizeUrl({
+      authOrigin: stash.authOrigin,
+      state: stash.state,
+      nonce: stash.nonce,
+      codeChallenge: pkce.challenge,
+      agentName: '',
+      template: BUY_IN_TEMPLATE,
+    }),
+  );
+  // Not part of `buildAuthorizeUrl`'s parameter set, but part of the Home's: the per-charge amount
+  // the app is asking for. The Home caps it at whatever it has registered for this client.
+  if (maxAmountBaseUnits && /^\d+$/.test(maxAmountBaseUnits)) url.searchParams.set('pay_amount', maxAmountBaseUnits);
+  return url.toString();
+}
+
+/** The delegation template this card room asks for. Curated at the Home for this client. */
+export const BUY_IN_TEMPLATE = 'poker-buyin';
+
+/**
+ * Consume a return leg that belongs to the MANDATE ceremony, or report `none` and leave the URL
+ * alone for the sign-in path to look at. Which one it is comes from the `state`: each ceremony
+ * stashed its own, and only one of them can match.
+ */
+export function takeMandateCallback(store: StorageLike | null = sessionStore()): CallbackOutcome {
+  if (callbackConsumed) return { status: 'none' };
+  const cb = parseCallback(location.href);
+  if (!cb || cb.kind === 'error') return { status: 'none' };
+  const stash = readStash(store, MANDATE_STASH_KEY);
+  if (!stash || stash.state !== cb.state) return { status: 'none' };
+  const outcome = consumeCallback(location.href, store, MANDATE_STASH_KEY);
+  if (outcome.status === 'none') return outcome;
+  callbackConsumed = true;
+  clearStash(store, MANDATE_STASH_KEY);
+  try {
+    history.replaceState(null, '', stripAuthParams(location.href));
+  } catch {
+    /* an unwritable history is not a reason to fail the authorisation */
   }
   return outcome;
 }

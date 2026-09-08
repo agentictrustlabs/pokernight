@@ -23,7 +23,7 @@ export function Lobby({ session, auth, onLogin }: { session: AppSession | null; 
       <div className="lobby-side">
         {/* Chosen once per connect, before a settled seat is possible — so it sits above the form
             that can open a settled table. */}
-        <TreasuryPanel session={session} />
+        <TreasuryPanel session={session} config={auth.config} />
         <CreateTable session={session} />
       </div>
     </div>
@@ -192,9 +192,10 @@ function CreateTable({ session }: { session: AppSession }) {
       </label>
       {settlement === 'mandate-transfer' ? (
         <p className="hint">
-          Buy-ins and cash-outs move USDC between Smart Agent treasuries on faithchain. Every player needs a treasury with
-          the money in it; a buy-in also needs a signed mandate from their Home, which this estate cannot issue yet — so a
-          seat here will be refused with that reason rather than quietly played for nothing.
+          Buy-ins and cash-outs move USDC between Smart Agent treasuries on faithchain. Before a seat here, every player
+          needs a treasury (a Smart Agent chartered under their person agent — not the person agent itself), USDC in it,
+          and a signed mandate authorising this table to take the buy-in. A seat that is missing one of those is refused
+          and told which, rather than quietly played for nothing.
         </p>
       ) : null}
       {err ? <div className="form-error">{err}</div> : null}

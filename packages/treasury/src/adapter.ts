@@ -26,7 +26,7 @@ import type {
   SettlementReceipt,
 } from '@pokernight/ledger';
 import type { TreasuryClient } from './client.js';
-import { buildBuyInRedemption, type Delegation, type MandateEnforcers } from './mandate.js';
+import { buildBuyInRedemption, checkBuyInMandate, type Delegation, type MandateEnforcers } from './mandate.js';
 import { TREASURY_SETTLEMENT_MODE, toSettlementReceipt } from './settlement.js';
 import { TreasuryError, type Address } from './types.js';
 import { chipsToUsdc, formatUsdc } from './units.js';
@@ -60,6 +60,8 @@ export interface TreasuryTransferAdapterOpts {
   delegationManager?: Address;
   /** The mandate's spend/frequency enforcer; absent, buy-ins refuse by name. */
   enforcers?: Partial<MandateEnforcers>;
+  /** The DelegationManager's "any redeemer" sentinel, when the host knows it. Injected: an address. */
+  openDelegate?: Address;
   /**
    * Look up the player's chosen treasury and their signed mandate. The host owns this because it is
    * the host that holds sessions; the adapter only ever asks.
@@ -78,17 +80,23 @@ export interface TreasuryTransferAdapterOpts {
  * thrown by `settleBuyIn` (so an op that somehow got queued still fails closed).
  */
 function buyInBlocker(opts: TreasuryTransferAdapterOpts, funding: PlayerFunding | null, req: BuyInRequest): string | null {
+  const amount = chipsToUsdc(req.chips, opts.chipValue);
   if (!funding || !funding.treasury) {
-    return `no treasury is selected for ${req.playerId} — choose the Smart Agent that funds your play before sitting at a settled table`;
+    return (
+      `no treasury is selected for ${req.playerId} — choose the treasury Smart Agent chartered under ` +
+      `your person agent before sitting at a settled table`
+    );
   }
   if (!ADDRESS_RE.test(funding.treasury)) {
     return `the treasury recorded for ${req.playerId} ("${funding.treasury}") is not an address`;
   }
   if (!funding.mandate) {
+    // State what IS missing, not why it might be. This used to assert that the Home had not curated
+    // the template — a claim this code cannot check and which went stale the moment the Home did.
     return (
-      `${req.playerId} has not signed a poker-buyin mandate, so the card room has no authority to move ${formatUsdc(chipsToUsdc(req.chips, opts.chipValue))} USDC ` +
-      `out of ${funding.treasury}. The mandate is signed at the player's Home; this deployment's Home has not yet curated the poker-buyin ` +
-      `delegation template for this client, so no mandate can exist yet. Until it does, a mandate-transfer table cannot seat a buy-in.`
+      `${req.playerId} has not signed a buy-in mandate, so the card room has no authority to move ` +
+      `${formatUsdc(amount)} USDC out of ${funding.treasury}. ` +
+      `A mandate is signed at the player's Home and authorises this table, up to a cap, for this session.`
     );
   }
   if (!opts.delegationManager) {
@@ -100,7 +108,18 @@ function buyInBlocker(opts: TreasuryTransferAdapterOpts, funding: PlayerFunding 
   if (!opts.houseDelegate) {
     return 'HOUSE_DELEGATE is not configured for this deployment, so there is no house agent to redeem the buy-in mandate as';
   }
-  return null;
+  // The same arithmetic the on-chain enforcers do, said BEFORE a seat is credited: which treasury the
+  // mandate was signed by, who it pays, in what asset, up to how much, and until when.
+  return checkBuyInMandate(funding.mandate, {
+    treasury: funding.treasury,
+    houseDelegate: opts.houseDelegate,
+    payee: opts.houseTreasury,
+    asset: opts.client.deployments.asset,
+    paymentEnforcer: opts.enforcers.payment,
+    ...(opts.openDelegate ? { openDelegate: opts.openDelegate } : {}),
+    amount,
+    now: (opts.now ?? (() => Date.now()))(),
+  });
 }
 
 export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts): SettlementAdapter {
@@ -174,13 +193,6 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
       const delegationManager = opts.delegationManager as Address;
       const paymentEnforcer = (opts.enforcers as MandateEnforcers).payment;
       const houseDelegate = opts.houseDelegate as Address;
-
-      if (mandate.delegate.toLowerCase() !== houseDelegate.toLowerCase()) {
-        throw new TreasuryError(
-          'bad-mandate',
-          `the mandate for ${req.playerId} is delegated to ${mandate.delegate}, but this card room redeems as ${houseDelegate}`,
-        );
-      }
 
       const balance = await client.readUsdcBalance(payer);
       if (balance < amount) {

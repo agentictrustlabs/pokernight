@@ -13,11 +13,33 @@
 /** Mirrors `TreasuryCandidate` in apps/tables/src/routes-treasury.ts. */
 export interface TreasuryCandidate {
   address: string;
+  /** `<label>.treasury`, or '' — a treasury is allowed to be nameless. */
+  name: string;
   label: string;
-  source: 'home-agent' | 'chosen';
   balance: string | null;
   balanceUsdc: string | null;
   error?: string;
+}
+
+/** Mirrors `TreasuryCreationOffer`. Who makes the treasury, and where a real player goes to do it. */
+export interface TreasuryCreationOffer {
+  mode: 'server' | 'home-portal';
+  portalUrl: string | null;
+  canName: boolean;
+}
+
+/** Mirrors `MandateView`. What the player has authorised, or would be authorising. */
+export interface MandateView {
+  present: boolean;
+  treasury: string | null;
+  maxPerBuyIn: string;
+  sessionTotal: string;
+  maxBuyIns: number;
+  validUntil: number;
+  payee: string;
+  asset: string;
+  problem: string | null;
+  unavailable: string | null;
 }
 
 /** Mirrors `TreasuryView` in apps/tables/src/routes-treasury.ts. */
@@ -25,18 +47,47 @@ export interface TreasuryView {
   chainId: number;
   asset: string;
   chipValue: string;
+  /** The player's PERSON agent — their identity. Never a candidate; shown so that is visible. */
+  person: string | null;
+  personName: string | null;
   chosen: string | null;
+  chosenName: string | null;
   balance: string | null;
   balanceUsdc: string | null;
   candidates: TreasuryCandidate[];
+  discoveryError: string | null;
+  create: TreasuryCreationOffer;
+  mandate: MandateView;
   faucet: { available: boolean; asset: string | null; reason: string | null };
+  notice: string | null;
   unavailable: string | null;
+}
+
+export interface CreateTreasuryResult {
+  treasury: string;
+  name: string;
+  txHash: string | null;
+  chosen: boolean;
+  note: string;
+}
+
+export interface MandateResult {
+  treasury: string;
+  source: 'home' | 'persona';
+  validUntil: number;
+  maxPerBuyIn: string;
+  sessionTotal: string;
+  maxBuyIns: number;
+  payee: string;
+  asset: string;
 }
 
 export interface SelectTreasuryResult {
   chosen: string;
+  name: string;
   balance: string | null;
   balanceUsdc: string | null;
+  note: string;
 }
 
 export interface FundTreasuryResult {
@@ -166,16 +217,79 @@ export function shortRef(ref: string, n = 6): string {
   return `${s.slice(0, n + 2)}…${s.slice(-n)}`;
 }
 
+/** What a player must still do before a settled seat, and which control does it. */
+export type SeatAction = 'wait' | 'configure' | 'create-treasury' | 'choose-treasury' | 'fund-treasury' | 'sign-mandate';
+
+export interface SeatBlock {
+  reason: string;
+  action: SeatAction;
+}
+
 /**
- * Whether this player can take a seat at a settled table yet, and what they still have to do.
+ * What stands between this player and a seat at a settled table, in the order the things have to
+ * happen: a treasury exists, it is chosen, it holds the money, and the card room has been authorised
+ * to take the buy-in out of it.
  *
- * A settled table with no treasury chosen would refuse the join with a server-side reason; saying it
- * here first turns a rejection into an instruction.
+ * The server refuses in the same order and with the same vocabulary (`authorizeBuyIn`). Saying it
+ * here first is what turns a rejection into an instruction — and the `action` is what lets the panel
+ * put the control that fixes it under the sentence that names it.
  */
-export function seatBlocker(settlement: string, treasury: TreasuryView | null): string | null {
+export function seatBlock(settlement: string, treasury: TreasuryView | null, buyInChips?: number): SeatBlock | null {
   if (settlement === 'play-money') return null;
-  if (!treasury) return 'Checking which treasury funds your play…';
-  if (treasury.unavailable) return treasury.unavailable;
-  if (!treasury.chosen) return 'Choose the treasury that funds your play before taking a seat at this table.';
+  if (!treasury) return { reason: 'Checking which treasury funds your play…', action: 'wait' };
+  if (treasury.unavailable) return { reason: treasury.unavailable, action: 'configure' };
+
+  if (!treasury.chosen) {
+    if (treasury.candidates.length === 0) {
+      return {
+        reason: treasury.discoveryError
+          ? treasury.discoveryError
+          : 'You have no treasury yet. A treasury is a Smart Agent chartered under your person agent — your identity is not one, and cannot be used as one.',
+        action: treasury.discoveryError ? 'wait' : 'create-treasury',
+      };
+    }
+    return { reason: 'Choose the treasury that funds your play before taking a seat at this table.', action: 'choose-treasury' };
+  }
+
+  const cost = buyInCostBaseUnits(buyInChips, treasury.chipValue);
+  if (cost !== null && treasury.balance !== null) {
+    let held: bigint;
+    try {
+      held = BigInt(treasury.balance);
+    } catch {
+      held = 0n;
+    }
+    if (held < cost) {
+      return {
+        reason: `Your treasury holds ${fmtUsdc(treasury.balance) ?? '0'} USDC and this buy-in costs ${fmtUsdc(cost) ?? '?'} USDC. Fund it, or buy in for less.`,
+        action: 'fund-treasury',
+      };
+    }
+  }
+
+  if (treasury.mandate.unavailable) return { reason: treasury.mandate.unavailable, action: 'configure' };
+  if (treasury.mandate.problem) return { reason: treasury.mandate.problem, action: 'sign-mandate' };
+  if (!treasury.mandate.present) {
+    return {
+      reason: 'You have not authorised a buy-in yet. The card room can only move USDC out of your treasury under a mandate you sign.',
+      action: 'sign-mandate',
+    };
+  }
   return null;
+}
+
+/** The same answer as one sentence, for the places that only have room for one. */
+export function seatBlocker(settlement: string, treasury: TreasuryView | null, buyInChips?: number): string | null {
+  return seatBlock(settlement, treasury, buyInChips)?.reason ?? null;
+}
+
+/** What `chips` costs in asset base units, or null when either number is unreadable. */
+function buyInCostBaseUnits(chips: number | undefined, chipValue: string | null | undefined): bigint | null {
+  if (chips === undefined || !Number.isFinite(chips) || chips <= 0 || !chipValue) return null;
+  try {
+    const cv = BigInt(chipValue);
+    return cv > 0n ? BigInt(Math.trunc(chips)) * cv : null;
+  } catch {
+    return null;
+  }
 }

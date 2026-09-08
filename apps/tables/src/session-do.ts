@@ -26,6 +26,15 @@ export interface SessionRecord {
   /** SA-signed scoped delegation to the relying delegate. Phase 3 spends against it. */
   delegation?: unknown;
   /**
+   * The id_token the Home minted at sign-in.
+   *
+   * Kept here and NOWHERE else: it is what lets the Worker ask the person's own Home which treasuries
+   * they have (`GET /connect/related-orgs`). It never goes back to the browser and never rides on a
+   * pokernight token — the session token stays a claims-only HMAC. Its own `exp` bounds the session,
+   * so a record that exists has an id_token that has not expired.
+   */
+  idToken?: string;
+  /**
    * The treasury Smart Agent this player chose to fund their play with, lowercased. Chosen once per
    * connect (`POST /treasury/select`) and verified there — the custodian check happens before it is
    * written, so anything stored here is a treasury this person actually custodies.
@@ -34,12 +43,23 @@ export interface SessionRecord {
    * a browser deciding where money goes. The table reads it from here, never from the wire.
    */
   treasury?: string;
+  /** `<label>.treasury` when the chosen treasury has a name, else ''. Display only. */
+  treasuryName?: string;
   /**
    * The signed `poker-buyin` mandate delegation, when the player has one. Opaque JSON; only
-   * `@pokernight/treasury` interprets it. Absent today, because the Home has not curated the
-   * template — which is exactly why a mandate-transfer buy-in refuses instead of guessing.
+   * `@pokernight/treasury` interprets it. Written by `POST /treasury/mandate` after the delegation
+   * has been checked against this session's treasury, the house delegate, the payee and the window.
+   * Absent means a mandate-transfer buy-in refuses by name rather than guessing.
    */
   buyInMandate?: unknown;
+  /**
+   * The treasury `buyInMandate` was signed BY. A mandate authorises one account to be spent from, so
+   * switching treasury must invalidate it rather than quietly re-point it at money the player never
+   * authorised. `playerFunding` refuses to hand the adapter a mandate whose binding has moved.
+   */
+  mandateTreasury?: string;
+  /** Unix SECONDS the mandate stops being valid, for the panel to show without decoding caveats. */
+  mandateValidUntil?: number;
   issuedAt: number;
   /** Absolute ms; the record self-deletes at this point. */
   expiresAt: number;
@@ -63,7 +83,13 @@ export class SessionDO extends DurableObject<Env> {
     if (request.method === 'POST') {
       // Partial update: the treasury choice must not require re-writing (and so risk losing) the
       // identity half of the record.
-      const patch = (await request.json()) as { treasury?: string | null; buyInMandate?: unknown };
+      const patch = (await request.json()) as {
+        treasury?: string | null;
+        treasuryName?: string | null;
+        buyInMandate?: unknown;
+        mandateTreasury?: string | null;
+        mandateValidUntil?: number | null;
+      };
       const rec = await this.ctx.storage.get<SessionRecord>(KEY);
       if (!rec) return json({ error: 'no session' }, 404);
       if (rec.expiresAt <= Date.now()) {
@@ -73,7 +99,16 @@ export class SessionDO extends DurableObject<Env> {
       const next: SessionRecord = { ...rec };
       if (patch.treasury === null) delete next.treasury;
       else if (typeof patch.treasury === 'string') next.treasury = patch.treasury.toLowerCase();
-      if ('buyInMandate' in patch) next.buyInMandate = patch.buyInMandate;
+      if (patch.treasuryName === null) delete next.treasuryName;
+      else if (typeof patch.treasuryName === 'string') next.treasuryName = patch.treasuryName;
+      if ('buyInMandate' in patch) {
+        if (patch.buyInMandate === null) delete next.buyInMandate;
+        else next.buyInMandate = patch.buyInMandate;
+      }
+      if (patch.mandateTreasury === null) delete next.mandateTreasury;
+      else if (typeof patch.mandateTreasury === 'string') next.mandateTreasury = patch.mandateTreasury.toLowerCase();
+      if (patch.mandateValidUntil === null) delete next.mandateValidUntil;
+      else if (typeof patch.mandateValidUntil === 'number') next.mandateValidUntil = patch.mandateValidUntil;
       await this.ctx.storage.put(KEY, next);
       return json(next);
     }

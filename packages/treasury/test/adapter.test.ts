@@ -169,12 +169,37 @@ describe('buy-in — money that is not the house’s', () => {
     const { adapter, client } = adapterFor({ treasury: PLAYER }, { [PLAYER.toLowerCase()]: 10_000_000n });
     const auth = await adapter.authorizeBuyIn(buyIn);
     expect(auth.ok).toBe(false);
-    expect(auth.ok === false && auth.reason).toMatch(/has not signed a poker-buyin mandate/);
-    expect(auth.ok === false && auth.reason).toMatch(/Home has not yet curated the poker-buyin delegation template/);
+    expect(auth.ok === false && auth.reason).toMatch(/has not signed a buy-in mandate/);
+    expect(auth.ok === false && auth.reason).toMatch(/has not signed a buy-in mandate/);
+    // The refusal must not claim anything about the Home's configuration — this code cannot see it.
+    expect(auth.ok === false && auth.reason).not.toMatch(/curated/);
 
     await expect(adapter.settleBuyIn(buyIn)).rejects.toMatchObject({ name: 'TreasuryError', code: 'no-mandate' });
     expect(client.calls).toHaveLength(0);
     expect(client.transfers).toHaveLength(0);
+  });
+
+  it('refuses a mandate signed by a DIFFERENT treasury, naming both accounts', async () => {
+    const other = '0x00000000000000000000000000000000000000b2' as Address;
+    const { adapter, client } = adapterFor(
+      { treasury: PLAYER, mandate: signedMandate({ delegator: other }) },
+      { [PLAYER.toLowerCase()]: 10_000_000n },
+    );
+    const auth = await adapter.authorizeBuyIn(buyIn);
+    expect(auth.ok).toBe(false);
+    expect(auth.ok === false && auth.reason).toContain(other);
+    expect(auth.ok === false && auth.reason).toContain(PLAYER);
+    await expect(adapter.settleBuyIn(buyIn)).rejects.toMatchObject({ name: 'TreasuryError' });
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it('refuses a buy-in larger than the mandate\u2019s per-charge cap, before anything is credited', async () => {
+    const { adapter, client } = adapterFor({ treasury: PLAYER, mandate: signedMandate() }, { [PLAYER.toLowerCase()]: 1_000_000_000n });
+    const big = { ...buyIn, chips: 1_000 }; // 10 USDC, against a 2 USDC cap
+    const auth = await adapter.authorizeBuyIn(big);
+    expect(auth.ok).toBe(false);
+    expect(auth.ok === false && auth.reason).toMatch(/allows at most 2.000000 USDC per buy-in/);
+    expect(client.calls).toHaveLength(0);
   });
 
   it('redeems the mandate through the DelegationManager as the house delegate', async () => {

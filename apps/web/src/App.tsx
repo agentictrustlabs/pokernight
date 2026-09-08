@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession } from './lib/types';
 import { ApiError, api, loadSession, saveSession, setUnauthorizedHandler } from './lib/api';
-import { startHomeSignIn, takeHomeCallback, type AuthConfig } from './lib/home';
+import { startHomeSignIn, takeHomeCallback, takeMandateCallback, type AuthConfig } from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
 import { HOME_HASH, goTo, route } from './lib/routes';
@@ -114,6 +114,40 @@ export function App() {
       alive = false;
     };
   }, [config, session]);
+
+  /**
+   * The return leg of a BUY-IN AUTHORISATION, which lands on the same redirect URI as a sign-in and
+   * is told apart by its own stashed `state`. It must be consumed first, because the sign-in path
+   * would otherwise treat the code as a fresh sign-in and mint a new session out of a ceremony the
+   * player ran to authorise money, not to log in again.
+   */
+  useEffect(() => {
+    const outcome = takeMandateCallback();
+    if (outcome.status !== 'signed-in') {
+      if (outcome.status === 'error') setError(outcome.message);
+      return;
+    }
+    const current = sessionRef.current;
+    if (!current) {
+      setError('Your Home finished the authorisation, but this browser is no longer signed in — sign in and try again.');
+      return;
+    }
+    setBusy(true);
+    api
+      .homeMandate(
+        {
+          code: outcome.code,
+          codeVerifier: outcome.codeVerifier,
+          authOrigin: outcome.authOrigin,
+          nonce: outcome.nonce,
+          state: outcome.state,
+        },
+        current.token,
+      )
+      .then(() => setNotice('Buy-ins are authorised. You can take a seat at a settled table.'))
+      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'Could not record the buy-in authorisation.'))
+      .finally(() => setBusy(false));
+  }, []);
 
   // The return leg of a Home sign-in. `takeHomeCallback` scrubs the URL and clears the stash the
   // first time it sees a `?code`, so a refresh (or React's double-invoked effects) cannot resubmit a

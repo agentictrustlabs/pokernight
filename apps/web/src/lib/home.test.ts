@@ -8,6 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectStash } from '@agenticprimitives/connect-client';
 import {
+  BUY_IN_TEMPLATE,
+  MANDATE_STASH_KEY,
   STASH_KEY,
   clearStash,
   consumeCallback,
@@ -15,8 +17,10 @@ import {
   isAllowedHomeOrigin,
   parseCallback,
   readStash,
+  startBuyInMandate,
   stripAuthParams,
   writeStash,
+  type AuthConfig,
   type StorageLike,
 } from './home';
 
@@ -171,5 +175,62 @@ describe('the issuer allowlist (the browser copy of the Worker rule)', () => {
   it('trusts localhost only for a localhost deployment', () => {
     expect(isAllowedHomeOrigin('localhost', 'http://localhost:3000')).toBe(true);
     expect(isAllowedHomeOrigin('localhost', 'https://www.faithnet.me')).toBe(false);
+  });
+});
+
+
+/**
+ * The buy-in authorisation is the SAME ceremony as sign-in with one parameter changed, and that one
+ * parameter is the whole of it: the Home decides what `poker-buyin` means and shows the player the
+ * caps. What this half must get right is the template, the amount, and keeping its stash apart from
+ * the sign-in stash — because both ceremonies come back to the same redirect URI.
+ */
+describe('startBuyInMandate', () => {
+  const config: AuthConfig = {
+    devAuth: false,
+    home: {
+      clientId: 'pokernight',
+      origin: 'https://www.faithnet.me',
+      zone: 'faithnet.me',
+      delegate: `0x${'de'.repeat(20)}`,
+      redirectUri: 'https://poker.faithnet.io/',
+      buyInTemplate: BUY_IN_TEMPLATE,
+    },
+  };
+
+  it('asks the Home for the buy-in template, for this client, at the registered redirect', async () => {
+    const store = fakeStore();
+    const url = new URL(await startBuyInMandate(config, '200000000', store));
+    expect(url.origin).toBe('https://www.faithnet.me');
+    expect(url.searchParams.get('delegation_template')).toBe('poker-buyin');
+    expect(url.searchParams.get('client_id')).toBe('pokernight');
+    expect(url.searchParams.get('redirect_uri')).toBe('https://poker.faithnet.io/');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    // The biggest single buy-in this table would take, in base units. The Home caps it further.
+    expect(url.searchParams.get('pay_amount')).toBe('200000000');
+  });
+
+  it('keeps its stash separate from the sign-in stash, so a return leg cannot be mistaken', async () => {
+    const store = fakeStore();
+    const url = new URL(await startBuyInMandate(config, null, store));
+    expect(store.map.has(MANDATE_STASH_KEY)).toBe(true);
+    expect(store.map.has(STASH_KEY)).toBe(false);
+    const stash = readStash(store, MANDATE_STASH_KEY);
+    expect(stash?.state).toBe(url.searchParams.get('state'));
+    expect(stash?.nonce).toBe(url.searchParams.get('nonce'));
+  });
+
+  it('omits an amount it cannot vouch for rather than sending nonsense', async () => {
+    const url = new URL(await startBuyInMandate(config, 'lots', fakeStore()));
+    expect(url.searchParams.has('pay_amount')).toBe(false);
+  });
+
+  it('refuses to send anyone to a Home this deployment does not trust', async () => {
+    const rogue: AuthConfig = { ...config, home: { ...config.home, origin: 'https://evil.example' } };
+    await expect(startBuyInMandate(rogue, null, fakeStore())).rejects.toThrow(/not a trusted Home/);
+  });
+
+  it('will not navigate when the browser refuses to keep the secret it would need on the way back', async () => {
+    await expect(startBuyInMandate(config, null, fakeStore('set'))).rejects.toThrow(/session storage is blocked/);
   });
 });

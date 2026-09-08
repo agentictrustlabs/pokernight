@@ -13,7 +13,15 @@
 
 import { privateKeyToAccount } from 'viem/accounts';
 import { createPublicClient, http } from 'viem';
-import { createTreasuryClient, type TreasuryClient, type TreasuryDeployments } from '@pokernight/treasury';
+import {
+  DEFAULT_BUY_IN_POLICY,
+  createTreasuryClient,
+  type BuyInMandatePolicy,
+  type MandateEnforcers,
+  type TreasuryClient,
+  type TreasuryDeployments,
+} from '@pokernight/treasury';
+import type { HomeApiConfig } from './home-api.js';
 import type { Env } from './env.js';
 
 /** A configuration failure that names the variable a human has to set. */
@@ -73,7 +81,71 @@ export function deployments(env: Env): TreasuryDeployments {
   // Optional: only the buy-in half needs these, and it says so by name when they are absent.
   if (isAddress(env.DELEGATION_MANAGER)) base.delegationManager = env.DELEGATION_MANAGER.trim() as `0x${string}`;
   if (isAddress(env.PAYMENT_ENFORCER)) base.paymentEnforcer = env.PAYMENT_ENFORCER.trim() as `0x${string}`;
+  if (isAddress(env.TIMESTAMP_ENFORCER)) base.timestampEnforcer = env.TIMESTAMP_ENFORCER.trim() as `0x${string}`;
+  if (isAddress(env.ALLOWED_TARGETS_ENFORCER)) base.allowedTargetsEnforcer = env.ALLOWED_TARGETS_ENFORCER.trim() as `0x${string}`;
+  if (isAddress(env.ALLOWED_METHODS_ENFORCER)) base.allowedMethodsEnforcer = env.ALLOWED_METHODS_ENFORCER.trim() as `0x${string}`;
   return base;
+}
+
+/**
+ * The four enforcer addresses a buy-in mandate composes, or a sentence naming the one that is not
+ * configured. A mandate is the player's protection: composing it out of three enforcers because the
+ * fourth was missing would silently hand the house a wider authority than the consent screen showed,
+ * so this refuses instead.
+ */
+export function mandateEnforcers(env: Env): MandateEnforcers {
+  const d = deployments(env);
+  const need = (v: `0x${string}` | undefined, name: string, why: string): `0x${string}` => {
+    if (!v) throw new TreasuryConfigError(name, `${name} is not set to an address, so ${why}`);
+    return v;
+  };
+  return {
+    payment: need(d.paymentEnforcer, 'PAYMENT_ENFORCER', 'a buy-in mandate would have no on-chain spend cap'),
+    timestamp: need(d.timestampEnforcer, 'TIMESTAMP_ENFORCER', 'a buy-in mandate would never expire'),
+    allowedTargets: need(d.allowedTargetsEnforcer, 'ALLOWED_TARGETS_ENFORCER', 'a buy-in mandate would not be pinned to the settlement asset'),
+    allowedMethods: need(d.allowedMethodsEnforcer, 'ALLOWED_METHODS_ENFORCER', 'a buy-in mandate would not be pinned to `transfer`'),
+  };
+}
+
+/** Where a mandate is redeemed. Named separately because the mandate half needs it and reads may not. */
+export function delegationManager(env: Env): `0x${string}` {
+  const d = deployments(env);
+  if (!d.delegationManager) {
+    throw new TreasuryConfigError('DELEGATION_MANAGER', 'DELEGATION_MANAGER is not set to an address, so a buy-in mandate could not be redeemed');
+  }
+  return d.delegationManager;
+}
+
+/** The house policy a mandate is built to. Chips and counts, because that is what a card room means. */
+export function mandatePolicy(env: Env): BuyInMandatePolicy {
+  const int = (raw: string | undefined, fallback: number): number => {
+    const n = Number((raw ?? '').trim());
+    return Number.isInteger(n) && n > 0 ? n : fallback;
+  };
+  return {
+    maxBuyInChips: int(env.MANDATE_MAX_BUY_IN_CHIPS, DEFAULT_BUY_IN_POLICY.maxBuyInChips),
+    maxBuyIns: int(env.MANDATE_MAX_BUY_INS, DEFAULT_BUY_IN_POLICY.maxBuyIns),
+    windowSeconds: int(env.MANDATE_VALID_SECONDS, DEFAULT_BUY_IN_POLICY.windowSeconds),
+    validForSeconds: int(env.MANDATE_VALID_SECONDS, DEFAULT_BUY_IN_POLICY.validForSeconds),
+  };
+}
+
+/** This deployment's view of the Home, for everything after sign-in (`home-api.ts`). */
+export function homeApi(env: Env): HomeApiConfig {
+  const origin = (env.HOME_ORIGIN ?? '').trim();
+  const clientId = (env.HOME_CLIENT_ID ?? '').trim();
+  if (!origin) throw new TreasuryConfigError('HOME_ORIGIN', 'HOME_ORIGIN is not set, so the card room cannot reach a Home');
+  if (!clientId) throw new TreasuryConfigError('HOME_CLIENT_ID', 'HOME_CLIENT_ID is not set, so the Home would not recognise this card room');
+  return { origin, clientId };
+}
+
+/** What the optional `<label>.treasury` claim needs. Absent, a treasury is created nameless. */
+export function treasuryNaming(env: Env): { nameRegistry: `0x${string}`; treasurySubregistry: `0x${string}` } | null {
+  if (!isAddress(env.AGENT_NAME_REGISTRY) || !isAddress(env.TREASURY_SUBREGISTRY)) return null;
+  return {
+    nameRegistry: env.AGENT_NAME_REGISTRY.trim() as `0x${string}`,
+    treasurySubregistry: env.TREASURY_SUBREGISTRY.trim() as `0x${string}`,
+  };
 }
 
 /** Balances and custody. Needs no key, so it works in every environment that has ASSET configured. */
@@ -102,6 +174,13 @@ export function custodialTreasury(env: Env): TreasuryClient {
     signer: privateKeyToAccount(key as `0x${string}`),
   });
 }
+
+/**
+ * `address(0xa11)` — what this chain's `DelegationManager` reads as "any redeemer may redeem this".
+ * A mandate carrying it is one the house may redeem even though it is not named in it. It lives here
+ * rather than in `@pokernight/treasury` because it is an address, and packages name none.
+ */
+export const OPEN_DELEGATE = '0x0000000000000000000000000000000000000a11' as `0x${string}`;
 
 export function houseTreasury(env: Env): `0x${string}` {
   const v = (env.HOUSE_TREASURY_SA ?? env.HOUSE_SA ?? '').trim();

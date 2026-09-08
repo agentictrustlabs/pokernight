@@ -18,9 +18,19 @@
  * Nothing here reaches the network and nothing here names a chain, a host or an address.
  */
 
-import { buildPaymentMandateCaveats, describePaymentMandate, type Caveat, type Delegation } from '@agenticprimitives/delegation';
+import {
+  ROOT_AUTHORITY,
+  buildPaymentMandateCaveats,
+  decodePaymentTerms,
+  decodeTimestampTerms,
+  describePaymentMandate,
+  hashDelegation,
+  type Caveat,
+  type Delegation,
+} from '@agenticprimitives/delegation';
 import { buildClosedMandate, x402, type PaymentMandate } from '@agenticprimitives/payments';
 import { TreasuryError, type Address, type Hex } from './types.js';
+import { formatUsdc } from './units.js';
 
 export type { Caveat, Delegation, PaymentMandate };
 
@@ -165,4 +175,232 @@ export function buildBuyInRedemption(input: BuyInRedemptionInput): { to: Address
     throw new TreasuryError('bad-mandate', `the buy-in mandate cannot be redeemed: ${e instanceof Error ? e.message : String(e)}`);
   }
   return { ...plan, mandate };
+}
+
+
+/* ------------------------------------------------------------------ the terms */
+
+/**
+ * The house's policy for what a night's mandate is allowed to be, in TABLE units.
+ *
+ * Chips and rebuys are what a card room actually thinks in; asset amounts are derived from them and
+ * the deployment's `chipValue`, so there is exactly one place a cap is decided and it is the same
+ * number the consent screen shows and the on-chain enforcer holds.
+ */
+export interface BuyInMandatePolicy {
+  /** The biggest single buy-in or rebuy the mandate may cover, in chips. */
+  maxBuyInChips: number;
+  /** How many buy-ins (the first one included) the night may take. */
+  maxBuyIns: number;
+  /** The window the redemption count is measured over. */
+  windowSeconds: number;
+  /** How long the mandate stays valid — the end of the night. */
+  validForSeconds: number;
+}
+
+/** One night, one table's worth of rebuys. Deliberately short: a mandate is not a standing account. */
+export const DEFAULT_BUY_IN_POLICY: BuyInMandatePolicy = {
+  maxBuyInChips: 20_000,
+  maxBuyIns: 5,
+  windowSeconds: 12 * 60 * 60,
+  validForSeconds: 12 * 60 * 60,
+};
+
+export interface BuyInMandateTermsInput {
+  payee: Address;
+  asset: Address;
+  enforcers: MandateEnforcers;
+  /** Asset base units per chip. */
+  chipValue: bigint;
+  policy: BuyInMandatePolicy;
+  /** Milliseconds. Injected so the terms are testable and the caller owns the clock. */
+  now: number;
+}
+
+/** Turn the house policy plus the chip value into the caveat terms a player is asked to sign. */
+export function buyInMandateTerms(input: BuyInMandateTermsInput): BuyInMandateTerms {
+  const { policy } = input;
+  if (!Number.isInteger(policy.maxBuyInChips) || policy.maxBuyInChips <= 0) {
+    throw new TreasuryError('bad-mandate', `maxBuyInChips must be a positive integer, got ${policy.maxBuyInChips}`);
+  }
+  if (!Number.isInteger(policy.maxBuyIns) || policy.maxBuyIns <= 0) {
+    throw new TreasuryError('bad-mandate', `maxBuyIns must be a positive integer, got ${policy.maxBuyIns}`);
+  }
+  if (input.chipValue <= 0n) throw new TreasuryError('bad-chip-value', `chipValue must be > 0, got ${input.chipValue}`);
+  const perCharge = BigInt(policy.maxBuyInChips) * input.chipValue;
+  return {
+    payee: input.payee,
+    asset: input.asset,
+    enforcers: input.enforcers,
+    maxAmountPerCharge: perCharge,
+    maxAggregate: perCharge * BigInt(policy.maxBuyIns),
+    maxRedemptionsPerWindow: policy.maxBuyIns,
+    windowSeconds: policy.windowSeconds,
+    validUntil: Math.floor(input.now / 1000) + policy.validForSeconds,
+  };
+}
+
+/* ------------------------------------------------------- the unsigned delegation */
+
+export interface UnsignedBuyInMandateInput {
+  /** The PLAYER'S TREASURY. Never their person agent: an identity is not a source of funds. */
+  treasury: Address;
+  /** The house agent that redeems it — `HOUSE_DELEGATE`. */
+  houseDelegate: Address;
+  terms: BuyInMandateTerms;
+  /** Distinguishes two mandates with identical terms. Milliseconds is plenty. */
+  salt: bigint;
+}
+
+/**
+ * The delegation a player signs, before their signature. Delegator is the TREASURY, which is the
+ * account the money leaves; the house is the delegate.
+ */
+export function unsignedBuyInMandate(input: UnsignedBuyInMandateInput): Delegation {
+  return {
+    delegator: input.treasury,
+    delegate: input.houseDelegate,
+    authority: ROOT_AUTHORITY,
+    caveats: buildBuyInMandateCaveats(input.terms),
+    salt: input.salt,
+    signature: '0x' as Hex,
+  };
+}
+
+/**
+ * The EIP-712 digest the treasury's custodian signs. Straight `hashDelegation`, re-exported under a
+ * name that says what it is for, so every path — the browser ceremony, a demo persona's server-side
+ * signature, and the test script — hashes the SAME bytes.
+ */
+export function buyInMandateDigest(mandate: Delegation, chainId: number, delegationManager: Address): Hex {
+  return hashDelegation(mandate, chainId, delegationManager);
+}
+
+/* ------------------------------------------------------------------ checking one */
+
+/** A delegation as it comes back off the wire or out of a session record: strings, not bigints. */
+function coerceDelegation(value: unknown): Delegation | null {
+  if (!value || typeof value !== 'object') return null;
+  const o = value as Record<string, unknown>;
+  const addr = (v: unknown): Address | null =>
+    typeof v === 'string' && /^0x[0-9a-fA-F]{40}$/.test(v.trim()) ? (v.trim() as Address) : null;
+  const delegator = addr(o.delegator);
+  const delegate = addr(o.delegate);
+  const authority = typeof o.authority === 'string' && /^0x[0-9a-fA-F]{64}$/.test(o.authority) ? (o.authority as Hex) : null;
+  const signature = typeof o.signature === 'string' && /^0x[0-9a-fA-F]*$/.test(o.signature) ? (o.signature as Hex) : null;
+  if (!delegator || !delegate || !authority || !signature) return null;
+  if (!Array.isArray(o.caveats)) return null;
+  const caveats: Caveat[] = [];
+  for (const raw of o.caveats) {
+    if (!raw || typeof raw !== 'object') return null;
+    const c = raw as Record<string, unknown>;
+    const enforcer = addr(c.enforcer);
+    const terms = typeof c.terms === 'string' && /^0x[0-9a-fA-F]*$/.test(c.terms) ? (c.terms as Hex) : null;
+    if (!enforcer || !terms) return null;
+    caveats.push({ enforcer, terms, args: (typeof c.args === 'string' ? c.args : '0x') as Hex });
+  }
+  let salt: bigint;
+  try {
+    salt = typeof o.salt === 'bigint' ? o.salt : BigInt((o.salt ?? 0) as string | number);
+  } catch {
+    return null;
+  }
+  return { delegator, delegate, authority, caveats, salt, signature };
+}
+
+/** Read a stored mandate back into a `Delegation`, or null when it is not one. */
+export function asBuyInMandate(value: unknown): Delegation | null {
+  return coerceDelegation(value);
+}
+
+export interface BuyInMandateExpectation {
+  /** The treasury this session actually spends from. */
+  treasury: Address;
+  /** The house agent this deployment redeems as. */
+  houseDelegate: Address;
+  /** Where buy-ins must land. */
+  payee: Address;
+  asset: Address;
+  paymentEnforcer: Address;
+  /**
+   * The sentinel `delegate` this chain's DelegationManager treats as "any redeemer" — a mandate
+   * carrying it may be redeemed by the house even though it names somebody else. INJECTED, because
+   * it is an address and this package names none.
+   */
+  openDelegate?: Address;
+  /** The movement being authorised right now, in base units. Omit to check the mandate alone. */
+  amount?: bigint;
+  /** Milliseconds. */
+  now: number;
+}
+
+/**
+ * Why this mandate does not authorise this movement, in one sentence — or null when it does.
+ *
+ * Everything here is checked OFF chain, before a seat is credited, precisely so the refusal names
+ * the missing thing instead of arriving as a reverted UserOp an hour later. The on-chain enforcers
+ * remain the authority; this is the same arithmetic, said early.
+ */
+export function checkBuyInMandate(value: unknown, expect: BuyInMandateExpectation): string | null {
+  const mandate = coerceDelegation(value);
+  if (!mandate) return 'the stored buy-in mandate is not a delegation this card room can read';
+  if (mandate.signature === '0x' || mandate.signature.length < 4) return 'the buy-in mandate carries no signature';
+  const eq = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+
+  if (!eq(mandate.delegator, expect.treasury)) {
+    return (
+      `the buy-in mandate was signed by ${mandate.delegator}, but this session spends from ${expect.treasury} — ` +
+      `sign a mandate for the treasury you are using`
+    );
+  }
+  const openToAnyone = expect.openDelegate !== undefined && eq(mandate.delegate, expect.openDelegate);
+  if (!eq(mandate.delegate, expect.houseDelegate) && !openToAnyone) {
+    return `the buy-in mandate is delegated to ${mandate.delegate}, but this card room redeems as ${expect.houseDelegate}`;
+  }
+
+  const payment = mandate.caveats.find((c) => eq(c.enforcer, expect.paymentEnforcer));
+  if (!payment) {
+    return 'the buy-in mandate has no payment caveat, so nothing on chain caps what the card room could take';
+  }
+  let terms: ReturnType<typeof decodePaymentTerms>;
+  try {
+    terms = decodePaymentTerms(payment.terms);
+  } catch (e) {
+    return `the buy-in mandate's payment caveat cannot be read: ${e instanceof Error ? e.message : String(e)}`;
+  }
+  if (!eq(terms.payee, expect.payee)) {
+    return `the buy-in mandate pays ${terms.payee}, which is not this card room's treasury ${expect.payee}`;
+  }
+  if (!eq(terms.asset, expect.asset)) {
+    return `the buy-in mandate is denominated in ${terms.asset}, but this table settles in ${expect.asset}`;
+  }
+  if (expect.amount !== undefined && terms.maxAmountPerCharge < expect.amount) {
+    return (
+      `the buy-in mandate allows at most ${formatUsdc(terms.maxAmountPerCharge)} USDC per buy-in, ` +
+      `and this one costs ${formatUsdc(expect.amount)} USDC — sign a new mandate or buy in for less`
+    );
+  }
+
+  const timestamp = mandate.caveats.find((c) => c !== payment && isTimestampTerms(c.terms));
+  if (timestamp) {
+    let window: { validAfter: bigint; validUntil: bigint };
+    try {
+      window = decodeTimestampTerms(timestamp.terms);
+    } catch {
+      return null; // not a timestamp caveat after all; the payment cap still stands
+    }
+    const nowSeconds = BigInt(Math.floor(expect.now / 1000));
+    if (window.validUntil > 0n && window.validUntil <= nowSeconds) {
+      return `the buy-in mandate expired at ${new Date(Number(window.validUntil) * 1000).toISOString()} — sign a new one`;
+    }
+    if (window.validAfter > nowSeconds) {
+      return `the buy-in mandate is not valid until ${new Date(Number(window.validAfter) * 1000).toISOString()}`;
+    }
+  }
+  return null;
+}
+
+/** Timestamp terms are exactly two words; anything else is a different caveat. */
+function isTimestampTerms(terms: Hex): boolean {
+  return terms.length === 2 + 128;
 }
