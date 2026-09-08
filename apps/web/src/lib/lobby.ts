@@ -10,12 +10,15 @@
 
 import type { PlayerInfo, TableSummary, TableView } from './types';
 import { fmtChips, joinNames, streetLabel } from './format';
+import { dualAmount, tableRate } from './money';
 
 /** `GET /tables/:id` — the spectator view, which is what tells us WHO is at a table. */
 export interface TableDetail {
   tableId: string;
   name: string;
   settlement: string;
+  /** Asset base units per chip, pinned when the table was created. Absent on a table with no rate. */
+  chipValue?: string;
   view: TableView;
   names: Record<string, string>;
   players?: Record<string, PlayerInfo>;
@@ -127,7 +130,10 @@ export interface LiveMoment {
 export function describeMoment(detail: TableDetail | null | undefined, roster: Roster): LiveMoment {
   const hand = detail?.view?.hand ?? null;
   const pot = hand ? hand.pots.reduce((a, p) => a + p.amount, 0) : 0;
-  const state = hand ? `${streetLabel(hand.street)} · pot ${fmtChips(pot)}` : 'between hands';
+  // On a settled table the pot is money, and the hero says so — the same rule as at the table.
+  const d = dualAmount(pot, tableRate(detail?.settlement, detail?.chipValue));
+  const potText = d.assetLabel ? `${d.chipsText} (${d.assetLabel})` : d.chipsText;
+  const state = hand ? `${streetLabel(hand.street)} · pot ${potText}` : 'between hands';
   const agentsPlaying = roster.agents.length > 0 && hand != null;
   if (!detail) return { agentsPlaying: false, state, line: '' };
   const who = roster.agents.length === 0 ? roster.line : `${roster.agentNames}${roster.humans.length ? ` and ${plural(roster.humans.length, 'person', 'people')}` : ''}`;

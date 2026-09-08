@@ -30,6 +30,7 @@ export {
   USDC_DECIMALS,
   USDC_UNIT,
   chipsToUsdc,
+  formatMoney,
   formatUsdc,
   parseUsdc,
   usdcRemainder,

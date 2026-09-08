@@ -17,8 +17,17 @@ export interface Env {
   AGENT_BASE_URL?: string;
   /** Comma-separated list of allowed browser origins. */
   ALLOWED_ORIGINS: string;
-  /** Asset base units per chip (default 10000 = 0.01 USDC at 6 decimals). */
+  /**
+   * Asset base units per chip for tables opened FROM NOW ON (1000000 = 1 USDC at 6 decimals). Read
+   * once, when a table is created, and stamped on it. Never read at settlement time.
+   */
   CHIP_VALUE: string;
+  /**
+   * The rate tables created before the rate was pinned have been settling at. Used ONLY to stamp
+   * such a table on its first load, so raising `CHIP_VALUE` cannot re-value stacks that are already
+   * on a table. Removable once every live table has loaded once.
+   */
+  LEGACY_CHIP_VALUE?: string;
   /** The person's Home (OIDC issuer). Sign-in redirects here; the Worker exchanges the code here. */
   HOME_ORIGIN: string;
   /** Zone the Home lives under. The issuer allowlist accepts the apex and single-label subdomains. */

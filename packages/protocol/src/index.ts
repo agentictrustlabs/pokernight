@@ -69,6 +69,17 @@ export const CreateTableRequestSchema = z.object({
 });
 export type CreateTableRequest = z.infer<typeof CreateTableRequestSchema>;
 
+/**
+ * Asset base units one chip is worth AT THIS TABLE, as a decimal string (bigints do not survive
+ * JSON). It is captured when the table is created and never changes afterwards, so a stack bought
+ * at one rate can never be cashed out at another — see `PokerTableDO`.
+ *
+ * Optional because a table created before rates were pinned has none until its first load, and
+ * because a deployment with no `CHIP_VALUE` configured has no rate to pin. A client that does not
+ * know the rate must say so rather than guess one.
+ */
+export const ChipValueSchema = z.string().regex(/^\d+$/);
+
 export const TableSummarySchema = z.object({
   tableId: z.string(),
   name: z.string(),
@@ -77,8 +88,24 @@ export const TableSummarySchema = z.object({
   seated: z.number().int(),
   handNo: z.number().int(),
   createdAt: z.number(),
+  /** This table's chip rate. See {@link ChipValueSchema}. Meaningless on a play-money table. */
+  chipValue: ChipValueSchema.optional(),
 });
 export type TableSummary = z.infer<typeof TableSummarySchema>;
+
+/**
+ * What a chip is worth, for a client that has to show both units.
+ *
+ * `null` is the honest answer on a play-money table (chips are the whole story there) and on a
+ * settled one whose rate has not been read yet. The two are different situations and callers that
+ * care distinguish them by `settlement`; what they must never do is invent a rate.
+ */
+export function tableChipValue(summary: Pick<TableSummary, 'settlement' | 'chipValue'>): bigint | null {
+  if (summary.settlement === 'play-money') return null;
+  if (!summary.chipValue || !/^\d+$/.test(summary.chipValue)) return null;
+  const v = BigInt(summary.chipValue);
+  return v > 0n ? v : null;
+}
 
 /** Seat an A2A agent at a table. The table resolves the agent card, then calls `poker.act` on its turn. */
 export const SeatAgentRequestSchema = z.object({

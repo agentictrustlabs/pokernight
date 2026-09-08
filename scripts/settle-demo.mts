@@ -48,7 +48,12 @@ const KEY_FILE = process.env.HOUSE_KEY_FILE ?? resolve(REPO, '.house-key.json');
 const HOUSE_FILE = resolve(REPO, 'house.faithchain.json');
 const RPC_URL = process.env.FAITHCHAIN_RPC ?? 'https://a2a.faithnet.io/rpc';
 
-/** Matches apps/tables `[env.faithnet.vars] CHIP_VALUE` — 10 000 base units = 0.01 USDC per chip. */
+/**
+ * The chip rate this demo settles at. It is self-contained — the same value prices the buy-in and
+ * the cash-out below — so it is a demo parameter, not a deployment one. A real table's rate is
+ * stamped on the table when it is created (`PokerTableDO` `meta.chipValue`) and is 1 000 000 by
+ * default now; this default is left at the older 0.01 USDC chip so the demo moves small amounts.
+ */
 const CHIP_VALUE = BigInt(process.env.CHIP_VALUE ?? '10000');
 /** A separate Smart Agent standing in for a player's own treasury. Stable across runs. */
 const PLAYER_SALT_LABEL = 'pokernight.demo.player.v1';

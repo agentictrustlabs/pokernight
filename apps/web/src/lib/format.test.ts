@@ -41,6 +41,15 @@ describe('formatEvent', () => {
     expect(formatEvent({ type: 'hole-cards', seat: 0, cards: ['Ah', 'Kd'], private: true }, ctx)).toEqual(['You are dealt Ah Kd']);
     expect(formatEvent({ type: 'showdown', shown: [{ seat: 1, holeCards: ['8c', '8s'], rank: twoPair }] }, ctx)).toEqual(['Bob shows 8c 8s — Two pair, aces and eights']);
     expect(formatEvent({ type: 'seat-joined', seat: 4, playerId: 'p', name: 'Dave', stack: 100 }, ctx)).toEqual(['Dave sits at seat 5 with 100']);
+    // A Home that knows someone only as a phone number asserts no name, and the table service hands
+    // back their address. The log says the seat rather than forty characters of hex.
+    expect(formatEvent({ type: 'seat-joined', seat: 4, playerId: 'p', name: '0x6a98eff1…4308f341', stack: 200 }, ctx)).toEqual([
+      'Seat 5 sits at seat 5 with 200',
+    ]);
+    // A nameless chatter at a seat is that seat; one who is not seated at all is "Someone".
+    const seatedCtx = { ...ctx, seatOf: (id: string) => (id === 'p2' ? 1 : null) };
+    expect(formatEvent({ type: 'chat', playerId: 'p2', name: '0x6a98eff1…4308f341', text: 'nh', at: 0 }, seatedCtx)).toEqual(['Seat 2: nh']);
+    expect(formatEvent({ type: 'chat', playerId: 'p9', name: '0x6a98eff1…4308f341', text: 'hi', at: 0 }, ctx)).toEqual(['Someone: hi']);
     expect(formatEvent({ type: 'seat-status', seat: 1, playerId: 'p', status: 'sitting-out' }, ctx)).toEqual(['Bob sits out']);
     expect(formatEvent({ type: 'chat', playerId: 'p', name: 'Bob', text: 'nh', at: 0 }, ctx)).toEqual(['Bob: nh']);
     expect(formatEvent({ type: 'hand-started', handNo: 3, seedCommit: 'x', button: 3, seats: [0, 1, 3] }, ctx)).toEqual(['Hand #3 — button Carol, 3 players']);

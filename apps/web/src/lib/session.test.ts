@@ -3,7 +3,8 @@
  * one of them owes an explanation.
  */
 import { describe, expect, it } from 'vitest';
-import { SESSION_ENDED_NOTICE, signOutTo } from './session';
+import { seatLabel } from './format';
+import { SESSION_ENDED_NOTICE, displayName, signOutTo } from './session';
 import { SIGNIN_HASH, route } from './routes';
 
 describe('signOutTo', () => {
@@ -48,5 +49,26 @@ describe('route', () => {
     expect(route('signin')).toEqual({ page: 'home' });
     expect(route('#how')).toEqual({ page: 'home' });
     expect(route('#live')).toEqual({ page: 'home' });
+  });
+});
+
+describe('names on screen', () => {
+  it('uses the name a Home asserted', () => {
+    expect(displayName({ name: 'richard.me', agentName: 'richard.me' })).toBe('richard.me');
+    expect(seatLabel('richard.me', 2)).toBe('richard.me');
+  });
+
+  /**
+   * A Home that knows someone as a phone number or an email address asserts no agent name and hands
+   * back their Smart Agent address as the display name. Neither the top bar nor a seat plate is a
+   * place for a raw `0x…`, so neither shows one.
+   */
+  it('never puts an address on screen, in either place', () => {
+    const nameless = { name: '0x2a5ae595…653c2747', address: '0x2a5ae595cc5009c8517780e78a20a34e653c2747' };
+    expect(displayName(nameless)).toBe('You');
+    expect(displayName({ name: '0x2a5ae595cc5009c8517780e78a20a34e653c2747' })).toBe('You');
+    expect(seatLabel('0x2a5ae595…653c2747', 2)).toBe('Seat 3');
+    expect(seatLabel('', 0)).toBe('Seat 1');
+    expect(seatLabel(null, 5)).toBe('Seat 6');
   });
 });

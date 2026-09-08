@@ -200,7 +200,10 @@ export interface BuyInMandatePolicy {
 
 /** One night, one table's worth of rebuys. Deliberately short: a mandate is not a standing account. */
 export const DEFAULT_BUY_IN_POLICY: BuyInMandatePolicy = {
-  maxBuyInChips: 20_000,
+  // 200 chips. The cap a player consents to is a cap in ASSET (`maxBuyInChips × chipValue`), so this
+  // number only means anything alongside a rate: at the 1-USDC chip the apps default to, it is a
+  // 200 USDC ceiling per buy-in — the same ceiling this policy has always described.
+  maxBuyInChips: 200,
   maxBuyIns: 5,
   windowSeconds: 12 * 60 * 60,
   validForSeconds: 12 * 60 * 60,

@@ -19,6 +19,7 @@
  *   GET  /tables/:id/settlement         → this player's money rows at a table (auth required)
  *   GET  /tables/:id/ws?token=...       → WebSocket to the table DO (no/invalid token = spectator)
  *   GET  /treasury                      → chosen treasury + balance + candidates + mandate (auth required)
+ *   POST /treasury/quick-start          → treasury + stake + buy-in authority, in one call (auth required)
  *   POST /treasury/select {address}     → choose the treasury that funds play (auth required)
  *   POST /treasury/create {label?}      → charter one under the player's person agent (auth required)
  *   POST /treasury/mandate {delegation?}→ sign or record the buy-in mandate (auth required)
@@ -50,6 +51,7 @@ import {
   createTreasury,
   fundTreasury,
   getTreasury,
+  quickStart,
   selectTreasury,
   signMandate,
 } from './routes-treasury.js';
@@ -336,6 +338,19 @@ app.get('/treasury', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
   return getTreasury(c, session);
+});
+
+/**
+ * Get this player ready to play, in one call: a treasury, a stake in it, and the buy-in authority.
+ *
+ * The panel that used to ask a newcomer to understand chartered Smart Agents, an open-mint test
+ * token and a delegation with caveats is one button now, and this is what the button does. It says
+ * what it did — or, when a step belongs to the player's own Home, exactly where to go and why.
+ */
+app.post('/treasury/quick-start', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  return quickStart(c, session);
 });
 
 app.post('/treasury/select', async (c) => {

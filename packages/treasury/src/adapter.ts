@@ -164,11 +164,14 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
           return { ok: false, reason: `could not read the USDC balance of ${funding.treasury}: ${e instanceof Error ? e.message : String(e)}` };
         }
         if (balance < amount) {
+          // Name the SHORTFALL, not just the two numbers: "not enough" a player has to subtract is
+          // not something they can act on. The client says the same thing in the same shape before
+          // the button is pressed (`buyInShortfall` in apps/web).
           return {
             ok: false,
             reason:
-              `${funding.treasury} holds ${formatUsdc(balance)} USDC; a ${req.chips}-chip buy-in costs ${formatUsdc(amount)} USDC. ` +
-              `Fund the treasury or buy in for less.`,
+              `${funding.treasury} holds ${formatUsdc(balance)} USDC; a ${req.chips}-chip buy-in costs ${formatUsdc(amount)} USDC — ` +
+              `${formatUsdc(amount - balance)} USDC short. Fund the treasury or buy in for less.`,
           };
         }
       }
@@ -198,7 +201,8 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
       if (balance < amount) {
         throw new TreasuryError(
           'insufficient-balance',
-          `${payer} holds ${formatUsdc(balance)} USDC, which does not cover the ${formatUsdc(amount)} USDC buy-in`,
+          `${payer} holds ${formatUsdc(balance)} USDC, which does not cover the ${formatUsdc(amount)} USDC buy-in — ` +
+            `${formatUsdc(amount - balance)} USDC short`,
         );
       }
 
@@ -247,7 +251,8 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
       if (balance < amount) {
         throw new TreasuryError(
           'insufficient-balance',
-          `the house treasury ${houseTreasury} holds ${formatUsdc(balance)} USDC, which does not cover the ${formatUsdc(amount)} USDC cash-out for ${req.playerId}`,
+          `the house treasury ${houseTreasury} holds ${formatUsdc(balance)} USDC, which does not cover the ${formatUsdc(amount)} USDC ` +
+            `cash-out for ${req.playerId} — ${formatUsdc(amount - balance)} USDC short`,
         );
       }
 

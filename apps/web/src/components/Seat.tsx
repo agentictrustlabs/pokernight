@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { ActionRecord, Card as CardCode, PlayerInfo, SeatView } from '../lib/types';
 import { actionBadge, fmtDelta } from '../lib/format';
+import type { TableRate } from '../lib/money';
 import { Card } from './Card';
 import { ChipStack } from './ChipStack';
 import { TurnClock } from './TurnClock';
@@ -49,6 +50,10 @@ export interface SeatProps {
   y: number;
   canSit: boolean;
   onSit: (seat: number) => void;
+  /** This table's chip rate, so a stack shows the money it is worth. Null on play money. */
+  rate?: TableRate | null;
+  /** Two words on an empty seat saying what sitting in it costs: "USDC" or "play money". */
+  modeLabel?: string;
 }
 
 export function Seat(p: SeatProps) {
@@ -60,14 +65,22 @@ export function Seat(p: SeatProps) {
     return (
       <li className="seat empty" style={style}>
         {p.canSit ? (
-          <button className="sit" onClick={() => p.onSit(p.seatNo)} aria-label={`Sit at seat ${p.seatNo + 1}`}>
+          <button
+            className="sit"
+            onClick={() => p.onSit(p.seatNo)}
+            aria-label={`Sit at seat ${p.seatNo + 1}${p.modeLabel ? ` — ${p.modeLabel}` : ''}`}
+          >
             <span className="seat-no">Seat {p.seatNo + 1}</span>
             <span className="sit-cta">Sit here</span>
+            {/* What this seat costs, on the seat itself: nobody should learn the table settles in
+                USDC only after they have pressed the button. */}
+            {p.modeLabel ? <span className={`sit-mode${p.rate ? ' money' : ''}`}>{p.modeLabel}</span> : null}
           </button>
         ) : (
           <span className="sit-open" aria-label={`Seat ${p.seatNo + 1}, empty`}>
             <span className="seat-no">Seat {p.seatNo + 1}</span>
             <span className="sit-cta">open</span>
+            {p.modeLabel ? <span className={`sit-mode${p.rate ? ' money' : ''}`}>{p.modeLabel}</span> : null}
           </span>
         )}
       </li>
@@ -146,7 +159,7 @@ export function Seat(p: SeatProps) {
               <span className="agent-name">{p.player?.agentName ?? p.player?.agentKind ?? 'a2a'}</span>
             </span>
           ) : null}
-          <ChipStack amount={s.stack} bigBlind={p.bigBlind} label="Stack" size="sm" maxColumns={4} className="seat-stack" />
+          <ChipStack amount={s.stack} bigBlind={p.bigBlind} label="Stack" size="sm" maxColumns={4} className="seat-stack" rate={p.rate} />
         </span>
       </div>
 

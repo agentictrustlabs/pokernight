@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { chipsFor, type ChipBreakdown } from '../lib/chips';
-import { fmtChips } from '../lib/format';
+import { dualAmount, type TableRate } from '../lib/money';
 
 /* Disc geometry, in the SVG's own units. */
 const RX = 11;
@@ -57,6 +57,12 @@ export interface ChipStackProps {
   /** Cap the drawing harder than the default, for tight spots. */
   maxColumns?: number;
   maxPerColumn?: number;
+  /**
+   * What a chip is worth at THIS table. Given, the money the chips stand for is printed under the
+   * count in the same mono face — a player at a settled table never has to do the multiplication.
+   * Null (a play-money table) prints the chip count alone, which is the whole truth there.
+   */
+  rate?: TableRate | null;
 }
 
 /**
@@ -76,6 +82,7 @@ export function ChipStack({
   className,
   maxColumns,
   maxPerColumn,
+  rate = null,
 }: ChipStackProps) {
   const b: ChipBreakdown = useMemo(
     () => chipsFor(amount, bigBlind, { maxColumns, maxPerColumn }),
@@ -88,9 +95,9 @@ export function ChipStack({
   const h = 2 * RY + Math.max(1, tallest) * SIDE + 1;
   const baseline = h - RY - SIDE;
   const k = SCALE[size];
-  const text = fmtChips(amount);
+  const d = dualAmount(amount, rate);
   const prefix = ariaLabel ?? label;
-  const aria = `${prefix ? `${prefix}: ` : ''}${text} chips`;
+  const aria = `${prefix ? `${prefix}: ` : ''}${d.label}`;
 
   return (
     <span className={`chips chips-${size}${className ? ` ${className}` : ''}`} role="img" aria-label={aria}>
@@ -112,9 +119,14 @@ export function ChipStack({
         </svg>
       ) : null}
       {showAmount ? (
-        <span className="chip-amount num" title={b.truncated ? `${text} chips (drawing simplified)` : `${text} chips`}>
+        <span className="chip-amount num" title={b.truncated ? `${d.label} (drawing simplified)` : d.label}>
           {label ? <span className="chip-label">{label}</span> : null}
-          {text}
+          {d.chipsText}
+        </span>
+      ) : null}
+      {showAmount && d.assetLabel ? (
+        <span className="chip-asset num" aria-hidden="true">
+          {d.assetLabel}
         </span>
       ) : null}
     </span>

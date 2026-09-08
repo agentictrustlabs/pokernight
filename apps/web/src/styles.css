@@ -2348,3 +2348,358 @@ details.dev-login .form .hint {
 .money-row.is-failed .money-what {
   color: var(--danger);
 }
+
+/* ------------------------------------------------------------- two units
+
+   A settled table shows every chip amount twice: the chip count in the primary figure and the money
+   it is worth directly under it, in the same mono face, a size down and in the gold the card room
+   already uses for anything consequential. A play-money table renders none of this — a bare chip
+   count is the truth there, and "0.00 USDC" would be a lie dressed as precision. */
+
+.chip-asset {
+  font-size: 0.68rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--gold);
+  opacity: 0.95;
+  line-height: 1.1;
+}
+.chips-xs .chip-asset {
+  font-size: 0.62rem;
+}
+/* On the felt the chips sit on dark green in BOTH themes, so this gold does not invert with them. */
+.felt,
+.bets {
+  --gold-on-felt: #f0d99a;
+}
+.felt .chip-asset,
+.bet-chips .chip-asset {
+  color: var(--gold-on-felt);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.bet-chips .chip-asset {
+  font-size: 0.6rem;
+}
+.winner-banner .chip-asset {
+  color: var(--gold);
+  text-shadow: none;
+}
+
+/* The settlement badge. Repeated on the header, on every open seat and above the buy-in box,
+   because "which kind of table is this" must be answerable without scrolling. */
+.settle-tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.settle-tag .tag {
+  text-transform: uppercase;
+}
+.settle-tag.money .tag {
+  color: var(--gold);
+  border-color: var(--brass);
+  background: var(--gold-soft);
+}
+.settle-rate {
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* An open seat says what sitting in it costs. */
+.seat.empty .sit-mode {
+  font-size: 0.56rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.8;
+}
+.seat.empty .sit-mode.money {
+  color: var(--gold);
+  opacity: 1;
+  font-weight: 700;
+}
+
+/* The seat picker: the terms first, the number second, both units live. */
+.picker {
+  display: grid;
+  gap: 0.5rem;
+}
+.picker.settles {
+  border-color: var(--brass);
+  background: var(--gold-soft);
+}
+.picker-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.picker-terms {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.picker-terms.money {
+  color: var(--ink);
+}
+.picker-controls {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+.picker-cost {
+  display: grid;
+  line-height: 1.15;
+  padding-bottom: 0.15rem;
+}
+.cost-chips {
+  font-weight: 600;
+}
+.cost-asset {
+  font-size: 0.72rem;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+/* Pot and commitment, priced in the action bar without crowding the buttons. */
+.asset-hint {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+/* The lobby's buy-in column carries both units, stacked. */
+.buyin-cell span {
+  display: block;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  /* Two units in a seat plate is a lot of type at 390px: the money line stays, the rate next to a
+     badge does not. */
+  .settle-rate {
+    display: none;
+  }
+}
+
+.wb-asset {
+  font-size: 0.8rem;
+  color: var(--gold);
+  white-space: nowrap;
+}
+/* The brand never breaks across lines: the table's name and its settlement badge live next to it,
+   and a wrapped "♠ / Pokernight" reads as a layout fault rather than as a tight fit. */
+.topbar .brand {
+  white-space: nowrap;
+}
+
+/* At phone widths the table header has four things to say (brand, table + settlement, connection,
+   who you are) and not enough room for one line. Give the table's own line the full width rather
+   than letting the badge land wherever it fits: which table this is, and whether it settles, is the
+   one thing a player must be able to read at a glance. */
+@media (max-width: 560px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 0.3rem;
+    column-gap: 0.6rem;
+  }
+  .topbar .meta:first-of-type {
+    order: 4;
+    flex: 1 1 100%;
+  }
+}
+
+/* The landing's featured seats and its table list carry the same two units as the table itself. */
+.fs-stack .cost-asset,
+.buyin-cell .cost-asset {
+  display: block;
+  font-size: 0.7rem;
+}
+.featured-head .settle-tag {
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------ getting set up */
+
+/* The money figure a player actually reads, wherever it appears: the set-up card and the money
+   panel at a table show the same one, so it is one rule rather than two that drift apart. */
+.start-money {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.7rem;
+}
+.start-amount {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--gold);
+  letter-spacing: -0.01em;
+}
+.start-name {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.start .primary,
+.start .button.primary {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+.start-line {
+  margin-top: 0.6rem;
+}
+.start-handoff {
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--rule);
+}
+.start-handoff .pair {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.start-handoff .button.primary {
+  width: auto;
+}
+
+/* The machinery, one disclosure away and no further. */
+.start-details,
+.money-details {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.6rem;
+}
+.start-details > summary,
+.money-details > summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  list-style: none;
+}
+.start-details > summary::before,
+.money-details > summary::before {
+  content: '▸ ';
+}
+.start-details[open] > summary::before,
+.money-details[open] > summary::before {
+  content: '▾ ';
+}
+.start-details > summary::-webkit-details-marker,
+.money-details > summary::-webkit-details-marker {
+  display: none;
+}
+.treasury-bare {
+  margin-top: 0.7rem;
+}
+.money-detail-body {
+  margin-top: 0.6rem;
+}
+.money-detail-body .money-what {
+  font-size: 0.78rem;
+}
+
+.money-sub {
+  margin: 0.9rem 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+.money-why {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+}
+.money-disclosure {
+  margin-top: 0.8rem;
+  font-size: 0.78rem;
+}
+
+/* The demo users, folded shut: an escape hatch, never a fork in the road for a new player. */
+.signin-demo > summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+}
+.signin-primary .primary.big {
+  width: 100%;
+  justify-content: center;
+  padding: 0.7rem 1rem;
+  font-size: 1rem;
+}
+.signin-primary .hint {
+  margin-top: 0.6rem;
+}
+
+/* A lobby column must be allowed to shrink, or a wide table pushes the side panel off the page. */
+.lobby > * {
+  min-width: 0;
+}
+.lobby-create {
+  padding: 0.9rem 1rem;
+}
+.lobby-create > summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.lobby-create > summary::before {
+  content: '▸ ';
+  color: var(--ink-soft);
+}
+.lobby-create[open] > summary::before {
+  content: '▾ ';
+}
+.lobby-create > summary::-webkit-details-marker {
+  display: none;
+}
+.lobby-create .panel.form {
+  border: 0;
+  padding: 0.8rem 0 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Anchors that ARE buttons. Two places in the money flow send someone somewhere as their next
+   action — their own Home, and the table they just got set up for — and both are links because
+   they navigate. They must still look like the primary action they are. */
+a.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.8rem;
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+a.button:hover {
+  border-color: var(--felt);
+  text-decoration: none;
+}
+a.button.primary {
+  background: var(--felt);
+  border-color: var(--felt);
+  color: #fff;
+  font-weight: 600;
+}
+a.button.primary:hover {
+  background: var(--felt-deep);
+  color: #fff;
+}
+.start a.button.primary {
+  margin-top: 0.2rem;
+}

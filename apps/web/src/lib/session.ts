@@ -7,6 +7,7 @@
  * "sign out" knows what happened; a person whose token was refused mid-hand does not.
  */
 
+import { looksLikeAddress } from './format';
 import { SIGNIN_HASH } from './routes';
 
 export type SignOutReason =
@@ -36,3 +37,22 @@ export function signOutTo(reason: SignOutReason): SignOutOutcome {
     revoke: reason === 'user',
   };
 }
+
+/* ------------------------------------------------------- who you are, on screen */
+
+/**
+ * The name to put on screen for a signed-in person.
+ *
+ * A Home that knows someone as a phone number or an email address asserts no agent name, and hands
+ * back their Smart Agent address as the display name. Printing that in the top bar puts a raw
+ * address in the one place every screen shows — so it becomes "You", and the address stays on the
+ * element's title and in the details, where someone who wants it can find it.
+ */
+export function displayName(session: { name: string; agentName?: string | undefined; address?: string | undefined }): string {
+  const agent = session.agentName?.trim();
+  if (agent && !looksLikeAddress(agent)) return agent;
+  const name = session.name?.trim() ?? '';
+  if (name && !looksLikeAddress(name)) return name;
+  return 'You';
+}
+

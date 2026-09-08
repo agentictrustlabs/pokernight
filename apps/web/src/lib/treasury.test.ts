@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { tableRate } from './money';
 import {
-  chipsToUsdcLabel,
   describeSettlement,
   fmtUsdc,
   isTreasuryAddress,
@@ -40,19 +40,6 @@ describe('fmtUsdc', () => {
   });
 });
 
-describe('chipsToUsdcLabel', () => {
-  it('multiplies chips by the table chip value', () => {
-    expect(chipsToUsdcLabel(200, '10000')).toBe('2');
-    expect(chipsToUsdcLabel(1, '10000')).toBe('0.01');
-  });
-
-  it('declines to guess when the chip value is missing or nonsense', () => {
-    expect(chipsToUsdcLabel(200, null)).toBeNull();
-    expect(chipsToUsdcLabel(200, '0')).toBeNull();
-    expect(chipsToUsdcLabel(200, 'ten')).toBeNull();
-  });
-});
-
 describe('statusOf', () => {
   it('reads a receipt with no status as settled, which is what a play-money row is', () => {
     expect(statusOf({ mode: 'play-money', orderId: 'o', amount: '0', asset: 'play', ref: 'play:o', at: 1 })).toBe('settled');
@@ -65,7 +52,7 @@ describe('statusOf', () => {
 describe('describeSettlement', () => {
   it('says a pending movement is waiting on the chain', () => {
     const e = entry({ receipt: { mode: 'mandate-transfer', orderId: 'o', amount: '2000000', asset: '0xa5', ref: '', at: 1, status: 'pending' } });
-    expect(describeSettlement(e)).toBe('Buy-in of 2 USDC — waiting for the chain');
+    expect(describeSettlement(e)).toBe('Buy-in of 200 chips (2.00 USDC) — waiting for the chain');
   });
 
   it('carries the reason forward when a movement failed', () => {
@@ -83,7 +70,7 @@ describe('describeSettlement', () => {
         error: 'the house treasury holds 1.000000 USDC',
       },
     });
-    expect(describeSettlement(e)).toBe('Cash-out of 2 USDC — did not settle: the house treasury holds 1.000000 USDC');
+    expect(describeSettlement(e)).toBe('Cash-out of 200 chips (2.00 USDC) — did not settle: the house treasury holds 1.000000 USDC');
   });
 
   it('never renders a bare "failed" with nothing after it', () => {
@@ -128,6 +115,10 @@ describe('shortRef', () => {
 });
 
 describe('seatBlock', () => {
+  /** The rate of a table opened before the default moved, and of one opened after it. */
+  const CENT = tableRate('mandate-transfer', '10000');
+  const DOLLAR = tableRate('mandate-transfer', '1000000');
+
   const view = (over: Partial<TreasuryView> = {}): TreasuryView => ({
     chainId: 34348,
     asset: '0xa5',
@@ -185,36 +176,57 @@ describe('seatBlock', () => {
   it('asks for a treasury to EXIST before it asks for one to be chosen', () => {
     const b = seatBlock('mandate-transfer', view());
     expect(b?.action).toBe('create-treasury');
-    // The whole correction: an identity is named as something that cannot stand in for a treasury.
-    expect(b?.reason).toMatch(/your identity is not one/);
+    // The whole correction, in the words a player reads: the money account is a thing of their own
+    // and separate from the identity they signed in with — never a substitute for it.
+    expect(b?.reason).toMatch(/apart from the identity you signed in with/);
   });
 
   it('asks for a choice once there is something to choose', () => {
     expect(seatBlock('mandate-transfer', view({ candidates: [candidate] }))).toEqual({
-      reason: 'Choose the treasury that funds your play before taking a seat at this table.',
+      reason: 'Pick which of your money accounts pays for this seat.',
       action: 'choose-treasury',
     });
   });
 
-  it('asks for money before it asks for a signature, and names both amounts', () => {
-    const b = seatBlock('mandate-transfer', ready(), 100_000);
+  it('asks for money before it asks for a signature, and names the shortfall in USDC', () => {
+    const b = seatBlock('mandate-transfer', ready(), 100_000, CENT);
     expect(b?.action).toBe('fund-treasury');
-    expect(b?.reason).toMatch(/holds 5 USDC and this buy-in costs 1000 USDC/);
+    expect(b?.reason).toMatch(/holds 5.00 USDC/);
+    expect(b?.reason).toMatch(/100,000-chip buy-in costs 1,000.00 USDC/);
+    expect(b?.reason).toMatch(/995.00 USDC short/);
+  });
+
+  /**
+   * The whole of bug 1, said in the client's voice: the SAME buy-in at the SAME treasury is
+   * affordable at the rate its table was created with and unaffordable at the deployment's new
+   * one. Only the table's own rate may decide.
+   */
+  it('prices the buy-in at the TABLE’s rate, never at the deployment default', () => {
+    expect(seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200, CENT)).toBeNull();
+    const dearer = seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200, DOLLAR);
+    expect(dearer?.action).toBe('fund-treasury');
+    expect(dearer?.reason).toMatch(/195.00 USDC short/);
+  });
+
+  it('does not price the buy-in at all when the table has not said what a chip is worth', () => {
+    // A wrong price is worse than no price: without the table's rate the affordability check is
+    // skipped and the server has the last word.
+    expect(seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 100_000)).toBeNull();
   });
 
   it('asks for a mandate once the treasury is chosen and funded', () => {
-    const b = seatBlock('mandate-transfer', ready(), 200);
+    const b = seatBlock('mandate-transfer', ready(), 200, CENT);
     expect(b?.action).toBe('sign-mandate');
-    expect(b?.reason).toMatch(/only move USDC out of your treasury under a mandate you sign/);
+    expect(b?.reason).toMatch(/Money leaves your account only under an authority you sign at your Home/);
   });
 
   it('carries the mandate’s own problem forward rather than saying "not authorised"', () => {
-    const b = seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, problem: 'the buy-in mandate expired at 2026-01-01' } }), 200);
+    const b = seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, problem: 'the buy-in mandate expired at 2026-01-01' } }), 200, CENT);
     expect(b).toEqual({ reason: 'the buy-in mandate expired at 2026-01-01', action: 'sign-mandate' });
   });
 
   it('clears once there is a funded treasury and a mandate that covers it', () => {
-    expect(seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200)).toBeNull();
-    expect(seatBlocker('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200)).toBeNull();
+    expect(seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200, CENT)).toBeNull();
+    expect(seatBlocker('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200, CENT)).toBeNull();
   });
 });

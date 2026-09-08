@@ -137,6 +137,14 @@ describe('describeMoment', () => {
     expect(m.line).toBe('Sharkbot and The Bluffer and 1 person — hand #754, Flop · pot 4');
   });
 
+  it('says the pot in money too when the table settles, at the table’s own rate', () => {
+    const d = { ...detail(), settlement: 'mandate-transfer', chipValue: '1000000' };
+    expect(describeMoment(d, summarizeRoster(d)).state).toBe('Flop · pot 4 (4.00 USDC)');
+    // The same pot at the rate an older table was opened with is a different amount of money.
+    const older = { ...d, chipValue: '10000' };
+    expect(describeMoment(older, summarizeRoster(older)).state).toBe('Flop · pot 4 (0.04 USDC)');
+  });
+
   it('does not claim a hand is running between hands', () => {
     const d = detail({ view: { ...detail().view, hand: null } });
     const m = describeMoment(d, summarizeRoster(d));

@@ -51,7 +51,17 @@ DEV_AUTH = "true"
 # Local dev points agents at localhost:8788; a public deployment must NOT enable this.
 ALLOW_AGENT_ENDPOINT = "true"
 ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
-CHIP_VALUE = "10000"
+# Asset base units per chip for tables opened FROM NOW ON. 1000000 = 1 USDC per chip at 6 decimals,
+# so a 1/2 table with a 40-200 buy-in reads as a normal cash game in dollars. Every existing table
+# keeps the rate stamped on it when it was created (PokerTableDO `meta.chipValue`); changing this
+# opens new tables at a new rate and re-values nothing.
+CHIP_VALUE = "1000000"
+# The rate tables created BEFORE the rate was pinned have been settling at, and the value stamped
+# onto such a table the first time it loads. It exists so that raising CHIP_VALUE above cannot
+# re-value stacks already sitting on an open table — the deploy that adds pinning is the same deploy
+# that raises the default, so "today's default" would be the wrong answer for every existing table.
+# Delete it once every live table has loaded once; it is not a default for anything new.
+LEGACY_CHIP_VALUE = "10000"
 # Home sign-in (OIDC). The ONLY registered redirect_uri for client `pokernight` is
 # https://poker.faithnet.io/ — there is no localhost redirect, so the real ceremony CANNOT run
 # against the live Home from `wrangler dev`. Local dev signs in through POST /dev/session instead.
@@ -117,7 +127,16 @@ A2A_TIMEOUT_MS = "20000"
 # client reads GET /auth/config rather than a build flag.
 DEV_AUTH = "true"
 ALLOWED_ORIGINS = "https://poker.faithnet.io"
-CHIP_VALUE = "10000"
+# 1 chip = 1.000000 USDC for tables opened from now on. Tables opened before this line changed keep
+# the 0.01 USDC chip they were created with — the rate is pinned per table, never re-read from here
+# (see PokerTableDO `meta.chipValue` and apps/tables/test/chip-value.test.ts).
+CHIP_VALUE = "1000000"
+# The rate tables created BEFORE the rate was pinned have been settling at, and the value stamped
+# onto such a table the first time it loads. It exists so that raising CHIP_VALUE above cannot
+# re-value stacks already sitting on an open table — the deploy that adds pinning is the same deploy
+# that raises the default, so "today's default" would be the wrong answer for every existing table.
+# Delete it once every live table has loaded once; it is not a default for anything new.
+LEGACY_CHIP_VALUE = "10000"
 # MockUSDC on faithchain (6 decimals). Only this var changes if the chain ever bridges a real USDC.
 ASSET = "0xdaE09066A2cc32f6203605619137dcF01A9B49Ae"
 # Contract addresses (phase 3): copy from ~/agenticprimitives/packages/contracts/deployments-faithchain.json
@@ -140,9 +159,13 @@ ALLOWED_METHODS_ENFORCER = "0xdBb2E47793393C499efB0f3fcbf6Ca8669791a41"
 AGENT_NAME_REGISTRY = "0x60E949D52660A9D4143ecB0fdA56c0457f20aED9"
 TREASURY_SUBREGISTRY = "0xf1df2D9b779C62a8BF5707C799d8E6842382892B"
 # What a night's buy-in mandate may cover. These are the caps the player sees before signing and the
-# ones the on-chain PaymentEnforcer holds: at most 20 000 chips (200 USDC) per buy-in, five buy-ins,
-# and twelve hours. A mandate is one night at a table, not a standing account.
-MANDATE_MAX_BUY_IN_CHIPS = "20000"
+# ones the on-chain PaymentEnforcer holds: at most 200 chips (200 USDC at the chip rate above) per
+# buy-in, five buy-ins, and twelve hours. A mandate is one night at a table, not a standing account.
+#
+# The USDC ceiling is what a player consents to and it has NOT moved: 20 000 chips at the old
+# 0.01 USDC chip was the same 200 USDC. So a mandate signed under this line still covers a buy-in at
+# an older table, whose chips are worth a hundredth as much.
+MANDATE_MAX_BUY_IN_CHIPS = "200"
 MANDATE_MAX_BUY_INS = "5"
 MANDATE_VALID_SECONDS = "43200"
 PAYMENT_RECEIPT_REGISTRY = "0x5FfDd6186C1bBc4628187B1c4C1fDaA39F870d43"

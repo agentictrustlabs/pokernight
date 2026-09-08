@@ -73,8 +73,20 @@ Asset: parameterized `ASSET` address. On faithchain today this is `MockUSDC`
 (`0xdaE09066A2cc32f6203605619137dcF01A9B49Ae`, 6 decimals, open mint). Real USDC does not exist on
 faithchain; if the chain ever bridges one, only the env var changes.
 
-Units: chips are integers in the table ledger. `chipValue` (default 10 000 = 0.01 USDC) converts
-chips to asset base units. Blinds and buy-in limits are configured in chips.
+Units: chips are integers in the table ledger. `chipValue` converts chips to asset base units;
+the deployment default is 1 000 000 = 1 USDC per chip, so a 1/2 table with a 40–200 buy-in reads as
+a normal cash game in dollars. Blinds and buy-in limits are configured in chips.
+
+**The rate belongs to the TABLE, not to the deployment.** `CHIP_VALUE` is read once, when a table is
+created, and stamped onto that table (`PokerTableDO` `meta.chipValue`). Every settlement at that
+table — buy-in, cash-out, ledger row, receipt — uses the stamped rate. A table created before the
+field existed is stamped on its first load with `LEGACY_CHIP_VALUE` (10 000), the rate such tables
+have actually been settling at — NOT with today's default, because the deploy that adds pinning is
+the same deploy that raises the default. Changing `CHIP_VALUE`
+therefore opens NEW tables at a new rate and re-values nothing that is already on a table. It has to
+be this way round: read at settlement time, a hundredfold change to the variable would have cashed a
+100-chip stack bought for 1 USDC out at 100 USDC of house funds. A settled table's rate is published
+on `TableSummary` and the table view so a client can show both units without guessing.
 
 ### 5.0 The player's treasury
 
@@ -93,6 +105,26 @@ needs a custody-grade session this app can never hold, so a real player is hande
 build/sign/submit rail with `/connect/persona-sign` and then recorded back at the Home.
 
 The card room never holds the treasury's key, exactly as it does not hold the house's.
+
+**Onboarding is one action, not three.** A person signing in for the first time — by phone number,
+email or a social account at their Home — has no treasury, no money and no mandate, and no reason to
+know those are three things. `POST /treasury/quick-start` does the whole sequence in one call and
+answers in money: it finds or creates the treasury, records it on the session, seeds it with
+**10 000 test USDC** if and only if it holds nothing, and signs the buy-in mandate. Every step comes
+back as `done`, `kept`, `blocked` or `failed` with its own sentence, and `ready` is true only when a
+settled seat would actually be allowed — the same four conditions `authorizeBuyIn` checks.
+
+The seed is gated on the ASSET calling itself a mock (`isTestAsset`), never on a flag, and is never
+minted into a treasury that already holds something: a player with money is not given more behind
+their back. Two of the three steps belong to the player's own Home when the player is a real person
+— their Home creates and custodies the treasury (`/treasuries` portal, discovered afterwards through
+`related-orgs`) and their Home signs the mandate (`poker-buyin` template) — so those come back
+`blocked` with the place to go, and the client watches for the result rather than making the person
+come back and press something twice.
+
+The client shows money and keeps the machinery behind a disclosure: a balance and a treasury NAME in
+the default view, and the address, the transaction hashes and the mandate caveats one click away.
+They are kept, not removed: the settlement is real and the receipts are the proof of it.
 
 ### 5.1 Buy-in (player → house)
 
@@ -251,7 +283,9 @@ rule that `packages/*` never hardcode domains or vendors; all faithnet specifics
 `CHAIN_ID=34348`, `RPC_URL=https://rpc.faithnet.io`, `HOME_ORIGIN=https://www.faithnet.me`,
 `HOME_ZONE=faithnet.me`, `AGENT_CARD_ZONE=faithnet.ai`, `ENTRY_POINT`, `AGENT_ACCOUNT_FACTORY`,
 `DELEGATION_MANAGER`, `PAYMENT_ENFORCER`, `DIGEST_BINDING_ENFORCER`, `PAYMENT_RECEIPT_REGISTRY`,
-`ASSET` (= `MOCK_USDC`), `HOUSE_SA`, `HOUSE_DELEGATE`, `CHIP_VALUE=10000`, `ALLOWED_ORIGINS`.
+`ASSET` (= `MOCK_USDC`), `HOUSE_SA`, `HOUSE_DELEGATE`, `CHIP_VALUE=1000000` (the default for NEW
+tables only), `LEGACY_CHIP_VALUE=10000` (what tables older than the pin settle at — see §5),
+`ALLOWED_ORIGINS`.
 Secrets via `wrangler secret put`: `SESSION_SECRET`, `RPC_TOKEN`, `AKCS_TOKEN` (or the GCP KMS key name).
 Bindings: DO `TABLES` (`PokerTableDO`, sqlite), DO `LOBBIES` (`LobbyDO`, sqlite), service binding to the
 house Worker. Local dev: `CHAIN_ID=31337`, `RPC_URL=http://127.0.0.1:8545`.

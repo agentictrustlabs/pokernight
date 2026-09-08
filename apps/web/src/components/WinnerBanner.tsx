@@ -1,6 +1,7 @@
 import type { Card as CardCode, HandResult } from '../lib/types';
 import { fmtDelta, summarizeResult, type FormatContext } from '../lib/format';
 import { netBySeat, shownCards, winningCards, winningSeats } from '../lib/hand';
+import { dualAmount, type TableRate } from '../lib/money';
 import { Card } from './Card';
 
 /**
@@ -8,7 +9,18 @@ import { Card } from './Card';
  * what every seat that showed was holding. A fold-to-one win never invents a
  * hand rank — it says "uncontested".
  */
-export function WinnerBanner({ result, ctx, board = [] }: { result: HandResult; ctx: FormatContext; board?: CardCode[] }) {
+export function WinnerBanner({
+  result,
+  ctx,
+  board = [],
+  rate = null,
+}: {
+  result: HandResult;
+  ctx: FormatContext;
+  board?: CardCode[];
+  /** This table's chip rate. Given, the pot that was just won is also said in money. */
+  rate?: TableRate | null;
+}) {
   const summary = summarizeResult(result, ctx);
   const win = winningCards(result);
   const winners = new Set(winningSeats(result));
@@ -16,12 +28,16 @@ export function WinnerBanner({ result, ctx, board = [] }: { result: HandResult; 
   const nets = netBySeat(result);
   const rows = [...shown.entries()].sort((a, b) => (winners.has(b[0]) ? 1 : 0) - (winners.has(a[0]) ? 1 : 0));
   const rankBySeat = new Map(result.shown.map((s) => [s.seat, s.rank.label] as const));
+  // The pot that was just won, in money — the one chip figure on this banner a player reads as a
+  // result rather than as a score.
+  const won = dualAmount(result.awards.reduce((a, w) => a + w.amount, 0), rate);
 
   return (
     <div className="winner-banner">
       <div className="wb-head">
         <span className="wb-headline">{summary.headline}</span>
         <span className={`wb-detail${summary.showdown ? '' : ' quiet'}`}>{summary.detail}</span>
+        {won.assetLabel ? <span className="wb-asset num">{won.assetLabel}</span> : null}
       </div>
       {board.length > 0 ? (
         <div className="wb-board" aria-label="Board">

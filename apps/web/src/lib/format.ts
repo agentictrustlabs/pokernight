@@ -47,6 +47,14 @@ export interface FormatContext {
   seatOf?: (playerId: string) => number | null;
 }
 
+/**
+ * Who an event is about: the name it carries when that is a name, and the seat's own label
+ * otherwise. An event with no name at all falls through to the context, which already knows.
+ */
+function who(name: string | undefined, seat: number, ctx: FormatContext): string {
+  return name ? seatLabel(name, seat) : ctx.seatName(seat);
+}
+
 /** One event may produce several lines (a hand end lists every award). */
 export function formatEvent(ev: TableEvent, ctx: FormatContext): string[] {
   const n = ctx.seatName;
@@ -102,14 +110,18 @@ export function formatEvent(ev: TableEvent, ctx: FormatContext): string[] {
       return formatResult(ev.result, ctx);
     case 'turn':
       return [];
+    // These three carry the name from the table service, which for a nameless Home identity is an
+    // address. Same rule as everywhere else: the seat, never the hex.
     case 'seat-joined':
-      return [`${ev.name ?? n(ev.seat)} sits at seat ${ev.seat + 1}${ev.stack != null ? ` with ${fmtChips(ev.stack)}` : ''}`];
+      return [`${who(ev.name, ev.seat, ctx)} sits at seat ${ev.seat + 1}${ev.stack != null ? ` with ${fmtChips(ev.stack)}` : ''}`];
     case 'seat-left':
-      return [`${ev.name ?? n(ev.seat)} leaves seat ${ev.seat + 1}`];
+      return [`${who(ev.name, ev.seat, ctx)} leaves seat ${ev.seat + 1}`];
     case 'seat-status':
-      return [`${ev.name ?? n(ev.seat)} ${ev.status === 'sitting-out' ? 'sits out' : 'is back in'}`];
-    case 'chat':
-      return [`${ev.name}: ${ev.text}`];
+      return [`${who(ev.name, ev.seat, ctx)} ${ev.status === 'sitting-out' ? 'sits out' : 'is back in'}`];
+    case 'chat': {
+      const seat = ctx.seatOf?.(ev.playerId) ?? null;
+      return [`${seat === null ? (looksLikeAddress(ev.name) ? 'Someone' : ev.name) : seatLabel(ev.name, seat)}: ${ev.text}`];
+    }
     default:
       return [];
   }
@@ -135,6 +147,27 @@ export function formatResult(result: HandResult, ctx: FormatContext): string[] {
 /** `0x89d13c59…a820ffd0` — recognisable, short enough for a topbar or a roster row. */
 export function shortAddress(address: string): string {
   return address.length > 14 ? `${address.slice(0, 10)}…${address.slice(-8)}` : address;
+}
+
+/** `0xb2154dd6…e653d7f6`, or a bare address — what a Home asserts for someone with no name yet. */
+const ADDRESS_LIKE = /^0x[0-9a-fA-F]{4,}(…|\.{3})?[0-9a-fA-F]*$/;
+
+export function looksLikeAddress(value: string | null | undefined): boolean {
+  const v = value?.trim() ?? '';
+  return v !== '' && ADDRESS_LIKE.test(v);
+}
+
+/**
+ * What to call a player at the table.
+ *
+ * A Home that knows someone by phone number or email address asserts no agent name, so the table
+ * service falls back to their Smart Agent address — and a seat plate, or a line of the log, reading
+ * `0x2a5ae595…653c2747` is a raw address in the most-looked-at part of the app. "Seat 3" is shorter,
+ * and more honest: we do not know their name, and the seat is what anyone at a table actually says.
+ */
+export function seatLabel(name: string | null | undefined, seat: number): string {
+  const n = name?.trim() ?? '';
+  return n && !looksLikeAddress(n) ? n : `Seat ${seat + 1}`;
 }
 
 /** Short hex prefix for seed commits: "3f9a2c…". */

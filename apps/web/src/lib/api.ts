@@ -2,6 +2,7 @@ import type { CreateTableRequest, Session, TableSummary } from '@pokernight/prot
 import type { AppSession } from './types';
 import type { AuthConfig } from './home';
 import type { TableDetail } from './lobby';
+import type { StakeResult } from './stake';
 import type {
   CreateTreasuryResult,
   FundTreasuryResult,
@@ -137,6 +138,9 @@ export const api = {
 
   /** The treasury that funds this session's play, its live balance, and what else it could be. */
   getTreasury: (token: string) => request<TreasuryView>('/treasury', {}, token),
+  /** Everything between signing in and sitting down, in one call: a treasury, a stake, the authority.
+   *  Answers with what it did and what (if anything) the player's own Home still has to do. */
+  quickStart: (token: string) => request<StakeResult>('/treasury/quick-start', { method: 'POST', body: '{}' }, token),
   /** Ask the card room to fund play from `address`. It checks custody on chain before agreeing. */
   selectTreasury: (address: string, token: string) =>
     request<SelectTreasuryResult>('/treasury/select', { method: 'POST', body: JSON.stringify({ address }) }, token),

@@ -10,6 +10,7 @@
  * with none is not offered a substitute — they are offered a way to make one.
  *
  *   GET  /treasury                     the chosen treasury, its balance, the candidates, the mandate
+ *   POST /treasury/quick-start         the whole thing in one call: a treasury, a stake, the authority
  *   POST /treasury/select {address}    choose one — refused unless the Home says it is theirs
  *   POST /treasury/create {label?}     make one (server-side for a demo persona; a hand-off otherwise)
  *   POST /treasury/fund {amount}       mint test USDC, faithchain's open-mint MockUSDC only
@@ -29,6 +30,7 @@ import {
   buyInMandateTerms,
   checkBuyInMandate,
   describeBuyInMandate,
+  formatMoney,
   formatUsdc,
   parseUsdc,
   unsignedBuyInMandate,
@@ -39,6 +41,7 @@ import { patchSessionRecord, readSessionRecord, setSessionTreasury, type Session
 import type { Env } from './env.js';
 import {
   HomeApiError,
+  checkTreasuryLabel,
   demoPersonaFor,
   demoSignIn,
   listRelatedAgents,
@@ -66,6 +69,7 @@ import {
   treasuryNaming,
 } from './treasury.js';
 import { TreasuryCreationError, createTreasuryForPersona } from './treasury-create.js';
+import type { TreasuryClient } from '@pokernight/treasury';
 
 export const SelectTreasurySchema = z.object({ address: z.string().trim().min(1).max(64) });
 /** A decimal USDC amount, e.g. "100" or "12.50". Capped so a demo faucet stays a demo faucet. */
@@ -640,11 +644,33 @@ export async function signMandate(c: Ctx, session: SessionClaims, supplied: unkn
     );
   }
 
+  const signed = await signMandateAsPersona(c.env, session.playerId, chosen, persona, ctx, expectation, now);
+  if ('error' in signed) return c.json({ error: signed.error }, signed.status);
+  return c.json({ treasury: chosen, source: 'persona', validUntil: ctx.terms.validUntil, ...consentOf(ctx.terms) });
+}
+
+/**
+ * Have the Home sign the buy-in mandate for one of its own demo people, and record it.
+ *
+ * Shared by `POST /treasury/mandate` and the quick-start flow so both ask for exactly the same
+ * delegation and check it the same way. The card room builds the terms, the HOME signs the EIP-712
+ * digest with the persona's own custodian key, and the result is re-checked against the expectation
+ * before it is kept: a mandate this app has not verified is a mandate this app will not store.
+ */
+async function signMandateAsPersona(
+  env: Env,
+  playerId: string,
+  treasury: string,
+  persona: DemoPersona,
+  ctx: MandateContext,
+  expectation: Parameters<typeof checkBuyInMandate>[1],
+  now: number,
+): Promise<{ ok: true } | { error: string; status: 401 | 502 | 503 }> {
   let config;
   try {
-    config = homeApi(c.env);
+    config = homeApi(env);
   } catch (e) {
-    return c.json({ error: configFailure(e) }, 503);
+    return { error: configFailure(e), status: 503 };
   }
 
   let signIn;
@@ -652,11 +678,11 @@ export async function signMandate(c: Ctx, session: SessionClaims, supplied: unkn
     signIn = await demoSignIn(config, persona.handle);
   } catch (e) {
     const reason = e instanceof HomeApiError ? e.reason : e instanceof Error ? e.message : String(e);
-    return c.json({ error: `your Home would not authorise a buy-in mandate: ${reason}` }, 502);
+    return { error: `your Home would not authorise a buy-in mandate: ${reason}`, status: 502 };
   }
 
   const unsigned = unsignedBuyInMandate({
-    treasury: chosen as Address,
+    treasury: treasury as Address,
     houseDelegate: ctx.houseDelegate,
     terms: ctx.terms,
     salt: BigInt(now),
@@ -668,17 +694,17 @@ export async function signMandate(c: Ctx, session: SessionClaims, supplied: unkn
     signature = await personaSignDigest(config, signIn.homeSession, digest);
   } catch (e) {
     const reason = e instanceof HomeApiError ? e.reason : e instanceof Error ? e.message : String(e);
-    return c.json({ error: `your Home did not sign the buy-in mandate: ${reason}` }, 502);
+    return { error: `your Home did not sign the buy-in mandate: ${reason}`, status: 502 };
   }
 
   const mandate = { ...unsigned, salt: unsigned.salt.toString(), signature };
   const problem = checkBuyInMandate(mandate, expectation);
-  if (problem) return c.json({ error: `the mandate your Home signed does not authorise this table: ${problem}` }, 502);
+  if (problem) return { error: `the mandate your Home signed does not authorise this table: ${problem}`, status: 502 };
 
-  if (!(await patchSessionRecord(c.env, session.playerId, { buyInMandate: mandate, mandateTreasury: chosen, mandateValidUntil: ctx.terms.validUntil }))) {
-    return c.json({ error: 'this session is no longer active, so the mandate was not recorded' }, 401);
+  if (!(await patchSessionRecord(env, playerId, { buyInMandate: mandate, mandateTreasury: treasury, mandateValidUntil: ctx.terms.validUntil }))) {
+    return { error: 'this session is no longer active, so the mandate was not recorded', status: 401 };
   }
-  return c.json({ treasury: chosen, source: 'persona', validUntil: ctx.terms.validUntil, ...consentOf(ctx.terms) });
+  return { ok: true };
 }
 
 /** The numbers a player is agreeing to, as strings, exactly as the consent screen showed them. */
@@ -760,5 +786,292 @@ export async function fundTreasury(c: Ctx, session: SessionClaims, amountRaw: st
     balanceUsdc,
     asset: faucet.name,
     note: 'Test USDC on faithchain. It has no value anywhere else.',
+  });
+}
+
+/* ----------------------------------------------------- POST /treasury/quick-start */
+
+/**
+ * The seed a new player starts with, as a decimal USDC amount.
+ *
+ * Test money on faithchain, and enough of it that nobody has to think about topping up on their
+ * first night. It is only ever minted into a treasury holding NOTHING: a player who already has
+ * money is never given more, because that would be the card room deciding to change somebody's
+ * balance behind their back.
+ */
+export const SEED_USDC = '10000';
+
+/** One thing the card room did, or could not do, said in money rather than machinery. */
+export interface QuickStartStep {
+  step: 'treasury' | 'stake' | 'authority';
+  /** `done` we did it · `kept` it was already so · `blocked` someone else must act · `failed` it broke. */
+  status: 'done' | 'kept' | 'blocked' | 'failed';
+  /** One plain sentence. Shown as-is; it is the whole progress line. */
+  said: string;
+  /** The address or transaction behind it. For the details disclosure ONLY — never the headline. */
+  detail?: string;
+}
+
+/** What the player must do next, when the card room cannot do it for them. */
+export interface QuickStartNext {
+  action: 'none' | 'create-at-home' | 'authorise-at-home' | 'retry';
+  said: string;
+  /** Their Home's own page, for `create-at-home`. Ours never appears here. */
+  portalUrl?: string | null;
+}
+
+export interface QuickStartView {
+  /** True only when a settled seat would actually be allowed right now. Never optimistic. */
+  ready: boolean;
+  treasury: string | null;
+  /** `<label>.treasury`, or '' — what a player should be shown instead of an address. */
+  treasuryName: string | null;
+  balance: string | null;
+  balanceUsdc: string | null;
+  steps: QuickStartStep[];
+  next: QuickStartNext;
+}
+
+/** How many candidate balances quick-start will read before it just takes the first one. */
+const BALANCE_READS = 8;
+
+/** A short label for a new treasury, from the person's own handle. `a–z0–9-`, 2–24 chars. */
+function labelFor(handle: string): string {
+  const base = handle.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+  return base.length >= 2 ? base.slice(0, 20) : '';
+}
+
+/**
+ * `POST /treasury/quick-start` — everything between signing in and sitting down, in one call.
+ *
+ * A new player does not have a mental model of chartered Smart Agents, delegation caveats or an
+ * open-mint test token, and should not need one to play a hand. So this does the whole sequence and
+ * reports it as three sentences about money: they have somewhere to keep it, they have some, and
+ * they have said how much this table may take.
+ *
+ * It never fakes a leg. Each step says `done`, `kept`, `blocked` or `failed`, and a failure carries
+ * the reason forward so the same button can be pressed again. `ready` is true only when a settled
+ * seat would actually be allowed — the same four conditions `authorizeBuyIn` checks on the way in.
+ *
+ * Two of the three steps belong to the player's Home when the player is a real person: their Home
+ * creates and custodies their treasury, and their Home signs the buy-in mandate. Those come back as
+ * `blocked` with the place to go, which is a step in the flow rather than a dead end.
+ */
+export async function quickStart(c: Ctx, session: SessionClaims): Promise<Response> {
+  const now = Date.now();
+  const record = await readSessionRecord(c.env, session.playerId);
+  const person = record?.address && isAddress(record.address) ? record.address.toLowerCase() : null;
+  if (!person) {
+    return c.json({ error: 'this session has no Smart Agent, so there is no person to set anything up for' }, 403);
+  }
+
+  const steps: QuickStartStep[] = [];
+  const persona = await personaFor(c.env, person);
+  let portalUrl: string | null = null;
+  try {
+    portalUrl = managedAgentsUrl(homeApi(c.env));
+  } catch {
+    /* named below by whichever step needs it */
+  }
+
+  const answer = (ready: boolean, treasury: string | null, name: string | null, balance: bigint | null, next: QuickStartNext): Response =>
+    c.json({
+      ready,
+      treasury,
+      treasuryName: name,
+      balance: balance === null ? null : balance.toString(),
+      balanceUsdc: balance === null ? null : formatUsdc(balance),
+      steps,
+      next,
+    } satisfies QuickStartView);
+
+  /* ------------------------------------------------------- 1. somewhere to keep it */
+
+  const found = await discover(c.env, record?.idToken);
+  if (found.error) {
+    steps.push({ step: 'treasury', status: 'failed', said: `We could not read your account: ${found.error}` });
+    return answer(false, null, null, null, { action: 'retry', said: 'Try again in a moment.' });
+  }
+
+  const held = record?.treasury && isAddress(record.treasury) ? record.treasury.toLowerCase() : null;
+  // Prefer what this session already spends from; otherwise the one with the most in it, so a
+  // returning player lands on the money they actually have rather than on an empty account. The
+  // Home's answer carries no balances, so they are read here — bounded, because a player who has
+  // made a dozen accounts should not turn one button into a dozen round trips.
+  let match = (held ? found.treasuries.find((t) => t.address === held) : null) ?? null;
+  if (!match && found.treasuries.length > 0) {
+    match = found.treasuries[0] ?? null;
+    let best = -1n;
+    // One client for the whole sweep, and a deployment that cannot reach the chain simply takes the
+    // first account the Home listed rather than failing a step that has nothing to do with balances.
+    let reader: TreasuryClient | null = null;
+    try {
+      reader = readOnlyTreasury(c.env);
+    } catch {
+      reader = null;
+    }
+    const sweep = reader ? found.treasuries.slice(0, BALANCE_READS) : [];
+    for (const candidate of sweep) {
+      try {
+        const b = await (reader as TreasuryClient).readUsdcBalance(candidate.address as Address);
+        if (b > best) {
+          best = b;
+          match = candidate;
+        }
+      } catch {
+        /* an unreadable balance is not a reason to reject an account the Home says is theirs */
+      }
+    }
+  }
+  let created = false;
+
+  if (!match) {
+    if (!persona) {
+      steps.push({
+        step: 'treasury',
+        status: 'blocked',
+        said: 'Your money is kept by you, at your own Home — the card room never holds it, so it cannot make the account for you.',
+      });
+      return answer(false, null, null, null, {
+        action: 'create-at-home',
+        said: 'Open your Home and create your personal treasury. Come back here afterwards and the rest happens on its own.',
+        portalUrl,
+      });
+    }
+
+    // A demo person's Home holds their key, so the card room can ask it to make the account. A name
+    // is worth having: it is what a player sees instead of forty characters of address.
+    let label = labelFor(persona.handle);
+    if (label && treasuryNaming(c.env)) {
+      try {
+        const check = await checkTreasuryLabel(homeApi(c.env), label);
+        if (check.status !== 'free') label = `${label.slice(0, 15)}-${Math.random().toString(16).slice(2, 6)}`;
+      } catch {
+        label = '';
+      }
+    } else {
+      label = '';
+    }
+
+    try {
+      const config = homeApi(c.env);
+      const signIn = await demoSignIn(config, persona.handle);
+      if (signIn.agent !== person) throw new Error('your Home answered for a different person than this session');
+      const naming = treasuryNaming(c.env);
+      const out = await createTreasuryForPersona(
+        { home: config, nameRegistry: naming?.nameRegistry ?? '0x', treasurySubregistry: naming?.treasurySubregistry ?? '0x' },
+        { persona, homeSession: signIn.homeSession, ...(label ? { label } : {}) },
+      );
+      match = { address: out.address.toLowerCase(), name: out.name, label: out.name || short(out.address), balance: '0', balanceUsdc: '0' };
+      created = true;
+    } catch (e) {
+      const reason = e instanceof TreasuryCreationError ? e.reason : e instanceof Error ? e.message : String(e);
+      steps.push({ step: 'treasury', status: 'failed', said: `Your account was not created: ${reason}` });
+      return answer(false, null, null, null, { action: 'retry', said: 'Nothing was set up. Try again.' });
+    }
+  }
+
+  const chosen = match.address;
+  if (chosen !== held && !(await setSessionTreasury(c.env, session.playerId, chosen, match.name))) {
+    steps.push({ step: 'treasury', status: 'failed', said: 'This sign-in is no longer active, so nothing was recorded.' });
+    return answer(false, null, null, null, { action: 'retry', said: 'Sign in again.' });
+  }
+  steps.push({
+    step: 'treasury',
+    status: created ? 'done' : 'kept',
+    // "Found" rather than "you already had": for a person who made it at their Home thirty seconds
+    // ago, "already" would be wrong, and the card room cannot tell that case from a returning
+    // player's. Both are true of "found", and both are true of who holds the key.
+    said: created
+      ? 'Your own money account is ready — it is yours, and your Home holds the key.'
+      : 'Found your money account — it is yours, and your Home holds the key.',
+    detail: match.name ? `${match.name} · ${chosen}` : chosen,
+  });
+
+  /* ------------------------------------------------------------------ 2. a stake */
+
+  let balance: bigint | null = null;
+  try {
+    balance = await readOnlyTreasury(c.env).readUsdcBalance(chosen as Address);
+  } catch (e) {
+    steps.push({ step: 'stake', status: 'failed', said: `We could not read your balance: ${e instanceof Error ? e.message : String(e)}` });
+    return answer(false, chosen, match.name, null, { action: 'retry', said: 'Try again in a moment.' });
+  }
+
+  if (balance > 0n) {
+    steps.push({ step: 'stake', status: 'kept', said: `You already have ${formatMoney(balance)} USDC to play with.` });
+  } else {
+    // Gated on the ASSET saying it is a mock, not on a flag: a real stablecoin is never minted, and
+    // the refusal names the token rather than pretending the money arrived.
+    const faucet = await isTestAsset(c.env);
+    if (!faucet.ok) {
+      steps.push({ step: 'stake', status: 'blocked', said: `Nothing was added: ${faucet.reason}` });
+    } else {
+      try {
+        const amount = parseUsdc(SEED_USDC);
+        const txHash = await custodialTreasury(c.env).mintTestAsset(chosen as Address, amount);
+        balance = await readOnlyTreasury(c.env)
+          .readUsdcBalance(chosen as Address)
+          .catch(() => amount);
+        steps.push({
+          step: 'stake',
+          status: 'done',
+          said: `You're set up with ${formatMoney(amount)} USDC to play with.`,
+          detail: txHash,
+        });
+      } catch (e) {
+        const reason = e instanceof TreasuryConfigError ? configFailure(e) : e instanceof Error ? e.message : String(e);
+        steps.push({ step: 'stake', status: 'failed', said: `The ${SEED_USDC} USDC did not arrive: ${reason}` });
+        return answer(false, chosen, match.name, balance, { action: 'retry', said: 'Your account is set up. Try adding the money again.' });
+      }
+    }
+  }
+
+  /* -------------------------------------------------------------- 3. the authority */
+
+  const ctx = mandateContext(c.env, now);
+  if ('error' in ctx) {
+    steps.push({ step: 'authority', status: 'blocked', said: `Buy-ins cannot be authorised here: ${ctx.error}` });
+    return answer(false, chosen, match.name, balance, { action: 'none', said: 'Play-money tables are unaffected.' });
+  }
+  const expectation = {
+    treasury: chosen as Address,
+    houseDelegate: ctx.houseDelegate,
+    payee: ctx.terms.payee,
+    asset: ctx.terms.asset,
+    paymentEnforcer: ctx.terms.enforcers.payment,
+    openDelegate: OPEN_DELEGATE,
+    now,
+  };
+  const consent = describeBuyInMandate(ctx.terms);
+  const cap = `up to ${formatMoney(consent.maxAmountPerCharge)} USDC a time, ${formatMoney(consent.sessionBudget)} USDC in all`;
+  const boundTo = record?.mandateTreasury?.toLowerCase();
+  const standing = boundTo === chosen && record?.buyInMandate ? checkBuyInMandate(record.buyInMandate, expectation) === null : false;
+
+  if (standing) {
+    steps.push({ step: 'authority', status: 'kept', said: `This table may already take ${cap}. You can undo that at your Home whenever you like.` });
+  } else if (!persona) {
+    steps.push({
+      step: 'authority',
+      status: 'blocked',
+      said: `The last thing is your say-so: how much this table may take from your money — ${cap}.`,
+    });
+    return answer(false, chosen, match.name, balance, {
+      action: 'authorise-at-home',
+      said: 'Your Home asks you this and signs it, not the card room. You can undo it there whenever you like.',
+    });
+  } else {
+    const signed = await signMandateAsPersona(c.env, session.playerId, chosen, persona, ctx, expectation, now);
+    if ('error' in signed) {
+      steps.push({ step: 'authority', status: 'failed', said: `Buy-ins were not authorised: ${signed.error}` });
+      return answer(false, chosen, match.name, balance, { action: 'retry', said: 'Your money is set up. Try authorising again.' });
+    }
+    steps.push({ step: 'authority', status: 'done', said: `This table may take ${cap}. You can undo that at your Home whenever you like.` });
+  }
+
+  const ready = balance !== null && balance > 0n;
+  return answer(ready, chosen, match.name, balance, {
+    action: ready ? 'none' : 'retry',
+    said: ready ? 'You are ready to sit down.' : 'There is no money in your account yet.',
   });
 }

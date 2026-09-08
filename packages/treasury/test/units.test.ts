@@ -4,6 +4,7 @@ import {
   USDC_DECIMALS,
   USDC_UNIT,
   chipsToUsdc,
+  formatMoney,
   formatUsdc,
   parseUsdc,
   usdcRemainder,
@@ -92,5 +93,29 @@ describe('formatUsdc / parseUsdc', () => {
     expect(parseUsdc('42')).toBe(42_000_000n);
     expect(() => parseUsdc('1.0000001')).toThrow(/decimal places/);
     expect(() => parseUsdc('abc')).toThrow(TreasuryError);
+  });
+});
+
+describe('formatMoney', () => {
+  it('writes an amount the way a price is written: grouped, two places, no tail of zeros', () => {
+    expect(formatMoney(10_000_000_000n)).toBe('10,000.00');
+    expect(formatMoney(200_000_000n)).toBe('200.00');
+    expect(formatMoney(1_500_000n)).toBe('1.50');
+    expect(formatMoney(0n)).toBe('0.00');
+  });
+
+  it('keeps the places an amount genuinely has, rather than rounding money away', () => {
+    expect(formatMoney(1_234_567n)).toBe('1.234567');
+    expect(formatMoney(10_000n)).toBe('0.01');
+    expect(formatMoney(1n)).toBe('0.000001');
+  });
+
+  it('keeps the sign', () => {
+    expect(formatMoney(-2_000_000n)).toBe('-2.00');
+  });
+
+  /** `formatUsdc` stays the exact form; a receipt is not a sentence. */
+  it('does not replace the exact form', () => {
+    expect(formatUsdc(200_000_000n)).toBe('200.000000');
   });
 });

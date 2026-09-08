@@ -4,15 +4,18 @@ import type { AppSession, Session } from '../lib/types';
 import { api } from '../lib/api';
 
 /**
- * The way in. Three doors, ranked by how much they prove:
+ * The way in. ONE action, and two things folded away behind it.
  *
- *   1. YOUR HOME. The OIDC redirect ceremony. Your Smart Agent proves who you are and signs the
- *      site-login delegation; the card room never sees a password and never holds your keys.
- *   2. A DEMO USER the Home lends out. A real Smart Agent with a real id_token, verified server-side
- *      exactly like (1) — but a shared account, so it is offered second and labelled as what it is.
- *      Rendered only when the Home actually returns a roster.
- *   3. A DEV NAME. Proves nothing; present only where `GET /auth/config` says DEV_AUTH is on, and
- *      folded away so it reads as the last resort it is.
+ * The headline is the door a stranger actually uses: their Home, where they sign in with a phone
+ * number, an email address or a social account. What happens after they press it — the OIDC
+ * ceremony, their Smart Agent signing a site-login delegation, the card room verifying it against
+ * their Home — is true and is not their problem, so this says what they get rather than how.
+ *
+ * Below it, collapsed, the two doors that are not for a new player:
+ *   A DEMO USER the Home lends out. A real Smart Agent verified exactly like a redirect sign-in,
+ *   but a shared account — offered as "try it as someone else" and labelled as what it is.
+ *   Rendered only when the Home actually returns a roster.
+ *   A DEV NAME. Proves nothing; only where `GET /auth/config` says DEV_AUTH is on.
  *
  * Every failure — the config not loading, a cancelled ceremony, a Home that will not mint — lands
  * here as a sentence and a way onward, never a blank screen.
@@ -52,13 +55,13 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
       ) : (
         <>
           <div className="signin-primary">
-            <p className="hint">
-              Sign in with your Home{homeHost ? ` at ${homeHost}` : ''}. Your Smart Agent proves who you are; the card room never sees a
-              password and never holds your keys.
-            </p>
-            <button className="primary" type="button" onClick={auth.signInWithHome} disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in with your Home'}
+            <button className="primary big" type="button" onClick={auth.signInWithHome} disabled={busy}>
+              {busy ? 'Signing in…' : 'Sign in to play'}
             </button>
+            <p className="hint">
+              Your phone number, an email address or a social account — whichever you like, at your Home
+              {homeHost ? ` (${homeHost})` : ''}. There is no password to set here, and no key ever leaves your side.
+            </p>
           </div>
 
           {personas.length > 0 ? <DemoUsers auth={auth} homeHost={homeHost} /> : null}
@@ -85,11 +88,11 @@ function safeHost(origin: string): string | null {
 function DemoUsers({ auth, homeHost }: { auth: AuthState; homeHost: string | null }) {
   const personas = auth.personas;
   return (
-    <section className="signin-demo">
-      <h3>Or borrow a demo user</h3>
+    <details className="signin-demo">
+      <summary>Try it as someone else</summary>
       <p className="hint">
-        {homeHost ?? 'The Home'} lends these Smart Agents to anyone who asks, so you can sit down without setting up an identity first.
-        Real accounts, shared by everyone — play money only.
+        {homeHost ?? 'The Home'} lends these accounts to anyone who asks, so you can look around without signing in. They are real, and
+        they are shared by everyone who visits — so treat anything you do with one as public.
       </p>
       {auth.demoError ? (
         <div className="form-error" role="alert">
@@ -120,7 +123,7 @@ function DemoUsers({ auth, homeHost }: { auth: AuthState; homeHost: string | nul
           );
         })}
       </ul>
-    </section>
+    </details>
   );
 }
 

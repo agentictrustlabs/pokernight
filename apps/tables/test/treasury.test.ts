@@ -11,7 +11,7 @@
 
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { createTableViaHttp, devSession, engineReady } from './helpers.js';
+import { TestClient, createTableViaHttp, devSession, engineReady, waitForAny } from './helpers.js';
 
 async function get(path: string, token?: string): Promise<Response> {
   return SELF.fetch(`http://tables.test${path}`, token ? { headers: { authorization: `Bearer ${token}` } } : {});
@@ -135,5 +135,48 @@ describe('GET /tables/:id/settlement', () => {
     expect(body.settlement).toBe('play-money');
     expect(body.entries).toEqual([]);
     expect(body.treasury).toBeNull();
+  });
+
+  /**
+   * The bug: this view returned EVERY ledger row for the player, and a `hand-result` row has no
+   * receipt because it never settles on chain — it is a chip movement inside the table's own
+   * ledger. The client, reading "no receipt" as "not settled", grew a list of
+   * "Hand of 1 chips — not settled" rows on a table where nothing was stuck at all.
+   *
+   * So: a hand is played for real here, and the settlement view must show the two buy-ins and not
+   * one row of hand history.
+   */
+  it.skipIf(!engineReady)('shows only movements that settle — never per-hand chip results', async () => {
+    const table = await createTableViaHttp('hand history is not settlement', { minBuyIn: 40, maxBuyIn: 200, actionTimeoutMs: 30_000 });
+    const sa = await devSession('Rowan');
+    const sb = await devSession('Sam');
+    const a = await TestClient.connect(table.tableId, sa.token);
+    const b = await TestClient.connect(table.tableId, sb.token);
+    await a.waitFor((m) => m.type === 'welcome');
+    await b.waitFor((m) => m.type === 'welcome');
+
+    a.send({ type: 'join', seat: 0, buyIn: 100 });
+    await a.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined' && m.event.seat === 0);
+    b.send({ type: 'join', seat: 1, buyIn: 100 });
+    await a.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined' && m.event.seat === 1);
+
+    // Fold the hand out the moment anyone is on the clock: the point is that a hand COMPLETED and
+    // wrote its `hand-result` rows, not how it was played.
+    await waitForAny([a, b], (m) => m.type === 'event' && m.event.type === 'hand-started', 10_000);
+    const { message: turn } = await waitForAny([a, b], (m) => m.type === 'turn', 10_000);
+    if (turn.type !== 'turn') throw new Error('unreachable');
+    (turn.seat === 0 ? a : b).send({ type: 'act', handNo: turn.handNo, action: { type: 'fold' } });
+    await waitForAny([a, b], (m) => m.type === 'event' && m.event.type === 'hand-ended', 10_000);
+
+    const rows = (await (await get(`/tables/${table.tableId}/settlement`, sa.token)).json()) as {
+      entries: Array<{ kind: string; chips: number; receipt: unknown }>;
+    };
+    expect(rows.entries.map((e) => e.kind)).toEqual(['buy-in']);
+    expect(rows.entries.every((e) => e.receipt !== null)).toBe(true);
+    // The hand happened — it is simply not settlement. Asserting its absence is the whole test.
+    expect(rows.entries.some((e) => e.kind === 'hand-result')).toBe(false);
+
+    a.close();
+    b.close();
   });
 });

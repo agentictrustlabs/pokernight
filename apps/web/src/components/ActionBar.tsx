@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Action, LegalActions, TableView } from '../lib/types';
 import type { TurnState } from '../lib/tableSocket';
 import { fmtChips, potOdds, secondsLeft } from '../lib/format';
+import { dualAmount, type TableRate } from '../lib/money';
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -24,13 +25,15 @@ export interface ActionBarProps {
   onAct: (a: Action) => void;
   /** Who the table is waiting on, for the idle caption. */
   waitingOn?: string | null;
+  /** This table's chip rate. Given, the pot and the amount being committed are also priced. */
+  rate?: TableRate | null;
 }
 
 /**
  * Fold / check / call / bet with sizing. Always rendered — disabled off-turn, so
  * the page never jumps when the action comes round.
  */
-export function ActionBar({ turn, view, now, onAct, waitingOn }: ActionBarProps) {
+export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null }: ActionBarProps) {
   const live = turn != null;
   const legal = turn?.legal ?? NOTHING_LEGAL;
   const range = legal.raise ?? legal.bet;
@@ -204,6 +207,14 @@ export function ActionBar({ turn, view, now, onAct, waitingOn }: ActionBarProps)
             ) : (
               <>pot <span className="num">{fmtChips(pot)}</span></>
             )}
+            {/* On a settled table the pot and the amount about to be committed are money, and are
+                shown as money — the chips stay the primary figure. */}
+            {rate ? (
+              <span className="asset-hint num">
+                pot {dualAmount(pot, rate).assetLabel}
+                {canRaise ? ` · ${kind === 'raise' ? 'raise to' : 'bet'} ${dualAmount(amount, rate).assetLabel}` : ''}
+              </span>
+            ) : null}
           </span>
         </div>
       </div>

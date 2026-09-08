@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { Action, Card as CardCode, ClientCommand, Session } from '../lib/types';
 import type { TableState } from '../lib/tableSocket';
 import { seatBlock, type TreasuryView } from '../lib/treasury';
-import { fmtChips, summarizeResult, type FormatContext } from '../lib/format';
+import { describeMode, describeRange, dualAmount, tableRate } from '../lib/money';
+import { seatLabel, summarizeResult, type FormatContext } from '../lib/format';
+
 import { awardedTo, blindSeats, lastActions, netBySeat, potTotal, shownCards, winningCards, winningSeats } from '../lib/hand';
 import { useNow, usePrefersReducedMotion } from '../lib/hooks';
 import { ActionBar } from './ActionBar';
@@ -10,6 +12,7 @@ import { Announcer } from './Announcer';
 import { Card, CardSlot } from './Card';
 import { ChipStack } from './ChipStack';
 import { Seat } from './Seat';
+import { SettlementTag } from './SettlementTag';
 import { StatusBar } from './StatusBar';
 import { WinnerBanner } from './WinnerBanner';
 
@@ -54,8 +57,12 @@ export function seatLayout(n: number, viewerSeat: number | null): SeatPos[] {
       // seat centres, and a card straddles it the way a nameplate straddles a table.
       x: 50 + 46 * Math.cos(a),
       y: 50 + 40.5 * Math.sin(a),
-      bx: 50 + 27 * Math.cos(a),
-      by: 50 + 24 * Math.sin(a),
+      // The bet ring sits inside the seat ring. It is pulled in a little further than the drawing
+      // alone needs because on a settled table a bet carries a second line (its value in USDC), and
+      // the seat cards paint over the bets — a money figure half-hidden behind a nameplate is worse
+      // than no money figure at all.
+      bx: 50 + 26 * Math.cos(a),
+      by: 50 + 21 * Math.sin(a),
     };
   });
 }
@@ -94,6 +101,7 @@ export function Table({
   session,
   send,
   settlement = 'play-money',
+  chipValue = null,
   treasury = null,
 }: {
   state: TableState;
@@ -101,6 +109,12 @@ export function Table({
   send: (c: ClientCommand) => void;
   /** The table's settlement mode. A settled table refuses a seat until the money is in order. */
   settlement?: string;
+  /**
+   * What one chip is worth AT THIS TABLE, in asset base units — the rate pinned when the table was
+   * created (`TableSummary.chipValue`). Never a deployment default: an old table settles at the
+   * rate it was opened with, and showing any other number here would be showing the wrong money.
+   */
+  chipValue?: string | null;
   /** This player's money, as the card room sees it. Null while it is still being read. */
   treasury?: TreasuryView | null;
 }) {
@@ -110,6 +124,10 @@ export function Table({
   const [addAmt, setAddAmt] = useState<string>('');
   const reduced = usePrefersReducedMotion();
 
+  // One rate for the whole table view. Null on play money, where a bare chip count is the truth.
+  const rate = tableRate(settlement, chipValue);
+  const mode = describeMode(settlement, rate);
+
   const myTurn = state.turn != null && view?.viewerSeat != null && state.turn.seat === view.viewerSeat;
   const inHand = view?.hand != null && view.hand.result == null;
   const now = useNow(inHand || myTurn);
@@ -118,7 +136,10 @@ export function Table({
 
   const nameOf = useMemo(() => {
     const bySeat = new Map<number, string>();
-    for (const s of view?.seats ?? []) bySeat.set(s.seat, state.names[s.playerId] ?? s.playerId.slice(0, 8));
+    // A Home that knows someone only as a phone number asserts no name, and the table service falls
+    // back to their address. `seatLabel` turns that into "Seat N" rather than putting a raw `0x…` on
+    // a seat plate and in every line of the log.
+    for (const s of view?.seats ?? []) bySeat.set(s.seat, seatLabel(state.names[s.playerId], s.seat));
     return (seat: number) => bySeat.get(seat) ?? `Seat ${seat + 1}`;
   }, [view, state.names]);
 
@@ -168,7 +189,10 @@ export function Table({
   // What this exact buy-in still needs, if anything. Recomputed as the number changes, so a player
   // typing 20 000 chips is told they are short before they press the button rather than after.
   const wanted = Math.min(cfg.maxBuyIn, Math.max(cfg.minBuyIn, Math.round(Number(buyIn) || 0)));
-  const block = seatBlock(settlement, treasury, wanted);
+  const block = seatBlock(settlement, treasury, wanted, rate);
+  // Both units, live, as the number changes: the amount that will actually be committed (the typed
+  // value clamped into the table's range) and the money it costs.
+  const cost = dualAmount(wanted, rate);
 
   const confirmSit = () => {
     if (picking == null || block) return;
@@ -198,7 +222,7 @@ export function Table({
           )}
 
           {moment && result && phase !== 'reveal' ? (
-            <WinnerBanner result={result} ctx={ctx} board={board} />
+            <WinnerBanner result={result} ctx={ctx} board={board} rate={rate} />
           ) : (
             <>
               <div className="board" aria-label="Board">
@@ -215,7 +239,7 @@ export function Table({
               <div className="middle">
                 {moment || (hand && pots.length <= 1) ? (
                   <div className="pots">
-                    <ChipStack amount={potShown} bigBlind={bb} label="Pot" size="sm" />
+                    <ChipStack amount={potShown} bigBlind={bb} label="Pot" size="sm" rate={rate} />
                   </div>
                 ) : hand ? (
                   <div className="pots">
@@ -227,13 +251,14 @@ export function Table({
                         label={i === 0 ? 'Main' : `Side ${i}`}
                         size="sm"
                         maxColumns={3}
+                        rate={rate}
                       />
                     ))}
                   </div>
                 ) : (
                   <div className="idle">
                     {cfg.smallBlind}/{cfg.bigBlind} blinds{cfg.ante ? `, ante ${cfg.ante}` : ''} · buy-in{' '}
-                    {fmtChips(cfg.minBuyIn)}–{fmtChips(cfg.maxBuyIn)}
+                    {describeRange(cfg.minBuyIn, cfg.maxBuyIn, rate)}
                   </div>
                 )}
               </div>
@@ -249,7 +274,7 @@ export function Table({
             const style = { '--x': pos.bx, '--y': pos.by, '--sx': pos.x, '--sy': pos.y } as CSSProperties;
             return (
               <li key={s.seat} className="bet-chips" style={style}>
-                <ChipStack amount={amt} bigBlind={bb} ariaLabel={`${nameOf(s.seat)} bet`} size="sm" maxColumns={3} maxPerColumn={6} />
+                <ChipStack amount={amt} bigBlind={bb} ariaLabel={`${nameOf(s.seat)} bet`} size="sm" maxColumns={3} maxPerColumn={6} rate={rate} />
               </li>
             );
           })}
@@ -308,6 +333,8 @@ export function Table({
                 y={pos.y}
                 canSit={canSit && picking == null}
                 onSit={startSit}
+                rate={rate}
+                modeLabel={mode.settles ? mode.label : 'play money'}
               />
             );
           })}
@@ -316,23 +343,38 @@ export function Table({
 
       {picking != null ? (
         <form
-          className="panel picker row"
+          className={`panel picker${mode.settles ? ' settles' : ''}`}
           onSubmit={(e) => {
             e.preventDefault();
             confirmSit();
           }}
         >
-          <strong>Sit at seat {picking + 1}</strong>
-          <label>
-            Buy-in ({fmtChips(cfg.minBuyIn)}–{fmtChips(cfg.maxBuyIn)})
-            <input type="number" min={cfg.minBuyIn} max={cfg.maxBuyIn} value={buyIn} onChange={(e) => setBuyIn(e.target.value)} autoFocus />
-          </label>
-          <button className="primary" type="submit" disabled={block !== null}>
-            Sit down
-          </button>
-          <button type="button" className="quiet" onClick={() => setPicking(null)}>
-            Cancel
-          </button>
+          {/* What kind of table this is, said ABOVE the buy-in box rather than in a panel below the
+              fold. A player must never commit money on a table they took for play, or the reverse. */}
+          <div className="picker-head">
+            <strong>Sit at seat {picking + 1}</strong>
+            <SettlementTag settlement={settlement} rate={rate} withRate />
+          </div>
+          <p className={mode.settles ? 'picker-terms money' : 'picker-terms'}>{mode.line}</p>
+
+          <div className="row picker-controls">
+            <label>
+              Buy-in ({describeRange(cfg.minBuyIn, cfg.maxBuyIn, rate)})
+              <input type="number" min={cfg.minBuyIn} max={cfg.maxBuyIn} value={buyIn} onChange={(e) => setBuyIn(e.target.value)} autoFocus />
+            </label>
+            {/* Both units, live, as the number changes. */}
+            <span className="picker-cost">
+              <span className="num cost-chips">{cost.chipsText} chips</span>
+              {cost.assetLabel ? <span className="num cost-asset">{cost.assetLabel}</span> : null}
+            </span>
+            <span className="spacer" style={{ flex: 1 }} />
+            <button className="primary" type="submit" disabled={block !== null}>
+              Sit down
+            </button>
+            <button type="button" className="quiet" onClick={() => setPicking(null)}>
+              Cancel
+            </button>
+          </div>
           {/* A settled table never falls back to play money. If the seat cannot be paid for, it says
               which of the four things is missing and points at the panel that fixes that one. */}
           {block ? (
@@ -341,13 +383,9 @@ export function Table({
               {block.action === 'wait' || block.action === 'configure' ? null : (
                 <>
                   {' '}
-                  <a href={block.action === 'create-treasury' || block.action === 'choose-treasury' ? '#/' : '#money'}>
-                    {block.action === 'fund-treasury'
-                      ? 'Fund it in the Money panel →'
-                      : block.action === 'sign-mandate'
-                        ? 'Authorise buy-ins in the Money panel →'
-                        : 'Set your treasury up in the lobby →'}
-                  </a>
+                  {/* One destination for all four of them: the set-up card is the one control that
+                      fixes whichever of them is missing, so a player never has to work out which. */}
+                  <a href="#stake">Get set up to play →</a>
                 </>
               )}
             </p>
@@ -356,7 +394,7 @@ export function Table({
       ) : null}
 
       {view.viewerSeat != null ? (
-        <ActionBar turn={myTurn ? state.turn : null} view={view} now={now} onAct={act} waitingOn={waitingOn} />
+        <ActionBar turn={myTurn ? state.turn : null} view={view} now={now} onAct={act} waitingOn={waitingOn} rate={rate} />
       ) : null}
 
       {me ? (
@@ -389,6 +427,8 @@ export function Table({
             <button type="submit" disabled={!addAmt}>
               Add
             </button>
+            {/* A rebuy moves money too, so it is priced as it is typed. */}
+            {rate && Number(addAmt) > 0 ? <span className="num cost-asset">{dualAmount(Number(addAmt), rate).assetLabel}</span> : null}
           </form>
           <span className="spacer" style={{ flex: 1 }} />
           <button className="danger" onClick={() => send({ type: 'leave' })}>

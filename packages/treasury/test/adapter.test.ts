@@ -74,13 +74,14 @@ function fakeClient(balances: Record<string, bigint>): TreasuryClient & {
   };
 }
 
-function adapterFor(funding: PlayerFunding | null, balances: Record<string, bigint> = {}) {
+function adapterFor(funding: PlayerFunding | null, balances: Record<string, bigint> = {}, over: { chipValue?: bigint } = {}) {
   const client = fakeClient(balances);
   const adapter = createTreasuryTransferAdapter({
     client,
     houseTreasury: HOUSE,
     houseDelegate: HOUSE_DELEGATE,
-    chipValue: CHIP_VALUE,
+    // The TABLE's rate, injected. The adapter never reads a deployment default of its own.
+    chipValue: over.chipValue ?? CHIP_VALUE,
     chainId: 34348,
     delegationManager: DELEGATION_MANAGER,
     enforcers: { payment: PAYMENT_ENFORCER },
@@ -136,7 +137,7 @@ describe('cash-out — the house paying its own funds', () => {
   it('names the shortfall when the house cannot cover the payout', async () => {
     const { adapter, client } = adapterFor(null, { [HOUSE.toLowerCase()]: 1_000_000n });
     await expect(adapter.settleCashOut({ ...cashOut, playerAddress: PLAYER })).rejects.toThrow(
-      /holds 1.000000 USDC, which does not cover the 2.000000 USDC cash-out/,
+      /holds 1.000000 USDC, which does not cover the 2.000000 USDC cash-out for home:0xabc — 1.000000 USDC short/,
     );
     expect(client.transfers).toHaveLength(0);
   });
@@ -158,11 +159,35 @@ describe('buy-in — money that is not the house’s', () => {
     expect(auth.ok === false && auth.reason).toMatch(/no treasury is selected/);
   });
 
-  it('refuses when the player treasury cannot cover the buy-in, quoting both numbers', async () => {
-    const { adapter } = adapterFor({ treasury: PLAYER, mandate: signedMandate() }, { [PLAYER.toLowerCase()]: 500_000n });
+  it('refuses when the player treasury cannot cover the buy-in, naming the shortfall', async () => {
+    const { adapter, client } = adapterFor({ treasury: PLAYER, mandate: signedMandate() }, { [PLAYER.toLowerCase()]: 500_000n });
     const auth = await adapter.authorizeBuyIn(buyIn);
     expect(auth.ok).toBe(false);
     expect(auth.ok === false && auth.reason).toMatch(/holds 0.500000 USDC; a 200-chip buy-in costs 2.000000 USDC/);
+    // Not "not enough": the number the player has to add, in the asset, so the sentence is an
+    // instruction rather than a verdict.
+    expect(auth.ok === false && auth.reason).toMatch(/1.500000 USDC short/);
+    // Nothing moved, and nothing was credited: the refusal happens before the seat exists.
+    expect(client.calls).toHaveLength(0);
+    expect(client.transfers).toHaveLength(0);
+  });
+
+  /**
+   * The same buy-in, priced by the TABLE's rate. An adapter built for a table pinned at 0.01 USDC
+   * per chip charges a hundredth of what one built at 1 USDC per chip charges — which is the whole
+   * of bug 1 seen from the money layer: the rate is an input, never something read at settlement.
+   */
+  it('charges the chip value it was built with, not one read later', async () => {
+    const cheap = adapterFor({ treasury: PLAYER, mandate: signedMandate() }, { [PLAYER.toLowerCase()]: 500_000n }, { chipValue: 1_000n });
+    const auth = await cheap.adapter.authorizeBuyIn(buyIn);
+    // 200 chips at 0.001 USDC is 0.20 USDC, which 0.50 USDC covers.
+    expect(cheap.adapter.chipValue).toBe(1_000n);
+    expect(auth.ok).toBe(true);
+
+    const dear = adapterFor({ treasury: PLAYER, mandate: signedMandate() }, { [PLAYER.toLowerCase()]: 500_000n }, { chipValue: 1_000_000n });
+    const authDear = await dear.adapter.authorizeBuyIn(buyIn);
+    expect(authDear.ok).toBe(false);
+    expect(authDear.ok === false && authDear.reason).toMatch(/costs 200.000000 USDC — 199.500000 USDC short/);
   });
 
   it('refuses, by name, while the player has no signed mandate — and never falls back to play money', async () => {

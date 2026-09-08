@@ -2,7 +2,7 @@
  * PokerTableDO — one Durable Object per table.
  *
  * Storage layout
- *   KV  `meta`          TableMeta (tableId, name, settlement, createdAt)
+ *   KV  `meta`          TableMeta (tableId, name, settlement, createdAt, chipValue — the table's PINNED rate)
  *   KV  `state`         engine TableState (authoritative; includes deck + hole cards, never sent raw)
  *   KV  `names`         Record<playerId, display name> (kept for compatibility)
  *   KV  `players`       Record<playerId, SeatRecord> — who occupies a seat and how it is reached
@@ -46,7 +46,7 @@ import {
   type TableState,
   type TableView,
 } from '@pokernight/engine';
-import { failedReceipt, pendingReceipt, type SettlementAdapter, type SettlementReceipt } from '@pokernight/ledger';
+import { failedReceipt, pendingReceipt, type LedgerEntryKind, type SettlementAdapter, type SettlementReceipt } from '@pokernight/ledger';
 import type { PlayerFunding } from '@pokernight/treasury';
 import {
   parseClientCommand,
@@ -65,6 +65,7 @@ import { a2aTimeoutMs, callPokerAct, resolveAgentBase } from './a2a.js';
 import { readSessionRecord } from './auth.js';
 import type { Env } from './env.js';
 import { createSettlementAdapter } from './settlement.js';
+import { defaultChipValue, pinnedChipValue, unstampedChipValue } from './treasury.js';
 
 /* ------------------------------------------------------------------ types */
 
@@ -73,6 +74,19 @@ export interface TableMeta {
   name: string;
   settlement: SettlementMode;
   createdAt: number;
+  /**
+   * Asset base units one chip is worth AT THIS TABLE, as a decimal string.
+   *
+   * Stamped from the deployment default when the table is created and NEVER re-derived. This is the
+   * rate every settlement at this table uses — buy-in, cash-out, ledger row and receipt — so that
+   * changing `CHIP_VALUE` opens new tables at a new rate instead of re-valuing the stacks already
+   * sitting on the old ones.
+   *
+   * Optional only for a table created before this field existed: `migrateChipValue` stamps
+   * `LEGACY_CHIP_VALUE` onto it the first time it loads, which is the rate it has been settling at
+   * all along — deliberately not today's default, which has moved.
+   */
+  chipValue?: string;
 }
 
 export interface InitRequest {
@@ -282,6 +296,14 @@ export class PokerTableDO extends DurableObject<Env> {
       // Migration: a table created before phase 2 has `names` but no `players`. Everyone in it was a
       // human on a WebSocket, so the record is derivable; it is persisted on the next seat change.
       this.players = (kv.get('players') as Record<string, SeatRecord> | undefined) ?? migratePlayers(this.names);
+      // Migration: a table created before the chip rate was pinned has been settling at
+      // `LEGACY_CHIP_VALUE`. Write that on once, here, and the table is immune to the deployment
+      // default moving from this moment on — including the move that ships with this very change.
+      const migrated = migrateChipValue(this.meta, env);
+      if (migrated) {
+        this.meta = migrated;
+        await ctx.storage.put('meta', migrated);
+      }
     });
   }
 
@@ -302,6 +324,7 @@ export class PokerTableDO extends DurableObject<Env> {
         tableId: this.meta.tableId,
         name: this.meta.name,
         settlement: this.meta.settlement,
+        ...(this.meta.chipValue ? { chipValue: this.meta.chipValue } : {}),
         view: viewFor(this.state, null),
         names: this.names,
         players: this.publicPlayers(),
@@ -343,12 +366,24 @@ export class PokerTableDO extends DurableObject<Env> {
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
-    const meta: TableMeta = { tableId: body.tableId, name: body.name, settlement: body.settlement, createdAt: body.createdAt ?? Date.now() };
+    // The rate is a property of the TABLE, read from the deployment default at this instant and
+    // fixed for the life of the table. Everything downstream reads `meta.chipValue`, never the env.
+    const rate = defaultChipValue(this.env);
+    const meta: TableMeta = {
+      tableId: body.tableId,
+      name: body.name,
+      settlement: body.settlement,
+      createdAt: body.createdAt ?? Date.now(),
+      ...(rate === null ? {} : { chipValue: rate.toString() }),
+    };
     // Adapter must exist for this mode before we accept the table — a table that cannot settle must
     // fail here, not at someone's cash-out. Built with the same funding resolver `settlement()` uses,
     // so the instance cached by this call behaves identically to one built later.
     try {
-      this.adapter = createSettlementAdapter(meta.settlement, this.env, (req) => this.playerFunding(req.playerId));
+      this.adapter = createSettlementAdapter(meta.settlement, this.env, {
+        ...(rate === null ? {} : { chipValue: rate }),
+        resolveFunding: (req) => this.playerFunding(req.playerId),
+      });
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
@@ -371,6 +406,8 @@ export class PokerTableDO extends DurableObject<Env> {
       seated: state.seats.length,
       handNo: state.handNo,
       createdAt: meta.createdAt,
+      // Said out loud so a client can convert chips to money instead of guessing at a rate.
+      ...(meta.chipValue ? { chipValue: meta.chipValue } : {}),
     };
   }
 
@@ -1105,9 +1142,22 @@ export class PokerTableDO extends DurableObject<Env> {
 
   private settlement(): SettlementAdapter {
     if (!this.adapter) {
-      this.adapter = createSettlementAdapter((this.meta as TableMeta).settlement, this.env, (req) => this.playerFunding(req.playerId));
+      const rate = this.chipValue();
+      this.adapter = createSettlementAdapter((this.meta as TableMeta).settlement, this.env, {
+        ...(rate === null ? {} : { chipValue: rate }),
+        resolveFunding: (req) => this.playerFunding(req.playerId),
+      });
     }
     return this.adapter;
+  }
+
+  /**
+   * This table's chip rate, in asset base units. THE one source for every amount of money this
+   * table moves; `CHIP_VALUE` is only ever consulted through the pin written at creation (or, for a
+   * table older than the pin, written on first load).
+   */
+  private chipValue(): bigint | null {
+    return pinnedChipValue(this.meta, this.env);
   }
 
   /**
@@ -1247,25 +1297,35 @@ export class PokerTableDO extends DurableObject<Env> {
    * The money rows for one player at this table: what was bought in, what was cashed out, and where
    * each movement has got to. The Worker gates this on the caller BEING that player — a settlement
    * state is nobody else's business, and a `playerId` is not a credential.
+   *
+   * ONLY the kinds that move an asset ({@link SETTLING_KINDS}). A `hand-result` row is a chip
+   * movement inside this table's own ledger and never settles on chain — it has no receipt and never
+   * will. Returning them made a working table grow a list of "Hand of 1 chips — not settled" rows,
+   * which reads as money stuck in limbo when nothing is stuck at all. Hand results are table
+   * history; they belong in the hand log, not in a settlement view.
    */
   private ledgerFor(playerId: string | null): {
     tableId: string;
     settlement: SettlementMode;
+    chipValue: string | null;
     treasury: string | null;
     entries: Array<{ id: string; seat: number; kind: string; chips: number; handNo: number | null; at: number; receipt: SettlementReceipt | null }>;
   } {
     const meta = this.meta as TableMeta;
-    const base = { tableId: meta.tableId, settlement: meta.settlement, treasury: null as string | null, entries: [] as never[] };
+    const rate = meta.chipValue ?? null;
+    const base = { tableId: meta.tableId, settlement: meta.settlement, chipValue: rate, treasury: null as string | null, entries: [] as never[] };
     if (!playerId) return base;
     const rows = this.ctx.storage.sql
       .exec<{ id: string; seat: number; kind: string; chips: number; hand_no: number | null; at: number; receipt_json: string | null }>(
-        'SELECT id, seat, kind, chips, hand_no, at, receipt_json FROM ledger WHERE player_id = ? ORDER BY at DESC, rowid DESC LIMIT 50',
+        `SELECT id, seat, kind, chips, hand_no, at, receipt_json FROM ledger WHERE player_id = ? AND kind IN (${SETTLING_KINDS.map(() => '?').join(', ')}) ORDER BY at DESC, rowid DESC LIMIT 50`,
         playerId,
+        ...SETTLING_KINDS,
       )
       .toArray();
     return {
       tableId: meta.tableId,
       settlement: meta.settlement,
+      chipValue: rate,
       treasury: this.players[playerId]?.treasury ?? null,
       entries: rows.map((r) => ({
         id: r.id,
@@ -1299,6 +1359,17 @@ export class PokerTableDO extends DurableObject<Env> {
 
 /* ------------------------------------------------------------ module utils */
 
+/**
+ * The ledger kinds that MOVE AN ASSET, and so are the only ones a settlement view can honestly
+ * report on.
+ *
+ * `hand-result` and `rake` are chip movements inside this table's ledger: they are settled the
+ * instant they are written, on chain they are nothing, and they carry no receipt because there is
+ * no receipt to carry. A view that listed them showed every hand as "not settled", which named a
+ * problem that does not exist.
+ */
+export const SETTLING_KINDS = ['buy-in', 'add-chips', 'cash-out'] as const satisfies readonly LedgerEntryKind[];
+
 function nextIdx(sql: SqlStorage, table: 'events' | 'actions', handNo: number): number {
   const row = sql.exec<{ n: number | null }>(`SELECT MAX(idx) AS n FROM ${table} WHERE hand_no = ?`, handNo).toArray()[0];
   return row && row.n !== null ? row.n + 1 : 0;
@@ -1316,6 +1387,22 @@ function migratePlayers(names: Record<string, string>): Record<string, SeatRecor
     out[playerId] = { playerId, name, kind: 'human', transport: 'ws' };
   }
   return out;
+}
+
+/**
+ * Stamp the rate a table that predates the pin has been settling at onto it, or `null` when there
+ * is nothing to do.
+ *
+ * The value written is `LEGACY_CHIP_VALUE` — deliberately NOT today's `CHIP_VALUE`, because the
+ * deploy that brings pinning is the same deploy that raises the default, and stamping the new rate
+ * onto an old table would re-value the stacks already sitting on it: the exact overpay pinning
+ * exists to prevent, arriving through the fix. Pure, and exported for the tests that prove both
+ * halves.
+ */
+export function migrateChipValue(meta: TableMeta | null, env: Env): TableMeta | null {
+  if (!meta || meta.chipValue) return null;
+  const rate = unstampedChipValue(env);
+  return rate === null ? null : { ...meta, chipValue: rate.toString() };
 }
 
 /**

@@ -10,6 +10,8 @@
  * and records the choice server-side. So the shapes below are read models, not authority.
  */
 
+import { buyInShortfall, fmtAsset, fmtChipCount, type TableRate } from './money';
+
 /** Mirrors `TreasuryCandidate` in apps/tables/src/routes-treasury.ts. */
 export interface TreasuryCandidate {
   address: string;
@@ -46,6 +48,11 @@ export interface MandateView {
 export interface TreasuryView {
   chainId: number;
   asset: string;
+  /**
+   * The DEPLOYMENT DEFAULT rate, which is what a new table would be opened at and what a mandate is
+   * sized against. It is NOT the rate any particular table settles at — that is pinned on the table
+   * and arrives as `TableSummary.chipValue`. Never convert a stack with this.
+   */
   chipValue: string;
   /** The player's PERSON agent — their identity. Never a candidate; shown so that is visible. */
   person: string | null;
@@ -128,6 +135,8 @@ export interface SettlementEntry {
 export interface TableSettlement {
   tableId: string;
   settlement: 'play-money' | 'mandate-transfer' | 'table-escrow';
+  /** The rate THIS table pinned at creation, in base units per chip. Null when it has none. */
+  chipValue: string | null;
   treasury: string | null;
   entries: SettlementEntry[];
 }
@@ -156,19 +165,6 @@ export function fmtUsdc(baseUnits: string | bigint | null | undefined): string |
   const whole = abs / 1_000_000n;
   const frac = (abs % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
   return `${neg ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`;
-}
-
-/** What a stack of chips is worth, given the table's chip value. Null when either is unreadable. */
-export function chipsToUsdcLabel(chips: number, chipValue: string | null | undefined): string | null {
-  if (!chipValue || !Number.isFinite(chips)) return null;
-  let cv: bigint;
-  try {
-    cv = BigInt(chipValue);
-  } catch {
-    return null;
-  }
-  if (cv <= 0n) return null;
-  return fmtUsdc(BigInt(Math.trunc(chips)) * cv);
 }
 
 /** The state a receipt reports. A row with no `status` was written settled — see the ledger package. */
@@ -201,13 +197,64 @@ export function kindLabel(kind: string): string {
  */
 export function describeSettlement(entry: SettlementEntry): string {
   const status = statusOf(entry.receipt);
-  const usdc = entry.receipt ? fmtUsdc(entry.receipt.amount) : null;
-  const amount = usdc ? `${usdc} USDC` : `${Math.abs(entry.chips)} chips`;
-  if (status === null) return `${kindLabel(entry.kind)} of ${Math.abs(entry.chips)} chips — not settled`;
+  const chips = `${fmtChipCount(Math.abs(entry.chips))} chips`;
+  // Both units, from the receipt's own base-unit amount — which was computed at the TABLE's rate
+  // when the row was written, so an old table's rows keep reading in the money they actually moved.
+  const raw = entry.receipt?.amount ?? '';
+  const amount = /^\d+$/.test(raw) && raw !== '0' ? `${chips} (${fmtAsset(BigInt(raw))} USDC)` : chips;
+  if (status === null) return `${kindLabel(entry.kind)} of ${chips} — not settled`;
   if (status === 'pending') return `${kindLabel(entry.kind)} of ${amount} — waiting for the chain`;
   if (status === 'failed') return `${kindLabel(entry.kind)} of ${amount} — did not settle: ${entry.receipt?.error ?? 'no reason recorded'}`;
-  if (entry.receipt?.mode === 'play-money') return `${kindLabel(entry.kind)} of ${Math.abs(entry.chips)} chips — play money`;
+  if (entry.receipt?.mode === 'play-money') return `${kindLabel(entry.kind)} of ${chips} — play money`;
   return `${kindLabel(entry.kind)} of ${amount} — settled`;
+}
+
+/**
+ * One money movement, in the words a player uses about money.
+ *
+ * `describeSettlement` above is the engineer's sentence — chips, base units, "waiting for the
+ * chain". This is the one a default view shows: what happened, how much it was in dollars, and
+ * whether it is done. The transaction and the chip count stay available; they are simply not the
+ * headline, because a player reading their own money should not have to translate.
+ */
+export interface Movement {
+  /** "Bought in", "Added chips", "Cashed out". */
+  what: string;
+  /** `"200.00 USDC"` — the asset amount from the receipt, or the chip count when there is none. */
+  amount: string;
+  status: SettlementStatus;
+  /** "done" · "on its way" · "did not go through". Three words, no jargon. */
+  statusText: string;
+  /** Why it failed. Present only when it did — a failure without its reason is unactionable. */
+  problem: string | null;
+  /** The transaction, for the details disclosure. Empty when there is not one yet. */
+  ref: string;
+  chips: number;
+}
+
+const MOVEMENT_WHAT: Record<string, string> = {
+  'buy-in': 'Bought in',
+  'add-chips': 'Added chips',
+  'cash-out': 'Cashed out',
+};
+
+export function describeMovement(entry: SettlementEntry): Movement {
+  // A row with no receipt has not been handed to the adapter yet; that is "on its way", not a
+  // failure and not a settlement. Only the three asset-moving kinds reach this view at all (the
+  // Worker filters hand results out), so there is no case here for a row that never settles.
+  const status = statusOf(entry.receipt) ?? 'pending';
+  const raw = entry.receipt?.amount ?? '';
+  const chips = Math.abs(entry.chips);
+  const amount = /^\d+$/.test(raw) && raw !== '0' ? `${fmtAsset(BigInt(raw))} USDC` : `${fmtChipCount(chips)} chips`;
+  return {
+    what: MOVEMENT_WHAT[entry.kind] ?? kindLabel(entry.kind),
+    amount,
+    status,
+    statusText: status === 'settled' ? 'done' : status === 'failed' ? 'did not go through' : 'on its way',
+    problem: status === 'failed' ? (entry.receipt?.error ?? 'no reason was recorded') : null,
+    ref: entry.receipt?.ref ?? '',
+    chips,
+  };
 }
 
 /** `0x1234…abcd`, for a tx hash or an address in a place with no room for forty characters. */
@@ -234,7 +281,17 @@ export interface SeatBlock {
  * here first is what turns a rejection into an instruction — and the `action` is what lets the panel
  * put the control that fixes it under the sentence that names it.
  */
-export function seatBlock(settlement: string, treasury: TreasuryView | null, buyInChips?: number): SeatBlock | null {
+export function seatBlock(
+  settlement: string,
+  treasury: TreasuryView | null,
+  buyInChips?: number,
+  /**
+   * THIS TABLE's rate (`tableRate(summary.settlement, summary.chipValue)`). Omitted, the buy-in is
+   * not priced at all: converting a stack at the deployment default would be a different number
+   * from the one the table will actually charge, and a wrong price is worse than no price.
+   */
+  rate?: TableRate | null,
+): SeatBlock | null {
   if (settlement === 'play-money') return null;
   if (!treasury) return { reason: 'Checking which treasury funds your play…', action: 'wait' };
   if (treasury.unavailable) return { reason: treasury.unavailable, action: 'configure' };
@@ -244,34 +301,25 @@ export function seatBlock(settlement: string, treasury: TreasuryView | null, buy
       return {
         reason: treasury.discoveryError
           ? treasury.discoveryError
-          : 'You have no treasury yet. A treasury is a Smart Agent chartered under your person agent — your identity is not one, and cannot be used as one.',
+          : 'You have no money account yet. A money table pays in and out of one of your own, kept apart from the identity you signed in with.',
         action: treasury.discoveryError ? 'wait' : 'create-treasury',
       };
     }
-    return { reason: 'Choose the treasury that funds your play before taking a seat at this table.', action: 'choose-treasury' };
+    return { reason: 'Pick which of your money accounts pays for this seat.', action: 'choose-treasury' };
   }
 
-  const cost = buyInCostBaseUnits(buyInChips, treasury.chipValue);
-  if (cost !== null && treasury.balance !== null) {
-    let held: bigint;
-    try {
-      held = BigInt(treasury.balance);
-    } catch {
-      held = 0n;
-    }
-    if (held < cost) {
-      return {
-        reason: `Your treasury holds ${fmtUsdc(treasury.balance) ?? '0'} USDC and this buy-in costs ${fmtUsdc(cost) ?? '?'} USDC. Fund it, or buy in for less.`,
-        action: 'fund-treasury',
-      };
-    }
+  // Priced at the TABLE's rate, and refused by name — with the shortfall in USDC — before the
+  // button can be pressed. The server refuses again in the same words (`authorizeBuyIn`).
+  if (buyInChips !== undefined && rate) {
+    const short = buyInShortfall(buyInChips, treasury.balance, rate);
+    if (short) return { reason: short.reason, action: 'fund-treasury' };
   }
 
   if (treasury.mandate.unavailable) return { reason: treasury.mandate.unavailable, action: 'configure' };
   if (treasury.mandate.problem) return { reason: treasury.mandate.problem, action: 'sign-mandate' };
   if (!treasury.mandate.present) {
     return {
-      reason: 'You have not authorised a buy-in yet. The card room can only move USDC out of your treasury under a mandate you sign.',
+      reason: 'You have not said what this table may take. Money leaves your account only under an authority you sign at your Home.',
       action: 'sign-mandate',
     };
   }
@@ -279,17 +327,6 @@ export function seatBlock(settlement: string, treasury: TreasuryView | null, buy
 }
 
 /** The same answer as one sentence, for the places that only have room for one. */
-export function seatBlocker(settlement: string, treasury: TreasuryView | null, buyInChips?: number): string | null {
-  return seatBlock(settlement, treasury, buyInChips)?.reason ?? null;
-}
-
-/** What `chips` costs in asset base units, or null when either number is unreadable. */
-function buyInCostBaseUnits(chips: number | undefined, chipValue: string | null | undefined): bigint | null {
-  if (chips === undefined || !Number.isFinite(chips) || chips <= 0 || !chipValue) return null;
-  try {
-    const cv = BigInt(chipValue);
-    return cv > 0n ? BigInt(Math.trunc(chips)) * cv : null;
-  } catch {
-    return null;
-  }
+export function seatBlocker(settlement: string, treasury: TreasuryView | null, buyInChips?: number, rate?: TableRate | null): string | null {
+  return seatBlock(settlement, treasury, buyInChips, rate)?.reason ?? null;
 }

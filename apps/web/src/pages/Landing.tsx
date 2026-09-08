@@ -3,6 +3,8 @@ import type { AuthState } from '../App';
 import type { AppSession, TableSummary } from '../lib/types';
 import { api } from '../lib/api';
 import { fmtChips } from '../lib/format';
+import { dualAmount, tableRate } from '../lib/money';
+import { SettlementTag } from '../components/SettlementTag';
 import { describeMoment, fmtSeats, pickFeaturedTable, summarizeLobby, summarizeRoster, type TableDetail } from '../lib/lobby';
 import { SignInPanel } from '../components/SignInPanel';
 
@@ -31,12 +33,13 @@ export function Landing({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSe
             <div className="signin-pitch">
               <h2>There is no account to create.</h2>
               <p>
-                You sign in with <strong>your own Home</strong>. It runs the ceremony, your Smart Agent signs a delegation scoped to this site,
-                and the card room verifies that against your Home. No password is set, and no key ever leaves your side of the table.
+                Sign in with a phone number, an email address or a social account. We set you up with{' '}
+                <strong>10,000 USDC to play with</strong>, and you are at a table.
               </p>
               <p>
-                Every table here is <strong>play money</strong>. The settlement path is real — buy-ins and cash-outs move under the delegation
-                you signed — but the asset is a test token on faithchain, and nothing on this site is a wager.
+                It is <strong>test money</strong> — USDC on faithchain, worth nothing anywhere else — and nothing on this site is a wager. The
+                settlement is real: buy-ins and cash-outs move between your money and the house's, and every one of them has a receipt you
+                can look at.
               </p>
             </div>
             <div className="signin-card panel">
@@ -46,7 +49,7 @@ export function Landing({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSe
         </section>
       </div>
       <footer className="landing-foot">
-        <span>Pokernight · play money · a card room on faithnet</span>
+        <span>Pokernight · test money on faithchain · a card room on faithnet</span>
         <span className="hint">Hands are seeded, committed before the deal and revealed after it. Every hand replays byte-identically.</span>
       </footer>
     </main>
@@ -114,12 +117,12 @@ function Hero({ live }: { live: LiveLobby }) {
           at the same table.
         </h1>
         <p className="hero-lede">
-          No-limit Texas Hold'em where an AI Smart Agent can take the seat beside you and play its own hand. Buy-ins are settled from each
-          player's own agent treasury — the house never holds anyone's keys.
+          No-limit Texas Hold'em where an AI can take the seat beside you and play its own hand. Sign in, we set you up with 10,000 in test
+          money, and you are at a table — your money stays yours, and the house never holds your keys.
         </p>
         <div className="hero-actions">
           <a className="cta" href="#signin">
-            Take a seat
+            Play a hand
           </a>
           <a className="cta-quiet" href="#how">
             How it works
@@ -145,20 +148,20 @@ function Hero({ live }: { live: LiveLobby }) {
 
 const STEPS: { title: string; body: string }[] = [
   {
-    title: 'Sign in with your Home',
-    body: 'Your Home runs the credential ceremony and your Smart Agent signs a scoped delegation to this site. The card room verifies it against your Home and never sees a password.',
+    title: 'Sign in',
+    body: 'A phone number, an email address or a social account, through your own Home. No password is set here, and the card room never holds your keys.',
   },
   {
-    title: 'Sit down and buy in',
-    body: 'Pick a seat and a stack. The buy-in moves from your agent treasury under caveats you signed: one asset, one method, a ceiling, an expiry.',
+    title: 'Get your stake',
+    body: 'One button sets up a money account that is yours, and puts 10,000 test USDC in it. You say how much a table may take from it, and you can undo that at your Home at any time.',
   },
   {
     title: 'Play the hand',
-    body: 'The deck is committed before the deal and revealed after it, so the shuffle can be checked afterwards. Agents get the same redacted view you do and answer on the same clock.',
+    body: 'Sit down for what a seat costs, in dollars. The deck is committed before the deal and revealed after it, so the shuffle can be checked afterwards. Agents get the same view you do and answer on the same clock.',
   },
   {
     title: 'Cash out',
-    body: 'Stand up whenever you like. Your stack settles back to your own Smart Agent, receipted, and the unused part of the delegation simply expires.',
+    body: 'Stand up whenever you like. Your stack goes back to your own money, receipted — and the part of the authority you did not use simply expires.',
   },
 ];
 
@@ -185,6 +188,9 @@ function LiveRoom({ live }: { live: LiveLobby }) {
   const roster = summarizeRoster(live.featured);
   const moment = describeMoment(live.featured, roster);
   const tables = live.tables;
+  // The featured table's own rate. Null on play money, and null while the detail is still loading —
+  // never the deployment's default, which is not what an already-open table settles at.
+  const featuredRate = tableRate(live.featured?.settlement, live.featured?.chipValue);
   return (
     <section className="landing-section live" id="live">
       <h2 className="section-title">In the room right now</h2>
@@ -201,6 +207,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
             <article className="featured">
               <div className="featured-head">
                 <h3>{live.featured.name}</h3>
+                <SettlementTag settlement={live.featured.settlement} rate={featuredRate} withRate />
                 {moment.agentsPlaying ? <span className="tag live">agents playing now</span> : <span className="tag">between hands</span>}
               </div>
               <p className="featured-line">{moment.line}</p>
@@ -211,11 +218,15 @@ function LiveRoom({ live }: { live: LiveLobby }) {
                     const info = live.featured?.players?.[s.playerId];
                     const name = info?.name ?? live.featured?.names?.[s.playerId] ?? `Seat ${s.seat + 1}`;
                     const kind = info?.kind === 'agent' ? (info.agentKind ?? 'agent') : 'person';
+                    const stack = dualAmount(s.stack, featuredRate);
                     return (
                       <li key={s.seat} className={info?.kind === 'agent' ? 'is-agent' : 'is-human'}>
                         <span className="fs-name">{name}</span>
                         <span className="fs-kind">{kind}</span>
-                        <span className="fs-stack mono">{fmtChips(s.stack)}</span>
+                        <span className="fs-stack mono" title={stack.label}>
+                          {stack.chipsText}
+                          {stack.assetLabel ? <span className="cost-asset">{stack.assetLabel}</span> : null}
+                        </span>
                       </li>
                     );
                   })}
@@ -230,24 +241,40 @@ function LiveRoom({ live }: { live: LiveLobby }) {
                   <th>Table</th>
                   <th>Blinds</th>
                   <th className="num">Seats</th>
-                  <th className="num">Buy-in</th>
+                  <th className="num">Buy-in (chips)</th>
                   <th className="num">Hand</th>
                 </tr>
               </thead>
               <tbody>
-                {tables.map((t) => (
-                  <tr key={t.tableId}>
-                    <td>{t.name}</td>
-                    <td className="mono">
-                      {t.config.smallBlind}/{t.config.bigBlind}
-                    </td>
-                    <td className="num">{fmtSeats(t.seated, t.config.seats)}</td>
-                    <td className="num">
-                      {fmtChips(t.config.minBuyIn)}–{fmtChips(t.config.maxBuyIn)}
-                    </td>
-                    <td className="num">{t.handNo}</td>
-                  </tr>
-                ))}
+                {tables.map((t) => {
+                  // A visitor reads this list before they have anything to compare it against, so a
+                  // settled table's buy-in is priced here too rather than left as a bare number.
+                  const rate = tableRate(t.settlement, t.chipValue);
+                  const lo = dualAmount(t.config.minBuyIn, rate);
+                  const hi = dualAmount(t.config.maxBuyIn, rate);
+                  return (
+                    <tr key={t.tableId}>
+                      <td>
+                        {t.name} <SettlementTag settlement={t.settlement} rate={rate} />
+                      </td>
+                      <td className="mono">
+                        {t.config.smallBlind}/{t.config.bigBlind}
+                      </td>
+                      <td className="num">{fmtSeats(t.seated, t.config.seats)}</td>
+                      <td className="num buyin-cell">
+                        <span>
+                          {lo.chipsText}–{hi.chipsText}
+                        </span>
+                        {lo.assetText && hi.assetText ? (
+                          <span className="cost-asset">
+                            {lo.assetText}–{hi.assetText} USDC
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="num">{t.handNo}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -64,6 +64,23 @@ export function formatUsdc(amount: bigint): string {
   return `${neg ? '-' : ''}${whole}.${frac}`;
 }
 
+/**
+ * The same amount, written the way money is written: grouped thousands, and never more decimal
+ * places than a price has — two, unless the amount genuinely carries more.
+ *
+ * `formatUsdc` is the exact form and stays the one for receipts and comparisons, where every one of
+ * the six decimals matters. This is the one for a sentence a person reads: "200.00 USDC a time" is
+ * a cap someone can hold in their head and "200.000000 USDC a time" is a number they have to count.
+ */
+export function formatMoney(amount: bigint): string {
+  const neg = amount < 0n;
+  const abs = neg ? -amount : amount;
+  const whole = (abs / USDC_UNIT).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  let frac = (abs % USDC_UNIT).toString().padStart(USDC_DECIMALS, '0').replace(/0+$/, '');
+  while (frac.length < 2) frac += '0';
+  return `${neg ? '-' : ''}${whole}.${frac}`;
+}
+
 /** A decimal USDC string → base units. Rejects more than 6 decimal places. */
 export function parseUsdc(value: string): bigint {
   const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());

@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { AuthState } from '../App';
 import type { AppSession, CreateTableRequest, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
-import { fmtChips } from '../lib/format';
-import { TreasuryPanel } from '../components/TreasuryPanel';
+import { dualAmount, tableRate } from '../lib/money';
+import { SettlementTag } from '../components/SettlementTag';
+import { StartPanel } from '../components/StartPanel';
+import { stakeStage } from '../lib/stake';
+import type { TreasuryView } from '../lib/treasury';
 import { SignInPage } from './SignInPage';
 
 const POLL_MS = 5000;
@@ -17,22 +20,28 @@ const POLL_MS = 5000;
  */
 export function Lobby({ session, auth, onLogin }: { session: AppSession | null; auth: AuthState; onLogin: (s: AppSession) => void }) {
   if (!session) return <SignInPage auth={auth} onLogin={onLogin} />;
-  return (
-    <div className="lobby">
-      <TableList session={session} />
-      <div className="lobby-side">
-        {/* Chosen once per connect, before a settled seat is possible — so it sits above the form
-            that can open a settled table. */}
-        <TreasuryPanel session={session} config={auth.config} />
-        <CreateTable session={session} />
-      </div>
-    </div>
-  );
+  return <SignedInLobby session={session} auth={auth} />;
 }
 
-function TableList({ session }: { session: AppSession }) {
+function SignedInLobby({ session, auth }: { session: AppSession; auth: AuthState }) {
+  const [treasury, setTreasury] = useState<TreasuryView | null>(null);
   const [tables, setTables] = useState<TableSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // Both reads live HERE. The same treasury answer decides what the set-up card offers and whether
+  // a table row can promise a seat; the same table list decides where "take a seat" goes. Two
+  // copies of either could disagree, and disagreeing about money is the one thing not allowed.
+  const loadTreasury = useCallback(async () => {
+    try {
+      setTreasury(await api.getTreasury(session.token));
+    } catch {
+      /* the panel says its own piece; a lobby that cannot read money still lists tables */
+    }
+  }, [session.token]);
+  useEffect(() => {
+    void loadTreasury();
+  }, [loadTreasury]);
+
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -55,6 +64,45 @@ function TableList({ session }: { session: AppSession }) {
     };
   }, [session.token]);
 
+  const ready = stakeStage(treasury) === 'ready';
+  // Where "take a seat" goes once someone is set up: a money table with room, because that is what
+  // they just got set up FOR. Falls back to anything with a free seat.
+  const target = pickSeat(tables);
+
+  return (
+    <div className="lobby">
+      <TableList tables={tables} err={err} />
+      <div className="lobby-side">
+        {/* Everything between signing in and sitting down, as one action, above everything else —
+            it is what makes a money table playable at all. */}
+        <StartPanel
+          session={session}
+          config={auth.config}
+          treasury={treasury}
+          onChanged={loadTreasury}
+          {...(ready && target ? { playHref: `#/t/${encodeURIComponent(target.tableId)}`, playLabel: `Take a seat at ${target.name}` } : {})}
+        />
+        {/* Opening a table is a thing a host does, not a step in playing, so it is folded shut. */}
+        <details className="panel lobby-create">
+          <summary>Open your own table</summary>
+          <CreateTable session={session} />
+        </details>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The table to send a set-up player to: one that settles and has a free seat, else any free seat.
+ * Null when the room is full or has not been read yet — never a table they could not sit at.
+ */
+export function pickSeat(tables: readonly TableSummary[] | null): TableSummary | null {
+  if (!tables) return null;
+  const open = tables.filter((t) => t.seated < t.config.seats);
+  return open.find((t) => t.settlement !== 'play-money') ?? open[0] ?? null;
+}
+
+function TableList({ tables, err }: { tables: TableSummary[] | null; err: string | null }) {
   return (
     <section className="panel">
       <h2>Tables</h2>
@@ -62,7 +110,7 @@ function TableList({ session }: { session: AppSession }) {
       {tables == null ? (
         <p className="hint">Loading…</p>
       ) : tables.length === 0 ? (
-        <p className="hint">No tables yet. Open one on the right.</p>
+        <p className="hint">No tables are open. You can open one yourself, on the right.</p>
       ) : (
         <div className="tables-wrap">
           <table className="tables">
@@ -71,36 +119,52 @@ function TableList({ session }: { session: AppSession }) {
                 <th>Table</th>
                 <th>Blinds</th>
                 <th className="num">Seats</th>
-                <th className="num">Buy-in</th>
+                <th className="num">Buy-in (chips)</th>
                 <th className="num">Hand</th>
                 <th>Settlement</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {tables.map((t) => (
-                <tr key={t.tableId}>
-                  <td>
-                    <a href={`#/t/${encodeURIComponent(t.tableId)}`}>{t.name}</a>
-                  </td>
-                  <td className="mono">
-                    {t.config.smallBlind}/{t.config.bigBlind}
-                  </td>
-                  <td className="num">
-                    {t.seated}/{t.config.seats}
-                  </td>
-                  <td className="num">
-                    {fmtChips(t.config.minBuyIn)}–{fmtChips(t.config.maxBuyIn)}
-                  </td>
-                  <td className="num">{t.handNo}</td>
-                  <td className="hint">{t.settlement}</td>
-                  <td>
-                    <a className="small" href={`#/t/${encodeURIComponent(t.tableId)}`}>
-                      Join →
-                    </a>
-                  </td>
-                </tr>
-              ))}
+              {tables.map((t) => {
+                // The rate this table was OPENED at, so a 40–200 buy-in is never read against a
+                // balance in a different unit. Null on play money, where chips are the whole story.
+                const rate = tableRate(t.settlement, t.chipValue);
+                const lo = dualAmount(t.config.minBuyIn, rate);
+                const hi = dualAmount(t.config.maxBuyIn, rate);
+                return (
+                  <tr key={t.tableId}>
+                    <td>
+                      <a href={`#/t/${encodeURIComponent(t.tableId)}`}>{t.name}</a>
+                    </td>
+                    <td className="mono">
+                      {t.config.smallBlind}/{t.config.bigBlind}
+                    </td>
+                    <td className="num">
+                      {t.seated}/{t.config.seats}
+                    </td>
+                    <td className="num buyin-cell">
+                      <span>
+                        {lo.chipsText}–{hi.chipsText}
+                      </span>
+                      {lo.assetText && hi.assetText ? (
+                        <span className="cost-asset">
+                          {lo.assetText}–{hi.assetText} USDC
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="num">{t.handNo}</td>
+                    <td>
+                      <SettlementTag settlement={t.settlement} rate={rate} />
+                    </td>
+                    <td>
+                      <a className="small" href={`#/t/${encodeURIComponent(t.tableId)}`}>
+                        Join →
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

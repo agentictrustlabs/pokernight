@@ -4,7 +4,7 @@ import { ApiError, api, loadSession, saveSession, setUnauthorizedHandler } from 
 import { startHomeSignIn, takeHomeCallback, takeMandateCallback, type AuthConfig } from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
-import { HOME_HASH, goTo, route } from './lib/routes';
+import { HOME_HASH, goTo, route, takeReturn } from './lib/routes';
 import { signOutTo, type SignOutReason } from './lib/session';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
@@ -144,7 +144,12 @@ export function App() {
         },
         current.token,
       )
-      .then(() => setNotice('Buy-ins are authorised. You can take a seat at a settled table.'))
+      .then(() => {
+        setNotice('Buy-ins are authorised — you can take a seat.');
+        // Back to the table they were sitting at when they left, not to the front door.
+        const back = takeReturn();
+        if (back) goTo(back);
+      })
       .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'Could not record the buy-in authorisation.'))
       .finally(() => setBusy(false));
   }, []);
@@ -232,7 +237,7 @@ export function App() {
     return (
       <div className="app">
         <CardDefs />
-        <TablePage tableId={r.tableId} session={session} onSignOut={signOut} />
+        <TablePage tableId={r.tableId} session={session} config={config} onSignOut={signOut} />
       </div>
     );
   }
@@ -252,7 +257,7 @@ export function App() {
             <Identity session={session} onSignOut={signOut} />
           ) : (
             <>
-              <span>card room · play money</span>
+              <span>card room · test money</span>
               {r.page === 'signin' ? null : <a href="#/signin">Sign in</a>}
             </>
           )}

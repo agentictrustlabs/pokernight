@@ -27,3 +27,33 @@ export function goTo(hash: string): void {
   if (location.hash === hash) return;
   location.hash = hash;
 }
+
+/* --------------------------------------------------- coming back from the Home */
+
+const RETURN_KEY = 'pokernight.returnTo';
+
+/**
+ * Remember where the person was standing before a trip to their Home.
+ *
+ * The buy-in authorisation returns to the site's ONE registered redirect URI, which is the front
+ * door — so without this, a person who authorised buy-ins while sitting at a table comes back to
+ * the lobby and has to find the table again. That is the difference between a flow and an errand.
+ */
+export function rememberReturn(hash: string = location.hash): void {
+  try {
+    sessionStorage.setItem(RETURN_KEY, hash || HOME_HASH);
+  } catch {
+    /* storage blocked: they land on the front door, which is where they would have landed anyway */
+  }
+}
+
+/** Where to send them back to, once and once only. Null when there is nowhere in particular. */
+export function takeReturn(): string | null {
+  try {
+    const hash = sessionStorage.getItem(RETURN_KEY);
+    sessionStorage.removeItem(RETURN_KEY);
+    return hash && hash !== location.hash ? hash : null;
+  } catch {
+    return null;
+  }
+}

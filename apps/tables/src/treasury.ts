@@ -55,13 +55,69 @@ export function chainId(env: Env): number {
   return n;
 }
 
-/** Asset base units per chip. `10000` = 0.01 USDC per chip at 6 decimals. */
+/**
+ * The DEPLOYMENT DEFAULT rate: asset base units per chip for a table created right now.
+ * `1000000` = 1 USDC per chip at 6 decimals.
+ *
+ * This is the rate a NEW table is stamped with. It is never the rate an EXISTING table settles at:
+ * a stack bought at one rate must cash out at that same rate, whatever the operator has since
+ * changed this variable to. Every settlement reads the table's own pinned rate — see
+ * {@link pinnedChipValue} and `PokerTableDO`.
+ */
 export function chipValue(env: Env): bigint {
   const raw = (env.CHIP_VALUE ?? '').trim();
   if (!/^\d+$/.test(raw) || BigInt(raw) <= 0n) {
     throw new TreasuryConfigError('CHIP_VALUE', `CHIP_VALUE is "${env.CHIP_VALUE}", which is not a positive integer of asset base units`);
   }
   return BigInt(raw);
+}
+
+/** The deployment default, or null where none is configured. For NEW tables, never for settlements. */
+export function defaultChipValue(env: Env): bigint | null {
+  try {
+    return chipValue(env);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The rate every table created BEFORE rates were pinned has been settling at.
+ *
+ * It exists because "today's default" is the wrong answer for an old table the moment `CHIP_VALUE`
+ * moves — and the deploy that introduces pinning is exactly the deploy that moves it. An unstamped
+ * table would be stamped on its first load with a rate it never had, which is the hundredfold
+ * overpay this whole change exists to prevent, arriving through the fix instead of the bug.
+ *
+ * So it is a separate, explicit variable, and it is NOT a default for anything new. Once every
+ * table has loaded once (they stamp themselves on first load) it can be deleted; while it is set,
+ * it is the truth about the tables that predate the field.
+ */
+export function legacyChipValue(env: Env): bigint | null {
+  const raw = (env.LEGACY_CHIP_VALUE ?? '').trim();
+  if (!/^\d+$/.test(raw) || BigInt(raw) <= 0n) return null;
+  return BigInt(raw);
+}
+
+/** What an unstamped table has been settling at: the legacy rate, else today's default. */
+export function unstampedChipValue(env: Env): bigint | null {
+  return legacyChipValue(env) ?? defaultChipValue(env);
+}
+
+/**
+ * The rate a table settles at: the one stamped on it, or — for a table created before rates were
+ * pinned — the rate such tables have been settling at (`LEGACY_CHIP_VALUE`, falling back to the
+ * deployment default where no such tables can exist). The caller writes the answer back onto the
+ * table's meta the first time it loads, and from then on this function only ever returns the
+ * stamped value.
+ *
+ * Null means no rate is known at all (no `CHIP_VALUE` anywhere), which a settled table cannot be:
+ * it could not have been created without one.
+ */
+export function pinnedChipValue(meta: { chipValue?: string } | null | undefined, env: Env): bigint | null {
+  const raw = (meta?.chipValue ?? '').trim();
+  if (/^\d+$/.test(raw) && BigInt(raw) > 0n) return BigInt(raw);
+  return unstampedChipValue(env);
 }
 
 export function rpcUrl(env: Env): string {

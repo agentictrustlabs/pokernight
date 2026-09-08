@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSession, ClientCommand } from '../lib/types';
 import { api, tableSocketUrl } from '../lib/api';
+import type { AuthConfig } from '../lib/home';
 import type { TreasuryView } from '../lib/treasury';
+import { seatLabel } from '../lib/format';
+import { tableRate } from '../lib/money';
+
+import { stakeStage } from '../lib/stake';
 import { TableSocket, dismissError, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
 import { Identity } from '../components/Identity';
 import { LogPanel } from '../components/LogPanel';
 import { MoneyPanel } from '../components/MoneyPanel';
+import { StartPanel } from '../components/StartPanel';
+import { SettlementTag } from '../components/SettlementTag';
 import { Table } from '../components/Table';
 import { Toast } from '../components/Toast';
 
@@ -17,10 +24,26 @@ import { Toast } from '../components/Toast';
  */
 const TREASURY_POLL_MS = 15_000;
 
-export function TablePage({ tableId, session, onSignOut }: { tableId: string; session: AppSession | null; onSignOut: () => void }) {
+export function TablePage({
+  tableId,
+  session,
+  config,
+  onSignOut,
+}: {
+  tableId: string;
+  session: AppSession | null;
+  /** `GET /auth/config`, so the set-up card can send a player to their own Home and back. */
+  config: AuthConfig | null;
+  onSignOut: () => void;
+}) {
   const [state, setState] = useState<TableState>(initialState);
   const [tableName, setTableName] = useState<string | null>(null);
   const [settlement, setSettlement] = useState<string>('play-money');
+  /**
+   * The rate THIS table pinned when it was created. Read off the table's own summary, never from
+   * the deployment's current default — an older table settles at the rate it was opened with.
+   */
+  const [chipValue, setChipValue] = useState<string | null>(null);
   const [treasury, setTreasury] = useState<TreasuryView | null>(null);
   const sockRef = useRef<TableSocket | null>(null);
   const token = session?.token ?? null;
@@ -50,6 +73,7 @@ export function TablePage({ tableId, session, onSignOut }: { tableId: string; se
         const summary = ts.find((t) => t.tableId === tableId);
         setTableName(summary?.name ?? null);
         setSettlement(summary?.settlement ?? 'play-money');
+        setChipValue(summary?.chipValue ?? null);
       })
       .catch(() => {});
     return () => {
@@ -80,6 +104,9 @@ export function TablePage({ tableId, session, onSignOut }: { tableId: string; se
     return () => clearInterval(h);
   }, [loadTreasury, settles, token]);
 
+  // Whether a settled seat would be allowed right now, from the one read above.
+  const ready = stakeStage(treasury) === 'ready';
+
   const send = useCallback((c: ClientCommand) => sockRef.current?.send(c), []);
   const onDismiss = useCallback(() => setState((s) => dismissError(s)), []);
 
@@ -87,7 +114,7 @@ export function TablePage({ tableId, session, onSignOut }: { tableId: string; se
     const bySeat = new Map<number, string>();
     const seatOfPlayer = new Map<string, number>();
     for (const s of state.view?.seats ?? []) {
-      bySeat.set(s.seat, state.names[s.playerId] ?? s.playerId.slice(0, 8));
+      bySeat.set(s.seat, seatLabel(state.names[s.playerId], s.seat));
       seatOfPlayer.set(s.playerId, s.seat);
     }
     return {
@@ -105,6 +132,9 @@ export function TablePage({ tableId, session, onSignOut }: { tableId: string; se
         </a>
         <span className="meta">
           <strong>{tableName ?? tableId}</strong>
+          {/* The settlement mode travels with the table's NAME, so it is on screen from the moment
+              the page opens and before anyone can reach a seat. */}
+          <SettlementTag settlement={settlement} rate={tableRate(settlement, chipValue)} withRate />
           {state.view?.hand ? <span className="num">hand #{state.view.hand.handNo}</span> : null}
         </span>
         <span className="spacer" />
@@ -114,9 +144,19 @@ export function TablePage({ tableId, session, onSignOut }: { tableId: string; se
         </span>
       </div>
       <div className="page table-page">
-        <Table state={state} session={session} send={send} settlement={settlement} treasury={treasury} />
+        <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} treasury={treasury} />
         <aside className="side">
-          <MoneyPanel tableId={tableId} settlement={settlement} session={session} treasury={treasury} onChanged={loadTreasury} />
+          {/* A player who is not ready to sit sees the ONE action that fixes that, above the money
+              summary — not a refusal pointing at a panel somewhere else. */}
+          {settles && session && !ready ? <StartPanel session={session} config={config} treasury={treasury} onChanged={loadTreasury} /> : null}
+          <MoneyPanel
+            tableId={tableId}
+            settlement={settlement}
+            chipValue={chipValue}
+            session={session}
+            treasury={treasury}
+            onChanged={loadTreasury}
+          />
           <LogPanel log={state.log} ctx={ctx} canChat={session != null} onChat={(text) => send({ type: 'chat', text })} />
         </aside>
       </div>

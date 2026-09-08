@@ -35,12 +35,22 @@ import {
  */
 export type FundingResolver = (req: { playerId: string; playerAddress?: string; delegation?: unknown }) => Promise<PlayerFunding | null>;
 
-export function createSettlementAdapter(mode: SettlementMode, env: Env, resolveFunding?: FundingResolver): SettlementAdapter {
+export interface SettlementAdapterOpts {
+  /**
+   * The TABLE's chip rate, in asset base units per chip. Required for a settled table and passed by
+   * the DO from its own meta, because the deployment default may have moved since the table was
+   * created — and a stack bought at one rate must never be paid out at another.
+   */
+  chipValue?: bigint;
+  resolveFunding?: FundingResolver;
+}
+
+export function createSettlementAdapter(mode: SettlementMode, env: Env, opts: SettlementAdapterOpts = {}): SettlementAdapter {
   switch (mode) {
     case 'play-money':
       return new PlayMoneyAdapter();
     case 'mandate-transfer':
-      return createMandateTransferAdapter(env, resolveFunding);
+      return createMandateTransferAdapter(env, opts);
     case 'table-escrow':
       // TODO(phase 4): return new TableEscrowAdapter(env)
       throw new Error(`settlement mode not available yet: ${mode}`);
@@ -52,7 +62,7 @@ export function createSettlementAdapter(mode: SettlementMode, env: Env, resolveF
  * created in this mode against a half-configured deployment must fail AT CREATION, loudly, rather
  * than seat players and discover at cash-out time that it cannot pay them.
  */
-function createMandateTransferAdapter(env: Env, resolveFunding?: FundingResolver): SettlementAdapter {
+function createMandateTransferAdapter(env: Env, opts: SettlementAdapterOpts): SettlementAdapter {
   let client;
   let house: `0x${string}`;
   let chips: bigint;
@@ -61,7 +71,10 @@ function createMandateTransferAdapter(env: Env, resolveFunding?: FundingResolver
   try {
     client = custodialTreasury(env);
     house = houseTreasury(env);
-    chips = chipValue(env);
+    // The table's own rate wherever the caller knows it. `chipValue(env)` is the fallback for the
+    // one caller that has no table yet — creating one — and is the same value that table is about
+    // to be stamped with, so the two can never disagree.
+    chips = opts.chipValue ?? chipValue(env);
     chain = chainId(env);
     deploys = deployments(env);
   } catch (e) {
@@ -72,7 +85,7 @@ function createMandateTransferAdapter(env: Env, resolveFunding?: FundingResolver
   }
 
   const resolve: FundingResolver =
-    resolveFunding ??
+    opts.resolveFunding ??
     (async (req) => {
       // No resolver wired means the caller has no way to know whose money this is. Answering "null"
       // is right: the adapter turns that into a refusal that names the missing treasury, and no seat

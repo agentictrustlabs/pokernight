@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppSession } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { shortAddress } from '../lib/format';
@@ -18,13 +18,13 @@ import { fmtUsdc, shortRef, type TreasuryView } from '../lib/treasury';
  * authority the player signs; the panel shows the exact caps before asking, and shows them again
  * after, because "authorised" with no numbers is not consent.
  */
-export function TreasuryPanel({ session, config }: { session: AppSession; config: AuthConfig | null }) {
+export function TreasuryPanel({ session, config, bare = false }: { session: AppSession; config: AuthConfig | null; bare?: boolean }) {
   const [view, setView] = useState<TreasuryView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | 'select' | 'fund' | 'create' | 'mandate' | 'refresh'>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [fundAmount, setFundAmount] = useState('100');
+  const [fundAmount, setFundAmount] = useState('10000');
   const [label, setLabel] = useState('');
   const [handedOff, setHandedOff] = useState(false);
 
@@ -113,20 +113,29 @@ export function TreasuryPanel({ session, config }: { session: AppSession; config
     [config, run],
   );
 
-  if (loadError) {
-    return (
+  /** Standalone it is a panel with a heading; inside the "details" disclosure it is just content. */
+  const Shell = ({ children }: { children: ReactNode }) =>
+    bare ? (
+      <div className="treasury treasury-bare">{children}</div>
+    ) : (
       <section className="panel treasury">
         <h2>Your treasury</h2>
-        <div className="form-error">{loadError}</div>
+        {children}
       </section>
+    );
+
+  if (loadError) {
+    return (
+      <Shell>
+        <div className="form-error">{loadError}</div>
+      </Shell>
     );
   }
   if (!view) {
     return (
-      <section className="panel treasury">
-        <h2>Your treasury</h2>
+      <Shell>
         <p className="hint">Loading…</p>
-      </section>
+      </Shell>
     );
   }
 
@@ -136,9 +145,7 @@ export function TreasuryPanel({ session, config }: { session: AppSession; config
   const working = busy !== null;
 
   return (
-    <section className="panel treasury">
-      <h2>Your treasury</h2>
-
+    <Shell>
       {view.person ? (
         <p className="hint">
           You are signed in as <code className="mono">{view.personName ?? shortAddress(view.person)}</code>. That is your
@@ -287,7 +294,7 @@ export function TreasuryPanel({ session, config }: { session: AppSession; config
 
       {notice ? <p className="hint treasury-notice">{notice}</p> : null}
       {error ? <div className="form-error">{error}</div> : null}
-    </section>
+    </Shell>
   );
 }
 
