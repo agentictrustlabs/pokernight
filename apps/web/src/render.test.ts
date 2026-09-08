@@ -11,6 +11,10 @@ import { Identity } from './components/Identity';
 import { Table } from './components/Table';
 import { WinnerBanner } from './components/WinnerBanner';
 import { Lobby } from './pages/Lobby';
+import { Landing } from './pages/Landing';
+import { SignInPage } from './pages/SignInPage';
+import { mapDemoPersonas } from './lib/demo';
+import { SESSION_ENDED_NOTICE } from './lib/session';
 import { initialState, reduce, type TableState } from './lib/tableSocket';
 import { endOfHandScript, flopView, welcome } from './lib/mockServer';
 
@@ -61,6 +65,11 @@ describe('sign-in render', () => {
     error: null,
     signInWithHome: () => {},
     dismissError: () => {},
+    personas: [],
+    demoBusy: null,
+    demoError: null,
+    connectAsDemo: () => {},
+    notice: null,
     ...over,
   });
   const signIn = (a: AuthState): string => renderToStaticMarkup(createElement(Lobby, { session: null, auth: a, onLogin: () => {} }));
@@ -103,5 +112,75 @@ describe('sign-in render', () => {
       }),
     );
     expect(nameless).toContain('0xabcdef01…abcdef01');
+  });
+});
+
+/**
+ * The front door and the doors in it. The landing page is the only thing a signed-out stranger sees,
+ * so what it says when it knows nothing yet matters as much as what it says when it knows everything.
+ */
+describe('landing and sign-in surfaces', () => {
+  const cfg = {
+    devAuth: false,
+    home: { clientId: 'pokernight', origin: 'https://www.faithnet.me', zone: 'faithnet.me', delegate: '0xabc', redirectUri: 'https://poker.faithnet.io/' },
+  };
+  const auth = (over: Partial<AuthState> = {}): AuthState => ({
+    config: cfg,
+    configError: null,
+    busy: false,
+    error: null,
+    signInWithHome: () => {},
+    dismissError: () => {},
+    personas: [],
+    demoBusy: null,
+    demoError: null,
+    connectAsDemo: () => {},
+    notice: null,
+    ...over,
+  });
+  const personas = mapDemoPersonas([
+    { handle: 'alice', sa: '0xb0d11ce19b756a682e78b4904cd8d832303b3d11', name: 'Alice Okoro', blurb: '' },
+    { handle: 'jpreg', sa: '0x9e15ef3b4c1add3bb55381c88ac244575bf80b2a', name: 'Jordan Pike — Joshua Project', blurb: '' },
+  ]);
+
+  it('says what Pokernight is, how it works, and carries sign-in itself', () => {
+    const html = renderToStaticMarkup(createElement(Landing, { auth: auth(), onLogin: () => {} }));
+    expect(html).toContain('at the same table');
+    expect(html).toContain('agent treasury');
+    expect(html).toContain('How a night works');
+    expect(html).toContain('Sign in with your Home'); // the panel is ON the page, not linked away to
+    expect(html).toContain('In the room right now');
+    // Before the lobby answers, it says it is reading it — never an empty claim about the room.
+    expect(html).toContain('Reading the lobby…');
+  });
+
+  it('offers the Home\'s demo users as a real list, with name, handle and address', () => {
+    const html = renderToStaticMarkup(createElement(SignInPage, { auth: auth({ personas }), onLogin: () => {} }));
+    expect(html).toContain('Alice Okoro');
+    expect(html).toContain('alice');
+    expect(html).toContain('0xb0d11ce1…303b3d11');
+    expect(html).toContain('Jordan Pike');
+    // Ranked below the real ceremony, and honest about what they are.
+    expect(html.indexOf('Sign in with your Home')).toBeLessThan(html.indexOf('borrow a demo user'));
+    expect(html).toContain('shared by everyone');
+  });
+
+  it('shows no demo section at all when the Home offers none', () => {
+    const html = renderToStaticMarkup(createElement(SignInPage, { auth: auth(), onLogin: () => {} }));
+    expect(html).not.toContain('demo user');
+    expect(html).toContain('Sign in with your Home');
+  });
+
+  it('says plainly when the Home will not mint a demo session for this app', () => {
+    const html = renderToStaticMarkup(
+      createElement(SignInPage, { auth: auth({ personas, demoError: 'Demo sign-in is not enabled for this app yet' }), onLogin: () => {} }),
+    );
+    expect(html).toContain('Demo sign-in is not enabled for this app yet');
+  });
+
+  it('tells a person whose session ended why they are looking at sign-in', () => {
+    const html = renderToStaticMarkup(createElement(SignInPage, { auth: auth({ notice: SESSION_ENDED_NOTICE }), onLogin: () => {} }));
+    expect(html).toContain(SESSION_ENDED_NOTICE);
+    expect(html).toContain('Sign in with your Home');
   });
 });

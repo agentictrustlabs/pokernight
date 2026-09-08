@@ -6,6 +6,8 @@
  *   GET  /auth/config                   → {devAuth, home:{clientId, origin, zone, delegate, redirectUri}}
  *   POST /auth/home {code, codeVerifier, authOrigin, nonce, state}
  *                                       → {token, playerId, name, agentName?, address?}  (Home OIDC)
+ *   POST /auth/home/demo {idToken, delegation?, authOrigin}
+ *                                       → same shape (Home quick-connect / demo users)
  *   POST /auth/signout                  → {ok} (auth required; drops the server-side session record)
  *   POST /dev/session {name}            → {token, playerId, name}   (DEV_AUTH=true only)
  *   GET  /tables                        → TableSummary[]            (LobbyDO "default", or ?circle=)
@@ -17,14 +19,14 @@
  *   GET  /tables/:id/ws?token=...       → WebSocket to the table DO (no/invalid token = spectator)
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
 import { CreateTableRequestSchema, DevSessionRequestSchema, POKER_ACT_SKILL, SeatAgentRequestSchema } from '@pokernight/protocol';
 import { agentKindFromCard, fetchAgentCard, hasPokerActSkill, resolveAgentBase } from './a2a.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aTimeoutMs, allowedOrigins, isDevAuth, type Env } from './env.js';
-import { HomeAuthError, completeHomeSignIn, homePlayerId, homeRedirectUri } from './home.js';
+import { HomeAuthError, completeDemoSignIn, completeHomeSignIn, homePlayerId, homeRedirectUri, type HomeIdentity } from './home.js';
 import type { SessionRecord } from './session-do.js';
 import type { SeatAgentBody } from './table-do.js';
 
@@ -95,7 +97,46 @@ app.post('/auth/home', async (c) => {
     console.error('home sign-in', e);
     return c.json({ error: 'home sign-in failed' }, 401);
   }
+  return issueHomeSession(c, identity);
+});
 
+const DemoAuthRequestSchema = z.object({
+  idToken: z.string().min(1).max(8192),
+  delegation: z.unknown().optional(),
+  authOrigin: z.string().min(1).max(512),
+});
+
+/**
+ * Finish a Home QUICK-CONNECT sign-in (spec 295, the Home's demo users).
+ *
+ * The Home hands the browser a finished sign-in result — an id_token plus the site-login delegation —
+ * instead of a code, so there is nothing left to exchange. Everything else is unchanged: this Worker
+ * fetches the Home's JWKS and verifies the id_token itself (`verifyHomeIdToken`), and the browser's
+ * word for who it is still never enters the decision. A quick-connect identity is a real Smart Agent
+ * whose custodian the Home holds; it is a shared account by design, which is why this route exists at
+ * all and why nothing beyond a play-money seat should ever rest on it.
+ */
+app.post('/auth/home/demo', async (c) => {
+  const parsed = DemoAuthRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+
+  let identity;
+  try {
+    identity = await completeDemoSignIn(c.env, parsed.data);
+  } catch (e) {
+    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
+    console.error('demo sign-in', e);
+    return c.json({ error: 'demo sign-in failed' }, 401);
+  }
+  return issueHomeSession(c, identity);
+});
+
+/**
+ * Turn a verified Home identity into a pokernight session: the server-side record (address,
+ * delegation, Home origin) plus a bearer token that carries claims only. Shared by both Home routes
+ * so a session established either way is indistinguishable downstream.
+ */
+async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIdentity): Promise<Response> {
   const playerId = homePlayerId(identity.address);
   // The session never outlives the assertion it rests on.
   const exp = Math.min(Date.now() + HOME_SESSION_TTL_MS, identity.expiresAt);
@@ -123,7 +164,7 @@ app.post('/auth/home', async (c) => {
     return c.json({ error: 'the card room cannot issue sessions right now (SESSION_SECRET is not configured)' }, 500);
   }
   return c.json({ token, playerId, name: identity.name, agentName: identity.agentName, address: identity.address });
-});
+}
 
 /** Sign out: drop the server-side record so the bearer token stops resolving straight away. */
 app.post('/auth/signout', async (c) => {

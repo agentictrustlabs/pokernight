@@ -6,3 +6,6 @@ dist/
 *.log
 coverage/
 .DS_Store
+
+# House custodian private key (scripts/provision-house.mts). NEVER commit.
+.house-key.json

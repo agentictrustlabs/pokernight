@@ -1,0 +1,22 @@
+{
+  "_note": "Addresses only — safe to commit. The custodian KEY lives in .house-key.json (gitignored).",
+  "network": "faithchain",
+  "chainId": 34348,
+  "rpcUrl": "https://a2a.faithnet.io/rpc",
+  "houseCustodian": "0xf8891FDf9B4DA58a17B516aDF40d6E6C5211F9C0",
+  "houseServiceSa": "0x7c8F694181c0c7378aCFEA779647A0eA4B85e54f",
+  "houseTreasurySa": "0x71937d23206876cf65FD06a21D6E1B68FAA93e4C",
+  "salts": {
+    "service": "pokernight.house.service.v1",
+    "treasury": "pokernight.house.treasury.v1"
+  },
+  "contracts": {
+    "asset": "0xdaE09066A2cc32f6203605619137dcF01A9B49Ae",
+    "entryPoint": "0xf7855250B3363AB7649B10957d8908A9AFcdD4B5",
+    "agentAccountFactory": "0x464eEe7518c3c97DA570592481329E0627E9a3B8",
+    "paymaster": "0xbd93fEC6910ffD74F14709188b5a9B6C6965b2a7",
+    "delegationManager": "0x710cb1bF08C234Df397e0910331e0A29710EF4F7",
+    "paymentReceiptRegistry": "0x5FfDd6186C1bBc4628187B1c4C1fDaA39F870d43"
+  },
+  "provisionedAt": "2026-09-08T17:39:07.024Z"
+}

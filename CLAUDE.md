@@ -9,6 +9,8 @@ substrate (`~/agenticprimitives`). Design: `docs/DESIGN.md` (read it before chan
 - `packages/protocol` zod wire schemas (WebSocket, HTTP, `poker.act` A2A skill). Typed against engine.
 - `packages/ledger`   chip ledger + `SettlementAdapter` (play-money now; on-chain adapters live in apps).
 - `packages/agent-kit` helpers and a rules-based baseline strategy for agents.
+- `packages/treasury` house money layer: read/move 6-decimal USDC from Smart Agents the house custodies.
+  Config injected (rpc, chain id, deployments, signer); no hostnames, no addresses, no keys.
 - `apps/tables`       Cloudflare Worker: `PokerTableDO` (WebSockets, SQLite, alarms) + `LobbyDO`. hono routes.
 - `apps/web`          Vite + React client.
 - `apps/agent`        reference WebSocket bot (`pnpm --filter pokernight-agent bot`).
@@ -30,6 +32,9 @@ substrate (`~/agenticprimitives`). Design: `docs/DESIGN.md` (read it before chan
 - `pnpm install` · `pnpm test` · `pnpm typecheck`
 - `pnpm dev:tables` (wrangler dev on :8787) · `pnpm dev:web` (vite on :5173) · `pnpm dev:agents` (wrangler dev on :8788)
 - `pnpm --filter pokernight-agent bot -- --table <id> --seat 3` (rules-based bot)
+- `pnpm provision:house` (idempotent; deploys the house Smart Agents on faithchain, funds the treasury,
+  writes `house.faithchain.json`. Add `--demo-transfer=<usdc>` to also move real USDC treasury → service.
+  The custodian key goes to `.house-key.json` — gitignored, mode 0600, never printed.)
 
 ## Agentic Primitives linkage
 `apps/tables`, `apps/agent` and `apps/agent-worker` depend on `@agenticprimitives/*` via `link:../../../agenticprimitives/packages/<name>`

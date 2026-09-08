@@ -10,16 +10,23 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.scripts.json --noEmit",
     "dev:tables": "pnpm --filter pokernight-tables dev",
     "dev:web": "pnpm --filter pokernight-web dev",
     "dev:agents": "pnpm --filter pokernight-agent-worker dev",
-    "bench": "pnpm --filter @pokernight/engine bench"
+    "bench": "pnpm --filter @pokernight/engine bench",
+    "provision:house": "tsx scripts/provision-house.mts"
   },
   "devDependencies": {
+    "@agenticprimitives/agent-account": "link:../agenticprimitives/packages/agent-account",
+    "@agenticprimitives/contracts": "link:../agenticprimitives/packages/contracts",
+    "@agenticprimitives/payments": "link:../agenticprimitives/packages/payments",
+    "@pokernight/treasury": "workspace:*",
     "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
     "turbo": "^2.10.12",
     "typescript": "^5.6.3",
+    "viem": "^2.52.2",
     "vitest": "^3.2.4"
   },
   "pnpm": {

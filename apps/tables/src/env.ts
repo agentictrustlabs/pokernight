@@ -42,12 +42,24 @@ export interface Env {
   PAYMENT_ENFORCER?: string;
   DIGEST_BINDING_ENFORCER?: string;
   PAYMENT_RECEIPT_REGISTRY?: string;
+  /** Paymaster that sponsors the house's UserOps (dev mode on faithchain). */
+  SMART_AGENT_PAYMASTER?: string;
+  /** The Poker Site's own Smart Agents, provisioned by scripts/provision-house.mts. */
+  HOUSE_SERVICE_SA?: string;
+  HOUSE_TREASURY_SA?: string;
+  /** Alias of HOUSE_TREASURY_SA (see settlement.ts). */
   HOUSE_SA?: string;
   HOUSE_DELEGATE?: string;
 
   /** Secrets. */
   SESSION_SECRET?: string;
   RPC_TOKEN?: string;
+  /**
+   * Private key of the EOA that custodies HOUSE_SERVICE_SA / HOUSE_TREASURY_SA. It SIGNS the
+   * userOpHash of every house transfer and nothing else — the asset lives in the Smart Agents.
+   * `wrangler secret put HOUSE_CUSTODIAN_KEY --env <env>`. Never a var; never in git.
+   */
+  HOUSE_CUSTODIAN_KEY?: string;
 }
 
 export function allowedOrigins(env: Env): string[] {

@@ -11,8 +11,12 @@
 #   SESSIONS — SessionDO namespace (one instance per playerId; the server-side half of a Home session)
 #
 # Secrets (NEVER in [vars]; see .dev.vars.example):
-#   SESSION_SECRET — HMAC key for session tokens (`wrangler secret put SESSION_SECRET --env <env>`)
-#   RPC_TOKEN      — chain-rpc-gateway app token for the tables Worker (phase 3)
+#   SESSION_SECRET      — HMAC key for session tokens (`wrangler secret put SESSION_SECRET --env <env>`)
+#   RPC_TOKEN           — chain-rpc-gateway app token for the tables Worker (phase 3)
+#   HOUSE_CUSTODIAN_KEY — private key custodying HOUSE_SERVICE_SA and HOUSE_TREASURY_SA. It only
+#                         ever SIGNS userOpHashes; it never holds the asset. Provisioned into
+#                         .house-key.json by scripts/provision-house.mts and set with
+#                         `wrangler secret put HOUSE_CUSTODIAN_KEY --env <env>`.
 name = "pokernight-tables"
 main = "src/index.ts"
 compatibility_date = "2026-05-19"
@@ -89,7 +93,9 @@ new_sqlite_classes = ["SessionDO"]
 
 [env.faithnet.vars]
 CHAIN_ID = "34348"
-RPC_URL = "https://rpc.faithnet.io"
+# rpc.faithnet.io requires a chain-rpc-gateway app token (RPC_TOKEN, a secret). The browser-safe a2a
+# relay below needs none and is what scripts/provision-house.mts uses; swap once RPC_TOKEN is set.
+RPC_URL = "https://a2a.faithnet.io/rpc"
 HOME_ORIGIN = "https://www.faithnet.me"
 HOME_ZONE = "faithnet.me"
 # OIDC client registered at the Home (GET https://www.faithnet.me/connect/client-info?client_id=pokernight):
@@ -124,5 +130,18 @@ DELEGATION_MANAGER = "0x710cb1bF08C234Df397e0910331e0A29710EF4F7"
 PAYMENT_ENFORCER = "0x07fA0aE59FdE4B7ce8962d6fE7a1d648ec3DD5CE"
 DIGEST_BINDING_ENFORCER = "0xA3bb9BCC9b2F6F2419E1aBe5ED6Fd5399b9E68e1"
 PAYMENT_RECEIPT_REGISTRY = "0x5FfDd6186C1bBc4628187B1c4C1fDaA39F870d43"
-HOUSE_SA = ""
+# Paymaster that sponsors the house's UserOps. It is in DEV MODE on faithchain (accepts every op)
+# and holds a large EntryPoint deposit, so the house pays no gas of its own.
+SMART_AGENT_PAYMASTER = "0xbd93fEC6910ffD74F14709188b5a9B6C6965b2a7"
+# The house's own on-chain identity, provisioned by `pnpm provision:house`
+# (scripts/provision-house.mts). Addresses also live in house.faithchain.json at the repo root;
+# both accounts are mode-0 AgentAccounts custodied by ONE EOA whose key is the
+# HOUSE_CUSTODIAN_KEY secret (see .dev.vars.example) — never a var, never in git.
+#   service  — the Poker Site acting as an agent (A2A identity, receipts, future delegate).
+#   treasury — the table bankroll. Buy-ins land here; cash-outs leave here.
+HOUSE_SERVICE_SA = "0x7c8F694181c0c7378aCFEA779647A0eA4B85e54f"
+HOUSE_TREASURY_SA = "0x71937d23206876cf65FD06a21D6E1B68FAA93e4C"
+# Legacy alias kept for src/settlement.ts; identical to HOUSE_TREASURY_SA.
+HOUSE_SA = "0x71937d23206876cf65FD06a21D6E1B68FAA93e4C"
+# Phase 3: the delegate address players' poker-buyin delegations are scoped to. Not provisioned yet.
 HOUSE_DELEGATE = ""

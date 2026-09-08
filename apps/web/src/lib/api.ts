@@ -1,6 +1,7 @@
-import type { CreateTableRequest, Session, TableSummary, TableView } from '@pokernight/protocol';
+import type { CreateTableRequest, Session, TableSummary } from '@pokernight/protocol';
 import type { AppSession } from './types';
 import type { AuthConfig } from './home';
+import type { TableDetail } from './lobby';
 
 /** Base URL of the tables API. `/api` is proxied by Vite in dev; baked at build otherwise. */
 export const API_BASE: string = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/+$/, '');
@@ -17,7 +18,7 @@ export function loadSession(): AppSession | null {
         token: s.token,
         playerId: s.playerId,
         name: s.name,
-        via: s.via === 'home' || s.playerId.startsWith('home:') ? 'home' : 'dev',
+        via: s.via === 'home' || s.via === 'demo' || s.via === 'dev' ? s.via : s.playerId.startsWith('home:') ? 'home' : 'dev',
         address: typeof s.address === 'string' ? s.address : undefined,
         agentName: typeof s.agentName === 'string' ? s.agentName : undefined,
       };
@@ -47,7 +48,19 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
+/**
+ * Told when the API refuses a session token we sent. Registered by the app, which turns it into the
+ * one correct outcome: clear the session and land on the sign-in page saying so. It lives here
+ * because every route is a place a session can be found dead, and a table view that silently stops
+ * updating is the worst of the alternatives.
+ */
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  unauthorizedHandler = fn;
+}
+
+async function request<T>(path: string, init: RequestInit = {}, token?: string, notifyUnauthorized = true): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json' };
   if (init.body) headers['content-type'] = 'application/json';
   if (token) headers.authorization = `Bearer ${token}`;
@@ -60,6 +73,8 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
     body = text;
   }
   if (!res.ok) {
+    // A 401 on a request we DID authenticate means this session is over, wherever we were.
+    if (res.status === 401 && token && notifyUnauthorized) unauthorizedHandler?.();
     const msg =
       body && typeof body === 'object' && 'error' in body && typeof (body as { error: unknown }).error === 'string'
         ? (body as { error: string }).error
@@ -87,16 +102,26 @@ export interface HomeAuthBody {
   state: string;
 }
 
+/** What the browser hands the Worker after `connectAsQuickConnect`. The Worker verifies the id_token
+ *  against the Home's JWKS itself; this is a shortcut past the code exchange, not past the proof. */
+export interface DemoAuthBody {
+  idToken: string;
+  delegation?: unknown;
+  authOrigin: string;
+}
+
 export const api = {
   authConfig: () => request<AuthConfig>('/auth/config'),
   homeLogin: (body: HomeAuthBody) => request<HomeSessionResponse>('/auth/home', { method: 'POST', body: JSON.stringify(body) }),
-  /** Best effort: drops the server-side session record so the token stops resolving straight away. */
-  signOut: (token: string) => request<{ ok: boolean }>('/auth/signout', { method: 'POST', body: '{}' }, token).catch(() => ({ ok: false })),
+  demoLogin: (body: DemoAuthBody) => request<HomeSessionResponse>('/auth/home/demo', { method: 'POST', body: JSON.stringify(body) }),
+  /** Best effort: drops the server-side session record so the token stops resolving straight away.
+   *  Never reports a 401 upward — we are already on our way out. */
+  signOut: (token: string) => request<{ ok: boolean }>('/auth/signout', { method: 'POST', body: '{}' }, token, false).catch(() => ({ ok: false })),
   devLogin: (name: string) => request<Session>('/dev/session', { method: 'POST', body: JSON.stringify({ name }) }),
   listTables: (token?: string) => request<TableSummary[]>('/tables', {}, token),
   createTable: (req: CreateTableRequest, token?: string) =>
     request<TableSummary>('/tables', { method: 'POST', body: JSON.stringify(req) }, token),
-  getTable: (id: string, token?: string) => request<TableView>(`/tables/${encodeURIComponent(id)}`, {}, token),
+  getTable: (id: string, token?: string) => request<TableDetail>(`/tables/${encodeURIComponent(id)}`, {}, token),
 };
 
 /** WebSocket URL for a table, derived from API_BASE (relative or absolute). */

@@ -141,6 +141,70 @@ export function isHomePlayerId(playerId: string): boolean {
 }
 
 /**
+ * Verify an id_token minted by a Home, and turn it into an identity.
+ *
+ * This is the part of the ceremony that DECIDES WHO SOMEONE IS, factored out so every path that ends
+ * with a Home-signed id_token runs exactly the same checks: the issuer allowlist, the Home's JWKS,
+ * ES256 pinning, iss/aud/exp, and (where the caller chose one) the nonce. Pass an empty
+ * `expectedNonce` only where the ceremony had no nonce to bind — the id_token is then bounded by
+ * `iat` age instead, and that is the whole of the replay window.
+ */
+export async function verifyHomeIdToken(
+  env: Env,
+  authOrigin: string,
+  idToken: string,
+  expectedNonce: string,
+  now = Date.now(),
+): Promise<Omit<HomeIdentity, 'delegation'>> {
+  if (!isAllowedHomeOrigin(env, authOrigin)) {
+    throw new HomeAuthError(`home origin "${authOrigin}" is not a trusted issuer for this deployment`);
+  }
+  let client: ConnectClient;
+  try {
+    client = homeClient(env);
+  } catch (e) {
+    // Misconfiguration, not the caller's fault — but still nothing to hand back but a refusal.
+    throw new HomeAuthError(`home sign-in is not configured: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  let claims: IdTokenClaims & { iat?: number };
+  try {
+    claims = (await client.verifyIdToken(authOrigin, idToken, expectedNonce)) as IdTokenClaims & { iat?: number };
+  } catch (e) {
+    throw new HomeAuthError(`id_token rejected: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // `verifyIdToken` already binds iss/aud/exp and pins ES256; re-assert the ones that decide who the
+  // player IS, so a future change to the library cannot silently widen them here.
+  if (claims.aud !== (env.HOME_CLIENT_ID ?? '').trim()) throw new HomeAuthError('id_token aud is not this client');
+  if (expectedNonce && claims.nonce !== expectedNonce) throw new HomeAuthError('id_token nonce does not match the sign-in request');
+  if (typeof claims.exp !== 'number' || claims.exp * 1000 <= now) throw new HomeAuthError('id_token has expired');
+  if (typeof claims.iat === 'number') {
+    if (claims.iat * 1000 > now + IAT_SKEW_MS) throw new HomeAuthError('id_token iat is in the future');
+    if (claims.iat * 1000 < now - IAT_MAX_AGE_MS) throw new HomeAuthError('id_token iat is too old');
+  }
+
+  let address: string;
+  try {
+    address = client.personAddressFromIdToken(idToken);
+  } catch {
+    throw new HomeAuthError('id_token carries no Smart Agent address');
+  }
+  if (!ADDRESS_RE.test(address)) throw new HomeAuthError(`id_token subject "${address}" is not a Smart Agent address`);
+  address = address.toLowerCase();
+
+  const agentName = typeof claims.agent_name === 'string' && claims.agent_name.trim() ? claims.agent_name.trim() : undefined;
+  return {
+    address,
+    agentName,
+    name: agentName ?? shortAddress(address),
+    homeOrigin: authOrigin,
+    claims,
+    expiresAt: claims.exp * 1000,
+  };
+}
+
+/**
  * Run the server half of the ceremony. Throws `HomeAuthError` with a reason a human can act on for
  * every rejection; the route turns that into a 401.
  */
@@ -163,40 +227,34 @@ export async function completeHomeSignIn(env: Env, req: HomeAuthRequest, now = D
     throw new HomeAuthError(`code exchange failed at ${req.authOrigin}: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  let claims: IdTokenClaims & { iat?: number };
-  try {
-    claims = (await client.verifyIdToken(req.authOrigin, token.idToken, req.nonce)) as IdTokenClaims & { iat?: number };
-  } catch (e) {
-    throw new HomeAuthError(`id_token rejected: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  if (!req.nonce) throw new HomeAuthError('id_token nonce does not match the sign-in request');
+  const identity = await verifyHomeIdToken(env, req.authOrigin, token.idToken, req.nonce, now);
+  return { ...identity, delegation: token.delegation };
+}
 
-  // `verifyIdToken` already binds iss/aud/nonce/exp and pins ES256; re-assert the two that decide who
-  // the player IS, so a future change to the library cannot silently widen them here.
-  if (claims.aud !== (env.HOME_CLIENT_ID ?? '').trim()) throw new HomeAuthError('id_token aud is not this client');
-  if (!req.nonce || claims.nonce !== req.nonce) throw new HomeAuthError('id_token nonce does not match the sign-in request');
-  if (typeof claims.exp !== 'number' || claims.exp * 1000 <= now) throw new HomeAuthError('id_token has expired');
-  if (typeof claims.iat === 'number') {
-    if (claims.iat * 1000 > now + IAT_SKEW_MS) throw new HomeAuthError('id_token iat is in the future');
-    if (claims.iat * 1000 < now - IAT_MAX_AGE_MS) throw new HomeAuthError('id_token iat is too old');
-  }
+/**
+ * What the browser POSTs to `/auth/home/demo` after `connectAsQuickConnect` (spec 295): the SAME two
+ * halves an OIDC sign-in yields — an id_token that authenticates and a site-login delegation that
+ * authorizes — minus the code exchange, because the Home already ran it.
+ */
+export interface DemoAuthRequest {
+  idToken: string;
+  delegation?: unknown;
+  authOrigin: string;
+}
 
-  let address: string;
-  try {
-    address = client.personAddressFromIdToken(token.idToken);
-  } catch {
-    throw new HomeAuthError('id_token carries no Smart Agent address');
-  }
-  if (!ADDRESS_RE.test(address)) throw new HomeAuthError(`id_token subject "${address}" is not a Smart Agent address`);
-  address = address.toLowerCase();
-
-  const agentName = typeof claims.agent_name === 'string' && claims.agent_name.trim() ? claims.agent_name.trim() : undefined;
-  return {
-    address,
-    agentName,
-    name: agentName ?? shortAddress(address),
-    homeOrigin: req.authOrigin,
-    delegation: token.delegation,
-    claims,
-    expiresAt: claims.exp * 1000,
-  };
+/**
+ * Accept a quick-connect result.
+ *
+ * The browser did the asking, so it hands us a finished id_token rather than a code. That is the ONLY
+ * difference: everything that decides identity — issuer allowlist, JWKS, ES256, iss/aud/exp, `iat`
+ * age — runs exactly as it does for a redirect sign-in, in `verifyHomeIdToken`. What we lose without
+ * the exchange is the nonce binding, so an id_token intercepted inside its `iat` window could be
+ * replayed here; the Home mints these for identities that exist to be shared, which is precisely the
+ * property that makes that acceptable and makes this path unsuitable for anything else.
+ */
+export async function completeDemoSignIn(env: Env, req: DemoAuthRequest, now = Date.now()): Promise<HomeIdentity> {
+  const identity = await verifyHomeIdToken(env, req.authOrigin, req.idToken, '', now);
+  const delegation = req.delegation && typeof req.delegation === 'object' ? (req.delegation as WireDelegation) : undefined;
+  return { ...identity, delegation };
 }

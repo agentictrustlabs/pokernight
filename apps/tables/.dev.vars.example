@@ -13,3 +13,16 @@ SESSION_SECRET=change-me-to-a-long-random-string
 
 # chain-rpc-gateway app token for the tables Worker (phase 3, mandate-transfer settlement). Unused in phase 1.
 RPC_TOKEN=
+
+# Private key of the EOA that custodies the house Smart Agents (HOUSE_SERVICE_SA and
+# HOUSE_TREASURY_SA in wrangler.toml). It only ever SIGNS the userOpHash of a house transfer —
+# `AgentAccount.execute` is gated to the EntryPoint, so this key cannot move the asset by itself and
+# never holds it. Provision it with `pnpm provision:house`, which writes it (and nothing else) to
+# .house-key.json at the repo root (gitignored, mode 0600); copy the `privateKey` field here for
+# local dev, and for a deployment set it as a SECRET, never a var:
+#
+#   pnpm --filter pokernight-tables exec wrangler secret put HOUSE_CUSTODIAN_KEY --env faithnet
+#
+# Rotating it means re-running provisioning with a new key: the Smart Agent addresses are derived
+# from the custodian, so a new key is a new pair of accounts.
+HOUSE_CUSTODIAN_KEY=

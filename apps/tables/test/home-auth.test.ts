@@ -264,3 +264,109 @@ describe('verifyHomeSession', () => {
     expect(await verifyHomeSession(env, 'garbage')).toBeNull();
   });
 });
+
+/**
+ * `POST /auth/home/demo` — the Home's quick-connect identities (spec 295).
+ *
+ * The Home runs the ceremony itself and hands the browser a finished result, so there is no code to
+ * exchange and no nonce we chose. Everything that DECIDES IDENTITY still runs here, against the same
+ * fake Home: JWKS lookup, ES256 pinning, signature, iss/aud/exp, `iat` age. These tests are the proof
+ * that the shortcut is only a shortcut past the exchange, never past the verification.
+ */
+describe('POST /auth/home/demo', () => {
+  /** Only `/jwks` — a quick-connect result never touches `/token`. */
+  function mockJwks(): void {
+    fetchMock
+      .get(HOME)
+      .intercept({ path: '/jwks', method: 'GET' })
+      .reply(200, { keys: [{ ...publicJwk, kid: KID, alg: 'ES256', use: 'sig' }] });
+  }
+
+  async function postDemo(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+    const res = await SELF.fetch('http://tables.test/auth/home/demo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  }
+
+  /** What `connectAsQuickConnect` returns: no nonce claim, because nobody asked for one. */
+  const demoClaims = (over: Record<string, unknown> = {}) => claimsFor({ nonce: undefined, agent_name: 'alice.me', ...over });
+
+  it('rejects a malformed or absent body', async () => {
+    expect((await postDemo({})).status).toBe(400);
+    expect((await postDemo({ idToken: '', authOrigin: HOME })).status).toBe(400);
+    const noBody = await SELF.fetch('http://tables.test/auth/home/demo', { method: 'POST' });
+    expect(noBody.status).toBe(400);
+  });
+
+  it('refuses an issuer origin that is not on the allowlist, before fetching its keys', async () => {
+    const r = await postDemo({ idToken: await signIdToken(demoClaims()), authOrigin: 'https://evil.example' });
+    expect(r.status).toBe(401);
+    expect(String(r.body.error)).toMatch(/not a trusted issuer/);
+  });
+
+  it('refuses an id_token minted for another client (aud)', async () => {
+    mockJwks();
+    const r = await postDemo({ idToken: await signIdToken(demoClaims({ aud: 'someone-else' })), authOrigin: HOME });
+    expect(r.status).toBe(401);
+    expect(String(r.body.error)).toMatch(/aud/);
+  });
+
+  it('refuses a forged signature', async () => {
+    mockJwks();
+    const [h, p, s] = (await signIdToken(demoClaims())).split('.') as [string, string, string];
+    const r = await postDemo({ idToken: `${h}.${p}.${s.slice(0, -3)}AAA`, authOrigin: HOME });
+    expect(r.status).toBe(401);
+    expect(String(r.body.error)).toMatch(/signature/);
+  });
+
+  it('refuses an algorithm other than ES256', async () => {
+    mockJwks();
+    const r = await postDemo({ idToken: await signIdToken(demoClaims(), { alg: 'HS256' }), authOrigin: HOME });
+    expect(r.status).toBe(401);
+    expect(String(r.body.error)).toMatch(/ES256/);
+  });
+
+  it('refuses an id_token whose iss is not the origin we were told to trust', async () => {
+    mockJwks();
+    const r = await postDemo({ idToken: await signIdToken(demoClaims({ iss: 'http://127.0.0.1:3000' })), authOrigin: HOME });
+    expect(r.status).toBe(401);
+    expect(String(r.body.error)).toMatch(/iss/);
+  });
+
+  it('refuses an expired id_token, and a stale one that has not expired yet', async () => {
+    mockJwks();
+    const expired = await postDemo({ idToken: await signIdToken(demoClaims({ iat: nowSec() - 600, exp: nowSec() - 60 })), authOrigin: HOME });
+    expect(expired.status).toBe(401);
+    expect(String(expired.body.error)).toMatch(/expired/);
+
+    mockJwks();
+    const stale = await postDemo({ idToken: await signIdToken(demoClaims({ iat: nowSec() - 3600, exp: nowSec() + 3600 })), authOrigin: HOME });
+    expect(stale.status).toBe(401);
+    expect(String(stale.body.error)).toMatch(/iat is too old/);
+  });
+
+  it('mints the same kind of session an OIDC sign-in does, delegation kept server-side', async () => {
+    const delegation = { delegator: PERSON, delegate: '0x89d13c596c45e4ee80af5ae06c727fe9a820ffd0', salt: '295' };
+    mockJwks();
+    const r = await postDemo({ idToken: await signIdToken(demoClaims()), delegation, authOrigin: HOME });
+    expect(r.status).toBe(200);
+    expect(r.body.playerId).toBe(`home:${PERSON.toLowerCase()}`);
+    expect(r.body.name).toBe('alice.me');
+    expect(r.body.address).toBe(PERSON.toLowerCase());
+    const token = String(r.body.token);
+    expect(token).not.toContain('delegator');
+
+    const session = await verifyHomeSession(env, token);
+    expect(session?.address).toBe(PERSON.toLowerCase());
+    expect(session?.agentName).toBe('alice.me');
+    expect(session?.delegation).toEqual(delegation);
+
+    // Signing out kills it exactly as it kills a redirect session.
+    const out = await SELF.fetch('http://tables.test/auth/signout', { method: 'POST', headers: { authorization: `Bearer ${token}` } });
+    expect(out.status).toBe(200);
+    expect(await verifyHomeSession(env, token)).toBeNull();
+  });
+});

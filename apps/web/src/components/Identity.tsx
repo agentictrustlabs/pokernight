@@ -1,16 +1,16 @@
 import type { AppSession } from '../lib/types';
+import { shortAddress } from '../lib/format';
 
-/** `0x89d13c59…a820ffd0` — recognisable, short enough for a topbar. */
-export function shortAddress(address: string): string {
-  return address.length > 14 ? `${address.slice(0, 10)}…${address.slice(-8)}` : address;
-}
+export { shortAddress };
 
 /**
  * Who you are signed in as. A Home session shows the agent name the Home asserted (or the truncated
- * Smart Agent address when it asserted none); a dev session says so plainly, because it proves nothing.
+ * Smart Agent address when it asserted none); a demo session shows the same, plus a tag saying the
+ * identity is one the Home lends out; a dev session says so plainly, because it proves nothing.
  */
 export function Identity({ session, onSignOut }: { session: AppSession; onSignOut: () => void }) {
-  const secondary = session.via === 'home' ? (session.agentName ?? (session.address ? shortAddress(session.address) : null)) : 'dev session';
+  const fromHome = session.via === 'home' || session.via === 'demo';
+  const secondary = fromHome ? (session.agentName ?? (session.address ? shortAddress(session.address) : null)) : 'dev session';
   return (
     <span className="identity">
       <strong>{session.name}</strong>
@@ -19,6 +19,7 @@ export function Identity({ session, onSignOut }: { session: AppSession; onSignOu
           {secondary}
         </span>
       ) : null}
+      {session.via === 'demo' ? <span className="tag">demo user</span> : null}
       <button className="quiet small" type="button" onClick={onSignOut}>
         sign out
       </button>

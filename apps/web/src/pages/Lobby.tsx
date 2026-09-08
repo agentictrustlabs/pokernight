@@ -1,111 +1,26 @@
 import { useEffect, useState } from 'react';
 import type { AuthState } from '../App';
-import type { AppSession, CreateTableRequest, Session, TableSummary } from '../lib/types';
+import type { AppSession, CreateTableRequest, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { fmtChips } from '../lib/format';
+import { SignInPage } from './SignInPage';
 
 const POLL_MS = 5000;
 
+/**
+ * The lobby, for a signed-in person: what is running, and a form to open something new.
+ *
+ * A signed-out caller gets the sign-in page. The app routes signed-out visitors to the landing page
+ * (`#/`) or to `#/signin` before it gets here, so this is the last line rather than the front door —
+ * but a lobby that rendered nothing without a session would be the one outcome nobody can act on.
+ */
 export function Lobby({ session, auth, onLogin }: { session: AppSession | null; auth: AuthState; onLogin: (s: AppSession) => void }) {
-  if (!session) return <SignIn auth={auth} onLogin={onLogin} />;
+  if (!session) return <SignInPage auth={auth} onLogin={onLogin} />;
   return (
     <div className="lobby">
       <TableList session={session} />
       <CreateTable session={session} />
     </div>
-  );
-}
-
-/**
- * The front door. Home sign-in is THE way in; the dev name box is a clearly secondary affordance and
- * appears only where `GET /auth/config` says dev auth is on (localhost today). Every failure — the
- * config not loading, a cancelled ceremony, a rejected token — lands here as a sentence and a retry,
- * never a blank screen.
- */
-function SignIn({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSession) => void }) {
-  const { config, configError, busy, error } = auth;
-  const homeHost = config?.home.origin ? safeHost(config.home.origin) : null;
-  return (
-    <div className="panel login">
-      <h1>Pokernight</h1>
-      {error ? (
-        <div className="form-error" role="alert">
-          <p>{error}</p>
-          <button className="quiet small" type="button" onClick={auth.dismissError}>
-            dismiss
-          </button>
-        </div>
-      ) : null}
-
-      {configError ? (
-        <>
-          <p className="hint">The table service did not answer, so we cannot tell which sign-in this room accepts.</p>
-          <div className="form-error">{configError}</div>
-          <button className="primary" type="button" onClick={() => location.reload()}>
-            Try again
-          </button>
-        </>
-      ) : !config ? (
-        <p className="hint">Checking how you sign in…</p>
-      ) : (
-        <>
-          <p className="hint">
-            Sign in with your Home{homeHost ? ` at ${homeHost}` : ''}. Your Smart Agent proves who you are; the card room never sees a
-            password and never holds your keys.
-          </p>
-          <button className="primary" type="button" onClick={auth.signInWithHome} disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in with your Home'}
-          </button>
-          {config.devAuth ? <DevLogin onLogin={onLogin} /> : null}
-        </>
-      )}
-    </div>
-  );
-}
-
-function safeHost(origin: string): string | null {
-  try {
-    return new URL(origin).host;
-  } catch {
-    return null;
-  }
-}
-
-/** Dev-only name login. Proves nothing; only offered where the API says DEV_AUTH is on. */
-function DevLogin({ onLogin }: { onLogin: (s: AppSession) => void }) {
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  return (
-    <form
-      className="form dev-login"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        const n = name.trim();
-        if (!n) return;
-        setBusy(true);
-        setErr(null);
-        try {
-          const s: Session = await api.devLogin(n);
-          onLogin({ ...s, via: 'dev' });
-        } catch (ex) {
-          setErr(ex instanceof Error ? ex.message : String(ex));
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <hr />
-      <p className="hint">Or, on this development deployment only: pick a name and a play-money session is minted for you. No proof of anything.</p>
-      <label>
-        Name
-        <input type="text" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
-      </label>
-      {err ? <div className="form-error">{err}</div> : null}
-      <button className="quiet" type="submit" disabled={busy || !name.trim()}>
-        {busy ? 'Signing in…' : 'Enter with a dev name'}
-      </button>
-    </form>
   );
 }
 

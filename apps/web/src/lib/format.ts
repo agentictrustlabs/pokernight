@@ -132,6 +132,11 @@ export function formatResult(result: HandResult, ctx: FormatContext): string[] {
   return lines;
 }
 
+/** `0x89d13c59…a820ffd0` — recognisable, short enough for a topbar or a roster row. */
+export function shortAddress(address: string): string {
+  return address.length > 14 ? `${address.slice(0, 10)}…${address.slice(-8)}` : address;
+}
+
 /** Short hex prefix for seed commits: "3f9a2c…". */
 export function shortHex(hex: string, n = 8): string {
   return hex.length > n ? `${hex.slice(0, n)}…` : hex;
