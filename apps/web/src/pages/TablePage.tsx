@@ -44,6 +44,9 @@ export function TablePage({
    * the deployment's current default — an older table settles at the rate it was opened with.
    */
   const [chipValue, setChipValue] = useState<string | null>(null);
+  // What this table's money is CALLED, from the table's own pin. Two tables in one lobby can settle
+  // in two different currencies, so the ticker is never a constant of the deployment.
+  const [assetSymbol, setAssetSymbol] = useState<string | null>(null);
   const [treasury, setTreasury] = useState<TreasuryView | null>(null);
   const sockRef = useRef<TableSocket | null>(null);
   const token = session?.token ?? null;
@@ -74,6 +77,7 @@ export function TablePage({
         setTableName(summary?.name ?? null);
         setSettlement(summary?.settlement ?? 'play-money');
         setChipValue(summary?.chipValue ?? null);
+        setAssetSymbol(summary?.assetSymbol ?? null);
       })
       .catch(() => {});
     return () => {
@@ -134,7 +138,7 @@ export function TablePage({
           <strong>{tableName ?? tableId}</strong>
           {/* The settlement mode travels with the table's NAME, so it is on screen from the moment
               the page opens and before anyone can reach a seat. */}
-          <SettlementTag settlement={settlement} rate={tableRate(settlement, chipValue)} withRate />
+          <SettlementTag settlement={settlement} rate={tableRate(settlement, chipValue, assetSymbol)} withRate />
           {state.view?.hand ? <span className="num">hand #{state.view.hand.handNo}</span> : null}
         </span>
         <span className="spacer" />
@@ -144,7 +148,7 @@ export function TablePage({
         </span>
       </div>
       <div className="page table-page">
-        <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} treasury={treasury} />
+        <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} assetSymbol={assetSymbol} treasury={treasury} />
         <aside className="side">
           {/* A player who is not ready to sit sees the ONE action that fixes that, above the money
               summary — not a refusal pointing at a panel somewhere else. */}
@@ -153,6 +157,7 @@ export function TablePage({
             tableId={tableId}
             settlement={settlement}
             chipValue={chipValue}
+            assetSymbol={assetSymbol}
             session={session}
             treasury={treasury}
             onChanged={loadTreasury}

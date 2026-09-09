@@ -57,8 +57,12 @@ import {
   chainId,
   chipValue,
   custodialTreasury,
+  defaultAsset,
+  defaultAssetSymbol,
   delegationManager,
   deployments,
+  legacyAsset,
+  legacyAssetSymbol,
   homeApi,
   houseDelegate,
   houseTreasury,
@@ -69,6 +73,7 @@ import {
   readOnlyTreasury,
   treasuryNaming,
 } from './treasury.js';
+import { BUY_IN_TEMPLATE } from './home.js';
 import { TreasuryCreationError, createTreasuryForPersona } from './treasury-create.js';
 import type { TreasuryClient } from '@pokernight/treasury';
 
@@ -133,6 +138,14 @@ export interface MandateView {
 export interface TreasuryView {
   chainId: number;
   asset: string;
+  /**
+   * What that asset calls itself — `SHQ`, the card room's own coin.
+   *
+   * The panel used to say "USDC" in a dozen places, which was true while there was one asset on the
+   * estate and became a wrong word next to a real balance the moment there were two. The card room
+   * states its currency here rather than the client assuming it.
+   */
+  assetSymbol: string;
   /** Asset base units per chip, as a decimal string (bigints do not survive JSON). */
   chipValue: string;
   /** The player's PERSON agent — their identity. Shown so they can see it is not on the list. */
@@ -143,6 +156,15 @@ export interface TreasuryView {
   chosenName: string | null;
   balance: string | null;
   balanceUsdc: string | null;
+  /**
+   * What the chosen treasury holds in EVERY currency this card room settles in, most current first.
+   *
+   * Normally one entry. Two while a currency change is in flight, and the second one is not
+   * decoration: the tables opened before the change are pinned to it and are paid out in it, so a
+   * player looking at their money needs to see it. `balance` above is the first entry, kept for
+   * every caller that only ever knew about one currency.
+   */
+  balances: Array<{ asset: string; symbol: string | null; balance: string | null; formatted: string | null; error?: string }>;
   candidates: TreasuryCandidate[];
   /** Why the candidate list could not be read from the Home, when it could not. */
   discoveryError: string | null;
@@ -159,7 +181,7 @@ export interface TreasuryView {
 type Ctx = Context<{ Bindings: Env }>;
 
 function configFailure(e: unknown): string {
-  if (e instanceof TreasuryConfigError) return `the card room is not configured to settle in USDC: ${e.message}`;
+  if (e instanceof TreasuryConfigError) return `the card room is not configured to settle on chain: ${e.message}`;
   return `the card room could not reach the money layer: ${e instanceof Error ? e.message : String(e)}`;
 }
 
@@ -236,7 +258,7 @@ interface MandateContext {
  * delegate, the enforcers and the redemption point are all deployment configuration, so a gap in any
  * of them is an operator problem stated as one — never a player being told to try again.
  */
-function mandateContext(env: Env, now: number): MandateContext | { error: string } {
+function mandateContext(env: Env, now: number, asset?: string): MandateContext | { error: string } {
   try {
     const delegate = houseDelegate(env);
     if (!delegate) {
@@ -245,7 +267,7 @@ function mandateContext(env: Env, now: number): MandateContext | { error: string
     return {
       terms: buyInMandateTerms({
         payee: houseTreasury(env),
-        asset: deployments(env).asset,
+        asset: deployments(env, asset).asset,
         enforcers: mandateEnforcers(env),
         chipValue: chipValue(env),
         policy: mandatePolicy(env),
@@ -260,9 +282,99 @@ function mandateContext(env: Env, now: number): MandateContext | { error: string
   }
 }
 
+/**
+ * Every currency this deployment SETTLES IN, most current first.
+ *
+ * There is normally one. There are two while a currency change is still working its way through:
+ * new tables open in `ASSET` (the card room's own coin) and every table opened before the change is
+ * pinned to `LEGACY_ASSET` and still owes its players money in it. Both are real currencies of this
+ * card room, and a mandate denominated in either is a mandate this deployment can honour — at the
+ * tables that settle in that one, and at no others.
+ *
+ * The order matters: it is the order a supplied mandate is TRIED in, so the current coin is what an
+ * unrecognised mandate is reported against.
+ */
+export function settlementAssets(env: Env): Array<{ asset: `0x${string}`; symbol: string | null }> {
+  const out: Array<{ asset: `0x${string}`; symbol: string | null }> = [];
+  const current = defaultAsset(env);
+  if (current) out.push({ asset: current, symbol: defaultAssetSymbol(env) });
+  const legacy = legacyAsset(env);
+  if (legacy && !out.some((a) => a.asset.toLowerCase() === legacy.toLowerCase())) {
+    out.push({ asset: legacy, symbol: legacyAssetSymbol(env) });
+  }
+  return out;
+}
+
+/** How a currency is named in a sentence: `SHQ (0xa14E…6141)`, or just the address where it has no
+ *  symbol configured. Money is never referred to by address alone if it has a name. */
+function nameAsset(asset: string, symbol: string | null): string {
+  return symbol ? `${symbol} (${short(asset)})` : short(asset);
+}
+
+/**
+ * What to CALL this deployment's money in a sentence a player reads.
+ *
+ * These routes are about what happens next — funding a treasury, asking for an authority — so the
+ * currency they name is the current one, not whatever an old table is pinned to. `USDC` is the
+ * fallback because a deployment that states no symbol is one that predates the card room having a
+ * coin of its own, and that is what it was settling in.
+ */
+export function moneyName(env: Env): string {
+  return defaultAssetSymbol(env) ?? 'USDC';
+}
+
+/**
+ * What a buy-in authorisation would cost the player, in the numbers a consent screen must show —
+ * or `null` where this deployment cannot ask for one at all.
+ *
+ * It exists for the SIGN-IN screen. Signing in now asks the player's Home for the payment template
+ * as well as the session (one ceremony instead of two), which means the act of signing in is also
+ * the act of approving a spending ceiling. A player must be told that BEFORE they go, in the same
+ * numbers their Home will show them when they get there — so the screen reads these, and if they
+ * are not available it does not claim a ceiling and does not ask for one.
+ *
+ * Everything here is public: the same caps the Home has registered for this client and the same
+ * ones the on-chain PaymentEnforcer holds.
+ */
+export function buyInOffer(env: Env): {
+  template: string;
+  /** Base-unit strings; the client formats them. */
+  maxPerBuyIn: string;
+  sessionTotal: string;
+  maxBuyIns: number;
+  maxBuyInChips: number;
+  validSeconds: number;
+  /** What the money is called (`SHQ`). */
+  symbol: string;
+} | null {
+  const ctx = mandateContext(env, Date.now());
+  if ('error' in ctx) return null;
+  const consent = describeBuyInMandate(ctx.terms);
+  const policy = mandatePolicy(env);
+  return {
+    template: BUY_IN_TEMPLATE,
+    maxPerBuyIn: consent.maxAmountPerCharge.toString(),
+    sessionTotal: consent.sessionBudget.toString(),
+    maxBuyIns: consent.maxRedemptionsPerWindow,
+    maxBuyInChips: policy.maxBuyInChips,
+    validSeconds: policy.windowSeconds,
+    symbol: moneyName(env),
+  };
+}
+
 /** The mandate half of `GET /treasury`: what is authorised, and whether it still covers this session. */
-function mandateView(env: Env, stored: unknown, boundTo: string | undefined, chosen: string | null, now: number): MandateView {
-  const ctx = mandateContext(env, now);
+function mandateView(
+  env: Env,
+  stored: unknown,
+  boundTo: string | undefined,
+  chosen: string | null,
+  now: number,
+  /** The currency the STORED mandate was recorded in. A mandate is checked against the coin it
+   *  actually names, not against the one a fresh mandate would be asked for today. */
+  storedAsset?: string,
+): MandateView {
+  const offer = mandateContext(env, now);
+  const ctx = stored && storedAsset ? mandateContext(env, now, storedAsset) : offer;
   const empty = (unavailable: string | null): MandateView => ({
     present: false,
     treasury: null,
@@ -310,6 +422,69 @@ function mandateView(env: Env, stored: unknown, boundTo: string | undefined, cho
   return { ...offered, present: problem === null, treasury: mandate?.delegator ?? boundTo ?? null, problem };
 }
 
+/**
+ * Accept — or discard — a mandate the player's Home minted during sign-in.
+ *
+ * Signing in asks the Home for the payment template, so the session and the spending authority
+ * arrive together and the player is asked once instead of twice. What arrives cannot be accepted at
+ * that instant: a mandate authorises ONE account to be spent from, and at sign-in this card room has
+ * not yet asked the Home which accounts are the player's. So it is parked (`pendingMandate`) and
+ * dealt with here, where the Home's own list of the player's treasuries is in hand.
+ *
+ * The rules, in order:
+ *   • the mandate's delegator must be a treasury the player's HOME lists as theirs — otherwise this
+ *     is an authority over an account nobody has vouched for, and it is discarded;
+ *   • if the session has not chosen a treasury, the one the mandate names becomes the choice: the
+ *     player just authorised spending from it, at their own Home, which is a choice;
+ *   • if the session HAS chosen a different treasury, nothing happens — the player's later choice
+ *     wins over an earlier ceremony, and they can authorise the chosen one the ordinary way;
+ *   • the mandate is then checked exactly as a hand-delivered one is, and kept only if it passes.
+ *
+ * Either way the pending field is cleared, so this decision is made once. Returns what changed, or
+ * null when nothing did.
+ */
+async function promotePendingMandate(
+  env: Env,
+  playerId: string,
+  record: { pendingMandate?: unknown; treasuryName?: string } | null,
+  found: { treasuries: TreasuryCandidate[]; error: string | null },
+  chosen: string | null,
+  now: number,
+): Promise<{ treasury: string; treasuryName: string | null; mandate: unknown; asset: string } | null> {
+  const pending = record?.pendingMandate;
+  if (!pending) return null;
+  // The Home could not be asked. Leave the mandate parked rather than discarding an authority the
+  // player really did sign because a lookup was down; the next load asks again.
+  if (found.error) return null;
+
+  const delegator = asBuyInMandate(pending)?.delegator?.toLowerCase() ?? '';
+  const match = isAddress(delegator) ? found.treasuries.find((t) => t.address === delegator) : undefined;
+  if (!match) {
+    await patchSessionRecord(env, playerId, { pendingMandate: null });
+    return null;
+  }
+  if (chosen && chosen !== delegator) return null;
+
+  const ctx = mandateContext(env, now);
+  if ('error' in ctx) return null;
+  const checked = matchSuppliedMandate(env, pending, delegator, ctx, now);
+  if ('error' in checked) {
+    await patchSessionRecord(env, playerId, { pendingMandate: null });
+    return null;
+  }
+  const ok = await patchSessionRecord(env, playerId, {
+    treasury: delegator,
+    treasuryName: match.name,
+    buyInMandate: pending,
+    mandateTreasury: delegator,
+    mandateAsset: checked.asset,
+    mandateValidUntil: checked.ctx.terms.validUntil,
+    pendingMandate: null,
+  });
+  if (!ok) return null;
+  return { treasury: delegator, treasuryName: match.name || null, mandate: pending, asset: checked.asset };
+}
+
 /* ------------------------------------------------------------------ GET /treasury */
 
 /**
@@ -321,6 +496,7 @@ function mandateView(env: Env, stored: unknown, boundTo: string | undefined, cho
  */
 export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Response> {
   const now = Date.now();
+  const money = moneyName(c.env);
   const record = await readSessionRecord(c.env, session.playerId);
   const person = record?.address && isAddress(record.address) ? record.address.toLowerCase() : null;
   let chosen = record?.treasury && isAddress(record.treasury) ? record.treasury.toLowerCase() : null;
@@ -346,6 +522,7 @@ export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Respo
     base = {
       chainId: chainId(c.env),
       asset: deployments(c.env).asset,
+      assetSymbol: money,
       chipValue: chipValue(c.env).toString(),
       person,
       personName: record?.agentName ?? null,
@@ -353,10 +530,11 @@ export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Respo
       chosenName: record?.treasuryName ?? null,
       balance: null,
       balanceUsdc: null,
+      balances: [],
       candidates: [],
       discoveryError: null,
       create,
-      mandate: mandateView(c.env, record?.buyInMandate, record?.mandateTreasury, chosen, now),
+      mandate: mandateView(c.env, record?.buyInMandate, record?.mandateTreasury, chosen, now, record?.mandateAsset),
       faucet: { available: false, asset: null, reason: null },
       notice: null,
       unavailable: null,
@@ -366,6 +544,7 @@ export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Respo
       {
         chainId: Number(c.env.CHAIN_ID) || 0,
         asset: '',
+        assetSymbol: money,
         chipValue: '0',
         person,
         personName: record?.agentName ?? null,
@@ -373,10 +552,11 @@ export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Respo
         chosenName: record?.treasuryName ?? null,
         balance: null,
         balanceUsdc: null,
+        balances: [],
         candidates: found.treasuries,
         discoveryError: found.error,
         create,
-        mandate: mandateView(c.env, record?.buyInMandate, record?.mandateTreasury, chosen, now),
+        mandate: mandateView(c.env, record?.buyInMandate, record?.mandateTreasury, chosen, now, record?.mandateAsset),
         faucet: { available: false, asset: null, reason: null },
         notice: null,
         unavailable: configFailure(e),
@@ -403,6 +583,21 @@ export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Respo
     base.mandate = mandateView(c.env, undefined, undefined, null, now);
   }
 
+  // A mandate the Home minted during SIGN-IN, now that we know which accounts are actually theirs.
+  //
+  // This is the second half of collapsing two trips into one: the ceremony that established the
+  // session also minted the authority, but the authority names an account and the card room could
+  // not yet check that the account is the player's. It can here — `found.treasuries` is the Home's
+  // own answer — so the mandate goes through exactly the verification a hand-delivered one goes
+  // through (`matchSuppliedMandate`) and is kept only if it passes.
+  const promoted = await promotePendingMandate(c.env, session.playerId, record, found, chosen, now);
+  if (promoted) {
+    chosen = promoted.treasury;
+    base.chosen = promoted.treasury;
+    base.chosenName = promoted.treasuryName ?? base.chosenName;
+    base.mandate = mandateView(c.env, promoted.mandate, promoted.treasury, promoted.treasury, now, promoted.asset);
+  }
+
   const client = readOnlyTreasury(c.env);
   for (const candidate of base.candidates) {
     try {
@@ -416,6 +611,20 @@ export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Respo
       }
     } catch (e) {
       candidate.error = `could not read the balance of ${candidate.address}: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+
+  // The chosen treasury's holdings in each currency this card room settles in. The first entry is
+  // today's, and is what `balance` above already says; the rest exist because tables opened before
+  // the currency changed are still pinned to the older one and are still paid out in it.
+  if (chosen) {
+    for (const { asset, symbol } of settlementAssets(c.env)) {
+      try {
+        const b = await readOnlyTreasury(c.env, asset).readUsdcBalance(chosen as Address);
+        base.balances.push({ asset, symbol, balance: b.toString(), formatted: formatUsdc(b) });
+      } catch (e) {
+        base.balances.push({ asset, symbol, balance: null, formatted: null, error: e instanceof Error ? e.message : String(e) });
+      }
     }
   }
 
@@ -621,14 +830,29 @@ export async function signMandate(c: Ctx, session: SessionClaims, supplied: unkn
   };
 
   // A delegation the player's own Home issued. Checked, never trusted.
+  //
+  // Checked against EVERY currency this card room settles in, not only today's. A player's Home
+  // signs a mandate denominated in the asset the Home has registered for this client, and while a
+  // currency change is in flight that can honestly be the older one — meanwhile tables opened
+  // before the change are pinned to exactly that currency and are the tables such a mandate is for.
+  // So the question is not "is this the coin we would ask for today" but "is this a coin we settle
+  // in at all", and the answer is recorded WITH the mandate: `mandateAsset` is what stops it being
+  // spent at a table that pays in something else (`PokerTableDO.playerFunding`).
   if (supplied !== undefined && supplied !== null) {
-    const problem = checkBuyInMandate(supplied, expectation);
-    if (problem) return c.json({ error: problem }, 400);
-    const validUntil = ctx.terms.validUntil;
-    if (!(await patchSessionRecord(c.env, session.playerId, { buyInMandate: supplied, mandateTreasury: chosen, mandateValidUntil: validUntil }))) {
+    const match = matchSuppliedMandate(c.env, supplied, chosen, ctx, now);
+    if ('error' in match) return c.json({ error: match.error }, 400);
+    const validUntil = match.ctx.terms.validUntil;
+    if (
+      !(await patchSessionRecord(c.env, session.playerId, {
+        buyInMandate: supplied,
+        mandateTreasury: chosen,
+        mandateAsset: match.asset,
+        mandateValidUntil: validUntil,
+      }))
+    ) {
       return c.json({ error: 'this session is no longer active, so the mandate was not recorded' }, 401);
     }
-    return c.json({ treasury: chosen, source: 'home', validUntil, ...consentOf(ctx.terms) });
+    return c.json({ treasury: chosen, source: 'home', validUntil, ...consentOf(match.ctx.terms) });
   }
 
   // No delegation supplied: this only works when the Home holds the treasury's custodian key, which
@@ -702,10 +926,55 @@ async function signMandateAsPersona(
   const problem = checkBuyInMandate(mandate, expectation);
   if (problem) return { error: `the mandate your Home signed does not authorise this table: ${problem}`, status: 502 };
 
-  if (!(await patchSessionRecord(env, playerId, { buyInMandate: mandate, mandateTreasury: treasury, mandateValidUntil: ctx.terms.validUntil }))) {
+  if (
+    !(await patchSessionRecord(env, playerId, {
+      buyInMandate: mandate,
+      mandateTreasury: treasury,
+      // The currency the card room ASKED for, which is the one it built the terms in. Recorded so a
+      // table pinned to a different coin refuses this authority instead of spending under it.
+      mandateAsset: ctx.terms.asset,
+      mandateValidUntil: ctx.terms.validUntil,
+    }))
+  ) {
     return { error: 'this session is no longer active, so the mandate was not recorded', status: 401 };
   }
   return { ok: true };
+}
+
+/**
+ * Which of this card room's currencies a supplied mandate is denominated in — or the reason it is
+ * none of them.
+ *
+ * Tries each settled currency in turn (current coin first) and takes the first whose full
+ * expectation the mandate satisfies: delegator, delegate, payee, asset, spend cap and window. A
+ * mandate that matches nothing is reported against TODAY's currency, because that is the one the
+ * player would have been asked for, and the refusal names the coin rather than only the mismatch.
+ */
+function matchSuppliedMandate(
+  env: Env,
+  supplied: unknown,
+  treasury: string,
+  current: MandateContext,
+  now: number,
+): { asset: string; ctx: MandateContext } | { error: string } {
+  const expectationFor = (ctx: MandateContext) => ({
+    treasury: treasury as Address,
+    houseDelegate: ctx.houseDelegate,
+    payee: ctx.terms.payee,
+    asset: ctx.terms.asset,
+    paymentEnforcer: ctx.terms.enforcers.payment,
+    openDelegate: OPEN_DELEGATE,
+    now,
+  });
+  let firstProblem: string | null = null;
+  for (const { asset } of settlementAssets(env)) {
+    const ctx = asset.toLowerCase() === current.terms.asset.toLowerCase() ? current : mandateContext(env, now, asset);
+    if ('error' in ctx) continue;
+    const problem = checkBuyInMandate(supplied, expectationFor(ctx));
+    if (problem === null) return { asset, ctx };
+    firstProblem ??= problem;
+  }
+  return { error: firstProblem ?? checkBuyInMandate(supplied, expectationFor(current)) ?? 'the mandate does not authorise this card room' };
 }
 
 /** The numbers a player is agreeing to, as strings, exactly as the consent screen showed them. */
@@ -737,6 +1006,7 @@ function consentOf(terms: BuyInMandateTerms): {
  * button disappears rather than reverting in a player's face.
  */
 export async function fundTreasury(c: Ctx, session: SessionClaims, amountRaw: string | undefined): Promise<Response> {
+  const money = moneyName(c.env);
   const record = await readSessionRecord(c.env, session.playerId);
   const chosen = record?.treasury && isAddress(record.treasury) ? record.treasury.toLowerCase() : null;
   if (!chosen) return c.json({ error: 'choose a treasury before funding one' }, 409);
@@ -748,7 +1018,7 @@ export async function fundTreasury(c: Ctx, session: SessionClaims, amountRaw: st
   try {
     amount = parseUsdc(amountRaw ?? '100');
   } catch (e) {
-    return c.json({ error: e instanceof TreasuryError ? e.message : `"${amountRaw}" is not a USDC amount` }, 400);
+    return c.json({ error: e instanceof TreasuryError ? e.message : `"${amountRaw}" is not an amount of ${money}` }, 400);
   }
   if (amount <= 0n) return c.json({ error: `the amount must be greater than zero, got ${formatUsdc(amount)}` }, 400);
   if (amount > MAX_FUND_USDC) {
@@ -786,7 +1056,7 @@ export async function fundTreasury(c: Ctx, session: SessionClaims, amountRaw: st
     balance,
     balanceUsdc,
     asset: faucet.name,
-    note: 'Test USDC on faithchain. It has no value anywhere else.',
+    note: `Test ${money} on faithchain. It has no value anywhere else.`,
   });
 }
 
@@ -860,6 +1130,7 @@ function labelFor(handle: string): string {
  */
 export async function quickStart(c: Ctx, session: SessionClaims): Promise<Response> {
   const now = Date.now();
+  const money = moneyName(c.env);
   const record = await readSessionRecord(c.env, session.playerId);
   const person = record?.address && isAddress(record.address) ? record.address.toLowerCase() : null;
   if (!person) {
@@ -991,48 +1262,69 @@ export async function quickStart(c: Ctx, session: SessionClaims): Promise<Respon
 
   /* ------------------------------------------------------------------ 2. a stake */
 
-  let balance: bigint | null = null;
-  try {
-    balance = await readOnlyTreasury(c.env).readUsdcBalance(chosen as Address);
-  } catch (e) {
-    steps.push({ step: 'stake', status: 'failed', said: `We could not read your balance: ${e instanceof Error ? e.message : String(e)}` });
-    return answer(false, chosen, match.name, null, { action: 'retry', said: 'Try again in a moment.' });
-  }
-
-  // The invariant is a floor, not "is it empty". A treasury the player CHOSE can hold less than a
-  // buy-in, and a player who arrives with 3 USDC at a table with a 40 USDC minimum is stuck with no
-  // way forward — which is the same dead end as having no treasury at all. So top up to the floor
-  // whenever they are under it, and only say "kept" when they already clear it.
+  // A stake in EVERY currency this card room settles in, not only today's.
+  //
+  // While a currency change is in flight there are two: new tables open in Sheqel and every table
+  // opened before it is pinned to MockUSDC and still owes its players cash-outs in it. A player set
+  // up with only one of them can sit at only some of the tables in the lobby, and the refusal they
+  // meet at the others ("not enough") is about a currency they were never given rather than about
+  // anything they did. So the floor is per currency. The first one — today's — is the balance this
+  // route reports, because it is the one a new table will use.
   const floor = parseUsdc(SEED_USDC);
-  if (balance >= floor) {
-    steps.push({ step: 'stake', status: 'kept', said: `You already have ${formatMoney(balance)} USDC to play with.` });
-  } else {
-    // Gated on the ASSET saying it is a mock, not on a flag: a real stablecoin is never minted, and
-    // the refusal names the token rather than pretending the money arrived.
-    const faucet = await isTestAsset(c.env);
-    if (!faucet.ok) {
-      steps.push({ step: 'stake', status: 'blocked', said: `Nothing was added: ${faucet.reason}` });
-    } else {
-      try {
-        // Mint the SHORTFALL, so a partly-funded treasury lands exactly on the floor rather than
-        // being handed another full seed on top of what it already had.
-        const shortfall = floor - balance;
-        const txHash = await custodialTreasury(c.env).mintTestAsset(chosen as Address, shortfall);
-        balance = await readOnlyTreasury(c.env)
-          .readUsdcBalance(chosen as Address)
-          .catch(() => floor);
-        steps.push({
-          step: 'stake',
-          status: 'done',
-          said: `You're set up with ${formatMoney(balance)} USDC to play with.`,
-          detail: txHash,
-        });
-      } catch (e) {
-        const reason = e instanceof TreasuryConfigError ? configFailure(e) : e instanceof Error ? e.message : String(e);
-        steps.push({ step: 'stake', status: 'failed', said: `The ${SEED_USDC} USDC did not arrive: ${reason}` });
-        return answer(false, chosen, match.name, balance, { action: 'retry', said: 'Your account is set up. Try adding the money again.' });
+  let balance: bigint | null = null;
+  const funded: string[] = [];
+  let lastTx = '';
+  for (const { asset, symbol } of settlementAssets(c.env)) {
+    const name = symbol ?? short(asset);
+    let held: bigint;
+    try {
+      held = await readOnlyTreasury(c.env, asset).readUsdcBalance(chosen as Address);
+    } catch (e) {
+      if (balance !== null) continue; // a SECOND currency failing to read is not worth a dead end
+      steps.push({ step: 'stake', status: 'failed', said: `We could not read your balance: ${e instanceof Error ? e.message : String(e)}` });
+      return answer(false, chosen, match.name, null, { action: 'retry', said: 'Try again in a moment.' });
+    }
+    // The invariant is a floor, not "is it empty". A treasury the player CHOSE can hold less than a
+    // buy-in, and a player who arrives with 3 at a table with a 40 minimum is stuck with no way
+    // forward — the same dead end as having no treasury at all.
+    if (held < floor) {
+      // Gated on the ASSET ITSELF answering "anyone may mint me", never on a flag: real money is
+      // never minted, and the refusal names the token rather than pretending the money arrived.
+      const faucet = await isTestAsset(c.env, asset);
+      if (!faucet.ok) {
+        if (balance === null) steps.push({ step: 'stake', status: 'blocked', said: `Nothing was added: ${faucet.reason}` });
+      } else {
+        try {
+          // Mint the SHORTFALL, so a partly-funded treasury lands exactly on the floor rather than
+          // being handed another full seed on top of what it already had.
+          lastTx = await custodialTreasury(c.env, asset).mintTestAsset(chosen as Address, floor - held);
+          held = await readOnlyTreasury(c.env, asset)
+            .readUsdcBalance(chosen as Address)
+            .catch(() => floor);
+          funded.push(name);
+        } catch (e) {
+          const reason = e instanceof TreasuryConfigError ? configFailure(e) : e instanceof Error ? e.message : String(e);
+          if (balance === null) {
+            steps.push({ step: 'stake', status: 'failed', said: `The ${SEED_USDC} ${name} did not arrive: ${reason}` });
+            return answer(false, chosen, match.name, null, { action: 'retry', said: 'Your account is set up. Try adding the money again.' });
+          }
+        }
       }
     }
+    if (balance === null) balance = held;
+  }
+  if (funded.length > 0) {
+    const others = funded.filter((f) => f !== money);
+    steps.push({
+      step: 'stake',
+      status: 'done',
+      said:
+        `You're set up with ${formatMoney(balance ?? floor)} ${money} to play with` +
+        (others.length > 0 ? ` — and the same again in ${others.join(', ')}, for the tables that opened before ${money}.` : '.'),
+      ...(lastTx ? { detail: lastTx } : {}),
+    });
+  } else if (balance !== null) {
+    steps.push({ step: 'stake', status: 'kept', said: `You already have ${formatMoney(balance)} ${money} to play with.` });
   }
 
   /* -------------------------------------------------------------- 3. the authority */
@@ -1052,9 +1344,13 @@ export async function quickStart(c: Ctx, session: SessionClaims): Promise<Respon
     now,
   };
   const consent = describeBuyInMandate(ctx.terms);
-  const cap = `up to ${formatMoney(consent.maxAmountPerCharge)} USDC a time, ${formatMoney(consent.sessionBudget)} USDC in all`;
+  const cap = `up to ${formatMoney(consent.maxAmountPerCharge)} ${money} a time, ${formatMoney(consent.sessionBudget)} ${money} in all`;
   const boundTo = record?.mandateTreasury?.toLowerCase();
-  const standing = boundTo === chosen && record?.buyInMandate ? checkBuyInMandate(record.buyInMandate, expectation) === null : false;
+  // Standing in ANY currency this card room settles in, for the reason `matchSuppliedMandate` gives:
+  // a mandate signed for the older coin still covers the tables pinned to it, and re-asking for one
+  // the player already has is the errand this whole route exists to remove.
+  const standing =
+    boundTo === chosen && record?.buyInMandate ? !('error' in matchSuppliedMandate(c.env, record.buyInMandate, chosen, ctx, now)) : false;
 
   if (standing) {
     steps.push({ step: 'authority', status: 'kept', said: `This table may already take ${cap}. You can undo that at your Home whenever you like.` });

@@ -26,7 +26,8 @@
  *   POST /treasury/select {address}     → choose the treasury that funds play (auth required)
  *   POST /treasury/create {label?}      → charter one under the player's person agent (auth required)
  *   POST /treasury/mandate {delegation?}→ sign or record the buy-in mandate (auth required)
- *   POST /treasury/fund {amount}        → mint test USDC into it (auth required; test assets only)
+ *   POST /treasury/fund {amount}        → mint the test settlement asset into it (auth required; open-mint
+ *                                       assets only — see `isTestAsset`)
  */
 
 import { Hono, type Context } from 'hono';
@@ -61,6 +62,7 @@ import {
   FundTreasurySchema,
   MandateSchema,
   SelectTreasurySchema,
+  buyInOffer,
   createTreasury,
   fundTreasury,
   getTreasury,
@@ -111,6 +113,18 @@ app.get('/auth/config', (c) => {
       redirectUri,
       /** The delegation template a buy-in authorisation asks the Home to run. */
       buyInTemplate: BUY_IN_TEMPLATE,
+      /**
+       * The spending ceiling signing in will ALSO ask the player to approve, or null where this
+       * deployment cannot ask for one.
+       *
+       * Sign-in and the buy-in authorisation used to be two separate trips to the player's Home.
+       * They are one now — the Home mints the mandate during the same ceremony that establishes the
+       * session — which means signing in is also approving a ceiling. The screen that sends them
+       * there has to say so, in these numbers, before they go. Null here means the client asks for a
+       * plain sign-in and promises nothing about money, which is what a deployment with no mandate
+       * configuration must do.
+       */
+      buyIn: buyInOffer(c.env),
     },
   });
 });
@@ -212,6 +226,11 @@ async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIde
     homeOrigin: identity.homeOrigin,
     delegation: identity.delegation,
     idToken: identity.idToken,
+    // A mandate the Home minted in the SAME ceremony (sign-in asks for the payment template). It is
+    // kept unaccepted: a mandate authorises one named account, and which of this person's accounts
+    // funds their play is a question only their Home can answer and only `GET /treasury` asks. That
+    // route promotes it through the ordinary verification, or drops it. Nothing spends under it here.
+    ...(identity.paymentDelegation ? { pendingMandate: identity.paymentDelegation } : {}),
     issuedAt: Date.now(),
     expiresAt: exp,
   };
@@ -275,7 +294,7 @@ app.post('/auth/home/mandate', async (c) => {
  * An explicit sign-out is a DIFFERENT ACT from a dropped connection, and this is where the difference
  * lives. Dropping a connection sits a player out — seat kept, chips kept, nothing settled — because
  * they have not said they are finished. Signing out says exactly that, so every seat they hold is
- * given up and, on a settled table, cashed out through the ordinary outbox so their USDC goes home.
+ * given up and, on a settled table, cashed out through the ordinary outbox so their money goes home.
  * Leaving a signed-out person's money committed to a seat they have walked away from is the bug this
  * route exists to close.
  *

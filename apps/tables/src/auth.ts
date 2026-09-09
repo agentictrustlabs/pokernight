@@ -227,7 +227,13 @@ export interface SessionPatch {
   treasuryName?: string | null;
   buyInMandate?: unknown;
   mandateTreasury?: string | null;
+  /** The CURRENCY the mandate is denominated in. A mandate is an authority over one asset in one
+   *  account; a table settling in a different coin may not use it (see `PokerTableDO.playerFunding`). */
+  mandateAsset?: string | null;
   mandateValidUntil?: number | null;
+  /** A mandate the Home minted during sign-in, waiting to be checked against a treasury. Never
+   *  spent under; see `SessionRecord.pendingMandate`. */
+  pendingMandate?: unknown;
 }
 
 /**
@@ -255,6 +261,7 @@ export async function setSessionTreasury(env: Env, playerId: string, treasury: s
     // so the authority stops applying and must be asked for again rather than assumed.
     buyInMandate: null,
     mandateTreasury: null,
+    mandateAsset: null,
     mandateValidUntil: null,
   });
 }

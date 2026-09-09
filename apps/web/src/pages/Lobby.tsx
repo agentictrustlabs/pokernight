@@ -85,7 +85,7 @@ function SignedInLobby({ session, auth }: { session: AppSession; auth: AuthState
         {/* Opening a table is a thing a host does, not a step in playing, so it is folded shut. */}
         <details className="panel lobby-create">
           <summary>Open your own table</summary>
-          <CreateTable session={session} />
+          <CreateTable session={session} money={(treasury?.assetSymbol ?? '').trim() || 'USDC'} />
         </details>
       </div>
     </div>
@@ -129,7 +129,7 @@ function TableList({ tables, err }: { tables: TableSummary[] | null; err: string
               {tables.map((t) => {
                 // The rate this table was OPENED at, so a 40–200 buy-in is never read against a
                 // balance in a different unit. Null on play money, where chips are the whole story.
-                const rate = tableRate(t.settlement, t.chipValue);
+                const rate = tableRate(t.settlement, t.chipValue, t.assetSymbol);
                 const lo = dualAmount(t.config.minBuyIn, rate);
                 const hi = dualAmount(t.config.maxBuyIn, rate);
                 return (
@@ -149,7 +149,7 @@ function TableList({ tables, err }: { tables: TableSummary[] | null; err: string
                       </span>
                       {lo.assetText && hi.assetText ? (
                         <span className="cost-asset">
-                          {lo.assetText}–{hi.assetText} USDC
+                          {lo.assetText}–{hi.assetText} {rate?.asset ?? 'USDC'}
                         </span>
                       ) : null}
                     </td>
@@ -176,7 +176,7 @@ function TableList({ tables, err }: { tables: TableSummary[] | null; err: string
   );
 }
 
-function CreateTable({ session }: { session: AppSession }) {
+function CreateTable({ session, money }: { session: AppSession; money: string }) {
   const [name, setName] = useState('');
   const [settlement, setSettlement] = useState<'play-money' | 'mandate-transfer'>('play-money');
   const [seats, setSeats] = useState(6);
@@ -251,13 +251,14 @@ function CreateTable({ session }: { session: AppSession }) {
         Settlement
         <select value={settlement} onChange={(e) => setSettlement(e.target.value as 'play-money' | 'mandate-transfer')}>
           <option value="play-money">play money</option>
-          <option value="mandate-transfer">USDC (mandate transfer)</option>
+          <option value="mandate-transfer">{money} (mandate transfer)</option>
         </select>
       </label>
       {settlement === 'mandate-transfer' ? (
         <p className="hint">
-          Buy-ins and cash-outs move USDC between Smart Agent treasuries on faithchain. Before a seat here, every player
-          needs a treasury (a Smart Agent chartered under their person agent — not the person agent itself), USDC in it,
+          Buy-ins and cash-outs move {money} — this card room's own currency — between Smart Agent treasuries on
+          faithchain. Before a seat here, every player needs a treasury (a Smart Agent chartered under their person
+          agent — not the person agent itself), {money} in it,
           and a signed mandate authorising this table to take the buy-in. A seat that is missing one of those is refused
           and told which, rather than quietly played for nothing.
         </p>

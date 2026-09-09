@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AppSession } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { shortAddress } from '../lib/format';
-import { describeRate, tableRate } from '../lib/money';
+import { describeRate, fmtAsset, tableRate } from '../lib/money';
 import { stakeBalance, stakeName } from '../lib/stake';
 import { describeMovement, fmtUsdc, seatBlock, shortRef, type TableSettlement, type TreasuryView } from '../lib/treasury';
 
@@ -27,6 +27,7 @@ export function MoneyPanel({
   tableId,
   settlement,
   chipValue = null,
+  assetSymbol = null,
   session,
   treasury,
   onChanged,
@@ -35,6 +36,8 @@ export function MoneyPanel({
   settlement: string;
   /** The rate this table pinned at creation (`TableSummary.chipValue`), not the deployment's. */
   chipValue?: string | null;
+  /** What that rate is denominated in (`TableSummary.assetSymbol`). Per table, never per deployment. */
+  assetSymbol?: string | null;
   session: AppSession | null;
   /** Read by the page (see TablePage) so the seat picker and this panel agree. */
   treasury: TreasuryView | null;
@@ -76,13 +79,29 @@ export function MoneyPanel({
   }
 
   const chosen = treasury?.chosen ?? rows?.treasury ?? null;
-  const balance = stakeBalance(treasury);
   const name = stakeName(treasury);
   // The table's own rate, preferring the summary the page read and falling back to the one the
   // settlement rows carry — both come from the table, neither from the deployment default.
-  const rate = tableRate(settlement, chipValue ?? rows?.chipValue ?? null);
+  const rate = tableRate(settlement, chipValue ?? rows?.chipValue ?? null, assetSymbol ?? rows?.assetSymbol ?? null);
+  // The balance in THIS TABLE's currency, which is the only balance that can pay for a seat here.
+  // The treasury's headline balance is in the card room's CURRENT coin, and at a table pinned to an
+  // older one that is the wrong number in the wrong ticker — "10,000.00 SHQ" over a seat that costs
+  // USDC reads as money the player does not have for this table.
+  const here = (treasury?.balances ?? []).find((b) => (b.symbol ?? '') === rate?.asset);
+  // `fmtAsset`, not `fmtUsdc`: the headline is money and reads as money — grouped, two decimals —
+  // exactly as `stakeBalance` renders the same figure everywhere else.
+  const balance =
+    here && here.balance !== null && /^\d+$/.test(here.balance)
+      ? `${fmtAsset(BigInt(here.balance))} ${here.symbol ?? ''}`.trim()
+      : stakeBalance(treasury);
   const block = seatBlock(settlement, treasury);
   const mandate = treasury?.mandate ?? null;
+  // The mandate names its OWN currency; a mandate signed for the older coin does not become a
+  // Sheqel authority because Sheqel is what the card room opens tables in today.
+  const mandateMoney =
+    ((treasury?.balances ?? []).find((b) => b.asset.toLowerCase() === (mandate?.asset ?? '').toLowerCase())?.symbol ??
+      (treasury?.assetSymbol ?? '').trim()) ||
+    'USDC';
   const entries = rows?.entries ?? [];
 
   return (
@@ -116,7 +135,7 @@ export function MoneyPanel({
       {entries.length > 0 ? (
         <ul className="money-rows">
           {entries.map((e) => {
-            const m = describeMovement(e);
+            const m = describeMovement(e, rows?.assetSymbol ?? assetSymbol);
             return (
               <li key={e.id} className={`money-row is-${m.status}`}>
                 <span className="money-what">
@@ -132,9 +151,10 @@ export function MoneyPanel({
         <p className="hint">Nothing yet. Money moves when you sit down, and again when you stand up.</p>
       )}
 
-      {/* Kept, and kept honest: what kind of money this is, said plainly rather than removed. */}
+      {/* Kept, and kept honest: what kind of money this is, said plainly rather than removed — and
+          named after THIS table's currency, which is not necessarily the one the lobby opens now. */}
       <p className="hint money-disclosure">
-        Test USDC on faithchain — real settlement, money that is worth nothing anywhere else. One chip is{' '}
+        Test {rate?.asset ?? 'money'} on faithchain — real settlement, money that is worth nothing anywhere else. One chip is{' '}
         {describeRate(rate)?.replace('1 chip = ', '') ?? 'a value this table has not stated'}.
       </p>
 
@@ -149,8 +169,8 @@ export function MoneyPanel({
           ) : null}
           {mandate?.present ? (
             <p className="hint">
-              Authorised: up to {fmtUsdc(mandate.maxPerBuyIn) ?? '?'} USDC per buy-in, {fmtUsdc(mandate.sessionTotal) ?? '?'} USDC in total, at
-              most {mandate.maxBuyIns} times, until{' '}
+              Authorised: up to {fmtUsdc(mandate.maxPerBuyIn) ?? '?'} {mandateMoney} per buy-in,{' '}
+              {fmtUsdc(mandate.sessionTotal) ?? '?'} {mandateMoney} in total, at most {mandate.maxBuyIns} times, until{' '}
               {mandate.validUntil ? new Date(mandate.validUntil * 1000).toLocaleString() : 'the end of the night'}. Payable only to{' '}
               <code className="mono">{shortAddress(mandate.payee)}</code>, and revocable at your Home.
             </p>
@@ -158,7 +178,7 @@ export function MoneyPanel({
           {entries.length > 0 ? (
             <ul className="money-rows">
               {entries.map((e) => {
-                const m = describeMovement(e);
+                const m = describeMovement(e, rows?.assetSymbol ?? assetSymbol);
                 return (
                   <li key={e.id} className="money-row">
                     <span className="money-what">

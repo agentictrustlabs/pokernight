@@ -77,6 +77,13 @@ function flag(name: string, fallback: string): string {
 }
 
 const HANDLE = flag('handle', 'elena');
+/**
+ * The currency to settle in. Defaults to the card room's OWN coin — Sheqel, recorded in
+ * `house.faithchain.json` by `pnpm deploy:sheqel` — falling back to the chain's MockUSDC for a
+ * checkout that has not deployed one. `--asset 0x…` settles this run in any other 6-decimal token,
+ * which is how the same script proves that a table pinned to the older currency still works.
+ */
+const ASSET_FLAG = flag('asset', '').trim();
 const CHIPS = Number(flag('chips', '200'));
 const FUND = parseUsdc(flag('fund', '25'));
 const LABEL = flag('label', '').trim();
@@ -97,17 +104,24 @@ async function settled(read: () => Promise<bigint>, expected: (v: bigint) => boo
   return value;
 }
 
-function loadHouse(): { houseTreasurySa: Address; houseServiceSa: Address; privateKey: Hex } {
+function loadHouse(): { houseTreasurySa: Address; houseServiceSa: Address; privateKey: Hex; asset: Address; assetName: string } {
   if (!existsSync(HOUSE_FILE)) throw new Error(`${HOUSE_FILE} does not exist — run \`pnpm provision:house\` first`);
   if (!existsSync(KEY_FILE)) throw new Error(`${KEY_FILE} does not exist — run \`pnpm provision:house\` first`);
-  const house = JSON.parse(readFileSync(HOUSE_FILE, 'utf8')) as { houseTreasurySa?: string; houseServiceSa?: string };
+  const house = JSON.parse(readFileSync(HOUSE_FILE, 'utf8')) as {
+    houseTreasurySa?: string;
+    houseServiceSa?: string;
+    contracts?: { sheqel?: string };
+  };
   const key = JSON.parse(readFileSync(KEY_FILE, 'utf8')) as { privateKey?: string };
   if (!house.houseTreasurySa || !house.houseServiceSa) throw new Error(`${HOUSE_FILE} is missing the house Smart Agent addresses`);
   if (!key.privateKey) throw new Error(`${KEY_FILE} has no "privateKey"`);
+  const asset = (ASSET_FLAG || house.contracts?.sheqel || CONTRACTS.mockUsdc) as Address;
   return {
     houseTreasurySa: house.houseTreasurySa as Address,
     houseServiceSa: house.houseServiceSa as Address,
     privateKey: key.privateKey as Hex,
+    asset,
+    assetName: asset.toLowerCase() === CONTRACTS.mockUsdc.toLowerCase() ? 'USDC' : 'SHQ',
   };
 }
 
@@ -121,8 +135,8 @@ async function main(): Promise<void> {
   console.log(`  rpc            ${RPC_URL}`);
   console.log(`  chainId        ${CONTRACTS.chainId}`);
   console.log(`  house treasury ${house.houseTreasurySa}   house delegate ${house.houseServiceSa}`);
-  console.log(`  asset          ${CONTRACTS.mockUsdc}  (6 decimals)`);
-  console.log(`  chip value     ${CHIP_VALUE} base units = ${formatUsdc(CHIP_VALUE)} USDC per chip`);
+  console.log(`  asset          ${house.asset}  ${house.assetName}, 6 decimals`);
+  console.log(`  chip value     ${CHIP_VALUE} base units = ${formatUsdc(CHIP_VALUE)} ${house.assetName} per chip`);
 
   const publicClient = createPublicClient({ transport: http(RPC_URL) });
   const onChainId = await publicClient.getChainId();
@@ -132,7 +146,7 @@ async function main(): Promise<void> {
     rpcUrl: RPC_URL,
     chainId: CONTRACTS.chainId,
     deployments: {
-      asset: CONTRACTS.mockUsdc,
+      asset: house.asset,
       entryPoint: CONTRACTS.entryPoint,
       agentAccountFactory: CONTRACTS.agentAccountFactory,
       paymaster: CONTRACTS.smartAgentPaymaster,
@@ -190,29 +204,29 @@ async function main(): Promise<void> {
 
   /* ------------------------------------------------------------------- 4. fund */
 
-  console.log('\n4. Fund it (MockUSDC has an open mint; this is test money)');
+  console.log(`\n4. Fund it (${house.assetName} has an open mint; this is test money)`);
   const need = chipsToUsdc(CHIPS, CHIP_VALUE);
   let held = await treasury.readUsdcBalance(player);
-  console.log(`  balance        ${formatUsdc(held)} USDC, buy-in costs ${formatUsdc(need)} USDC`);
+  console.log(`  balance        ${formatUsdc(held)} ${house.assetName}, buy-in costs ${formatUsdc(need)} ${house.assetName}`);
   if (held < need || FUND > 0n) {
     const top = held < need ? (need - held > FUND ? need - held : FUND) : FUND;
     const before = held;
     const hash = await treasury.mintTestAsset(player, top, account);
-    console.log(`  mint ${formatUsdc(top)} USDC  tx ${hash}`);
+    console.log(`  mint ${formatUsdc(top)} ${house.assetName}  tx ${hash}`);
     // Wait for the MINT itself to be visible, not merely for "enough": a read replica that is still
     // behind will otherwise deliver the new balance in the middle of the buy-in and make an exact
     // before/after comparison lie about what moved.
     held = await settled(() => treasury.readUsdcBalance(player), (v) => v >= before + top);
-    console.log(`  balance        ${formatUsdc(held)} USDC`);
+    console.log(`  balance        ${formatUsdc(held)} ${house.assetName}`);
   }
-  if (held < need) throw new Error(`the treasury still holds ${formatUsdc(held)} USDC, under the ${formatUsdc(need)} USDC buy-in`);
+  if (held < need) throw new Error(`the treasury still holds ${formatUsdc(held)} ${house.assetName}, under the ${formatUsdc(need)} ${house.assetName} buy-in`);
 
   /* ---------------------------------------------------------------- 5. mandate */
 
   console.log('\n5. The buy-in mandate — signed by their Home, with their key');
   const terms = buyInMandateTerms({
     payee: house.houseTreasurySa,
-    asset: CONTRACTS.mockUsdc as Address,
+    asset: house.asset,
     enforcers: {
       payment: CONTRACTS.paymentEnforcer as Address,
       timestamp: CONTRACTS.timestampEnforcer as Address,
@@ -224,8 +238,8 @@ async function main(): Promise<void> {
     now: Date.now(),
   });
   const consent = describeBuyInMandate(terms);
-  console.log(`  what they are shown: up to ${formatUsdc(consent.maxAmountPerCharge)} USDC per buy-in,`);
-  console.log(`  ${formatUsdc(consent.sessionBudget)} USDC in total, at most ${consent.maxRedemptionsPerWindow} times,`);
+  console.log(`  what they are shown: up to ${formatUsdc(consent.maxAmountPerCharge)} ${house.assetName} per buy-in,`);
+  console.log(`  ${formatUsdc(consent.sessionBudget)} ${house.assetName} in total, at most ${consent.maxRedemptionsPerWindow} times,`);
   console.log(`  payable only to ${consent.recipient}, until ${new Date(consent.expiresAt * 1000).toISOString()}`);
 
   const unsigned = unsignedBuyInMandate({
@@ -244,7 +258,7 @@ async function main(): Promise<void> {
     treasury: player,
     houseDelegate: house.houseServiceSa,
     payee: house.houseTreasurySa,
-    asset: CONTRACTS.mockUsdc as Address,
+    asset: house.asset,
     paymentEnforcer: CONTRACTS.paymentEnforcer as Address,
     amount: need,
     now: Date.now(),
@@ -270,7 +284,7 @@ async function main(): Promise<void> {
   const config = { seats: 6, smallBlind: 1, bigBlind: 2, minBuyIn: 40, maxBuyIn: 20_000 };
   let state = createTable(config);
   state = sitDown(state, 0, `home:${signIn.agent}`, CHIPS);
-  console.log(`  seat 0 buys in for ${CHIPS} chips = ${formatUsdc(need)} USDC`);
+  console.log(`  seat 0 buys in for ${CHIPS} chips = ${formatUsdc(need)} ${house.assetName}`);
 
   const buyInReq = {
     tableId: 'settle-persona',
@@ -292,15 +306,15 @@ async function main(): Promise<void> {
   console.log(`  tx       ${buyIn.ref}`);
   console.log(`  after    house ${formatUsdc(houseAfterBuyIn)}   player ${formatUsdc(playerAfterBuyIn)}`);
   if (playerBeforeBuyIn - playerAfterBuyIn !== need || houseAfterBuyIn - houseBeforeBuyIn !== need) {
-    throw new Error(`buy-in balances did not move by exactly ${formatUsdc(need)} USDC`);
+    throw new Error(`buy-in balances did not move by exactly ${formatUsdc(need)} ${house.assetName}`);
   }
-  console.log(`  both balances moved by exactly ${formatUsdc(need)} USDC ✓`);
+  console.log(`  both balances moved by exactly ${formatUsdc(need)} ${house.assetName} ✓`);
 
   console.log('\n7. Stand up, and settle the cash-out');
   const stood = standUp(state, 0);
   const cashOutChips = stood.cashOut;
   const back = chipsToUsdc(cashOutChips, CHIP_VALUE);
-  console.log(`  seat 0 stands up with ${cashOutChips} chips = ${formatUsdc(back)} USDC`);
+  console.log(`  seat 0 stands up with ${cashOutChips} chips = ${formatUsdc(back)} ${house.assetName}`);
   const houseBeforeOut = await treasury.readUsdcBalance(house.houseTreasurySa);
   const playerBeforeOut = await treasury.readUsdcBalance(player);
   const cashOut = await adapter.settleCashOut({
@@ -317,16 +331,16 @@ async function main(): Promise<void> {
   console.log(`  tx       ${cashOut.ref}`);
   console.log(`  after    house ${formatUsdc(houseAfterOut)}   player ${formatUsdc(playerAfterOut)}`);
   if (playerAfterOut - playerBeforeOut !== back || houseBeforeOut - houseAfterOut !== back) {
-    throw new Error(`cash-out balances did not move by exactly ${formatUsdc(back)} USDC`);
+    throw new Error(`cash-out balances did not move by exactly ${formatUsdc(back)} ${house.assetName}`);
   }
-  console.log(`  both balances moved by exactly ${formatUsdc(back)} USDC ✓`);
+  console.log(`  both balances moved by exactly ${formatUsdc(back)} ${house.assetName} ✓`);
 
   console.log('\nSummary');
   console.log(`  person agent      ${signIn.agent}          (identity — never spent from)`);
   console.log(`  treasury          ${player}  ${playerName}`);
   console.log(`  house treasury    ${house.houseTreasurySa}`);
-  console.log(`  buy-in  tx        ${buyIn.ref}   ${formatUsdc(need)} USDC  player → house`);
-  console.log(`  cash-out tx       ${cashOut.ref}   ${formatUsdc(back)} USDC  house → player`);
+  console.log(`  buy-in  tx        ${buyIn.ref}   ${formatUsdc(need)} ${house.assetName}  player → house`);
+  console.log(`  cash-out tx       ${cashOut.ref}   ${formatUsdc(back)} ${house.assetName}  house → player`);
   console.log('  the buy-in moved under a mandate signed at the player\'s Home with a key this card room');
   console.log('  does not hold. That is the whole difference from scripts/settle-demo.mts.');
 }

@@ -2,7 +2,7 @@
   "name": "pokernight",
   "version": "0.0.1",
   "private": true,
-  "description": "Texas Hold'em table service on the faithnet estate: people and AI Smart Agents at the same tables, USDC settled from agent treasuries.",
+  "description": "Texas Hold'em table service on the faithnet estate: people and AI Smart Agents at the same tables, settled in the card room's own currency (Sheqel) from agent treasuries.",
   "packageManager": "pnpm@10.30.3",
   "engines": {
     "node": ">=22"
@@ -16,6 +16,8 @@
     "dev:agents": "pnpm --filter pokernight-agent-worker dev",
     "bench": "pnpm --filter @pokernight/engine bench",
     "provision:house": "tsx scripts/provision-house.mts",
+    "deploy:sheqel": "tsx scripts/deploy-sheqel.mts",
+    "test:contracts": "forge test --root contracts",
     "settle:demo": "tsx scripts/settle-demo.mts",
     "settle:persona": "tsx scripts/settle-persona.mts"
   },

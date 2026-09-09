@@ -103,6 +103,7 @@ export function Table({
   send,
   settlement = 'play-money',
   chipValue = null,
+  assetSymbol = null,
   treasury = null,
 }: {
   state: TableState;
@@ -116,6 +117,8 @@ export function Table({
    * rate it was opened with, and showing any other number here would be showing the wrong money.
    */
   chipValue?: string | null;
+  /** What that rate is denominated in (`TableSummary.assetSymbol`). Per table, never per deployment. */
+  assetSymbol?: string | null;
   /** This player's money, as the card room sees it. Null while it is still being read. */
   treasury?: TreasuryView | null;
 }) {
@@ -126,7 +129,7 @@ export function Table({
   const reduced = usePrefersReducedMotion();
 
   // One rate for the whole table view. Null on play money, where a bare chip count is the truth.
-  const rate = tableRate(settlement, chipValue);
+  const rate = tableRate(settlement, chipValue, assetSymbol);
   const mode = describeMode(settlement, rate);
 
   const myTurn = state.turn != null && view?.viewerSeat != null && state.turn.seat === view.viewerSeat;

@@ -197,6 +197,18 @@ describe('sign-in render', () => {
     expect(html).not.toContain('dev name');
   });
 
+  /**
+   * The disclosure and the ask move together. This config states no ceiling (`home.buyIn` absent),
+   * so sign-in requests a plain session — and the screen must therefore claim nothing about money.
+   * A button that said "set tonight's limit" without a limit to show would be the same failure as a
+   * money grant behind a button labelled only "sign in", in the other direction.
+   */
+  it('promises nothing about money where the card room states no ceiling', () => {
+    const html = signIn(auth());
+    expect(html).not.toContain('sets your limit for tonight');
+    expect(html).not.toContain('Sign in and set tonight');
+  });
+
   it('offers the dev name box only where the API says dev auth is on', () => {
     const cfg = auth().config;
     const html = signIn(auth({ config: { ...cfg, devAuth: true } as NonNullable<AuthState['config']> }));
@@ -243,7 +255,24 @@ describe('sign-in render', () => {
 describe('landing and sign-in surfaces', () => {
   const cfg = {
     devAuth: false,
-    home: { clientId: 'pokernight', origin: 'https://www.faithnet.me', zone: 'faithnet.me', delegate: '0xabc', redirectUri: 'https://poker.faithnet.io/' },
+    home: {
+      clientId: 'pokernight',
+      origin: 'https://www.faithnet.me',
+      zone: 'faithnet.me',
+      delegate: '0xabc',
+      redirectUri: 'https://poker.faithnet.io/',
+      // The ceiling signing in also approves, and the currency it is in. Present here because the
+      // live deployment states it, and because the landing copy and the consent block read it.
+      buyIn: {
+        template: 'poker-buyin',
+        maxPerBuyIn: '200000000',
+        sessionTotal: '1000000000',
+        maxBuyIns: 5,
+        maxBuyInChips: 200,
+        validSeconds: 43200,
+        symbol: 'SHQ',
+      },
+    },
   };
   const auth = (over: Partial<AuthState> = {}): AuthState => ({
     config: cfg,
@@ -267,10 +296,18 @@ describe('landing and sign-in surfaces', () => {
   it('says what Pokernight is, how it works, and carries sign-in itself', () => {
     const html = renderToStaticMarkup(createElement(Landing, { auth: auth(), onLogin: () => {} }));
     expect(html).toContain('at the same table');
-    // The promise a stranger is actually reading for: what they get, in money.
-    expect(html).toContain('10,000 test USDC');
+    // The promise a stranger is actually reading for: what they get, and in WHICH money — the card
+    // room's own coin, named by the card room rather than assumed to be USDC.
+    expect(html).toContain('10,000 SHQ to play with');
     expect(html).toContain('How a night works');
-    expect(html).toContain('Sign in to play'); // the panel is ON the page, not linked away to
+    // The panel is ON the page, not linked away to — and its button says both things it does,
+    // because pressing it approves a spending ceiling as well as signing in.
+    expect(html).toContain('Sign in and set tonight');
+    // …and the ceiling itself is on the page BEFORE the button, in the numbers the Home will show.
+    expect(html).toContain('Signing all sets your limit for tonight'.replace('all ', 'in also '));
+    expect(html).toContain('200.00 SHQ');
+    expect(html).toContain('1,000.00 SHQ');
+    expect(html).toContain('Nothing is taken until you sit down');
     expect(html).toContain('In the room right now');
     // Before the lobby answers, it says it is reading it — never an empty claim about the room.
     expect(html).toContain('Reading the lobby…');
@@ -283,14 +320,14 @@ describe('landing and sign-in surfaces', () => {
     expect(html).toContain('0xb0d11ce1…303b3d11');
     expect(html).toContain('Jordan Pike');
     // Ranked below the real way in, folded shut, and honest about what they are.
-    expect(html.indexOf('Sign in to play')).toBeLessThan(html.indexOf('Try it as someone else'));
+    expect(html.indexOf('Sign in and set tonight')).toBeLessThan(html.indexOf('Try it as someone else'));
     expect(html).toContain('shared by everyone who visits');
   });
 
   it('shows no demo section at all when the Home offers none', () => {
     const html = renderToStaticMarkup(createElement(SignInPage, { auth: auth(), onLogin: () => {} }));
     expect(html).not.toContain('Try it as someone else');
-    expect(html).toContain('Sign in to play');
+    expect(html).toContain('Sign in and set tonight');
   });
 
   it('says plainly when the Home will not mint a demo session for this app', () => {
@@ -303,7 +340,7 @@ describe('landing and sign-in surfaces', () => {
   it('tells a person whose session ended why they are looking at sign-in', () => {
     const html = renderToStaticMarkup(createElement(SignInPage, { auth: auth({ notice: SESSION_ENDED_NOTICE }), onLogin: () => {} }));
     expect(html).toContain(SESSION_ENDED_NOTICE);
-    expect(html).toContain('Sign in to play');
+    expect(html).toContain('Sign in and set tonight');
   });
 });
 

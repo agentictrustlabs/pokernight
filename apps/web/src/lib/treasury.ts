@@ -48,6 +48,9 @@ export interface MandateView {
 export interface TreasuryView {
   chainId: number;
   asset: string;
+  /** What that asset calls itself (`SHQ`). Stated by the card room, never assumed here: the estate
+   *  has more than one currency on it now. Absent on an older server: fall back to `USDC`. */
+  assetSymbol?: string;
   /**
    * The DEPLOYMENT DEFAULT rate, which is what a new table would be opened at and what a mandate is
    * sized against. It is NOT the rate any particular table settles at — that is pinned on the table
@@ -61,6 +64,9 @@ export interface TreasuryView {
   chosenName: string | null;
   balance: string | null;
   balanceUsdc: string | null;
+  /** What the chosen treasury holds in every currency this card room settles in, most current
+   *  first. `balance` above is the first entry. Absent on an older server. */
+  balances?: Array<{ asset: string; symbol: string | null; balance: string | null; formatted: string | null; error?: string }>;
   candidates: TreasuryCandidate[];
   discoveryError: string | null;
   create: TreasuryCreationOffer;
@@ -137,6 +143,10 @@ export interface TableSettlement {
   settlement: 'play-money' | 'mandate-transfer' | 'table-escrow';
   /** The rate THIS table pinned at creation, in base units per chip. Null when it has none. */
   chipValue: string | null;
+  /** The currency THIS table pinned at creation, and what it calls itself. Null on a table older
+   *  than the pin, which settles in USDC. */
+  asset?: string | null;
+  assetSymbol?: string | null;
   treasury: string | null;
   entries: SettlementEntry[];
 }
@@ -192,16 +202,26 @@ export function kindLabel(kind: string): string {
 }
 
 /**
+ * What THIS table's money is called. A settlement row is about a movement that already happened at
+ * a particular table, so the ticker comes from that table (`TableSettlement.assetSymbol`). `USDC` is
+ * the fallback because a table that names no currency is one that opened before the card room had a
+ * coin of its own — which is exactly the currency it moved.
+ */
+function ticker(symbol: string | null | undefined): string {
+  return (symbol ?? '').trim() || 'USDC';
+}
+
+/**
  * One line about where a movement stands, in the words a player needs. A failed movement always
  * carries its reason forward: "failed" on its own is the one thing nobody can act on.
  */
-export function describeSettlement(entry: SettlementEntry): string {
+export function describeSettlement(entry: SettlementEntry, symbol?: string | null): string {
   const status = statusOf(entry.receipt);
   const chips = `${fmtChipCount(Math.abs(entry.chips))} chips`;
   // Both units, from the receipt's own base-unit amount — which was computed at the TABLE's rate
   // when the row was written, so an old table's rows keep reading in the money they actually moved.
   const raw = entry.receipt?.amount ?? '';
-  const amount = /^\d+$/.test(raw) && raw !== '0' ? `${chips} (${fmtAsset(BigInt(raw))} USDC)` : chips;
+  const amount = /^\d+$/.test(raw) && raw !== '0' ? `${chips} (${fmtAsset(BigInt(raw))} ${ticker(symbol)})` : chips;
   if (status === null) return `${kindLabel(entry.kind)} of ${chips} — not settled`;
   if (status === 'pending') return `${kindLabel(entry.kind)} of ${amount} — waiting for the chain`;
   if (status === 'failed') return `${kindLabel(entry.kind)} of ${amount} — did not settle: ${entry.receipt?.error ?? 'no reason recorded'}`;
@@ -238,14 +258,14 @@ const MOVEMENT_WHAT: Record<string, string> = {
   'cash-out': 'Cashed out',
 };
 
-export function describeMovement(entry: SettlementEntry): Movement {
+export function describeMovement(entry: SettlementEntry, symbol?: string | null): Movement {
   // A row with no receipt has not been handed to the adapter yet; that is "on its way", not a
   // failure and not a settlement. Only the three asset-moving kinds reach this view at all (the
   // Worker filters hand results out), so there is no case here for a row that never settles.
   const status = statusOf(entry.receipt) ?? 'pending';
   const raw = entry.receipt?.amount ?? '';
   const chips = Math.abs(entry.chips);
-  const amount = /^\d+$/.test(raw) && raw !== '0' ? `${fmtAsset(BigInt(raw))} USDC` : `${fmtChipCount(chips)} chips`;
+  const amount = /^\d+$/.test(raw) && raw !== '0' ? `${fmtAsset(BigInt(raw))} ${ticker(symbol)}` : `${fmtChipCount(chips)} chips`;
   return {
     what: MOVEMENT_WHAT[entry.kind] ?? kindLabel(entry.kind),
     amount,

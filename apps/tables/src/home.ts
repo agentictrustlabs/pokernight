@@ -114,6 +114,16 @@ export interface HomeIdentity {
   /** The SA-signed scoped delegation the Home issued to `HOME_DELEGATE`. Opaque here; phase 3 spends
    *  against it. Never travels in a bearer token. */
   delegation?: WireDelegation;
+  /**
+   * The PAYMENT mandate the Home minted in the same ceremony, when it minted one.
+   *
+   * Sign-in asks for the `poker-buyin` template rather than `site-login`, and the Home's payment
+   * ceremony issues the mandate DURING the enrol — one visit, consent and authority together. So a
+   * sign-in can come back carrying both halves, and this is the second one. `undefined` means the
+   * ceremony returned none, which is a fact about that exchange and not an inference about the
+   * Home: the session is established either way and the separate authorisation path still exists.
+   */
+  paymentDelegation?: unknown;
   claims: IdTokenClaims & { iat?: number };
   expiresAt: number;
   /**
@@ -218,24 +228,68 @@ export async function completeHomeSignIn(env: Env, req: HomeAuthRequest, now = D
   if (!isAllowedHomeOrigin(env, req.authOrigin)) {
     throw new HomeAuthError(`home origin "${req.authOrigin}" is not a trusted issuer for this deployment`);
   }
-  let client: ConnectClient;
   try {
-    client = homeClient(env);
+    // Not used for the exchange (see below) — called for its configuration checks, which refuse
+    // with the name of the variable that is missing rather than failing at the Home.
+    homeClient(env);
   } catch (e) {
     // Misconfiguration, not the caller's fault — but still nothing to hand back but a refusal.
     throw new HomeAuthError(`home sign-in is not configured: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  let token: { idToken: string; delegation?: WireDelegation };
-  try {
-    token = await client.exchangeCode(req.authOrigin, req.code, req.codeVerifier);
-  } catch (e) {
-    throw new HomeAuthError(`code exchange failed at ${req.authOrigin}: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  // Exchanged directly rather than through `client.exchangeCode`, which returns the id_token and the
+  // site-login delegation and DROPS everything else — and `paymentDelegation` is precisely the field
+  // it drops. Sign-in now asks for the payment template, so that field is half the answer.
+  const token = await exchangeAtHome(env, req);
 
   if (!req.nonce) throw new HomeAuthError('id_token nonce does not match the sign-in request');
   const identity = await verifyHomeIdToken(env, req.authOrigin, token.idToken, req.nonce, now);
-  return { ...identity, delegation: token.delegation };
+  return {
+    ...identity,
+    delegation: token.delegation,
+    ...(token.paymentDelegation ? { paymentDelegation: token.paymentDelegation } : {}),
+  };
+}
+
+/**
+ * POST the authorization code to the Home's `/token`, and keep EVERY half of the answer.
+ *
+ * One function so the sign-in ceremony and the standalone authorisation ceremony ask the same
+ * question the same way; the only thing that ever differed between them was which fields the caller
+ * bothered to read, which is exactly the kind of difference that goes stale.
+ */
+async function exchangeAtHome(
+  env: Env,
+  req: HomeAuthRequest,
+): Promise<{ idToken: string; delegation?: WireDelegation; paymentDelegation?: unknown }> {
+  const clientId = (env.HOME_CLIENT_ID ?? '').trim();
+  if (!clientId) throw new HomeAuthError('home sign-in is not configured: HOME_CLIENT_ID is not set');
+  let body: { id_token?: string; delegation?: WireDelegation; paymentDelegation?: unknown; error?: string };
+  try {
+    const res = await fetch(new URL('/token', req.authOrigin).toString(), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: req.code,
+        code_verifier: req.codeVerifier,
+        client_id: clientId,
+        redirect_uri: homeRedirectUri(env),
+      }),
+    });
+    body = (await res.json().catch(() => ({}))) as typeof body;
+    if (!res.ok || !body.id_token) {
+      throw new HomeAuthError(`code exchange failed at ${req.authOrigin}: ${body.error ?? `HTTP ${res.status}`}`);
+    }
+  } catch (e) {
+    if (e instanceof HomeAuthError) throw e;
+    throw new HomeAuthError(`code exchange failed at ${req.authOrigin}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  return {
+    idToken: body.id_token,
+    ...(body.delegation ? { delegation: body.delegation } : {}),
+    ...(body.paymentDelegation ? { paymentDelegation: body.paymentDelegation } : {}),
+  };
 }
 
 /**
@@ -305,10 +359,11 @@ export interface HomeMandateResult {
 /**
  * Finish a `poker-buyin` ceremony: exchange the code and take BOTH halves of the answer.
  *
- * `exchangeCode` in `@agenticprimitives/connect-client` returns the id_token and the site-login
- * delegation and drops everything else, so the token endpoint is called directly here — the payment
- * mandate is precisely the field it drops. The identity half is then verified by exactly the same
- * function every other sign-in path uses, so nothing about who the player is rests on this route.
+ * The FALLBACK path, kept deliberately. Sign-in now asks for the payment template itself, so most
+ * players never come here — but a player who signed in before that change, or whose mandate expired
+ * or was revoked at their Home, must be able to authorise again without signing out first. Same
+ * exchange (`exchangeAtHome`), same identity verification as every other sign-in path, so nothing
+ * about who the player is rests on this route.
  */
 export async function completeMandateCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<HomeMandateResult> {
   if (!isAllowedHomeOrigin(env, req.authOrigin)) {
@@ -316,31 +371,8 @@ export async function completeMandateCeremony(env: Env, req: HomeAuthRequest, no
   }
   if (!req.nonce) throw new HomeAuthError('id_token nonce does not match the authorisation request');
 
-  const clientId = (env.HOME_CLIENT_ID ?? '').trim();
-  if (!clientId) throw new HomeAuthError('home sign-in is not configured: HOME_CLIENT_ID is not set');
-
-  let body: { id_token?: string; paymentDelegation?: unknown; error?: string };
-  try {
-    const res = await fetch(new URL('/token', req.authOrigin).toString(), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        grant_type: 'authorization_code',
-        code: req.code,
-        code_verifier: req.codeVerifier,
-        client_id: clientId,
-        redirect_uri: homeRedirectUri(env),
-      }),
-    });
-    body = (await res.json().catch(() => ({}))) as typeof body;
-    if (!res.ok || !body.id_token) {
-      throw new HomeAuthError(`code exchange failed at ${req.authOrigin}: ${body.error ?? `HTTP ${res.status}`}`);
-    }
-  } catch (e) {
-    if (e instanceof HomeAuthError) throw e;
-    throw new HomeAuthError(`code exchange failed at ${req.authOrigin}: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  const identity = await verifyHomeIdToken(env, req.authOrigin, body.id_token, req.nonce, now);
-  return { identity, ...(body.paymentDelegation ? { paymentDelegation: body.paymentDelegation } : {}) };
+  const token = await exchangeAtHome(env, req);
+  const identity = await verifyHomeIdToken(env, req.authOrigin, token.idToken, req.nonce, now);
+  return { identity, ...(token.paymentDelegation ? { paymentDelegation: token.paymentDelegation } : {}) };
 }
+

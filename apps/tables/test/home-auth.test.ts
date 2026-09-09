@@ -75,9 +75,11 @@ function claimsFor(over: Record<string, unknown> = {}): Record<string, unknown> 
 }
 
 /** Stub the fake Home's `/token` and `/jwks` for exactly one exchange. */
-function mockHome(idToken: string, delegation: unknown = { delegator: PERSON, salt: '1' }): void {
+function mockHome(idToken: string, delegation: unknown = { delegator: PERSON, salt: '1' }, paymentDelegation?: unknown): void {
   const pool = fetchMock.get(HOME);
-  pool.intercept({ path: '/token', method: 'POST' }).reply(200, { id_token: idToken, delegation });
+  pool
+    .intercept({ path: '/token', method: 'POST' })
+    .reply(200, { id_token: idToken, delegation, ...(paymentDelegation ? { paymentDelegation } : {}) });
   pool.intercept({ path: '/jwks', method: 'GET' }).reply(200, { keys: [{ ...publicJwk, kid: KID, alg: 'ES256', use: 'sig' }] });
 }
 
@@ -108,6 +110,10 @@ describe('GET /auth/config', () => {
     expect(cfg.home.clientId).toBe('pokernight');
     expect(cfg.home.origin).toBe(HOME);
     expect(cfg.home.zone).toBe('localhost');
+    // The ceiling signing in would ALSO ask for. Null here, because dev configures no house
+    // delegate and no enforcers — so the client asks for a plain session and promises no ceiling.
+    // A deployment that cannot state the caps must never ask the player to approve them.
+    expect(cfg.home.buyIn).toBeNull();
     expect(cfg.home.redirectUri).toBe('http://localhost:5173/');
     expect(typeof cfg.home.delegate).toBe('string');
   });
@@ -455,3 +461,47 @@ describe('POST /auth/home/demo', () => {
     expect(await verifyHomeSession(env, token)).toBeNull();
   });
 });
+
+/**
+ * ONE TRIP TO THE HOME.
+ *
+ * Sign-in asks for the payment template, so the Home's ceremony can mint the buy-in mandate in the
+ * same visit that establishes the session. The exchange therefore has to KEEP that field —
+ * `connect-client`'s `exchangeCode` drops it, which is why this Worker posts to `/token` itself.
+ *
+ * What arrives is parked, not accepted. A mandate authorises one named account and at this instant
+ * the card room has not asked the player's Home which accounts are theirs; `GET /treasury` does
+ * that, and promotes or discards it there. Nothing spends under `pendingMandate`.
+ */
+describe('a sign-in that also brings a buy-in mandate', () => {
+  it('keeps the payment delegation the Home minted in the same ceremony', async () => {
+    const payment = { delegator: `0x${'cd'.repeat(20)}`, delegate: `0x${'ef'.repeat(20)}`, salt: '7' };
+    mockHome(await signIdToken(claimsFor()), { delegator: PERSON, salt: '1' }, payment);
+    const r = await postHome(goodRequest());
+    expect(r.status).toBe(200);
+
+    const record = await readRecord(String(r.body.playerId));
+    expect(record?.pendingMandate).toEqual(payment);
+    // Parked, NOT accepted: nothing is spendable until a treasury has been checked against it.
+    expect(record?.buyInMandate).toBeUndefined();
+    expect(record?.mandateTreasury).toBeUndefined();
+    // …and it never reaches the browser. The response is a session and nothing else.
+    expect(JSON.stringify(r.body)).not.toContain('delegator');
+  });
+
+  it('signs in exactly as before when the Home returns no mandate', async () => {
+    mockHome(await signIdToken(claimsFor({ sub: `did:pkh:eip155:31337:0x${'a9'.repeat(20)}` })));
+    const r = await postHome(goodRequest());
+    expect(r.status).toBe(200);
+    const record = await readRecord(String(r.body.playerId));
+    expect(record?.pendingMandate).toBeUndefined();
+    expect(record?.delegation).toBeTruthy();
+  });
+});
+
+/** The server-side session record, read the way the Worker reads it. */
+async function readRecord(playerId: string): Promise<Record<string, unknown> | null> {
+  const stub = env.SESSIONS.get(env.SESSIONS.idFromName(playerId));
+  const res = await stub.fetch('https://session/record');
+  return res.ok ? ((await res.json()) as Record<string, unknown>) : null;
+}

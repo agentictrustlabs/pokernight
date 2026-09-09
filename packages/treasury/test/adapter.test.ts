@@ -365,4 +365,41 @@ describe('a pull mandate from the Home', () => {
     );
     expect(refused).toMatch(/is delegated to 0x00000000000000000000000000000000000000f6/);
   });
+
+  it('accepts a mandate naming EITHER house account, so a Home config change is not a flag-day', () => {
+    // The Home picks the redeemer from its own config: a pull mandate with no declared redeemer
+    // names the payee (the treasury); one with a redeemer names the service agent. Both are this
+    // house. Refusing either would strand every mandate minted on the other side of that change.
+    const treasury = '0x00000000000000000000000000000000000000f6' as const;
+    const service = '0x0000000000000000000000000000000000000347' as const;
+    const base = {
+      treasury: '0x00000000000000000000000000000000000000b1',
+      houseDelegate: service,
+      alsoAcceptedDelegates: [treasury],
+      payee: treasury,
+      asset: '0x00000000000000000000000000000000000000aa',
+      paymentEnforcer: '0x00000000000000000000000000000000000000ee',
+      amount: 1_000_000n,
+      now: Date.now(),
+    } as never;
+    const mandate = (delegate: string) =>
+      ({
+        delegator: '0x00000000000000000000000000000000000000b1',
+        delegate,
+        authority: `0x${'ff'.repeat(32)}`,
+        caveats: [],
+        salt: 1n,
+        signature: '0x1234',
+      }) as never;
+
+    for (const named of [service, treasury]) {
+      const reason = String(checkBuyInMandate(mandate(named), base) ?? '');
+      expect(reason).not.toMatch(/delegated to/);
+    }
+    // A stranger is still refused, and the refusal names what would have been accepted.
+    const foreign = String(checkBuyInMandate(mandate('0x00000000000000000000000000000000000000ff'), base) ?? '');
+    expect(foreign).toMatch(/delegated to/);
+    expect(foreign).toContain(service);
+    expect(foreign).toContain(treasury);
+  });
 });

@@ -3,7 +3,8 @@
 Status: proposal, 2026-09-08. Author: Richard Pedersen with Claude.
 
 Pokernight is a Texas Hold'em table service where people and AI Smart Agents sit at the same tables,
-and where buy-ins and cash-outs settle in USDC from each player's Smart Agent treasury on faithchain.
+and where buy-ins and cash-outs settle in the card room's own currency, Sheqel, from each player's
+Smart Agent treasury on faithchain.
 It is built as a third-party app on the Agentic Primitives substrate (`~/agenticprimitives`) and lives
 in the faithnet estate (faithnet.me / faithnet.io / faithnet.ai, chain faithchain).
 
@@ -69,9 +70,28 @@ allowlist-mode `SmartAgentPaymaster` can still sponsor to keep the house account
 
 ## 5. Money model
 
-Asset: parameterized `ASSET` address. On faithchain today this is `MockUSDC`
-(`0xdaE09066A2cc32f6203605619137dcF01A9B49Ae`, 6 decimals, open mint). Real USDC does not exist on
-faithchain; if the chain ever bridges one, only the env var changes.
+Asset: parameterized `ASSET` address. On faithchain today this is **Sheqel (SHQ)**
+(`0xa14E4a9447607c1233DcE34dB6Ead47C094f6141`, 6 decimals, open mint) — the card room's OWN currency,
+deployed from `contracts/src/Sheqel.sol` by `pnpm deploy:sheqel`. It is a named deployment of
+`AppCurrency`, a parameterised ERC-20 that exists so an app-specific coin is a pattern rather than a
+one-off; the contract lives in THIS repo because the coin belongs to the app, not to the substrate.
+Six decimals because every amount in this codebase is an integer of 6-decimal base units. The mint is
+open, which is defensible only for a test asset on a test chain and is documented as such in the
+contract.
+
+Before Sheqel the asset was faithchain's `MockUSDC` (`0xdaE09066A2cc32f6203605619137dcF01A9B49Ae`,
+also 6 decimals, also open mint). It has NOT been deleted: it is `LEGACY_ASSET`, and every table
+opened before Sheqel is pinned to it (below).
+
+**The asset belongs to the TABLE, not to the deployment** — the same rule as the chip rate, and for
+a stronger reason. A rate that moved under an open table mispriced the stacks on it; an ASSET that
+moved under an open table would collect the buy-ins in one currency and pay the cash-outs in another,
+which is not a mispricing but a different promise. `ASSET` / `ASSET_SYMBOL` are read once, when a
+table is created, and stamped on it (`PokerTableDO` `meta.asset` / `meta.assetSymbol`); a table older
+than the field is stamped on first load with `LEGACY_ASSET` / `LEGACY_ASSET_SYMBOL`, the currency it
+has actually been settling in. A buy-in mandate carries a currency too (`SessionDO.mandateAsset`), and
+a table will not spend under a mandate denominated in anything but its own — it says which currency
+the authority names instead of claiming the player authorised nothing.
 
 Units: chips are integers in the table ledger. `chipValue` converts chips to asset base units;
 the deployment default is 1 000 000 = 1 USDC per chip, so a 1/2 table with a 40–200 buy-in reads as

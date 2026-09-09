@@ -2105,6 +2105,26 @@ label > select {
 .signin > * + * {
   margin-top: 1.1rem;
 }
+/* What signing in also approves. Set apart from the hints around it because it is the one thing on
+   this screen that is about the player's money — a disclosure, not a reassurance, and it has to read
+   as one before the button rather than after it. */
+.signin-consent {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--brass) 55%, var(--rule));
+  border-radius: var(--radius);
+  background: var(--brass-soft);
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.signin-consent p {
+  margin: 0;
+}
+.signin-consent p + p {
+  margin-top: 0.45rem;
+}
+
 .signin-notice {
   margin: 0;
   padding: 0.55rem 0.75rem;

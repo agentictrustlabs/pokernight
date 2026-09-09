@@ -19,6 +19,9 @@ export interface TableDetail {
   settlement: string;
   /** Asset base units per chip, pinned when the table was created. Absent on a table with no rate. */
   chipValue?: string;
+  /** What that rate is denominated in, pinned at the same instant. Absent on a table older than the
+   *  pin, which settles in USDC — see `LEGACY_ASSET_TICKER`. */
+  assetSymbol?: string;
   view: TableView;
   names: Record<string, string>;
   players?: Record<string, PlayerInfo>;
@@ -131,7 +134,7 @@ export function describeMoment(detail: TableDetail | null | undefined, roster: R
   const hand = detail?.view?.hand ?? null;
   const pot = hand ? hand.pots.reduce((a, p) => a + p.amount, 0) : 0;
   // On a settled table the pot is money, and the hero says so — the same rule as at the table.
-  const d = dualAmount(pot, tableRate(detail?.settlement, detail?.chipValue));
+  const d = dualAmount(pot, tableRate(detail?.settlement, detail?.chipValue, detail?.assetSymbol));
   const potText = d.assetLabel ? `${d.chipsText} (${d.assetLabel})` : d.chipsText;
   const state = hand ? `${streetLabel(hand.street)} · pot ${potText}` : 'between hands';
   const agentsPlaying = roster.agents.length > 0 && hand != null;

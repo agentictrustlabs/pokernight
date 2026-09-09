@@ -1,10 +1,16 @@
 /**
  * Home sign-in — the BROWSER half of the OIDC ceremony (DESIGN.md §3).
  *
- * We only ever run the front half here: build a `site-login` authorize request to the person's Home
- * with PKCE S256 + state + nonce (`@agenticprimitives/connect-client`), stash the verifier/nonce/state
- * in `sessionStorage`, and navigate. The Home runs the credential ceremony and returns the person to
+ * We only ever run the front half here: build an authorize request to the person's Home with PKCE
+ * S256 + state + nonce (`@agenticprimitives/connect-client`), stash the verifier/nonce/state in
+ * `sessionStorage`, and navigate. The Home runs the credential ceremony and returns the person to
  * the registered redirect URI with `?code&state`.
+ *
+ * The template that request asks for is `poker-buyin`, not `site-login`, wherever this deployment
+ * states the caps — so ONE visit to the Home establishes the session AND mints the buy-in mandate,
+ * instead of the player being sent back a second time to authorise what they came to do. What that
+ * costs is a duty: the sign-in screen has to say what ceiling it is asking for, in the same numbers
+ * the Home will show, before anybody is sent anywhere.
  *
  * The code is then handed STRAIGHT to the tables Worker, which exchanges and verifies it itself. This
  * app never sees an id_token, never decides who the person is, and holds nothing the Worker would
@@ -34,6 +40,26 @@ export interface AuthConfig {
     redirectUri: string | null;
     /** The delegation template a buy-in authorisation asks the Home to run. */
     buyInTemplate?: string;
+    /**
+     * The spending ceiling SIGNING IN also asks the player to approve, or null/absent where this
+     * deployment cannot ask for one (local dev, a half-configured deployment).
+     *
+     * Present, the sign-in ceremony asks the Home for the payment template and comes back with the
+     * session and the mandate together — so the sign-in screen must say what the player is
+     * approving, in these numbers, before it sends them. Absent, sign-in is a plain sign-in and the
+     * screen promises nothing about money.
+     */
+    buyIn?: {
+      template: string;
+      /** Base units. */
+      maxPerBuyIn: string;
+      sessionTotal: string;
+      maxBuyIns: number;
+      maxBuyInChips: number;
+      validSeconds: number;
+      /** What the money is called: `SHQ`. */
+      symbol: string;
+    } | null;
   };
 }
 
@@ -298,6 +324,18 @@ export function takeProfileName(store: StorageLike | null = sessionStore()): str
  * Start the ceremony: build the authorize URL, persist the stash, then navigate. Throws with a
  * message worth showing if the Home origin is untrusted or the browser will not keep the stash.
  *
+ * ONE TRIP, not two. This used to run `startEnrollment`, which hardcodes `site-login`, so the
+ * session came back carrying no payment authority and the player was sent straight back to their
+ * Home to authorise buy-ins — a second visit that existed only because the first one had asked for
+ * the narrower thing. `pokernight` is registered for `poker-buyin` as well, and the Home's payment
+ * ceremony mints the mandate DURING the enrol, so asking for that template on the FIRST connect
+ * brings the session and the mandate back together.
+ *
+ * The template is only requested where the deployment states the caps (`config.home.buyIn`),
+ * because those caps are what the sign-in screen shows the player before they go. A ceiling nobody
+ * was shown is not consent, so no caps means no payment request: a plain `site-login`, exactly as
+ * before, and the separate authorisation path still there for whoever needs it.
+ *
  * `name` is the person's PROFILE name and it never goes on the authorize request — see
  * {@link toProfileName}. It is remembered on this origin and handed to the card room on the return
  * leg. The enrolment itself stays name-deferred, which is what keeps the account nameless in the
@@ -312,12 +350,49 @@ export async function startHomeSignIn(
   if (!isAllowedHomeOrigin(config.home.zone, config.home.origin)) {
     throw new Error(`Refusing to sign in at ${config.home.origin}: it is not a trusted Home for this site.`);
   }
-  const { url, stash } = await connectViaRedirect(homeClient(config));
+  const client = homeClient(config);
+  const offer = config.home.buyIn ?? null;
+
+  // No caps to show means no ceiling to ask for: the ordinary name-deferred `site-login` enrolment,
+  // byte-for-byte what this did before.
+  if (!offer) {
+    const { url, stash } = await connectViaRedirect(client);
+    if (!writeStash(store, stash)) {
+      throw new Error('This browser will not let the site keep a sign-in secret (session storage is blocked), so sign-in cannot complete.');
+    }
+    rememberProfileName(store, name);
+    return url;
+  }
+
+  // The same PKCE/state/nonce ceremony `connectViaRedirect` runs, with the template the caller
+  // actually wants. `buildAuthorizeUrl` is on the public client interface precisely so an app can
+  // ask for a template it is registered for; `startEnrollment` is the site-login shorthand.
+  const pkce = await generatePkce();
+  const stash: ConnectStash = {
+    name: '',
+    state: randomB64url(16),
+    authOrigin: config.home.origin,
+    codeVerifier: pkce.verifier,
+    nonce: randomB64url(16),
+  };
   if (!writeStash(store, stash)) {
     throw new Error('This browser will not let the site keep a sign-in secret (session storage is blocked), so sign-in cannot complete.');
   }
   rememberProfileName(store, name);
-  return url;
+  const url = new URL(
+    client.buildAuthorizeUrl({
+      authOrigin: stash.authOrigin,
+      state: stash.state,
+      nonce: stash.nonce,
+      codeChallenge: pkce.challenge,
+      agentName: '',
+      template: offer.template || BUY_IN_TEMPLATE,
+    }),
+  );
+  // The per-charge amount asked for. The Home caps it at whatever it has registered for this client,
+  // so this can only ever ask for less than the ceiling the player is shown — never more.
+  if (/^\d+$/.test(offer.maxPerBuyIn)) url.searchParams.set('pay_amount', offer.maxPerBuyIn);
+  return url.toString();
 }
 
 export type CallbackOutcome =

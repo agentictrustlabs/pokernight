@@ -34,6 +34,22 @@ describe('tableRate', () => {
     expect(tableRate(undefined, '1000000')).toBeNull();
   });
 
+  /**
+   * The card room minted a coin of its own, so the ticker is a property of the TABLE and arrives on
+   * the wire with the rate. A table that names none is one that predates the coin, and those settle
+   * in USDC — putting today's ticker on them would be the wrong word beside a real amount of money.
+   */
+  it('names the currency the TABLE states, and falls back to USDC only for a table that states none', () => {
+    expect(tableRate('mandate-transfer', '1000000', 'SHQ')?.asset).toBe('SHQ');
+    expect(tableRate('mandate-transfer', '1000000')?.asset).toBe('USDC');
+    expect(tableRate('mandate-transfer', '1000000', '  ')?.asset).toBe('USDC');
+    expect(dualAmount(200, tableRate('mandate-transfer', '1000000', 'SHQ')).assetLabel).toBe('200.00 SHQ');
+    expect(describeRate(tableRate('mandate-transfer', '1000000', 'SHQ'))).toBe('1 chip = 1.00 SHQ');
+    // Two tables, two coins, at the same instant. Neither label is the deployment's.
+    expect(describeMode('mandate-transfer', tableRate('mandate-transfer', '1000000', 'SHQ')).label).toBe('SHQ');
+    expect(describeMode('mandate-transfer', tableRate('mandate-transfer', '10000')).label).toBe('USDC');
+  });
+
   it('reads a settled table’s pinned rate', () => {
     expect(CENT).toEqual({ chipValue: 10_000n, asset: 'USDC' });
     expect(DOLLAR).toEqual({ chipValue: 1_000_000n, asset: 'USDC' });

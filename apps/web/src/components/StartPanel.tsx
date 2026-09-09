@@ -128,7 +128,7 @@ export function StartPanel({
   // The stage copy above already says what an unauthorised player has left to do, so repeating the
   // server's version of the same sentence underneath is noise, not honesty. A failure always shows.
   const echoes = next?.action === 'authorise-at-home' && stage === 'authorise' && !broke;
-  const line = echoes ? null : (readyLine(result) ?? progressLine(result));
+  const line = echoes ? null : (readyLine(result, treasury?.assetSymbol) ?? progressLine(result));
 
   return (
     <section className="panel start" id="stake">

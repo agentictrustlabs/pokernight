@@ -117,6 +117,9 @@ describe('progressLine', () => {
 describe('readyLine', () => {
   it('ends on money, not on machinery', () => {
     expect(readyLine(result({ ready: true, balance: '10000000000' }))).toBe("You're set up with 10,000.00 USDC to play with.");
+    // The card room's own currency, where the server states one. There is more than one on the
+    // estate now, so the ticker is never assumed.
+    expect(readyLine(result({ ready: true, balance: '10000000000' }), 'SHQ')).toBe("You're set up with 10,000.00 SHQ to play with.");
   });
 
   it('claims nothing while the set-up is unfinished', () => {

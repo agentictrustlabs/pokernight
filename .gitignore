@@ -9,3 +9,8 @@ coverage/
 
 # House custodian private key (scripts/provision-house.mts). NEVER commit.
 .house-key.json
+
+# Foundry build output for contracts/ (the Sheqel sources ARE committed; the artifacts are not).
+contracts/out/
+contracts/cache/
+contracts/broadcast/

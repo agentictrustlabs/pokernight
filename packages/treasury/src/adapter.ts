@@ -42,6 +42,16 @@ export interface PlayerFunding {
    * authorised anything, which is a refusal, not a fallback.
    */
   mandate?: Delegation;
+  /**
+   * Why the host WITHHELD a mandate it holds — set only when there is one and it does not apply
+   * here.
+   *
+   * "You have not authorised anything" and "what you authorised is not about this table" are
+   * different facts, and a player who has just signed a mandate is owed the second one rather than
+   * being told the first. The host knows which it is (a mandate bound to another treasury, or
+   * denominated in another currency); the adapter cannot see the difference, so it is told.
+   */
+  mandateProblem?: string;
 }
 
 export interface TreasuryTransferAdapterOpts {
@@ -91,6 +101,9 @@ function buyInBlocker(opts: TreasuryTransferAdapterOpts, funding: PlayerFunding 
     return `the treasury recorded for ${req.playerId} ("${funding.treasury}") is not an address`;
   }
   if (!funding.mandate) {
+    // The host held a mandate and decided it does not apply here. That is a different fact from
+    // "you have not authorised anything", and it is the one the player needs.
+    if (funding.mandateProblem) return funding.mandateProblem;
     // State what IS missing, not why it might be. This used to assert that the Home had not curated
     // the template — a claim this code cannot check and which went stale the moment the Home did.
     return (
@@ -113,6 +126,10 @@ function buyInBlocker(opts: TreasuryTransferAdapterOpts, funding: PlayerFunding 
   return checkBuyInMandate(funding.mandate, {
     treasury: funding.treasury,
     houseDelegate: opts.houseDelegate,
+    // The house treasury is also this house. A mandate the Home minted with no declared redeemer
+    // names the payee, so accept that too rather than refusing every mandate issued before the
+    // Home's config named a redeemer.
+    alsoAcceptedDelegates: [opts.houseTreasury],
     payee: opts.houseTreasury,
     asset: opts.client.deployments.asset,
     paymentEnforcer: opts.enforcers.payment,
@@ -195,7 +212,14 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
       const mandate = (funding as PlayerFunding).mandate as Delegation;
       const delegationManager = opts.delegationManager as Address;
       const paymentEnforcer = (opts.enforcers as MandateEnforcers).payment;
-      const houseDelegate = opts.houseDelegate as Address;
+      // Present it as the account the mandate NAMES. The check above accepted either house account,
+      // so redeeming as a hardcoded one would fail on chain for the other — the DelegationManager
+      // compares the caller against the delegate, and both are custodied by the same key anyway.
+      const eqAddr = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+      const named = (mandate as { delegate?: string }).delegate;
+      const houseDelegate = (
+        named && eqAddr(named, houseTreasury) ? houseTreasury : opts.houseDelegate
+      ) as Address;
 
       const balance = await client.readUsdcBalance(payer);
       if (balance < amount) {

@@ -120,16 +120,118 @@ export function pinnedChipValue(meta: { chipValue?: string } | null | undefined,
   return unstampedChipValue(env);
 }
 
+/* ---------------------------------------------------------------- the settlement asset */
+
+/**
+ * The DEPLOYMENT DEFAULT settlement asset: the token a table created RIGHT NOW is stamped with.
+ *
+ * The same shape as {@link chipValue}, and for a stronger version of the same reason. A chip rate
+ * that moved under an open table mispriced the stacks on it; an ASSET that moved under an open
+ * table would collect a buy-in in one currency and pay the cash-out in another — the table would be
+ * keeping a promise it never made. So this is read ONCE, when a table is created, and every
+ * settlement afterwards reads the table's own pin (see {@link pinnedAsset} and `PokerTableDO`).
+ */
+export function defaultAsset(env: Env): `0x${string}` | null {
+  const v = (env.ASSET ?? '').trim();
+  return ADDRESS_RE.test(v) ? (v as `0x${string}`) : null;
+}
+
+/** What that asset calls itself (`SHQ`), for the places that put a ticker next to a number. */
+export function defaultAssetSymbol(env: Env): string | null {
+  const v = (env.ASSET_SYMBOL ?? '').trim();
+  return v === '' ? null : v.slice(0, 12);
+}
+
+/**
+ * The asset every table created BEFORE the asset was pinned has been settling in.
+ *
+ * Exactly the argument behind `LEGACY_CHIP_VALUE`, and it bites harder here: the deploy that
+ * introduces asset pinning is the same deploy that points `ASSET` at the card room's own coin, so
+ * "today's asset" is the wrong answer for every table that already exists. Those tables took their
+ * buy-ins in MockUSDC and hold player money denominated in it. Stamping them with the new coin
+ * would not re-price them — it would repudiate them.
+ *
+ * Delete it once every live table has loaded once. It is not a default for anything new.
+ */
+export function legacyAsset(env: Env): `0x${string}` | null {
+  const v = (env.LEGACY_ASSET ?? '').trim();
+  return ADDRESS_RE.test(v) ? (v as `0x${string}`) : null;
+}
+
+export function legacyAssetSymbol(env: Env): string | null {
+  const v = (env.LEGACY_ASSET_SYMBOL ?? '').trim();
+  return v === '' ? null : v.slice(0, 12);
+}
+
+/** What an unstamped table has been settling in: the legacy asset, else today's default. */
+export function unstampedAsset(env: Env): `0x${string}` | null {
+  return legacyAsset(env) ?? defaultAsset(env);
+}
+
+/** The symbol that goes with {@link unstampedAsset}, chosen by the SAME rule so the two agree. */
+export function unstampedAssetSymbol(env: Env): string | null {
+  return legacyAsset(env) ? legacyAssetSymbol(env) : defaultAssetSymbol(env);
+}
+
+/**
+ * The asset a table settles in: the one stamped on it, or — for a table created before assets were
+ * pinned — the asset such tables have been settling in (`LEGACY_ASSET`, falling back to the
+ * deployment default where no such tables can exist). The caller writes the answer onto the table's
+ * meta the first time it loads, and from then on this only ever returns the stamped value.
+ */
+export function pinnedAsset(meta: { asset?: string } | null | undefined, env: Env): `0x${string}` | null {
+  const raw = (meta?.asset ?? '').trim();
+  if (ADDRESS_RE.test(raw)) return raw as `0x${string}`;
+  return unstampedAsset(env);
+}
+
+/**
+ * What a given currency is CALLED, if this deployment knows — `SHQ`, `USDC`, else null.
+ *
+ * Only the deployment's own currencies have names here, which is the point: an address this card
+ * room does not settle in is named by its address, because inventing a ticker for it would be a
+ * label nobody checked.
+ */
+export function assetSymbolFor(env: Env, asset: string | null | undefined): string | null {
+  const a = (asset ?? '').trim().toLowerCase();
+  if (!ADDRESS_RE.test(a)) return null;
+  if (a === defaultAsset(env)?.toLowerCase()) return defaultAssetSymbol(env);
+  if (a === legacyAsset(env)?.toLowerCase()) return legacyAssetSymbol(env);
+  return null;
+}
+
+/** The symbol for {@link pinnedAsset}. A stamped table carries its own; anything else falls back the
+ *  same way the address does, so a table can never be labelled with a coin it does not pay in. */
+export function pinnedAssetSymbol(meta: { asset?: string; assetSymbol?: string } | null | undefined, env: Env): string | null {
+  const raw = (meta?.asset ?? '').trim();
+  if (ADDRESS_RE.test(raw)) {
+    const sym = (meta?.assetSymbol ?? '').trim();
+    return sym === '' ? null : sym.slice(0, 12);
+  }
+  return unstampedAssetSymbol(env);
+}
+
 export function rpcUrl(env: Env): string {
   const v = (env.RPC_URL ?? '').trim();
   if (!v) throw new TreasuryConfigError('RPC_URL', 'RPC_URL is not set, so the card room cannot reach the chain');
   return v;
 }
 
-/** The contract set both client shapes need. Buy-in-only addresses are read separately. */
-export function deployments(env: Env): TreasuryDeployments {
+/**
+ * The contract set both client shapes need. Buy-in-only addresses are read separately.
+ *
+ * `asset` overrides the deployment default with the token a PARTICULAR TABLE is pinned to. Every
+ * caller that is acting for a table passes it; the ones that are not (the faucet, a balance read,
+ * the terms of a fresh mandate) get today's default, which is the right answer for them because
+ * they are about what happens NEXT rather than about money already committed to a table.
+ */
+export function deployments(env: Env, asset?: string): TreasuryDeployments {
+  const pinned = (asset ?? '').trim();
+  if (asset !== undefined && !ADDRESS_RE.test(pinned)) {
+    throw new TreasuryConfigError('ASSET', `"${asset}" is not the address of a settlement asset`);
+  }
   const base: TreasuryDeployments = {
-    asset: addr(env, 'ASSET', 'the card room does not know which token it settles in'),
+    asset: pinned === '' ? addr(env, 'ASSET', 'the card room does not know which token it settles in') : (pinned as `0x${string}`),
     entryPoint: addr(env, 'ENTRY_POINT', 'a Smart Agent UserOp cannot be built'),
     agentAccountFactory: addr(env, 'AGENT_ACCOUNT_FACTORY', 'a Smart Agent address cannot be derived'),
     paymaster: addr(env, 'SMART_AGENT_PAYMASTER', 'nothing would sponsor the gas for a settlement'),
@@ -207,9 +309,10 @@ export function treasuryNaming(env: Env): { nameRegistry: `0x${string}`; treasur
   };
 }
 
-/** Balances and custody. Needs no key, so it works in every environment that has ASSET configured. */
-export function readOnlyTreasury(env: Env): TreasuryClient {
-  return createTreasuryClient({ rpcUrl: rpcUrl(env), chainId: chainId(env), deployments: deployments(env) });
+/** Balances and custody. Needs no key, so it works in every environment that has ASSET configured.
+ *  `asset` reads a table's PINNED currency instead of the deployment default. */
+export function readOnlyTreasury(env: Env, asset?: string): TreasuryClient {
+  return createTreasuryClient({ rpcUrl: rpcUrl(env), chainId: chainId(env), deployments: deployments(env, asset) });
 }
 
 /**
@@ -217,7 +320,7 @@ export function readOnlyTreasury(env: Env): TreasuryClient {
  * itself lives in the house Smart Agents — but it is still a key, so it is read here, used here, and
  * never logged, echoed or returned.
  */
-export function custodialTreasury(env: Env): TreasuryClient {
+export function custodialTreasury(env: Env, asset?: string): TreasuryClient {
   const key = (env.HOUSE_CUSTODIAN_KEY ?? '').trim();
   if (!PRIVATE_KEY_RE.test(key)) {
     throw new TreasuryConfigError(
@@ -229,7 +332,7 @@ export function custodialTreasury(env: Env): TreasuryClient {
   return createTreasuryClient({
     rpcUrl: rpcUrl(env),
     chainId: chainId(env),
-    deployments: deployments(env),
+    deployments: deployments(env, asset),
     signer: privateKeyToAccount(key as `0x${string}`),
   });
 }
@@ -255,31 +358,70 @@ export function houseDelegate(env: Env): `0x${string}` | undefined {
   return ADDRESS_RE.test(v) ? (v as `0x${string}`) : undefined;
 }
 
-const ERC20_NAME_ABI = [
+const TEST_ASSET_PROBE_ABI = [
   { type: 'function', name: 'name', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+  { type: 'function', name: 'symbol', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+  { type: 'function', name: 'mint', stateMutability: 'nonpayable', inputs: [{ type: 'address' }, { type: 'uint256' }], outputs: [] },
 ] as const;
 
 /**
- * Whether the settlement asset is a TEST asset with an open mint.
- *
- * The faucet route is only ever allowed to exist against play money, and "the operator set a flag"
- * is not proof of that — the token itself is. MockUSDC calls itself "Mock USD Coin"; a real USDC
- * does not, and would revert on `mint` anyway. Reading the name means the refusal is grounded in
- * what is actually deployed rather than in configuration that could be wrong.
+ * A caller with no standing whatsoever: no key, no balance, no role in this deployment. The probe
+ * below asks the token whether IT may mint, so the address has to be one that could not possibly be
+ * privileged. A fixed literal, so the question asked is identical every time and a refusal can be
+ * reproduced by hand.
  */
-export async function isTestAsset(env: Env): Promise<{ ok: true; name: string } | { ok: false; reason: string }> {
+const OPEN_MINT_PROBE = '0x000000000000000000000000000000000f0f0f0f' as `0x${string}`;
+
+/**
+ * Whether the settlement asset is a TEST asset — one ANYONE may mint.
+ *
+ * The faucet, and the seed a new player is given, are only ever allowed to exist against play money,
+ * and "the operator set a flag" is not proof of that. The token itself is.
+ *
+ * This used to read the token's NAME and accept anything calling itself mock or test. That worked
+ * while the only test asset on the chain was `Mock USD Coin`, and stopped working the moment the
+ * card room minted a currency of its own: `Sheqel` is exactly as mintable as MockUSDC and says
+ * neither word. Widening the pattern to "…or Sheqel" would have made the check a list of names —
+ * which is a configuration by another route, and wrong for the next coin.
+ *
+ * So the check no longer reads the label. It asks the CONTRACT the question the faucet actually
+ * depends on: simulate `mint(address,uint256)` from an address with no standing in this deployment
+ * (`OPEN_MINT_PROBE`) and see whether it would succeed. That is true of MockUSDC, true of Sheqel,
+ * and false of every asset whose supply means something: a real USDC has no such function, or gates
+ * it behind a minter role, and either way the simulation reverts. Nothing is minted by asking — a
+ * simulation changes no state — and the answer is grounded in deployed bytecode rather than in a
+ * string the token chose for itself or a variable somebody set.
+ *
+ * `name` is still read, and still returned, so a refusal can say WHICH token it refused. It just no
+ * longer decides anything.
+ */
+export async function isTestAsset(env: Env, asset?: string): Promise<{ ok: true; name: string } | { ok: false; reason: string }> {
+  const client = createPublicClient({ transport: http(rpcUrl(env)) });
+  const address = deployments(env, asset).asset;
+
   let name: string;
   try {
-    const client = createPublicClient({ transport: http(rpcUrl(env)) });
-    name = (await client.readContract({ address: deployments(env).asset, abi: ERC20_NAME_ABI, functionName: 'name' })) as string;
+    name = (await client.readContract({ address, abi: TEST_ASSET_PROBE_ABI, functionName: 'name' })) as string;
   } catch (e) {
     return { ok: false, reason: `could not read the settlement asset's name: ${e instanceof Error ? e.message : String(e)}` };
   }
-  if (!/mock|test/i.test(name)) {
+
+  try {
+    await client.simulateContract({
+      address,
+      abi: TEST_ASSET_PROBE_ABI,
+      functionName: 'mint',
+      args: [OPEN_MINT_PROBE, 1n],
+      account: OPEN_MINT_PROBE,
+    });
+  } catch (e) {
     return {
       ok: false,
-      reason: `the settlement asset calls itself "${name}", which is not a test asset — there is no faucet for real money`,
+      reason:
+        `"${name}" (${address}) will not let an arbitrary caller mint it, so it is not a test asset — ` +
+        `there is no faucet for money whose supply means something (${e instanceof Error ? e.message.split('\n')[0] : String(e)})`,
     };
   }
+
   return { ok: true, name };
 }

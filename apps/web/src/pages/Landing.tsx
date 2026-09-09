@@ -21,6 +21,9 @@ const POLL_MS = 15000;
  */
 export function Landing({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSession) => void }) {
   const live = useLiveLobby();
+  // The card room's currency, as the card room states it (`GET /auth/config`). `USDC` is the
+  // fallback because a deployment that names no coin is one that settles in USDC.
+  const money = (auth.config?.home.buyIn?.symbol ?? '').trim() || 'USDC';
   return (
     <main className="landing">
       <Hero live={live} />
@@ -34,10 +37,11 @@ export function Landing({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSe
               <h2>There is no account to create.</h2>
               <p>
                 Sign in with a phone number, an email address or a social account. We set you up with{' '}
-                <strong>10,000 USDC to play with</strong>, and you are at a table.
+                <strong>10,000 {money} to play with</strong>, and you are at a table.
               </p>
               <p>
-                It is <strong>test money</strong> — USDC on faithchain, worth nothing anywhere else — and nothing on this site is a wager. The
+                It is <strong>test money</strong> — {money}, this card room&rsquo;s own coin on faithchain, worth nothing anywhere else — and
+                nothing on this site is a wager. The
                 settlement is real: buy-ins and cash-outs move between your money and the house's, and every one of them has a receipt you
                 can look at.
               </p>
@@ -153,7 +157,7 @@ const STEPS: { title: string; body: string }[] = [
   },
   {
     title: 'Get your stake',
-    body: 'One button sets up a money account that is yours, and puts 10,000 test USDC in it. You say how much a table may take from it, and you can undo that at your Home at any time.',
+    body: 'One button sets up a money account that is yours, and puts 10,000 in test money in it. You say how much a table may take from it, and you can undo that at your Home at any time.',
   },
   {
     title: 'Play the hand',
@@ -190,7 +194,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
   const tables = live.tables;
   // The featured table's own rate. Null on play money, and null while the detail is still loading —
   // never the deployment's default, which is not what an already-open table settles at.
-  const featuredRate = tableRate(live.featured?.settlement, live.featured?.chipValue);
+  const featuredRate = tableRate(live.featured?.settlement, live.featured?.chipValue, live.featured?.assetSymbol);
   return (
     <section className="landing-section live" id="live">
       <h2 className="section-title">In the room right now</h2>
@@ -252,7 +256,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
                 {tables.map((t) => {
                   // A visitor reads this list before they have anything to compare it against, so a
                   // settled table's buy-in is priced here too rather than left as a bare number.
-                  const rate = tableRate(t.settlement, t.chipValue);
+                  const rate = tableRate(t.settlement, t.chipValue, t.assetSymbol);
                   const lo = dualAmount(t.config.minBuyIn, rate);
                   const hi = dualAmount(t.config.maxBuyIn, rate);
                   return (
@@ -270,7 +274,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
                         </span>
                         {lo.assetText && hi.assetText ? (
                           <span className="cost-asset">
-                            {lo.assetText}–{hi.assetText} USDC
+                            {lo.assetText}–{hi.assetText} {rate?.asset ?? 'USDC'}
                           </span>
                         ) : null}
                       </td>

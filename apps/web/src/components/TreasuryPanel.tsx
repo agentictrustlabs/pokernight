@@ -14,10 +14,21 @@ import { fmtUsdc, shortRef, type TreasuryView } from '../lib/treasury';
  * default conflated the two. A player with no treasury is offered a way to make one, never a
  * substitute.
  *
- * Below that: the money in it, and the mandate. A buy-in moves the player's own USDC, so it needs an
+ * Below that: the money in it, and the mandate. A buy-in moves the player's own money, so it needs an
  * authority the player signs; the panel shows the exact caps before asking, and shows them again
  * after, because "authorised" with no numbers is not consent.
  */
+/**
+ * What this card room's money is called, as the server states it.
+ *
+ * `USDC` is the fallback and it is the honest one: a server that names no currency is one that
+ * predates the card room having a coin of its own, and USDC is what it settles in. The wrong ticker
+ * beside a real balance is worse than a stale one.
+ */
+function ticker(view: { assetSymbol?: string } | null): string {
+  return (view?.assetSymbol ?? '').trim() || 'USDC';
+}
+
 export function TreasuryPanel({ session, config, bare = false }: { session: AppSession; config: AuthConfig | null; bare?: boolean }) {
   const [view, setView] = useState<TreasuryView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -25,6 +36,9 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [fundAmount, setFundAmount] = useState('10000');
+  /** This card room's currency, as the server states it. Read before `view` is loaded too, so the
+   *  callbacks below close over a stable value rather than a conditional one. */
+  const money = ticker(view);
   const [label, setLabel] = useState('');
   const [handedOff, setHandedOff] = useState(false);
 
@@ -83,9 +97,9 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
     () =>
       run('fund', async () => {
         const r = await api.fundTreasury(fundAmount.trim(), session.token);
-        return `Minted ${r.mintedUsdc} test USDC — ${shortRef(r.txHash)}`;
+        return `Minted ${r.mintedUsdc} test ${money} — ${shortRef(r.txHash)}`;
       }),
-    [fundAmount, run, session.token],
+    [fundAmount, money, run, session.token],
   );
 
   const authorise = useCallback(
@@ -94,9 +108,9 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
         const r = await api.signMandate(undefined, session.token);
         const per = fmtUsdc(r.maxPerBuyIn) ?? '?';
         const total = fmtUsdc(r.sessionTotal) ?? '?';
-        return `Authorised: up to ${per} USDC per buy-in, ${total} USDC in total, at most ${r.maxBuyIns} buy-ins, until ${new Date(r.validUntil * 1000).toLocaleString()}.`;
+        return `Authorised: up to ${per} ${money} per buy-in, ${total} ${money} in total, at most ${r.maxBuyIns} buy-ins, until ${new Date(r.validUntil * 1000).toLocaleString()}.`;
       }),
-    [run, session.token],
+    [money, run, session.token],
   );
 
   /**
@@ -170,7 +184,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
           <code className="mono" title={chosen}>
             {view.chosenName || shortAddress(chosen)}
           </code>
-          <strong className="treasury-balance">{chosenBalance === null ? '—' : `${chosenBalance} USDC`}</strong>
+          <strong className="treasury-balance">{chosenBalance === null ? '—' : `${chosenBalance} ${money}`}</strong>
         </div>
       ) : null}
 
@@ -187,7 +201,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
               <code className="mono" title={c.address}>
                 {shortAddress(c.address)}
               </code>
-              <span className="num">{c.balanceUsdc === null ? (c.error ? '—' : '…') : `${fmtUsdc(c.balance) ?? c.balanceUsdc} USDC`}</span>
+              <span className="num">{c.balanceUsdc === null ? (c.error ? '—' : '…') : `${fmtUsdc(c.balance) ?? c.balanceUsdc} ${money}`}</span>
               {c.address === chosen ? (
                 <span className="hint">in use</span>
               ) : (
@@ -270,11 +284,11 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
               value={fundAmount}
               inputMode="decimal"
               maxLength={16}
-              aria-label="Test USDC to mint"
+              aria-label={`Test ${money} to mint`}
               onChange={(e) => setFundAmount(e.target.value)}
             />
             <button type="button" className={empty ? 'primary' : undefined} disabled={working} onClick={() => void fund()}>
-              {busy === 'fund' ? 'Minting…' : 'Fund with test USDC'}
+              {busy === 'fund' ? 'Minting…' : `Fund with test ${money}`}
             </button>
           </span>
         </div>
@@ -295,6 +309,33 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
       {notice ? <p className="hint treasury-notice">{notice}</p> : null}
       {error ? <div className="form-error">{error}</div> : null}
     </Shell>
+  );
+}
+
+/**
+ * What the treasury holds in the card room's OTHER currency, when there is one.
+ *
+ * There is one while a currency change is in flight: new tables settle in Sheqel, and every table
+ * opened before it is pinned to MockUSDC and is still paid out in it. A player at one of those
+ * tables is spending money this panel would otherwise not show at all, which is not a balance a
+ * money panel may leave out. When the older currency is gone from the deployment, so is this line.
+ */
+function OtherCurrencies({ view, money }: { view: TreasuryView; money: string }) {
+  const others = (view.balances ?? []).filter((b) => (b.symbol ?? '') !== money);
+  if (others.length === 0) return null;
+  return (
+    <p className="hint treasury-other-currency">
+      Also holds{' '}
+      {others.map((b, i) => (
+        <span key={b.asset}>
+          {i > 0 ? ', ' : ''}
+          <strong>
+            {b.formatted ?? '—'} {b.symbol ?? 'other'}
+          </strong>
+        </span>
+      ))}{' '}
+      — for the tables that opened before {money}, which still settle in it.
+    </p>
   );
 }
 
@@ -324,6 +365,7 @@ function MandateSection({
   onAuthoriseAtHome: () => void;
 }) {
   const m = view.mandate;
+  const money = ticker(view);
   if (m.unavailable) {
     return (
       <div className="treasury-mandate">
@@ -342,16 +384,29 @@ function MandateSection({
       <h3>Buy-in authority</h3>
       {m.present ? (
         <p className="hint">
-          <span className="tag live">authorised</span> The card room may take up to <strong>{per} USDC</strong> per
-          buy-in from {view.chosenName || shortAddress(view.chosen ?? '')}, <strong>{total} USDC</strong> in total, at
+          <span className="tag live">authorised</span> The card room may take up to <strong>
+            {per} {money}
+          </strong>{' '}
+          per buy-in from {view.chosenName || shortAddress(view.chosen ?? '')},{' '}
+          <strong>
+            {total} {money}
+          </strong>{' '}
+          in total, at
           most {m.maxBuyIns} times, until {until}. It can send that money to one place only:{' '}
           <code className="mono">{shortAddress(m.payee)}</code>.
         </p>
       ) : (
         <>
           <p className="hint">
-            A buy-in moves your own USDC, so it needs your signature. What you would be authorising: up to{' '}
-            <strong>{per} USDC</strong> per buy-in, <strong>{total} USDC</strong> in total, at most {m.maxBuyIns} times,
+            A buy-in moves your own {money}, so it needs your signature. What you would be authorising: up to{' '}
+            <strong>
+              {per} {money}
+            </strong>{' '}
+            per buy-in,{' '}
+            <strong>
+              {total} {money}
+            </strong>{' '}
+            in total, at most {m.maxBuyIns} times,
             until {until} — payable only to <code className="mono">{shortAddress(m.payee)}</code>, and revocable at your
             Home at any time.
           </p>

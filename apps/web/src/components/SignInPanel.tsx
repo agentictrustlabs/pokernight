@@ -2,15 +2,24 @@ import { useState } from 'react';
 import type { AuthState } from '../App';
 import type { AppSession, Session } from '../lib/types';
 import { api } from '../lib/api';
-import { PROFILE_NAME_MAX, toProfileName } from '../lib/home';
+import { PROFILE_NAME_MAX, toProfileName, type AuthConfig } from '../lib/home';
+import { fmtAsset } from '../lib/money';
 
 /**
  * The way in. ONE question, ONE action, and two things folded away behind them.
  *
  * The headline is the door a stranger actually uses: their Home, where they sign in with a phone
  * number, an email address or a social account. What happens after they press it — the OIDC
- * ceremony, their Smart Agent signing a site-login delegation, the card room verifying it against
- * their Home — is true and is not their problem, so this says what they get rather than how.
+ * ceremony, their Smart Agent signing a delegation, the card room verifying it against their Home —
+ * is true and is not their problem, so this says what they get rather than how.
+ *
+ * ONE THING IS THEIR PROBLEM, and it is stated here rather than discovered later. That same visit
+ * to their Home also mints the buy-in mandate: a ceiling on what this table may take from their
+ * money tonight. It used to be a second trip, which is why it used to be somebody else's screen to
+ * explain. It is this screen's job now, so {@link BuyInConsent} says the numbers — per buy-in, in
+ * all, how many, how long, and that nothing moves until they actually sit down — BEFORE the button,
+ * and the button says both things it does. A money grant folded into something labelled only "sign
+ * in" would be a worse bug than the extra trip it replaced.
  *
  * The question above it is what to call them, and it is a PROFILE name — not a Faithnet handle. It
  * is what the seat plate, the hand log and the header say instead of a truncated address, and it is
@@ -81,8 +90,9 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
               A first name or a full name — it is what other players see at the table, and what this room calls you.
               Leave it blank if you would rather not: you will play as &ldquo;Seat 4&rdquo;.
             </p>
+            <BuyInConsent buyIn={config.home.buyIn ?? null} />
             <button className="primary big" type="button" onClick={() => auth.signInWithHome(name)} disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in to play'}
+              {busy ? 'Signing in…' : config.home.buyIn ? 'Sign in and set tonight’s limit' : 'Sign in to play'}
             </button>
             <p className="hint">
               Your phone number, an email address or a social account — whichever you like, at your Home
@@ -94,6 +104,37 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
           {config.devAuth ? <DevLogin onLogin={onLogin} /> : null}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * What signing in ALSO approves, in the numbers the Home is about to show.
+ *
+ * Rendered only where the card room states caps. Where it does not — local dev, a deployment with
+ * no mandate configuration — sign-in asks for a plain session, so there is nothing to disclose and
+ * this renders nothing rather than a reassurance nobody needs.
+ *
+ * "Nothing is taken until you sit down" is load-bearing and it is true: the mandate is a `pull`
+ * authority, so the ceremony mints a ceiling and moves no money. The revocation sentence is true
+ * too, and it is the player's, not ours — it happens at their Home.
+ */
+function BuyInConsent({ buyIn }: { buyIn: NonNullable<AuthConfig['home']['buyIn']> | null }) {
+  if (!buyIn) return null;
+  const per = `${fmtAsset(BigInt(buyIn.maxPerBuyIn))} ${buyIn.symbol}`;
+  const all = `${fmtAsset(BigInt(buyIn.sessionTotal))} ${buyIn.symbol}`;
+  const hours = Math.max(1, Math.round(buyIn.validSeconds / 3600));
+  return (
+    <div className="signin-consent">
+      <p>
+        <strong>Signing in also sets your limit for tonight.</strong> At your Home you will approve this card room taking up
+        to <strong>{per}</strong> from your money for one buy-in, up to <strong>{all}</strong> in all, across at
+        most {buyIn.maxBuyIns} buy-ins, for the next {hours} hours.
+      </p>
+      <p className="hint">
+        Nothing is taken until you sit down at a table and buy in — this is a ceiling, not a payment. Your Home shows you the
+        same figures and signs it, and you can undo it there whenever you like.
+      </p>
     </div>
   );
 }

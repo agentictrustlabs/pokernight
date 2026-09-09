@@ -1,5 +1,5 @@
 /**
- * The treasury routes, against the DEV configuration (no ASSET, no chain).
+ * The treasury routes, against the DEV configuration (a named asset, but no chain behind it).
  *
  * That is deliberately the harshest environment for them: nothing on chain is reachable, so every
  * answer these tests see is a refusal. What is asserted is that each refusal NAMES the thing that is
@@ -48,8 +48,10 @@ describe('GET /treasury', () => {
     const res = await get('/treasury', s.token);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { unavailable: string | null; chosen: string | null; candidates: unknown[] };
-    // Dev config has no ASSET, so the answer is a sentence naming it — not a 500.
-    expect(body.unavailable).toMatch(/ASSET/);
+    // Dev config has no chain behind it, so the answer is a sentence naming the first variable that
+    // is not set — not a 500. (`ASSET` and `ASSET_SYMBOL` ARE set in dev, so the shape of a settled
+    // deployment is exercised; `ENTRY_POINT` is the next thing a money layer needs.)
+    expect(body.unavailable).toMatch(/ENTRY_POINT/);
     expect(body.chosen).toBeNull();
     expect(body.candidates).toEqual([]);
   });
@@ -116,7 +118,7 @@ describe('settled tables', () => {
   it('refuses to CREATE one on a deployment that cannot settle, saying why', async () => {
     const res = await post('/tables', { name: 'USDC night', settlement: 'mandate-transfer', circle: crypto.randomUUID() }, undefined);
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toMatch(/cannot settle in USDC/);
+    expect(((await res.json()) as { error: string }).error).toMatch(/cannot settle on chain/);
   });
 });
 

@@ -70,7 +70,18 @@ import { readSessionRecord } from './auth.js';
 import { seatIdleMs } from './env.js';
 import type { Env } from './env.js';
 import { createSettlementAdapter } from './settlement.js';
-import { defaultChipValue, pinnedChipValue, unstampedChipValue } from './treasury.js';
+import {
+  assetSymbolFor,
+  defaultAsset,
+  defaultAssetSymbol,
+  defaultChipValue,
+  pinnedAsset,
+  pinnedAssetSymbol,
+  pinnedChipValue,
+  unstampedAsset,
+  unstampedAssetSymbol,
+  unstampedChipValue,
+} from './treasury.js';
 
 /* ------------------------------------------------------------------ types */
 
@@ -92,6 +103,23 @@ export interface TableMeta {
    * all along — deliberately not today's default, which has moved.
    */
   chipValue?: string;
+  /**
+   * The ERC-20 this table settles in, as an address.
+   *
+   * Stamped from the deployment default when the table is created and NEVER re-derived, for a
+   * stronger version of the reason `chipValue` is. A rate that moved under an open table mispriced
+   * the stacks on it. An ASSET that moved under an open table would take the buy-ins in one
+   * currency and pay the cash-outs in another — a table that took MockUSDC and paid out Sheqel
+   * would not have mispriced anything; it would have kept a different promise from the one it made.
+   *
+   * Optional only for a table created before this field existed: `migrateAsset` stamps `LEGACY_ASSET`
+   * onto it the first time it loads, which is the currency it has been settling in all along —
+   * deliberately not today's default, which is now the card room's own coin.
+   */
+  asset?: string;
+  /** What {@link TableMeta.asset} calls itself (`USDC`, `SHQ`). A label for the address, stamped at
+   *  the same instant and by the same rule, so a table can never name a coin it does not pay in. */
+  assetSymbol?: string;
 }
 
 export interface InitRequest {
@@ -329,9 +357,10 @@ export class PokerTableDO extends DurableObject<Env> {
       // human on a WebSocket, so the record is derivable; it is persisted on the next seat change.
       this.players = (kv.get('players') as Record<string, SeatRecord> | undefined) ?? migratePlayers(this.names);
       // Migration: a table created before the chip rate was pinned has been settling at
-      // `LEGACY_CHIP_VALUE`. Write that on once, here, and the table is immune to the deployment
-      // default moving from this moment on — including the move that ships with this very change.
-      const migrated = migrateChipValue(this.meta, env);
+      // `LEGACY_CHIP_VALUE`, and one created before the ASSET was pinned has been settling in
+      // `LEGACY_ASSET`. Write both on once, here, and the table is immune to either deployment
+      // default moving from this moment on — including the moves that ship with those very changes.
+      const migrated = migrateMeta(this.meta, env);
       if (migrated) {
         this.meta = migrated;
         await ctx.storage.put('meta', migrated);
@@ -357,6 +386,8 @@ export class PokerTableDO extends DurableObject<Env> {
         name: this.meta.name,
         settlement: this.meta.settlement,
         ...(this.meta.chipValue ? { chipValue: this.meta.chipValue } : {}),
+        ...(this.meta.asset ? { asset: this.meta.asset } : {}),
+        ...(this.meta.assetSymbol ? { assetSymbol: this.meta.assetSymbol } : {}),
         view: viewFor(this.state, null),
         names: this.names,
         players: this.publicPlayers(),
@@ -415,12 +446,18 @@ export class PokerTableDO extends DurableObject<Env> {
     // The rate is a property of the TABLE, read from the deployment default at this instant and
     // fixed for the life of the table. Everything downstream reads `meta.chipValue`, never the env.
     const rate = defaultChipValue(this.env);
+    // …and so is the CURRENCY. Same instant, same rule, same reason: a table settles in the money it
+    // opened in, whatever the deployment is pointed at by the time somebody cashes out.
+    const asset = defaultAsset(this.env);
+    const assetSymbol = defaultAssetSymbol(this.env);
     const meta: TableMeta = {
       tableId: body.tableId,
       name: body.name,
       settlement: body.settlement,
       createdAt: body.createdAt ?? Date.now(),
       ...(rate === null ? {} : { chipValue: rate.toString() }),
+      ...(asset === null ? {} : { asset }),
+      ...(asset === null || assetSymbol === null ? {} : { assetSymbol }),
     };
     // Adapter must exist for this mode before we accept the table — a table that cannot settle must
     // fail here, not at someone's cash-out. Built with the same funding resolver `settlement()` uses,
@@ -428,6 +465,7 @@ export class PokerTableDO extends DurableObject<Env> {
     try {
       this.adapter = createSettlementAdapter(meta.settlement, this.env, {
         ...(rate === null ? {} : { chipValue: rate }),
+        ...(asset === null ? {} : { asset }),
         resolveFunding: (req) => this.playerFunding(req.playerId),
       });
     } catch (e) {
@@ -452,8 +490,11 @@ export class PokerTableDO extends DurableObject<Env> {
       seated: state.seats.length,
       handNo: state.handNo,
       createdAt: meta.createdAt,
-      // Said out loud so a client can convert chips to money instead of guessing at a rate.
+      // Said out loud so a client can convert chips to money instead of guessing at a rate — and
+      // NAME that money, instead of assuming every table on the estate settles in the same coin.
       ...(meta.chipValue ? { chipValue: meta.chipValue } : {}),
+      ...(meta.asset ? { asset: meta.asset } : {}),
+      ...(meta.assetSymbol ? { assetSymbol: meta.assetSymbol } : {}),
     };
   }
 
@@ -1428,8 +1469,10 @@ export class PokerTableDO extends DurableObject<Env> {
   private settlement(): SettlementAdapter {
     if (!this.adapter) {
       const rate = this.chipValue();
+      const asset = this.asset();
       this.adapter = createSettlementAdapter((this.meta as TableMeta).settlement, this.env, {
         ...(rate === null ? {} : { chipValue: rate }),
+        ...(asset === null ? {} : { asset }),
         resolveFunding: (req) => this.playerFunding(req.playerId),
       });
     }
@@ -1443,6 +1486,20 @@ export class PokerTableDO extends DurableObject<Env> {
    */
   private chipValue(): bigint | null {
     return pinnedChipValue(this.meta, this.env);
+  }
+
+  /**
+   * This table's settlement asset. THE one currency every amount of money this table moves is
+   * denominated in; `ASSET` is only ever consulted through the pin written at creation (or, for a
+   * table older than the pin, written on first load).
+   */
+  private asset(): string | null {
+    return pinnedAsset(this.meta, this.env);
+  }
+
+  /** What this table's money is called. Null where the table states no symbol for its asset. */
+  private assetSymbol(): string | null {
+    return pinnedAssetSymbol(this.meta, this.env);
   }
 
   /**
@@ -1462,8 +1519,29 @@ export class PokerTableDO extends DurableObject<Env> {
     // treasury, the authority does not travel with them: leaving it attached would let a seat spend
     // from money they never authorised. Absent here means the adapter refuses by name, which is right.
     const boundTo = (rec?.mandateTreasury ?? '').trim().toLowerCase();
-    if (rec?.buyInMandate && (!boundTo || boundTo === treasury.toLowerCase())) {
+    // …and a mandate authorises ONE CURRENCY to be spent. A mandate signed for MockUSDC says nothing
+    // about the player's Sheqel, so carrying it to a Sheqel table would be reading a signature as
+    // consent to something it never named. The adapter's on-chain check would refuse it anyway
+    // (`checkBuyInMandate` compares the asset); refusing here means the refusal names the currency
+    // instead of arriving as a mismatch deep inside a redemption.
+    const mandateAsset = (rec?.mandateAsset ?? '').trim().toLowerCase();
+    const tableAsset = (this.asset() ?? '').trim().toLowerCase();
+    const sameAsset = !mandateAsset || !tableAsset || mandateAsset === tableAsset;
+    if (rec?.buyInMandate && (!boundTo || boundTo === treasury.toLowerCase()) && sameAsset) {
       funding.mandate = rec.buyInMandate as PlayerFunding['mandate'];
+    } else if (rec?.buyInMandate && !sameAsset) {
+      // Say which of the two it is. A player who has just authorised buy-ins and is then told they
+      // have authorised nothing would reasonably conclude the ceremony failed; what actually
+      // happened is that their authority is denominated in another currency and this table is not
+      // paid in it.
+      const name = (address: string): string => {
+        const symbol = assetSymbolFor(this.env, address);
+        return symbol ? `${symbol} (${address})` : address;
+      };
+      funding.mandateProblem =
+        `your buy-in authority is denominated in ${name(mandateAsset)}, and this table settles in ` +
+        `${name(tableAsset)} — authorise buy-ins for this table's currency, or sit at a table that ` +
+        `settles in the one you authorised`;
     }
     return funding;
   }
@@ -1594,12 +1672,24 @@ export class PokerTableDO extends DurableObject<Env> {
     tableId: string;
     settlement: SettlementMode;
     chipValue: string | null;
+    asset: string | null;
+    assetSymbol: string | null;
     treasury: string | null;
     entries: Array<{ id: string; seat: number; kind: string; chips: number; handNo: number | null; at: number; receipt: SettlementReceipt | null }>;
   } {
     const meta = this.meta as TableMeta;
     const rate = meta.chipValue ?? null;
-    const base = { tableId: meta.tableId, settlement: meta.settlement, chipValue: rate, treasury: null as string | null, entries: [] as never[] };
+    const asset = meta.asset ?? null;
+    const assetSymbol = meta.assetSymbol ?? null;
+    const base = {
+      tableId: meta.tableId,
+      settlement: meta.settlement,
+      chipValue: rate,
+      asset,
+      assetSymbol,
+      treasury: null as string | null,
+      entries: [] as never[],
+    };
     if (!playerId) return base;
     const rows = this.ctx.storage.sql
       .exec<{ id: string; seat: number; kind: string; chips: number; hand_no: number | null; at: number; receipt_json: string | null }>(
@@ -1612,6 +1702,8 @@ export class PokerTableDO extends DurableObject<Env> {
       tableId: meta.tableId,
       settlement: meta.settlement,
       chipValue: rate,
+      asset,
+      assetSymbol,
       treasury: this.players[playerId]?.treasury ?? null,
       entries: rows.map((r) => ({
         id: r.id,
@@ -1708,6 +1800,35 @@ export function migrateChipValue(meta: TableMeta | null, env: Env): TableMeta | 
   if (!meta || meta.chipValue) return null;
   const rate = unstampedChipValue(env);
   return rate === null ? null : { ...meta, chipValue: rate.toString() };
+}
+
+/**
+ * Stamp the CURRENCY a table that predates the pin has been settling in onto it, or `null` when
+ * there is nothing to do.
+ *
+ * The value written is `LEGACY_ASSET` — deliberately NOT today's `ASSET`, for the same reason
+ * {@link migrateChipValue} writes the legacy rate, only with more at stake. The deploy that brings
+ * asset pinning is the deploy that points `ASSET` at the card room's own coin; stamping that onto a
+ * table whose players bought in with MockUSDC would not re-price their stacks, it would change what
+ * the table owes them into a different currency. Pure, and exported for the tests.
+ */
+export function migrateAsset(meta: TableMeta | null, env: Env): TableMeta | null {
+  if (!meta || meta.asset) return null;
+  const asset = unstampedAsset(env);
+  if (asset === null) return null;
+  const symbol = unstampedAssetSymbol(env);
+  return { ...meta, asset, ...(symbol === null ? {} : { assetSymbol: symbol }) };
+}
+
+/**
+ * Every first-load migration, composed: the rate, then the currency. One function so the DO writes
+ * the record once and neither migration can be forgotten at the call site. `null` means the record
+ * is already complete and nothing should be written.
+ */
+export function migrateMeta(meta: TableMeta | null, env: Env): TableMeta | null {
+  const rated = migrateChipValue(meta, env);
+  const assed = migrateAsset(rated ?? meta, env);
+  return assed ?? rated;
 }
 
 /**

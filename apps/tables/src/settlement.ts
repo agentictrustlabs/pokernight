@@ -3,9 +3,11 @@
  *
  * play-money       chips never leave the DO. Unchanged, and deliberately untouched by everything
  *                  below: a play-money table must behave exactly as it did before money was real.
- * mandate-transfer USDC moves between Smart Agent treasuries on chain. Cash-outs are paid by the
- *                  house custodian out of HOUSE_TREASURY_SA; buy-ins are pulled from the player's
- *                  own treasury by redeeming a mandate THEY signed. See `@pokernight/treasury`.
+ * mandate-transfer the TABLE's settlement asset moves between Smart Agent treasuries on chain —
+ *                  Sheqel for a table opened now, MockUSDC for one opened before the card room had
+ *                  a coin of its own. Cash-outs are paid by the house custodian out of
+ *                  HOUSE_TREASURY_SA; buy-ins are pulled from the player's own treasury by
+ *                  redeeming a mandate THEY signed. See `@pokernight/treasury`.
  * table-escrow     phase 4.
  *
  * Everything chain-shaped is read here (`treasury.ts`) and injected. The adapter itself lives in
@@ -42,6 +44,12 @@ export interface SettlementAdapterOpts {
    * created — and a stack bought at one rate must never be paid out at another.
    */
   chipValue?: bigint;
+  /**
+   * The TABLE's settlement asset. Passed by the DO from its own meta for the same reason the chip
+   * rate is: the deployment default may have moved to a different currency since the table was
+   * created, and a stack bought with one coin must never be paid out in another.
+   */
+  asset?: string;
   resolveFunding?: FundingResolver;
 }
 
@@ -69,17 +77,20 @@ function createMandateTransferAdapter(env: Env, opts: SettlementAdapterOpts): Se
   let chain: number;
   let deploys;
   try {
-    client = custodialTreasury(env);
+    // The table's own currency wherever the caller knows it, exactly as with the rate below: the
+    // client this builds carries `deployments.asset`, and that is the token every transfer, every
+    // balance check and every mandate check in this adapter is denominated in.
+    client = custodialTreasury(env, opts.asset);
     house = houseTreasury(env);
     // The table's own rate wherever the caller knows it. `chipValue(env)` is the fallback for the
     // one caller that has no table yet — creating one — and is the same value that table is about
     // to be stamped with, so the two can never disagree.
     chips = opts.chipValue ?? chipValue(env);
     chain = chainId(env);
-    deploys = deployments(env);
+    deploys = deployments(env, opts.asset);
   } catch (e) {
     if (e instanceof TreasuryConfigError) {
-      throw new Error(`this deployment cannot settle in USDC: ${e.message}`);
+      throw new Error(`this deployment cannot settle on chain: ${e.message}`);
     }
     throw e;
   }

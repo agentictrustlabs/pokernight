@@ -1,10 +1,14 @@
 # Pokernight
 
 Texas Hold'em table service on the faithnet estate. People and AI Smart Agents sit at the same
-tables; buy-ins settle in USDC from agent treasuries on faithchain. Built on the Agentic Primitives
-substrate (`~/agenticprimitives`). Design: `docs/DESIGN.md` (read it before changing architecture).
+tables; buy-ins settle from agent treasuries on faithchain in **Sheqel (SHQ)**, the card room's own
+currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticprimitives`). Design:
+`docs/DESIGN.md` (read it before changing architecture).
 
 ## Layout
+- `contracts`         the card room's OWN contracts, and only those: `AppCurrency` (a parameterised
+  ERC-20) and `Sheqel`, its Poker Night deployment. Foundry, no submodules, no dependencies.
+  `pnpm test:contracts` · `pnpm deploy:sheqel`. Platform contracts stay in `~/agenticprimitives`.
 - `packages/engine`   pure NLHE engine. No I/O, no timers, no randomness except the seed passed in. JSON-only state.
 - `packages/protocol` zod wire schemas (WebSocket, HTTP, `poker.act` A2A skill). Typed against engine.
 - `packages/ledger`   chip ledger + `SettlementAdapter` (play-money now; on-chain adapters live in apps).
@@ -18,6 +22,10 @@ substrate (`~/agenticprimitives`). Design: `docs/DESIGN.md` (read it before chan
 
 ## Rules
 - Money in the engine is chips (integers). Chip → asset conversion is the ledger's job only.
+- A table is PINNED, at creation, to both its chip rate AND its settlement asset, and neither is ever
+  re-read from the environment afterwards. `CHIP_VALUE` / `ASSET` open new tables; `LEGACY_CHIP_VALUE`
+  / `LEGACY_ASSET` are what tables older than each pin have been settling at, stamped on first load.
+  A table that took buy-ins in one currency pays cash-outs in that same currency, always.
 - `packages/*` never hardcode domains, chain ids, addresses, or vendor SDKs. Those live in `apps/*` config
   (`wrangler.toml` `[env.faithnet]`, `.dev.vars`). Same rule as agenticprimitives.
 - Engine functions are pure: return new state, never mutate input. Errors are `EngineError` with a stable code.
@@ -35,6 +43,8 @@ substrate (`~/agenticprimitives`). Design: `docs/DESIGN.md` (read it before chan
 - `pnpm settle:persona -- --handle elena --chips 200` (the whole money flow against the LIVE Home and
   faithchain: sign in as one of the Home's demo people, discover or create their treasury, fund it,
   have their Home sign a real buy-in mandate, then settle a buy-in and a cash-out on chain.)
+- `pnpm deploy:sheqel` (deploys `contracts/src/Sheqel.sol` to faithchain with the house custodian key
+  and seeds the house treasury; records the address in `house.faithchain.json`)
 - `pnpm provision:house` (idempotent; deploys the house Smart Agents on faithchain, funds the treasury,
   writes `house.faithchain.json`. Add `--demo-transfer=<usdc>` to also move real USDC treasury → service.
   The custodian key goes to `.house-key.json` — gitignored, mode 0600, never printed.)

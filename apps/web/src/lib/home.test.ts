@@ -322,3 +322,76 @@ describe('the name on the way in', () => {
     await expect(startHomeSignIn(rogue, 'Rowan', fakeStore())).rejects.toThrow(/not a trusted Home/);
   });
 });
+
+/**
+ * ONE TRIP TO THE HOME, not two.
+ *
+ * Sign-in used to ask for `site-login`, which is why the session came back with no payment authority
+ * and the player was immediately sent back to their Home to authorise buy-ins. `pokernight` is
+ * registered for `poker-buyin` too, and the Home's payment ceremony mints the mandate DURING the
+ * enrol — so the first connect can bring both halves back, and does.
+ *
+ * The condition is disclosure, not capability: the payment template is requested only where the
+ * deployment states the caps the sign-in screen shows. A deployment that states none asks for a
+ * plain session, exactly as before.
+ */
+describe('signing in asks for the buy-in template, once', () => {
+  const caps = {
+    template: BUY_IN_TEMPLATE,
+    maxPerBuyIn: '200000000',
+    sessionTotal: '1000000000',
+    maxBuyIns: 5,
+    maxBuyInChips: 200,
+    validSeconds: 43200,
+    symbol: 'SHQ',
+  };
+  const config: AuthConfig = {
+    devAuth: false,
+    home: {
+      clientId: 'pokernight',
+      origin: 'https://www.faithnet.me',
+      zone: 'faithnet.me',
+      delegate: `0x${'de'.repeat(20)}`,
+      redirectUri: 'https://poker.faithnet.io/',
+      buyInTemplate: BUY_IN_TEMPLATE,
+      buyIn: caps,
+    },
+  };
+
+  it('asks for poker-buyin on the FIRST connect, with the ceiling it showed the player', async () => {
+    const store = fakeStore();
+    const url = new URL(await startHomeSignIn(config, 'Rowan', store));
+    expect(url.searchParams.get('delegation_template')).toBe('poker-buyin');
+    expect(url.searchParams.get('pay_amount')).toBe('200000000');
+    expect(url.searchParams.get('client_id')).toBe('pokernight');
+    expect(url.searchParams.get('redirect_uri')).toBe('https://poker.faithnet.io/');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    // Still name-deferred: asking for money must not start claiming handles as a side effect.
+    expect(url.searchParams.get('agent_name')).toBe('');
+    expect(store.map.get(PROFILE_NAME_KEY)).toBe('Rowan');
+  });
+
+  it('uses the SIGN-IN stash, so the return leg still mints a session', async () => {
+    const store = fakeStore();
+    const url = new URL(await startHomeSignIn(config, '', store));
+    expect(store.map.has(STASH_KEY)).toBe(true);
+    expect(store.map.has(MANDATE_STASH_KEY)).toBe(false);
+    const stash = readStash(store, STASH_KEY);
+    expect(stash?.state).toBe(url.searchParams.get('state'));
+    expect(stash?.nonce).toBe(url.searchParams.get('nonce'));
+    expect(consumeCallback(`https://poker.faithnet.io/?code=abc&state=${stash?.state}`, store).status).toBe('signed-in');
+  });
+
+  it('asks for a plain sign-in where the deployment states no ceiling — nothing about money is implied', async () => {
+    const bare: AuthConfig = { ...config, home: { ...config.home, buyIn: null } };
+    const url = new URL(await startHomeSignIn(bare, '', fakeStore()));
+    expect(url.searchParams.get('delegation_template')).toBe('site-login');
+    expect(url.searchParams.has('pay_amount')).toBe(false);
+  });
+
+  it('still refuses an untrusted Home, and a browser that will not keep the secret', async () => {
+    const rogue: AuthConfig = { ...config, home: { ...config.home, origin: 'https://evil.example' } };
+    await expect(startHomeSignIn(rogue, '', fakeStore())).rejects.toThrow(/not a trusted Home/);
+    await expect(startHomeSignIn(config, '', fakeStore('set'))).rejects.toThrow(/session storage is blocked/);
+  });
+});

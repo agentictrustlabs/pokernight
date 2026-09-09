@@ -53,6 +53,9 @@ describe('describeSettlement', () => {
   it('says a pending movement is waiting on the chain', () => {
     const e = entry({ receipt: { mode: 'mandate-transfer', orderId: 'o', amount: '2000000', asset: '0xa5', ref: '', at: 1, status: 'pending' } });
     expect(describeSettlement(e)).toBe('Buy-in of 200 chips (2.00 USDC) — waiting for the chain');
+    // The TABLE's currency, where the table names one. A row is about money that already moved at a
+    // particular table, so it is labelled with that table's coin and not with the deployment's.
+    expect(describeSettlement(e, 'SHQ')).toBe('Buy-in of 200 chips (2.00 SHQ) — waiting for the chain');
   });
 
   it('carries the reason forward when a movement failed', () => {

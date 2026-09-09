@@ -321,6 +321,13 @@ export interface BuyInMandateExpectation {
   treasury: Address;
   /** The house agent this deployment redeems as. */
   houseDelegate: Address;
+  /**
+   * Other house accounts a mandate may legitimately name as its redeemer. The Home decides the
+   * redeemer from ITS config, so accepting only one address turns a change there into a flag-day
+   * that refuses every mandate minted on the other side of it. What bounds the money is the payment
+   * caveat's payee, checked below and enforced on chain.
+   */
+  alsoAcceptedDelegates?: readonly Address[];
   /** Where buy-ins must land. */
   payee: Address;
   asset: Address;
@@ -356,9 +363,22 @@ export function checkBuyInMandate(value: unknown, expect: BuyInMandateExpectatio
       `sign a mandate for the treasury you are using`
     );
   }
+  // WHICH house account may present the mandate.
+  //
+  // The Home decides this, and its answer changes with configuration: a `pull` mandate with no
+  // declared redeemer names the PAYEE, while one that declares a redeemer names that instead. Both
+  // are this card room — the service agent and the treasury share a custodian — so a mandate naming
+  // either is legitimate, and pinning a single address here turns a Home config change into a
+  // flag-day where every mandate minted on the other side of it is refused. What actually bounds the
+  // money is the payment caveat's payee, checked below and enforced on chain; the redeemer only says
+  // who may present it.
+  const accepted = [expect.houseDelegate, ...(expect.alsoAcceptedDelegates ?? [])];
   const openToAnyone = expect.openDelegate !== undefined && eq(mandate.delegate, expect.openDelegate);
-  if (!eq(mandate.delegate, expect.houseDelegate) && !openToAnyone) {
-    return `the buy-in mandate is delegated to ${mandate.delegate}, but this card room redeems as ${expect.houseDelegate}`;
+  if (!accepted.some((a) => eq(mandate.delegate, a)) && !openToAnyone) {
+    return (
+      `the buy-in mandate is delegated to ${mandate.delegate}, but this card room redeems as ` +
+      `${accepted.join(' or ')}`
+    );
   }
 
   const payment = mandate.caveats.find((c) => eq(c.enforcer, expect.paymentEnforcer));

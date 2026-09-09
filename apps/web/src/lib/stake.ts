@@ -87,11 +87,15 @@ export function stakeName(view: TreasuryView | null | undefined): string | null 
   return name ? name : null;
 }
 
-/** `"10,000.00 USDC"`, or null when there is no balance to state. A balance is money, so it reads as money. */
+/**
+ * `"10,000.00 SHQ"`, or null when there is no balance to state. A balance is money, so it reads as
+ * money — and in the currency the card room actually states, because there is more than one on this
+ * estate now. `USDC` is the fallback for a server that names none, which is what it settles in.
+ */
 export function stakeBalance(view: TreasuryView | null | undefined): string | null {
   const raw = view?.balance;
   if (raw === null || raw === undefined || !/^-?\d+$/.test(raw.trim())) return null;
-  return `${fmtAsset(BigInt(raw.trim()))} USDC`;
+  return `${fmtAsset(BigInt(raw.trim()))} ${(view?.assetSymbol ?? '').trim() || 'USDC'}`;
 }
 
 /**
@@ -116,9 +120,9 @@ export function stakeFailed(result: StakeResult | null | undefined): boolean {
  * The money sentence a finished set-up ends on. Money terms only: what they have, and that they can
  * sit down. Never an address, never a transaction — those are in the details.
  */
-export function readyLine(result: StakeResult | null | undefined): string | null {
+export function readyLine(result: StakeResult | null | undefined, symbol?: string | null): string | null {
   if (!result?.ready) return null;
   const raw = result.balance;
   if (!raw || !/^\d+$/.test(raw)) return 'You are ready to sit down.';
-  return `You're set up with ${fmtAsset(BigInt(raw))} USDC to play with.`;
+  return `You're set up with ${fmtAsset(BigInt(raw))} ${(symbol ?? '').trim() || 'USDC'} to play with.`;
 }

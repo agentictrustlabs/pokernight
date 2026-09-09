@@ -66,6 +66,25 @@ export interface SessionRecord {
    * authorised. `playerFunding` refuses to hand the adapter a mandate whose binding has moved.
    */
   mandateTreasury?: string;
+  /**
+   * The CURRENCY `buyInMandate` is denominated in. A mandate names one asset as well as one account:
+   * an authority to move Sheqel says nothing about the same treasury's MockUSDC. A table settling in
+   * a different coin therefore may not use it, which is what `PokerTableDO.playerFunding` enforces.
+   */
+  mandateAsset?: string;
+  /**
+   * A payment mandate the player's Home minted during SIGN-IN, before this card room knew which
+   * treasury the session would spend from.
+   *
+   * Sign-in asks the Home for the payment template, so the mandate arrives with the session rather
+   * than on a second trip. It cannot be accepted at that instant: a mandate is an authority over one
+   * named account, and the card room has not yet asked the Home which of the player's accounts are
+   * theirs. So it waits here, unaccepted and unusable, until `GET /treasury` discovers the player's
+   * treasuries and can check it against one of them — at which point it is promoted to
+   * `buyInMandate` through exactly the same verification a hand-delivered mandate goes through, or
+   * dropped. Nothing ever spends under this field.
+   */
+  pendingMandate?: unknown;
   /** Unix SECONDS the mandate stops being valid, for the panel to show without decoding caveats. */
   mandateValidUntil?: number;
   issuedAt: number;
@@ -96,7 +115,9 @@ export class SessionDO extends DurableObject<Env> {
         treasuryName?: string | null;
         buyInMandate?: unknown;
         mandateTreasury?: string | null;
+        mandateAsset?: string | null;
         mandateValidUntil?: number | null;
+        pendingMandate?: unknown;
       };
       const rec = await this.ctx.storage.get<SessionRecord>(KEY);
       if (!rec) return json({ error: 'no session' }, 404);
@@ -115,8 +136,14 @@ export class SessionDO extends DurableObject<Env> {
       }
       if (patch.mandateTreasury === null) delete next.mandateTreasury;
       else if (typeof patch.mandateTreasury === 'string') next.mandateTreasury = patch.mandateTreasury.toLowerCase();
+      if (patch.mandateAsset === null) delete next.mandateAsset;
+      else if (typeof patch.mandateAsset === 'string') next.mandateAsset = patch.mandateAsset.toLowerCase();
       if (patch.mandateValidUntil === null) delete next.mandateValidUntil;
       else if (typeof patch.mandateValidUntil === 'number') next.mandateValidUntil = patch.mandateValidUntil;
+      if ('pendingMandate' in patch) {
+        if (patch.pendingMandate === null) delete next.pendingMandate;
+        else next.pendingMandate = patch.pendingMandate;
+      }
       await this.ctx.storage.put(KEY, next);
       return json(next);
     }

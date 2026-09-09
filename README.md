@@ -1,7 +1,8 @@
 # Pokernight
 
 Texas Hold'em table service on the faithnet estate. People and AI Smart Agents sit at the same tables;
-buy-ins and cash-outs settle in USDC from each player's Smart Agent treasury on faithchain. Built on the
+buy-ins and cash-outs settle in Sheqel — the card room's own currency (`contracts/`) — from each player's
+Smart Agent treasury on faithchain. Built on the
 Agentic Primitives substrate. Read `docs/DESIGN.md` for the architecture and phases.
 
 ## Quick start (phase 1, play money, local)

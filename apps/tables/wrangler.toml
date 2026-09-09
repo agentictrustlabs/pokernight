@@ -67,6 +67,15 @@ CHIP_VALUE = "1000000"
 # that raises the default, so "today's default" would be the wrong answer for every existing table.
 # Delete it once every live table has loaded once; it is not a default for anything new.
 LEGACY_CHIP_VALUE = "10000"
+# The settlement asset for tables opened FROM NOW ON, and what it calls itself. Local dev has no
+# chain of its own worth naming; these are here so the shape is identical in both universes and so
+# the unit tests can exercise pinning and migration. Like CHIP_VALUE, this is read ONCE per table,
+# at creation, and stamped on it — never at settlement time.
+ASSET = "0x1111111111111111111111111111111111111111"
+ASSET_SYMBOL = "SHQ"
+# What tables created BEFORE the asset was pinned have been settling in. See the faithnet block.
+LEGACY_ASSET = "0x2222222222222222222222222222222222222222"
+LEGACY_ASSET_SYMBOL = "USDC"
 # Home sign-in (OIDC). The ONLY registered redirect_uri for client `pokernight` is
 # https://poker.faithnet.io/ — there is no localhost redirect, so the real ceremony CANNOT run
 # against the live Home from `wrangler dev`. Local dev signs in through POST /dev/session instead.
@@ -149,8 +158,28 @@ CHIP_VALUE = "1000000"
 # that raises the default, so "today's default" would be the wrong answer for every existing table.
 # Delete it once every live table has loaded once; it is not a default for anything new.
 LEGACY_CHIP_VALUE = "10000"
-# MockUSDC on faithchain (6 decimals). Only this var changes if the chain ever bridges a real USDC.
-ASSET = "0xdaE09066A2cc32f6203605619137dcF01A9B49Ae"
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# The card room's own money.
+#
+# Sheqel (SHQ) — `contracts/src/Sheqel.sol`, deployed to faithchain by `pnpm deploy:sheqel`, 6
+# decimals to match every other amount in this app, open mint because it is a TEST asset and the
+# house seeds new players. The address also lives in house.faithchain.json.
+#
+# Pinned per table, exactly as CHIP_VALUE is and for a stronger version of the same reason. A rate
+# that moved under an open table mispriced the stacks on it; an ASSET that moved under an open table
+# would collect the buy-ins in one currency and pay the cash-outs in another. So this is the
+# currency a table opened FROM NOW ON is stamped with, and nothing else: every existing table keeps
+# the currency stamped on it (`PokerTableDO` meta.asset), and the switch to Sheqel re-denominates
+# nothing.
+ASSET = "0xa14E4a9447607c1233DcE34dB6Ead47C094f6141"
+ASSET_SYMBOL = "SHQ"
+# MockUSDC on faithchain (6 decimals) — the currency every table opened BEFORE Sheqel has been
+# settling in, and the value stamped onto such a table the first time it loads. It is NOT deleted
+# and it is NOT a default for anything new: those tables took real buy-ins in MockUSDC and owe their
+# players cash-outs in it, so "today's asset" is the wrong answer for every one of them. Delete it
+# once every live table has loaded once.
+LEGACY_ASSET = "0xdaE09066A2cc32f6203605619137dcF01A9B49Ae"
+LEGACY_ASSET_SYMBOL = "USDC"
 # Contract addresses (phase 3): copy from ~/agenticprimitives/packages/contracts/deployments-faithchain.json
 # (keys: entryPoint, agentAccountFactory, delegationManager, paymentEnforcer, digestBindingEnforcer,
 # paymentReceiptRegistry). HOUSE_SA / HOUSE_DELEGATE come from the pokernight.treasury Smart Agent
@@ -174,9 +203,15 @@ TREASURY_SUBREGISTRY = "0xf1df2D9b779C62a8BF5707C799d8E6842382892B"
 # ones the on-chain PaymentEnforcer holds: at most 200 chips (200 USDC at the chip rate above) per
 # buy-in, five buy-ins, and twelve hours. A mandate is one night at a table, not a standing account.
 #
-# The USDC ceiling is what a player consents to and it has NOT moved: 20 000 chips at the old
-# 0.01 USDC chip was the same 200 USDC. So a mandate signed under this line still covers a buy-in at
-# an older table, whose chips are worth a hundredth as much.
+# The MONEY ceiling is what a player consents to and it has NOT moved: 20 000 chips at the old
+# 0.01 chip was the same 200. So a mandate signed under this line still covers a buy-in at an older
+# table, whose chips are worth a hundredth as much.
+#
+# These are also the numbers the SIGN-IN screen shows before it sends anybody anywhere. Sign-in asks
+# the player's Home for the `poker-buyin` template rather than `site-login`, so one visit brings back
+# the session AND the mandate — which means signing in IS approving this ceiling, and the screen says
+# so in these figures (GET /auth/config `home.buyIn`). A deployment that cannot state them (no
+# HOUSE_DELEGATE, no enforcers) asks for a plain session and promises nothing about money.
 MANDATE_MAX_BUY_IN_CHIPS = "200"
 MANDATE_MAX_BUY_INS = "5"
 MANDATE_VALID_SECONDS = "43200"

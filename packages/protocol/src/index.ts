@@ -80,6 +80,21 @@ export type CreateTableRequest = z.infer<typeof CreateTableRequestSchema>;
  */
 export const ChipValueSchema = z.string().regex(/^\d+$/);
 
+/**
+ * The settlement ASSET a table pays in, as a 20-byte address, pinned exactly like the chip rate and
+ * for the same reason — only harder. A rate that moved under an open table over- or under-paid a
+ * stack; an ASSET that moved under an open table would take a buy-in in one currency and pay the
+ * cash-out in another, which is not a mispricing but a different promise altogether.
+ *
+ * Optional because a table created before the asset was pinned has none until its first load, and
+ * because a play-money table settles in nothing at all.
+ */
+export const AssetAddressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
+
+/** What the pinned asset calls itself, e.g. `SHQ` or `USDC`. A label for the address above, so a
+ *  client can name the money without holding a table of addresses. */
+export const AssetSymbolSchema = z.string().min(1).max(12);
+
 export const TableSummarySchema = z.object({
   tableId: z.string(),
   name: z.string(),
@@ -90,6 +105,10 @@ export const TableSummarySchema = z.object({
   createdAt: z.number(),
   /** This table's chip rate. See {@link ChipValueSchema}. Meaningless on a play-money table. */
   chipValue: ChipValueSchema.optional(),
+  /** This table's settlement asset. See {@link AssetAddressSchema}. */
+  asset: AssetAddressSchema.optional(),
+  /** What that asset calls itself. See {@link AssetSymbolSchema}. */
+  assetSymbol: AssetSymbolSchema.optional(),
 });
 export type TableSummary = z.infer<typeof TableSummarySchema>;
 
@@ -105,6 +124,22 @@ export function tableChipValue(summary: Pick<TableSummary, 'settlement' | 'chipV
   if (!summary.chipValue || !/^\d+$/.test(summary.chipValue)) return null;
   const v = BigInt(summary.chipValue);
   return v > 0n ? v : null;
+}
+
+/**
+ * What this table's money is CALLED, for a client that has to put a ticker next to a number.
+ *
+ * `null` on a play-money table, where there is no money. A settled table that states no symbol is a
+ * table opened before the app had a currency of its own, and those settle in USDC — which is why
+ * that, and not the deployment's current coin, is the fallback. Naming today's coin on a table that
+ * pays in yesterday's would be a wrong label on a real amount of money.
+ */
+export const LEGACY_ASSET_SYMBOL = 'USDC';
+
+export function tableAssetSymbol(summary: Pick<TableSummary, 'settlement' | 'assetSymbol'>): string | null {
+  if (summary.settlement === 'play-money') return null;
+  const s = (summary.assetSymbol ?? '').trim();
+  return s === '' ? LEGACY_ASSET_SYMBOL : s;
 }
 
 /** Seat an A2A agent at a table. The table resolves the agent card, then calls `poker.act` on its turn. */

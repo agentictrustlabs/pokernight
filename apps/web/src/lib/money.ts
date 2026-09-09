@@ -11,8 +11,17 @@
  * a table settles at the rate it was created with whatever the deployment has since moved to.
  */
 
-/** The settlement asset. Six decimals, everywhere this app runs. */
-export const ASSET_TICKER = 'USDC';
+/**
+ * What a table's money is called when the table does not say.
+ *
+ * It used to be THE ticker: one deployment, one asset, `USDC` everywhere. That stopped being true
+ * when the card room minted a currency of its own — tables now settle in Sheqel, and every table
+ * opened before that still settles in USDC and always will. So the ticker comes off the wire, per
+ * table (`TableSummary.assetSymbol`), and this is only the answer for a table that names none:
+ * those are exactly the tables that predate the app having a coin, so USDC is what they pay in.
+ * Naming today's coin here would put the wrong word next to a real amount of somebody's money.
+ */
+export const LEGACY_ASSET_TICKER = 'USDC';
 const ASSET_UNIT = 1_000_000n;
 const ASSET_DECIMALS = 6;
 /** Money reads as money: two decimal places minimum, even when the rest are zeros. */
@@ -29,11 +38,17 @@ export interface TableRate {
  * The rate for a table, or null when there is no honest conversion to show: a play-money table, a
  * settled table whose summary has not been read yet, or a rate the server could not state.
  */
-export function tableRate(settlement: string | null | undefined, chipValue: string | null | undefined): TableRate | null {
+export function tableRate(
+  settlement: string | null | undefined,
+  chipValue: string | null | undefined,
+  /** The table's own ticker (`TableSummary.assetSymbol`). Absent, see {@link LEGACY_ASSET_TICKER}. */
+  assetSymbol?: string | null,
+): TableRate | null {
   if (settlement === 'play-money' || !settlement) return null;
   if (!chipValue || !/^\d+$/.test(chipValue.trim())) return null;
   const v = BigInt(chipValue.trim());
-  return v > 0n ? { chipValue: v, asset: ASSET_TICKER } : null;
+  const asset = (assetSymbol ?? '').trim() || LEGACY_ASSET_TICKER;
+  return v > 0n ? { chipValue: v, asset } : null;
 }
 
 /** `1234567n` → `"1.234567"`, `1000000n` → `"1.00"`, `10000n` → `"0.01"`. Grouped, sign-preserving. */
@@ -142,7 +157,7 @@ export function affordableChips(balance: string | null | undefined, rate: TableR
 /** How a table settles, in the words a player needs before they sit — not after. */
 export interface ModeDescription {
   settles: boolean;
-  /** Two words for a badge: "USDC" or "Play money". */
+  /** Two words for a badge: this table's ticker ("SHQ", "USDC") or "Play money". */
   label: string;
   /** One sentence saying what pressing "Sit down" will actually do. */
   line: string;
@@ -156,10 +171,13 @@ export function describeMode(settlement: string | null | undefined, rate: TableR
       line: 'Play money. Nothing moves on chain, and these chips are only good at this table.',
     };
   }
+  // The badge names THIS table's currency, not the deployment's. Two tables in the lobby can settle
+  // in two different coins, and a badge that said the same word on both would be wrong on one.
+  const ticker = rate?.asset ?? LEGACY_ASSET_TICKER;
   const at = describeRate(rate);
   return {
     settles: true,
-    label: ASSET_TICKER,
-    line: `Settles in ${ASSET_TICKER}. Buying in moves real money out of your treasury${at ? `, at ${at}` : ''}.`,
+    label: ticker,
+    line: `Settles in ${ticker}. Buying in moves real money out of your treasury${at ? `, at ${at}` : ''}.`,
   };
 }
