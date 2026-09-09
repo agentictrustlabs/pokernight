@@ -4,7 +4,7 @@
  * The bearer token stays tiny (playerId, name, exp, HMAC — see `auth.ts`); everything a session knows
  * that a token has no business carrying lives here: the person's Smart Agent address and the
  * SA-signed scoped delegation the Home issued to `HOME_DELEGATE`. Phase 3 reads the delegation from
- * here when a seat moves USDC; nothing on the wire ever carries it.
+ * here when a seat moves money; nothing on the wire ever carries it.
  *
  * Existence is also the revocation switch: `resolveSession` refuses a `home:` token whose record has
  * been deleted (sign-out), and the record deletes itself on an alarm at the id_token's expiry so the
@@ -68,7 +68,7 @@ export interface SessionRecord {
   mandateTreasury?: string;
   /**
    * The CURRENCY `buyInMandate` is denominated in. A mandate names one asset as well as one account:
-   * an authority to move Sheqel says nothing about the same treasury's MockUSDC. A table settling in
+   * an authority to move one currency says nothing about a treasury's holdings in another. A table settling in
    * a different coin therefore may not use it, which is what `PokerTableDO.playerFunding` enforces.
    */
   mandateAsset?: string;

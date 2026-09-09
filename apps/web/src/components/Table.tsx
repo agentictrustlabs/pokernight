@@ -6,7 +6,7 @@ import { describeMode, describeRange, dualAmount, tableRate } from '../lib/money
 import { seatLabel, summarizeResult, type FormatContext } from '../lib/format';
 
 import { awardedTo, blindSeats, lastActions, netBySeat, potTotal, shownCards, winningCards, winningSeats } from '../lib/hand';
-import { dealState, sitOutNotice } from '../lib/seating';
+import { dealState, satOutAction, satOutHeadline, sitOutNotice } from '../lib/seating';
 import { useNow, usePrefersReducedMotion } from '../lib/hooks';
 import { ActionBar } from './ActionBar';
 import { Announcer } from './Announcer';
@@ -59,7 +59,7 @@ export function seatLayout(n: number, viewerSeat: number | null): SeatPos[] {
       x: 50 + 46 * Math.cos(a),
       y: 50 + 40.5 * Math.sin(a),
       // The bet ring sits inside the seat ring. It is pulled in a little further than the drawing
-      // alone needs because on a settled table a bet carries a second line (its value in USDC), and
+      // alone needs because on a settled table a bet carries a second line (its value in the table's currency), and
       // the seat cards paint over the bets — a money figure half-hidden behind a nameplate is worse
       // than no money figure at all.
       bx: 50 + 26 * Math.cos(a),
@@ -176,6 +176,17 @@ export function Table({
   const deal = dealState(view);
   const sittingOut = me != null && me.status === 'sitting-out';
   const myReason = me != null ? state.players[me.playerId]?.sitOutReason : undefined;
+  // What a sat-out player is offered, decided by the one fact that matters: whether they have chips.
+  // Offering "Sit in" to somebody on zero is offering a control that cannot help them, which is how
+  // a busted player ends up pressing a button forever at a table that never deals them in.
+  const satOut = satOutAction(me?.stack ?? 1);
+  // The cheapest way back in, so the default commits the least money. Clamped into the table's own
+  // range, and never past what the stack may hold — a rebuy is capped by `maxBuyIn` like any buy-in.
+  const rebuyChips = Math.max(0, Math.min(cfg.minBuyIn, cfg.maxBuyIn - (me?.stack ?? 0)));
+  const rebuyCost = dualAmount(rebuyChips, rate);
+  // Priced and refused by name BEFORE the button, exactly as a fresh buy-in is: a rebuy moves the
+  // same money under the same mandate, so it meets the same four conditions in the same order.
+  const rebuyBlock = satOut === 'rebuy' ? seatBlock(settlement, treasury, rebuyChips, rate) : null;
   const canSit = session != null && view.viewerSeat == null;
   const waitingOn = inHand && hand?.toAct != null && hand.toAct !== view.viewerSeat ? nameOf(hand.toAct) : null;
 
@@ -233,14 +244,40 @@ export function Table({
       ) : null}
 
       {sittingOut ? (
-        <div className="table-notice sat-out" role="status">
+        <div className={`table-notice sat-out${satOut === 'rebuy' ? ' broke' : ''}`} role="status">
           <div className="notice-text">
-            <strong>You are sitting out</strong>
-            <span className="hint">{sitOutNotice(myReason)}</span>
+            <strong>{satOutHeadline(me?.stack ?? 1)}</strong>
+            <span className="hint">{sitOutNotice(myReason, me?.stack ?? 1)}</span>
+            {/* A rebuy that cannot be paid for says which of the four things is missing, in the same
+                words and the same order the server refuses in, and points at the one card that
+                fixes whichever it is. Silence here is what "the game is stuck" felt like. */}
+            {rebuyBlock ? (
+              <span className={rebuyBlock.action === 'wait' ? 'hint' : 'form-error'}>
+                {rebuyBlock.reason}
+                {rebuyBlock.action === 'wait' || rebuyBlock.action === 'configure' ? null : (
+                  <>
+                    {' '}
+                    <a href="#stake">Get set up to play →</a>
+                  </>
+                )}
+              </span>
+            ) : null}
           </div>
-          <button className="primary sit-in" onClick={() => send({ type: 'sit-in' })}>
-            Sit in
-          </button>
+          {satOut === 'rebuy' ? (
+            <button
+              className="primary sit-in"
+              disabled={rebuyBlock !== null || rebuyChips <= 0}
+              onClick={() => send({ type: 'add-chips', amount: rebuyChips })}
+            >
+              {/* One press does the whole thing: the server sits a busted seat back in as part of
+                  the rebuy, so there is no second button and no way to land half-way. */}
+              Buy back in — {rebuyCost.assetLabel ?? `${rebuyCost.chipsText} chips`}
+            </button>
+          ) : (
+            <button className="primary sit-in" onClick={() => send({ type: 'sit-in' })}>
+              Sit in
+            </button>
+          )}
         </div>
       ) : null}
 

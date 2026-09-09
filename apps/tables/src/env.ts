@@ -18,7 +18,7 @@ export interface Env {
   /** Comma-separated list of allowed browser origins. */
   ALLOWED_ORIGINS: string;
   /**
-   * Asset base units per chip for tables opened FROM NOW ON (1000000 = 1 USDC at 6 decimals). Read
+   * Asset base units per chip for tables opened FROM NOW ON (1000000 = 1 Sheqel at 6 decimals). Read
    * once, when a table is created, and stamped on it. Never read at settlement time.
    */
   CHIP_VALUE: string;
@@ -44,24 +44,15 @@ export interface Env {
   A2A_TIMEOUT_MS?: string;
 
   /**
-   * The settlement asset for tables opened FROM NOW ON — Poker Night's own coin, Sheqel
-   * (`contracts/src/Sheqel.sol`). Read once, when a table is created, and stamped on it. Never read
-   * at settlement time: a table that took its buy-ins in one currency pays its cash-outs in that
-   * same currency, whatever this has since been pointed at.
+   * The settlement asset — Poker Night's own coin, Sheqel (`contracts/src/Sheqel.sol`), and the
+   * ONLY currency this card room settles in. Read once, when a table is created, and stamped on it,
+   * so every amount a table moves is denominated in the coin the TABLE records rather than in
+   * whatever this variable currently says.
    */
   ASSET?: string;
   /** What `ASSET` calls itself (`SHQ`). Stamped alongside the address so a table can label its own
    *  money without a lookup table of addresses. */
   ASSET_SYMBOL?: string;
-  /**
-   * The asset tables created BEFORE the asset was pinned have been settling in — faithchain
-   * MockUSDC. Used ONLY to stamp such a table on its first load, so pointing `ASSET` at a new coin
-   * cannot change the currency of money already committed to an open table. Removable once every
-   * live table has loaded once.
-   */
-  LEGACY_ASSET?: string;
-  /** The symbol that goes with `LEGACY_ASSET` (`USDC`). */
-  LEGACY_ASSET_SYMBOL?: string;
   /** Phase 3 contract addresses; empty in dev. */
   ENTRY_POINT?: string;
   AGENT_ACCOUNT_FACTORY?: string;

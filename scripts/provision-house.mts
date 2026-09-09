@@ -2,14 +2,14 @@
 /**
  * Provision the Poker Site's own on-chain identity on faithchain.
  *
- *   npx tsx scripts/provision-house.mts [--demo-transfer[=<usdc>]] [--mint <usdc>]
+ *   npx tsx scripts/provision-house.mts [--demo-transfer[=<shq>]] [--mint <shq>] [--asset 0x…]
  *
  * Idempotent. Every run:
  *   1. loads (or creates) the house custodian EOA from `.house-key.json` — gitignored,
  *      mode 0600, and NEVER printed;
  *   2. derives the two house Smart Agents deterministically from that custodian +
  *      a labelled salt, and deploys whichever is missing;
- *   3. tops the treasury up to the mint target using MockUSDC's permissionless mint;
+ *   3. tops the treasury up to the mint target using the Sheqel's permissionless mint;
  *   4. writes the addresses (no secrets) to `house.faithchain.json`;
  *   5. prints the wrangler lines needed to wire `apps/tables`.
  *
@@ -33,8 +33,8 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
 import {
   createTreasuryClient,
-  formatUsdc,
-  parseUsdc,
+  formatAmount,
+  parseAmount,
   type AgentAccountSpec,
 } from '@pokernight/treasury';
 
@@ -59,10 +59,31 @@ function flag(name: string): string | boolean {
 
 const MINT_TARGET = (() => {
   const v = flag('mint');
-  return typeof v === 'string' ? parseUsdc(v) : parseUsdc(process.env.HOUSE_MINT_USDC ?? '1000000');
+  return typeof v === 'string' ? parseAmount(v) : parseAmount(process.env.HOUSE_MINT_SHQ ?? '1000000');
 })();
+/**
+ * The card room's currency — the Sheqel, and nothing else.
+ *
+ * Read from `house.faithchain.json`, which `pnpm deploy:sheqel` writes, or given with `--asset`.
+ * There is no fallback to another token: this script mints and moves money, and a fallback would
+ * mean quietly minting the wrong coin. A checkout with no Sheqel deployed is told to deploy one.
+ */
+const ASSET: Address = (() => {
+  const flagged = flag('asset');
+  if (typeof flagged === 'string' && /^0x[0-9a-fA-F]{40}$/.test(flagged.trim())) return flagged.trim() as Address;
+  const existing = existsSync(OUT_FILE) ? (JSON.parse(readFileSync(OUT_FILE, 'utf8')) as { contracts?: { sheqel?: string } }) : null;
+  const sheqel = existing?.contracts?.sheqel ?? '';
+  if (!/^0x[0-9a-fA-F]{40}$/.test(sheqel)) {
+    throw new Error(
+      `no Sheqel address in ${OUT_FILE} — run \`pnpm deploy:sheqel\` first, or pass --asset 0x…. This script ` +
+        'will not fall back to another token: it mints, and minting the wrong coin is worse than not running.',
+    );
+  }
+  return sheqel as Address;
+})();
+
 const DEMO = flag('demo-transfer');
-const DEMO_AMOUNT = typeof DEMO === 'string' ? parseUsdc(DEMO) : parseUsdc('25');
+const DEMO_AMOUNT = typeof DEMO === 'string' ? parseAmount(DEMO) : parseAmount('25');
 
 /**
  * The a2a relay fans out to read replicas, so a read taken immediately after a write
@@ -136,7 +157,7 @@ async function main(): Promise<void> {
     rpcUrl: RPC_URL,
     chainId: CONTRACTS.chainId,
     deployments: {
-      asset: CONTRACTS.mockUsdc,
+      asset: ASSET,
       entryPoint: CONTRACTS.entryPoint,
       agentAccountFactory: CONTRACTS.agentAccountFactory,
       paymaster: CONTRACTS.smartAgentPaymaster,
@@ -170,44 +191,44 @@ async function main(): Promise<void> {
   }
 
   console.log('\nFunding');
-  let treasuryBalance = await treasury.readUsdcBalance(addresses.treasury);
-  console.log(`  treasury balance ${formatUsdc(treasuryBalance)} USDC`);
+  let treasuryBalance = await treasury.readBalance(addresses.treasury);
+  console.log(`  treasury balance ${formatAmount(treasuryBalance)} SHQ`);
   if (treasuryBalance < MINT_TARGET) {
     const top = MINT_TARGET - treasuryBalance;
-    console.log(`  minting ${formatUsdc(top)} USDC to the treasury…`);
+    console.log(`  minting ${formatAmount(top)} SHQ to the treasury…`);
     const hash = await treasury.mintTestAsset(addresses.treasury, top, account);
     console.log(`  mint tx ${hash}`);
     treasuryBalance = await readBalanceSettled(
-      () => treasury.readUsdcBalance(addresses.treasury),
+      () => treasury.readBalance(addresses.treasury),
       (v) => v >= MINT_TARGET,
     );
-    console.log(`  treasury balance ${formatUsdc(treasuryBalance)} USDC`);
+    console.log(`  treasury balance ${formatAmount(treasuryBalance)} SHQ`);
     if (treasuryBalance < MINT_TARGET) {
-      throw new Error(`mint ${hash} landed but the treasury still reads ${formatUsdc(treasuryBalance)} USDC`);
+      throw new Error(`mint ${hash} landed but the treasury still reads ${formatAmount(treasuryBalance)} SHQ`);
     }
   } else {
-    console.log(`  at or above the ${formatUsdc(MINT_TARGET)} USDC target — nothing minted`);
+    console.log(`  at or above the ${formatAmount(MINT_TARGET)} SHQ target — nothing minted`);
   }
-  const serviceBalance = await treasury.readUsdcBalance(addresses.service);
-  console.log(`  service  balance ${formatUsdc(serviceBalance)} USDC`);
+  const serviceBalance = await treasury.readBalance(addresses.service);
+  console.log(`  service  balance ${formatAmount(serviceBalance)} SHQ`);
 
   if (DEMO) {
-    console.log(`\nDemo transfer — treasury -> service, ${formatUsdc(DEMO_AMOUNT)} USDC`);
-    const beforeT = await treasury.readUsdcBalance(addresses.treasury);
-    const beforeS = await treasury.readUsdcBalance(addresses.service);
-    console.log(`  before  treasury ${formatUsdc(beforeT)}  service ${formatUsdc(beforeS)}`);
-    const { txHash } = await treasury.transferUsdc({
+    console.log(`\nDemo transfer — treasury -> service, ${formatAmount(DEMO_AMOUNT)} SHQ`);
+    const beforeT = await treasury.readBalance(addresses.treasury);
+    const beforeS = await treasury.readBalance(addresses.service);
+    console.log(`  before  treasury ${formatAmount(beforeT)}  service ${formatAmount(beforeS)}`);
+    const { txHash } = await treasury.transferAsset({
       from: addresses.treasury,
       to: addresses.service,
       amount: DEMO_AMOUNT,
     });
     const afterS = await readBalanceSettled(
-      () => treasury.readUsdcBalance(addresses.service),
+      () => treasury.readBalance(addresses.service),
       (v) => v === beforeS + DEMO_AMOUNT,
     );
-    const afterT = await treasury.readUsdcBalance(addresses.treasury);
+    const afterT = await treasury.readBalance(addresses.treasury);
     console.log(`  tx      ${txHash}`);
-    console.log(`  after   treasury ${formatUsdc(afterT)}  service ${formatUsdc(afterS)}`);
+    console.log(`  after   treasury ${formatAmount(afterT)}  service ${formatAmount(afterS)}`);
     if (beforeT - afterT !== DEMO_AMOUNT || afterS - beforeS !== DEMO_AMOUNT) {
       throw new Error('balances did not move by exactly the transferred amount');
     }
@@ -227,7 +248,7 @@ async function main(): Promise<void> {
         houseTreasurySa: addresses.treasury,
         salts: { service: SERVICE_SALT_LABEL, treasury: TREASURY_SALT_LABEL },
         contracts: {
-          asset: CONTRACTS.mockUsdc,
+          asset: ASSET,
           entryPoint: CONTRACTS.entryPoint,
           agentAccountFactory: CONTRACTS.agentAccountFactory,
           paymaster: CONTRACTS.smartAgentPaymaster,
@@ -245,7 +266,7 @@ async function main(): Promise<void> {
   console.log(`  custodian (EOA)      ${custodian.address}`);
   console.log(`  service agent (SA)   ${addresses.service}`);
   console.log(`  treasury (SA)        ${addresses.treasury}`);
-  console.log(`  treasury USDC        ${formatUsdc(await treasury.readUsdcBalance(addresses.treasury))}`);
+  console.log(`  treasury SHQ         ${formatAmount(await treasury.readBalance(addresses.treasury))}`);
   console.log(`  written              ${OUT_FILE}`);
 
   console.log('\nWire apps/tables — wrangler.toml [env.faithnet.vars]');

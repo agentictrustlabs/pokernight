@@ -206,7 +206,7 @@ describe('signing out gives up the seat', () => {
     const mine = body.stoodUp.find((x) => x.tableId === table.tableId);
     expect(mine).toMatchObject({ seat: 3, chips: 120, settlement: 'play-money' });
     // Play money settles inline, so there is nothing outstanding to warn about. On a settled table
-    // this is where `pending: true` would say the USDC has not landed.
+    // this is where `pending: true` would say the money has not landed.
     expect(mine?.pending).toBe(false);
 
     expect(await seatsOf(table.tableId)).toEqual([]);
@@ -391,4 +391,336 @@ beforeAll(() => {
 
 afterAll(() => {
   fetchMock.assertNoPendingInterceptors();
+});
+
+/* ------------------------------------------------------------ retiring a table */
+
+async function retireTable(tableId: string, token: string | null, circle?: string): Promise<Response> {
+  return SELF.fetch(`http://tables.test/tables/${tableId}${circle ? `?circle=${circle}` : ''}`, {
+    method: 'DELETE',
+    ...(token ? { headers: { 'x-operator-token': token } } : {}),
+  });
+}
+
+async function lobbyIds(circle?: string): Promise<string[]> {
+  const res = await SELF.fetch(`http://tables.test/tables${circle ? `?circle=${circle}` : ''}`);
+  return ((await res.json()) as Array<{ tableId: string }>).map((t) => t.tableId);
+}
+
+/**
+ * DELETE /tables/:id — the operator retire.
+ *
+ * There was no way to close a table at all, so an unplayable one stayed in the lobby forever. This
+ * is that way, gated on the SAME `OPERATOR_TOKEN` mechanism as the seat clear — a separate header,
+ * a constant-time compare, and nothing at all on a deployment that has set no secret.
+ *
+ * The one condition about the table is that nobody is sitting at it: a seated table holds somebody's
+ * chips, and at a settled table those chips are their money.
+ */
+describe('DELETE /tables/:id — the operator retire', () => {
+  it('refuses without the operator token, and never echoes it back', async () => {
+    const circle = crypto.randomUUID();
+    const table = await createTableViaHttp('unretired', {}, circle);
+
+    const missing = (await (await retireTable(table.tableId, null, circle)).json()) as { error: string };
+    expect(missing.error).toContain('x-operator-token');
+
+    const res = await retireTable(table.tableId, 'not-the-token', circle);
+    expect(res.status).toBe(403);
+    const wrong = (await res.json()) as { error: string };
+    expect(wrong.error).not.toContain(OPERATOR_TOKEN);
+
+    // Still there: a refused retire changes nothing.
+    expect(await lobbyIds(circle)).toContain(table.tableId);
+  });
+
+  it.skipIf(!engineReady)('refuses while anyone is seated, and says how many', async () => {
+    const circle = crypto.randomUUID();
+    const table = await createTableViaHttp('occupied', {}, circle);
+    const { client } = await seatOnePlayer(table.tableId, 'Sitting', 0, 100);
+
+    const res = await retireTable(table.tableId, OPERATOR_TOKEN, circle);
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; refused: string; seated: number };
+    expect(body.refused).toBe('seated');
+    expect(body.seated).toBe(1);
+    expect(body.error).toContain('1 player');
+    expect(body.error).toContain('Stand them up first');
+
+    client.close();
+  }, 20_000);
+
+  it('retires an empty table: gone from the lobby, and gone from the table itself', async () => {
+    const circle = crypto.randomUUID();
+    const doomed = await createTableViaHttp('retire me', {}, circle);
+    const keep = await createTableViaHttp('keep me', {}, circle);
+
+    const res = await SELF.fetch(`http://tables.test/tables/${doomed.tableId}?circle=${circle}`, {
+      method: 'DELETE',
+      headers: { 'x-operator-token': OPERATOR_TOKEN },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ retired: true, tableId: doomed.tableId, name: 'retire me' });
+
+    const listed = ((await (await SELF.fetch(`http://tables.test/tables?circle=${circle}`)).json()) as Array<{ tableId: string }>).map((t) => t.tableId);
+    expect(listed).toEqual([keep.tableId]);
+    // A retired table is gone, not hidden: the spectator view has nothing to show.
+    expect((await SELF.fetch(`http://tables.test/tables/${doomed.tableId}`)).status).toBe(404);
+  });
+});
+
+/* ------------------------------------------------ running out of chips */
+
+/**
+ * Force a seat into the state the engine leaves a busted player in: no chips, sitting out.
+ *
+ * How it got there is the engine's business and the engine tests it (`stack === 0 → sitting-out` at
+ * hand end). What is under test here is what the TABLE does about it, so the state is set directly
+ * rather than played out over several hands.
+ */
+async function bust(tableId: string, playerId: string, reason: 'requested' | 'disconnected' | null = null): Promise<void> {
+  await runInDurableObject(stub(tableId), async (instance: PokerTableDO, state) => {
+    const inst = instance as unknown as {
+      state: { seats: Array<{ seat: number; playerId: string; stack: number; status: string }> };
+      players: Record<string, { sitOutReason?: string }>;
+    };
+    const s = inst.state.seats.find((x) => x.playerId === playerId);
+    if (!s) throw new Error(`no seat for ${playerId}`);
+    s.stack = 0;
+    s.status = 'sitting-out';
+    await state.storage.put('state', inst.state);
+    const rec = inst.players[playerId];
+    if (rec) {
+      if (reason) rec.sitOutReason = reason;
+      else delete rec.sitOutReason;
+      await state.storage.put('players', inst.players);
+    }
+  });
+}
+
+async function seatOf(tableId: string, playerId: string): Promise<{ seat: number; stack: number; status: string } | undefined> {
+  return (await seatsOf(tableId)).find((s) => s.playerId === playerId);
+}
+
+/**
+ * "When one player gets out of money the game gets stuck."
+ *
+ * A player at zero is sat out by the engine, and the only control the table offered them was
+ * "Sit in" — which sits them in with nothing, changes nothing, and gets undone at the end of the
+ * next hand. The money they need has to arrive in the same press, or the press is a dead end.
+ */
+describe('a player who has run out of chips', () => {
+  it.skipIf(!engineReady)('is dealt back in by the rebuy itself, not by a second button', async () => {
+    const table = await createTableViaHttp('busted', {}, crypto.randomUUID());
+    const { client, playerId, token } = await seatOnePlayer(table.tableId, 'Busted', 0, 100);
+    await bust(table.tableId, playerId);
+    expect(await seatOf(table.tableId, playerId)).toMatchObject({ stack: 0, status: 'sitting-out' });
+
+    client.send({ type: 'add-chips', amount: 40 });
+    await client.waitFor((m) => m.type === 'event' && m.event.type === 'seat-status' && m.event.status === 'active');
+
+    // Chips AND a seat that will be dealt in: one press, both halves.
+    expect(await seatOf(table.tableId, playerId)).toMatchObject({ stack: 40, status: 'active' });
+    // …and it settled through the ordinary money path, so the ledger says what happened.
+    const { kinds } = await money(table.tableId, playerId);
+    expect(kinds).toEqual([
+      ['buy-in', 100],
+      ['add-chips', 40],
+    ]);
+    // The SAME path a buy-in takes, receipt and all: a rebuy is money moving, so it is authorised
+    // (`authorizeBuyIn` — the mandate cap on a settled table) and receipted like one. On a settled
+    // table an unaffordable rebuy is refused by name before the chips appear, exactly as a buy-in
+    // is; that half is proven against a real mandate in `@pokernight/treasury`'s adapter tests.
+    const view = (await (
+      await SELF.fetch(`http://tables.test/tables/${table.tableId}/settlement`, { headers: { authorization: `Bearer ${token}` } })
+    ).json()) as { entries: Array<{ kind: string; chips: number; receipt: unknown }> };
+    const rebuy = view.entries.find((e) => e.kind === 'add-chips');
+    expect(rebuy).toMatchObject({ chips: 40 });
+    expect(rebuy?.receipt).not.toBeNull();
+    client.close();
+  }, 20_000);
+
+  it.skipIf(!engineReady)('is refused by name when the rebuy would break the table’s cap, and stays sat out', async () => {
+    const table = await createTableViaHttp('busted cap', {}, crypto.randomUUID());
+    const { client, playerId } = await seatOnePlayer(table.tableId, 'Greedy', 0, 200);
+
+    // At the table maximum already: there is no room for a rebuy on top.
+    client.send({ type: 'add-chips', amount: 10 });
+    const err = await client.waitFor((m) => m.type === 'error');
+    expect(err.type === 'error' && err.message).toMatch(/maxBuyIn/);
+    expect(await seatOf(table.tableId, playerId)).toMatchObject({ stack: 200, status: 'active' });
+    client.close();
+  }, 20_000);
+
+  /**
+   * The one thing a rebuy must NOT do: undo a sit-out the player chose. Somebody who asked to sit
+   * out and then tops up is topping up, not asking to be dealt in.
+   */
+  it.skipIf(!engineReady)('does not sit a player in who chose to sit out and still had chips', async () => {
+    const table = await createTableViaHttp('deliberate', {}, crypto.randomUUID());
+    const { client, playerId } = await seatOnePlayer(table.tableId, 'Deliberate', 0, 100);
+    client.send({ type: 'sit-out' });
+    await client.waitFor((m) => m.type === 'event' && m.event.type === 'seat-status' && m.event.status === 'sitting-out');
+
+    client.send({ type: 'add-chips', amount: 40 });
+    await client.waitFor((m) => m.type === 'event' && m.event.type === 'seat-status' && m.event.stack === 140);
+    expect(await seatOf(table.tableId, playerId)).toMatchObject({ stack: 140, status: 'sitting-out' });
+    client.close();
+  }, 20_000);
+});
+
+/**
+ * Reconnecting undoes the sit-out the DROP caused — and only that one.
+ *
+ * A disconnect sit-out was never the player's decision: it is a guard that keeps a vanished seat
+ * from bleeding blinds, and it has done its job the moment its owner is back. Two players with
+ * chips left sat out after reconnecting is how a table ended up with nobody to deal to.
+ */
+describe('reconnecting', () => {
+  it.skipIf(!engineReady)('sits a dropped player back in when they come back with chips', async () => {
+    const table = await createTableViaHttp('dropped', {}, crypto.randomUUID());
+    const s = await devSession('Dropper');
+    const first = await TestClient.connect(table.tableId, s.token);
+    first.send({ type: 'join', seat: 3, buyIn: 120 });
+    await first.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined' && m.event.seat === 3);
+
+    first.close();
+    await sleep(600);
+    expect(await seatOf(table.tableId, s.playerId)).toMatchObject({ status: 'sitting-out' });
+
+    const again = await TestClient.connect(table.tableId, s.token);
+    await sleep(600);
+    expect(await seatOf(table.tableId, s.playerId)).toMatchObject({ stack: 120, status: 'active' });
+    again.close();
+  }, 20_000);
+
+  it.skipIf(!engineReady)('leaves a player who ASKED to sit out exactly where they put themselves', async () => {
+    const table = await createTableViaHttp('asked', {}, crypto.randomUUID());
+    const s = await devSession('Asker');
+    const first = await TestClient.connect(table.tableId, s.token);
+    first.send({ type: 'join', seat: 4, buyIn: 120 });
+    await first.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined' && m.event.seat === 4);
+    first.send({ type: 'sit-out' });
+    await first.waitFor((m) => m.type === 'event' && m.event.type === 'seat-status' && m.event.status === 'sitting-out');
+    first.close();
+    await sleep(600);
+
+    const again = await TestClient.connect(table.tableId, s.token);
+    await sleep(600);
+    expect(await seatOf(table.tableId, s.playerId)).toMatchObject({ status: 'sitting-out' });
+    again.close();
+  }, 20_000);
+
+  /** No chips means the sit-out that matters is being broke. Sitting them in would hide the rebuy. */
+  it.skipIf(!engineReady)('does not sit a busted player in on reconnect, because that would change nothing', async () => {
+    const table = await createTableViaHttp('dropped broke', {}, crypto.randomUUID());
+    const s = await devSession('Dropped Broke');
+    const first = await TestClient.connect(table.tableId, s.token);
+    first.send({ type: 'join', seat: 2, buyIn: 100 });
+    await first.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined' && m.event.seat === 2);
+    first.close();
+    await sleep(600);
+    await bust(table.tableId, s.playerId, 'disconnected');
+
+    const again = await TestClient.connect(table.tableId, s.token);
+    await sleep(600);
+    expect(await seatOf(table.tableId, s.playerId)).toMatchObject({ stack: 0, status: 'sitting-out' });
+    again.close();
+  }, 20_000);
+});
+
+/* --------------------------------------------------- an AGENT that runs out */
+
+/**
+ * An agent at zero chips is the same deadlock as a human at zero, with nobody to press the button.
+ *
+ * A bot holds no session, no treasury and no opinion, so it cannot be OFFERED a rebuy — it has to be
+ * decided for it. `Friday Night` reached exactly this state: three agents on zero, one player left,
+ * and a table that could no longer deal. On play money the table tops the bot back up to the minimum
+ * buy-in (play chips cost nobody anything, and the house was the source of every chip on the table
+ * already); on a settled table there is no account to charge, so the seat is stood up instead. This
+ * is the play-money half; the settled half needs a chain and cannot be created in this environment.
+ */
+describe('an agent seat with no chips', () => {
+  it.skipIf(!engineReady)('is topped back up to the table minimum between hands, on play money', async () => {
+    const table = await createTableViaHttp('busted bot', {}, crypto.randomUUID());
+    const s = await devSession('Bot Seater');
+    const res = await SELF.fetch(`http://tables.test/tables/${table.tableId}/seat-agent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${s.token}` },
+      body: JSON.stringify({ seat: 1, buyIn: 100, agentName: 'sharkbot.svc', endpoint: AGENT_ORIGIN }),
+    });
+    expect(res.status).toBe(201);
+    const bot = agentPlayerId('sharkbot.svc');
+    await bust(table.tableId, bot);
+    expect(await seatOf(table.tableId, bot)).toMatchObject({ stack: 0, status: 'sitting-out' });
+
+    // Between hands is when this is decided, so put the table there and let the alarm run.
+    await runInDurableObject(stub(table.tableId), async (instance: PokerTableDO, state) => {
+      await state.storage.put('next-hand-at', Date.now() - 1);
+      await instance.alarm();
+    });
+
+    // Chips again, sitting in, and a ledger row saying where they came from.
+    expect(await seatOf(table.tableId, bot)).toMatchObject({ stack: 40, status: 'active' });
+    const { kinds } = await money(table.tableId, bot);
+    expect(kinds).toEqual([
+      ['buy-in', 100],
+      ['add-chips', 40],
+    ]);
+  }, 20_000);
+
+  /** A human at zero is NOT topped up: their money is theirs, and they are asked. */
+  it.skipIf(!engineReady)('leaves a busted HUMAN seat alone — that one is offered a rebuy instead', async () => {
+    const table = await createTableViaHttp('busted human untouched', {}, crypto.randomUUID());
+    const { client, playerId } = await seatOnePlayer(table.tableId, 'Broke Human', 0, 100);
+    await bust(table.tableId, playerId);
+
+    await runInDurableObject(stub(table.tableId), async (instance: PokerTableDO, state) => {
+      await state.storage.put('next-hand-at', Date.now() - 1);
+      await instance.alarm();
+    });
+
+    expect(await seatOf(table.tableId, playerId)).toMatchObject({ stack: 0, status: 'sitting-out' });
+    client.close();
+  }, 20_000);
+});
+
+/**
+ * The repair that unstuck the tables that were ALREADY stuck.
+ *
+ * The alarm is how a table gets from "no hand running" to "deal one", and it is scheduled by
+ * whatever last committed. A table whose last commit left it unable to deal scheduled nothing, went
+ * to sleep, and had no way to notice that the reason had since been fixable. So a table with seats
+ * and no hand running gets exactly one between-hands tick when it loads.
+ */
+describe('a table that stalled between hands', () => {
+  it.skipIf(!engineReady)('wakes itself up when it loads, rather than sleeping forever', async () => {
+    const table = await createTableViaHttp('stalled', {}, crypto.randomUUID());
+    const { client, playerId } = await seatOnePlayer(table.tableId, 'Stalled', 0, 100);
+    client.close();
+    await sleep(400);
+
+    // The state a stalled table is in: seats, no hand, no pending work of any kind.
+    await runInDurableObject(stub(table.tableId), async (_i: PokerTableDO, state) => {
+      await state.storage.delete('next-hand-at');
+      await state.storage.deleteAlarm();
+      expect(await state.storage.getAlarm()).toBeNull();
+    });
+
+    // Loading it again is enough. (`runInDurableObject` reconstructs after an abort, which is what
+    // a deploy does to every live table.)
+    await runInDurableObject(stub(table.tableId), (_i, state) => {
+      state.abort('test: evict so the table loads again');
+    }).catch(() => {
+      /* aborting is the point */
+    });
+    await SELF.fetch(`http://tables.test/tables/${table.tableId}`);
+
+    await runInDurableObject(stub(table.tableId), async (_i: PokerTableDO, state) => {
+      expect(await state.storage.get<number>('next-hand-at')).toBeGreaterThan(0);
+      expect(await state.storage.getAlarm()).not.toBeNull();
+    });
+    expect(await seatOf(table.tableId, playerId)).toMatchObject({ stack: 100 });
+  }, 20_000);
 });

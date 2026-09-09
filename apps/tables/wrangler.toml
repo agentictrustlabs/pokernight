@@ -12,10 +12,11 @@
 #
 # Secrets (NEVER in [vars]; see .dev.vars.example):
 #   SESSION_SECRET      — HMAC key for session tokens (`wrangler secret put SESSION_SECRET --env <env>`)
-#   OPERATOR_TOKEN      — operator authority for DELETE /tables/:id/seat/:seat, presented in the
-#                         x-operator-token header and compared in constant time. There is no admin
-#                         role in this app; this secret is the whole of it. A deployment that has not
-#                         set it can clear no seats at all, which is the safe default.
+#   OPERATOR_TOKEN      — operator authority for DELETE /tables/:id/seat/:seat and DELETE
+#                         /tables/:id, presented in the x-operator-token header and compared in
+#                         constant time. There is no admin role in this app; this secret is the whole
+#                         of it. A deployment that has not set it can clear no seats and retire no
+#                         tables at all, which is the safe default.
 #                         `wrangler secret put OPERATOR_TOKEN --env <env>`. Never a var, never logged.
 #   RPC_TOKEN           — chain-rpc-gateway app token for the tables Worker (phase 3)
 #   HOUSE_CUSTODIAN_KEY — private key custodying HOUSE_SERVICE_SA and HOUSE_TREASURY_SA. It only
@@ -56,8 +57,8 @@ DEV_AUTH = "true"
 # Local dev points agents at localhost:8788; a public deployment must NOT enable this.
 ALLOW_AGENT_ENDPOINT = "true"
 ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
-# Asset base units per chip for tables opened FROM NOW ON. 1000000 = 1 USDC per chip at 6 decimals,
-# so a 1/2 table with a 40-200 buy-in reads as a normal cash game in dollars. Every existing table
+# Asset base units per chip for tables opened FROM NOW ON. 1000000 = 1 Sheqel per chip at 6 decimals,
+# so a 1/2 table with a 40-200 buy-in reads as a normal cash game. Every existing table
 # keeps the rate stamped on it when it was created (PokerTableDO `meta.chipValue`); changing this
 # opens new tables at a new rate and re-values nothing.
 CHIP_VALUE = "1000000"
@@ -73,9 +74,6 @@ LEGACY_CHIP_VALUE = "10000"
 # at creation, and stamped on it — never at settlement time.
 ASSET = "0x1111111111111111111111111111111111111111"
 ASSET_SYMBOL = "SHQ"
-# What tables created BEFORE the asset was pinned have been settling in. See the faithnet block.
-LEGACY_ASSET = "0x2222222222222222222222222222222222222222"
-LEGACY_ASSET_SYMBOL = "USDC"
 # Home sign-in (OIDC). The ONLY registered redirect_uri for client `pokernight` is
 # https://poker.faithnet.io/ — there is no localhost redirect, so the real ceremony CANNOT run
 # against the live Home from `wrangler dev`. Local dev signs in through POST /dev/session instead.
@@ -148,8 +146,8 @@ SEAT_IDLE_MS = "300000"
 # client reads GET /auth/config rather than a build flag.
 DEV_AUTH = "true"
 ALLOWED_ORIGINS = "https://poker.faithnet.io"
-# 1 chip = 1.000000 USDC for tables opened from now on. Tables opened before this line changed keep
-# the 0.01 USDC chip they were created with — the rate is pinned per table, never re-read from here
+# 1 chip = 1.000000 Sheqel for tables opened from now on. Tables opened before this line changed keep
+# the 0.01 chip they were created with — the rate is pinned per table, never re-read from here
 # (see PokerTableDO `meta.chipValue` and apps/tables/test/chip-value.test.ts).
 CHIP_VALUE = "1000000"
 # The rate tables created BEFORE the rate was pinned have been settling at, and the value stamped
@@ -165,21 +163,15 @@ LEGACY_CHIP_VALUE = "10000"
 # decimals to match every other amount in this app, open mint because it is a TEST asset and the
 # house seeds new players. The address also lives in house.faithchain.json.
 #
-# Pinned per table, exactly as CHIP_VALUE is and for a stronger version of the same reason. A rate
-# that moved under an open table mispriced the stacks on it; an ASSET that moved under an open table
-# would collect the buy-ins in one currency and pay the cash-outs in another. So this is the
-# currency a table opened FROM NOW ON is stamped with, and nothing else: every existing table keeps
-# the currency stamped on it (`PokerTableDO` meta.asset), and the switch to Sheqel re-denominates
-# nothing.
+# It is the ONLY currency this card room settles in. There is no second asset, no conversion and no
+# fallback: a table that cannot be opened in Sheqel is not opened.
+#
+# Still stamped per table at creation (`PokerTableDO` meta.asset), exactly as CHIP_VALUE is. With one
+# currency the stamp can never disagree with this line — which is why it is cheap, and why it is
+# kept: it makes "which coin does this table settle in?" a question about the table's own data rather
+# than about whatever this variable is pointed at today.
 ASSET = "0xa14E4a9447607c1233DcE34dB6Ead47C094f6141"
 ASSET_SYMBOL = "SHQ"
-# MockUSDC on faithchain (6 decimals) — the currency every table opened BEFORE Sheqel has been
-# settling in, and the value stamped onto such a table the first time it loads. It is NOT deleted
-# and it is NOT a default for anything new: those tables took real buy-ins in MockUSDC and owe their
-# players cash-outs in it, so "today's asset" is the wrong answer for every one of them. Delete it
-# once every live table has loaded once.
-LEGACY_ASSET = "0xdaE09066A2cc32f6203605619137dcF01A9B49Ae"
-LEGACY_ASSET_SYMBOL = "USDC"
 # Contract addresses (phase 3): copy from ~/agenticprimitives/packages/contracts/deployments-faithchain.json
 # (keys: entryPoint, agentAccountFactory, delegationManager, paymentEnforcer, digestBindingEnforcer,
 # paymentReceiptRegistry). HOUSE_SA / HOUSE_DELEGATE come from the pokernight.treasury Smart Agent
@@ -200,7 +192,7 @@ ALLOWED_METHODS_ENFORCER = "0xdBb2E47793393C499efB0f3fcbf6Ca8669791a41"
 AGENT_NAME_REGISTRY = "0x60E949D52660A9D4143ecB0fdA56c0457f20aED9"
 TREASURY_SUBREGISTRY = "0xf1df2D9b779C62a8BF5707C799d8E6842382892B"
 # What a night's buy-in mandate may cover. These are the caps the player sees before signing and the
-# ones the on-chain PaymentEnforcer holds: at most 200 chips (200 USDC at the chip rate above) per
+# ones the on-chain PaymentEnforcer holds: at most 200 chips (200 Sheqels at the chip rate above) per
 # buy-in, five buy-ins, and twelve hours. A mandate is one night at a table, not a standing account.
 #
 # The MONEY ceiling is what a player consents to and it has NOT moved: 20 000 chips at the old

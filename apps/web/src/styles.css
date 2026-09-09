@@ -1390,6 +1390,17 @@ label > select {
 .table-notice.sat-out {
   border-left-color: var(--felt);
 }
+/* Out of chips is the loudest of the three: it is the only one where the table will never deal
+   again until the player does something, and the thing to do costs money. Gold, like everything
+   else in this room that is about money. */
+.table-notice.sat-out.broke {
+  border-left-color: var(--gold, #c9a227);
+}
+.table-notice.sat-out.broke .form-error {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+}
 .table-notice .sit-in {
   font-size: 1rem;
   padding: 0.55rem 1.4rem;
@@ -2415,7 +2426,7 @@ details.dev-login .form .hint {
    A settled table shows every chip amount twice: the chip count in the primary figure and the money
    it is worth directly under it, in the same mono face, a size down and in the gold the card room
    already uses for anything consequential. A play-money table renders none of this — a bare chip
-   count is the truth there, and "0.00 USDC" would be a lie dressed as precision. */
+   count is the truth there, and "0.00 SHQ" would be a lie dressed as precision. */
 
 .chip-asset {
   font-size: 0.68rem;

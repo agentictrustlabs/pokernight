@@ -78,8 +78,6 @@ import {
   pinnedAsset,
   pinnedAssetSymbol,
   pinnedChipValue,
-  unstampedAsset,
-  unstampedAssetSymbol,
   unstampedChipValue,
 } from './treasury.js';
 
@@ -106,19 +104,18 @@ export interface TableMeta {
   /**
    * The ERC-20 this table settles in, as an address.
    *
-   * Stamped from the deployment default when the table is created and NEVER re-derived, for a
-   * stronger version of the reason `chipValue` is. A rate that moved under an open table mispriced
-   * the stacks on it. An ASSET that moved under an open table would take the buy-ins in one
-   * currency and pay the cash-outs in another — a table that took MockUSDC and paid out Sheqel
-   * would not have mispriced anything; it would have kept a different promise from the one it made.
+   * KEPT ON PURPOSE even though the card room has exactly one currency (Sheqel) and this can
+   * therefore never disagree with `ASSET`. One field recording which coin a table settles in costs
+   * a few bytes and makes "which currency is this table?" answerable from the table's own data
+   * rather than from a deployment variable somebody could repoint. What was deleted with the second
+   * currency is the LEGACY fallback and the first-load migration that stamped an old coin onto
+   * older tables — not this record. Do not reinstate either.
    *
-   * Optional only for a table created before this field existed: `migrateAsset` stamps `LEGACY_ASSET`
-   * onto it the first time it loads, which is the currency it has been settling in all along —
-   * deliberately not today's default, which is now the card room's own coin.
+   * Optional only for a play-money table, which settles in nothing.
    */
   asset?: string;
-  /** What {@link TableMeta.asset} calls itself (`USDC`, `SHQ`). A label for the address, stamped at
-   *  the same instant and by the same rule, so a table can never name a coin it does not pay in. */
+  /** What {@link TableMeta.asset} calls itself (`SHQ`). A label for the address, stamped at the same
+   *  instant and by the same rule, so a table can never name a coin it does not pay in. */
   assetSymbol?: string;
 }
 
@@ -357,13 +354,29 @@ export class PokerTableDO extends DurableObject<Env> {
       // human on a WebSocket, so the record is derivable; it is persisted on the next seat change.
       this.players = (kv.get('players') as Record<string, SeatRecord> | undefined) ?? migratePlayers(this.names);
       // Migration: a table created before the chip rate was pinned has been settling at
-      // `LEGACY_CHIP_VALUE`, and one created before the ASSET was pinned has been settling in
-      // `LEGACY_ASSET`. Write both on once, here, and the table is immune to either deployment
-      // default moving from this moment on — including the moves that ship with those very changes.
-      const migrated = migrateMeta(this.meta, env);
+      // `LEGACY_CHIP_VALUE`. Write it on once, here, and the table is immune to the deployment
+      // default moving from this moment on — including the move that ships with this very change.
+      const migrated = migrateChipValue(this.meta, env);
       if (migrated) {
         this.meta = migrated;
         await ctx.storage.put('meta', migrated);
+      }
+      // Repair: a table that stalled between hands has no alarm pending, and nothing to wake it.
+      //
+      // The alarm is how a table gets from "no hand running" to "deal one", and it is scheduled by
+      // whatever last committed. A table whose last commit left it unable to deal — everyone sat
+      // out, everyone broke, its bots on zero — scheduled nothing, so it went to sleep and no
+      // amount of looking at it woke it up. `Friday Night` sat like that with three agents on zero
+      // and one player left, which is the "the game is stuck" report.
+      //
+      // So a table with seats and no hand running gets exactly ONE between-hands tick on load. The
+      // tick is where {@link settleBustedAgents} runs and where a hand is started if one can be; if
+      // neither applies it schedules nothing further and the table goes straight back to sleep.
+      if (this.state && this.state.seats.length > 0 && (this.state.hand === null || this.state.hand.result !== undefined)) {
+        if ((await ctx.storage.get<number>('next-hand-at')) === undefined) {
+          await ctx.storage.put('next-hand-at', Date.now() + HAND_START_DELAY_MS);
+        }
+        if ((await ctx.storage.getAlarm()) === null) await ctx.storage.setAlarm(Date.now() + HAND_START_DELAY_MS);
       }
     });
   }
@@ -409,6 +422,12 @@ export class PokerTableDO extends DurableObject<Env> {
       const seat = Number(path.slice('/seat/'.length));
       if (!Number.isInteger(seat) || seat < 0) return json({ error: 'bad seat' }, 400);
       return this.serial(() => this.clearSeat(seat));
+    }
+    // OPERATOR: retire the table. The Worker has already checked the operator token; the condition
+    // that is about the TABLE rather than the caller — is anybody sitting here — is checked below,
+    // where the truth about the seats lives.
+    if (request.method === 'POST' && path === '/retire') {
+      return this.serial(() => this.retire());
     }
     if (request.method === 'POST' && path === '/stand-up') {
       const body = (await request.json()) as { playerId?: string };
@@ -466,6 +485,7 @@ export class PokerTableDO extends DurableObject<Env> {
       this.adapter = createSettlementAdapter(meta.settlement, this.env, {
         ...(rate === null ? {} : { chipValue: rate }),
         ...(asset === null ? {} : { asset }),
+        ...(asset === null || assetSymbol === null ? {} : { assetSymbol }),
         resolveFunding: (req) => this.playerFunding(req.playerId),
       });
     } catch (e) {
@@ -537,10 +557,20 @@ export class PokerTableDO extends DurableObject<Env> {
     const client = pair[0];
     const server = pair[1];
     const attachment: Attachment = { playerId, name, seat: playerId ? this.seatOf(playerId) : null };
-    // Reconnecting is activity, and it counts even though it deliberately does NOT sit the player
-    // back in: choosing to be dealt in again is theirs to do, but a seat whose owner is at the
-    // keyboard is not an abandoned seat and must stop looking like one to the operator route.
+    // Reconnecting is activity: a seat whose owner is at the keyboard is not an abandoned seat and
+    // must stop looking like one to the operator route.
     if (playerId) void this.touchSeat(playerId);
+    // …and it undoes the sit-out the DROP itself caused.
+    //
+    // This used to be strictly manual, on the principle that being dealt in is the player's own
+    // decision. That is right for a sit-out the player CHOSE, and right for one they earned by
+    // missing turns — but a disconnect sit-out was never a decision. It is a guard that keeps a
+    // vanished seat from bleeding blinds, and the moment its owner is back the guard has done its
+    // job. Leaving it on is how two players with plenty of chips ended up sat out at a table that
+    // then had nobody to deal to and looked broken. So: only `disconnected`, and only with chips in
+    // front of them; a `requested` or `timeouts` sit-out still waits for the player to press it,
+    // and the turn clock remains the answer to somebody who reconnects and then wanders off again.
+    if (playerId) void this.serial(() => this.sitInOnReconnect(playerId));
     this.ctx.acceptWebSocket(server, playerId ? [playerId] : []);
     server.serializeAttachment(attachment);
     const state = this.state as TableState;
@@ -591,7 +621,7 @@ export class PokerTableDO extends DurableObject<Env> {
    * and posts blinds with nobody behind it bleeds that player's money and stalls everyone else for
    * two turn clocks a hand. So the seat comes out of the deal — and nothing else happens to it. The
    * seat is kept, the chips are kept, and NO settlement is queued: dropping a connection is not
-   * standing up, and a disconnect that moved somebody's USDC would be a far worse bug than the one
+   * standing up, and a disconnect that moved somebody's money would be a far worse bug than the one
    * this fixes.
    *
    * A hand already running continues under the existing turn clock. Their chips are in the pot; the
@@ -617,6 +647,27 @@ export class PokerTableDO extends DurableObject<Env> {
     }
     if (!playerId) return; // a spectator has no seat to sit out
     await this.serial(() => this.sitOutOnDisconnect(playerId, ws));
+  }
+
+  /**
+   * The other half of {@link sitOutOnDisconnect}: a player whose CONNECTION sat them out is sat back
+   * in when they return. Silent when there is nothing to undo, so it is safe to call on every socket.
+   */
+  private async sitInOnReconnect(playerId: string): Promise<void> {
+    const state = this.state;
+    if (!state) return;
+    if (this.players[playerId]?.sitOutReason !== 'disconnected') return;
+    const seat = this.seatOf(playerId);
+    if (seat === null) return;
+    const occupant = state.seats.find((x) => x.seat === seat);
+    // No chips means the sit-out that matters now is being broke, not being away: sitting them in
+    // would change nothing and hide the rebuy they actually need.
+    if (!occupant || occupant.status !== 'sitting-out' || occupant.stack <= 0) return;
+    const seatsBefore = seatMap(state);
+    const next = sitIn(state, seat);
+    await this.noteSitOut(playerId, null);
+    const name = this.players[playerId]?.name ?? this.names[playerId] ?? playerId;
+    await this.commit(next, [], [this.seatStatus(next, seat, playerId, name)], seatsBefore);
   }
 
   /** The sit-out half of {@link webSocketClose}, on the serial queue so it cannot interleave a hand. */
@@ -743,7 +794,18 @@ export class PokerTableDO extends DurableObject<Env> {
           ...(treasury ? { playerAddress: treasury } : {}),
         });
         if (!auth.ok) return sendError(ws, 'settlement-failed', auth.reason);
-        const next = addChips(state, seat, cmd.amount);
+        // A player sat out BECAUSE they had nothing left is asking, by rebuying, to keep playing.
+        // Leaving them sat out would make the rebuy useless — money moved, still not dealt in — and
+        // "Sit in" was the only control on offer to somebody it could not help. So the two halves
+        // happen together, and only in that exact case: a player who CHOSE to sit out and then tops
+        // up keeps the choice they made.
+        const brokeBefore = (state.seats.find((x) => x.seat === seat)?.stack ?? 0) === 0;
+        const wasSittingOut = state.seats.find((x) => x.seat === seat)?.status === 'sitting-out';
+        let next = addChips(state, seat, cmd.amount);
+        if (brokeBefore && wasSittingOut && (next.seats.find((x) => x.seat === seat)?.stack ?? 0) > 0) {
+          next = sitIn(next, seat);
+          await this.noteSitOut(playerId, null);
+        }
         await this.settleBuyInOrQueue({
           tableId: meta.tableId,
           seat,
@@ -903,7 +965,7 @@ export class PokerTableDO extends DurableObject<Env> {
     await this.noteSitOut(playerId, null);
     const ev: SeatEvent = { type: 'seat-left', seat, playerId, name, stack: cashOut };
     await this.commit(next, events, [ev], seatsBefore);
-    // `pending` is the honest half of the answer: on a settled table the USDC has NOT moved yet — the
+    // `pending` is the honest half of the answer: on a settled table the money has NOT moved yet — the
     // outbox op above is a promise to move it, with retries and a failure that gets written onto the
     // ledger row. Callers report this verbatim rather than saying the money is back.
     return { seat, playerId, name, chips: cashOut, settlement: meta.settlement, pending: this.settles };
@@ -957,6 +1019,47 @@ export class PokerTableDO extends DurableObject<Env> {
    * the chips go back to that player's treasury. The house does not keep them and they are not
    * stranded on a seat nobody can reach.
    */
+  /**
+   * Retire this table: no seats, no history, no row in the lobby.
+   *
+   * There was no way to close a table at all, so a table nobody could play at — one settling in a
+   * currency the card room has stopped using, say — sat in the lobby forever. This is that way, and
+   * it is fenced the same way the operator seat clear is: the token gets you here, and the state of
+   * the table decides the rest.
+   *
+   * The one condition is that NOBODY IS SEATED. A seated table holds somebody's chips, and chips at
+   * a settled table are somebody's money; deleting the table would strand them with no cash-out and
+   * no record. Stand the players up first (which pays them out through the ordinary path) and then
+   * retire it. The refusal says exactly that, and how many seats are in the way.
+   */
+  private async retire(): Promise<Response> {
+    const state = this.state as TableState;
+    const meta = this.meta as TableMeta;
+    if (state.seats.length > 0) {
+      return json(
+        {
+          error:
+            `${meta.name} still has ${state.seats.length} ${state.seats.length === 1 ? 'player' : 'players'} seated, so it cannot be ` +
+            `retired — their chips are at this table and retiring it would strand them. Stand them up first (a cash-out pays them ` +
+            `out through the ordinary path), then retire it.`,
+          refused: 'seated',
+          seated: state.seats.length,
+        },
+        409,
+      );
+    }
+    // Everything this table knew: meta, state, ledger, hands, outbox, alarm. A retired table is
+    // gone, not hidden — `GET /tables/:id` answers 404 afterwards, which is the honest answer.
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.meta = null;
+    this.state = null;
+    this.names = {};
+    this.players = {};
+    this.adapter = null;
+    return json({ retired: true, tableId: meta.tableId, name: meta.name });
+  }
+
   private async clearSeat(seat: number): Promise<Response> {
     const state = this.state as TableState;
     const meta = this.meta as TableMeta;
@@ -1206,13 +1309,87 @@ export class PokerTableDO extends DurableObject<Env> {
           const nextAt = await this.ctx.storage.get<number>('next-hand-at');
           if (nextAt !== undefined && now >= nextAt) {
             await this.ctx.storage.delete('next-hand-at');
-            if (canStartHand(state)) await this.startNewHand(state, seatsBefore);
+            // Between hands is where a busted AGENT seat is dealt with, because it is the only
+            // moment its stack is final and no hand is riding on it. Returns the state to start
+            // from, which may differ from `state` if any agent was rebought or stood up.
+            const settled = await this.settleBustedAgents(state, seatsBefore);
+            if (canStartHand(settled)) await this.startNewHand(settled, seatMap(settled));
           }
         }
       }
       await this.drainOutbox(now);
       await this.scheduleAlarm();
     });
+  }
+
+  /**
+   * What happens to an AGENT seat that has run out of chips.
+   *
+   * A human at zero is offered a rebuy and decides. An agent cannot be offered anything: it holds no
+   * session, no treasury and no opinion, so a bot at zero is a seat that will never play again and
+   * the table quietly stops being able to deal. `Friday Night` reached exactly that state — three
+   * agents on zero, one player left, deadlock — which is the same bug as the human one wearing a
+   * different hat.
+   *
+   * Two modes, and each gets the only honest answer available to it:
+   *
+   *   play-money  TOP IT UP to the table's minimum buy-in. Play-money chips cost nobody anything
+   *               and the house is already the source of every chip on the table, so keeping the
+   *               bot in the game invents nothing that was not invented when it sat down. It goes
+   *               through the ordinary `add-chips` path, so the ledger records it like any rebuy.
+   *   settled     STAND IT UP. A rebuy here would move real money out of a treasury, and an agent
+   *               has none — there is no account to charge and nobody to ask. Standing it up pays
+   *               out whatever it has (nothing) through the ordinary path and frees the seat for
+   *               someone who can pay for it. Inventing house money for a bot at a money table is
+   *               the one thing this must not do.
+   */
+  private async settleBustedAgents(state: TableState, seatsBefore: Map<number, string>): Promise<TableState> {
+    const meta = this.meta as TableMeta;
+    const busted = state.seats.filter((s) => s.stack === 0 && this.players[s.playerId]?.transport === 'a2a');
+    if (busted.length === 0) return state;
+
+    if (this.settles) {
+      for (const seat of busted) {
+        const name = this.players[seat.playerId]?.name ?? this.names[seat.playerId] ?? seat.playerId;
+        try {
+          await this.standUpSeat(seat.seat, seat.playerId, name, seatMap(this.state as TableState), Date.now());
+        } catch (e) {
+          console.warn(`standing up busted agent seat ${seat.seat}`, e);
+        }
+      }
+      return this.state as TableState;
+    }
+
+    let next = state;
+    const events: TableEvent[] = [];
+    const now = Date.now();
+    for (const seat of busted) {
+      const amount = next.config.minBuyIn;
+      const name = this.players[seat.playerId]?.name ?? this.names[seat.playerId] ?? seat.playerId;
+      const orderId = `${meta.tableId}:${seat.playerId}:${seat.seat}:add:${now}`;
+      try {
+        next = addChips(next, seat.seat, amount);
+        if (next.seats.find((x) => x.seat === seat.seat)?.status === 'sitting-out') {
+          next = sitIn(next, seat.seat);
+          await this.noteSitOut(seat.playerId, null);
+        }
+        await this.settleBuyInOrQueue({
+          tableId: meta.tableId,
+          seat: seat.seat,
+          playerId: seat.playerId,
+          chips: amount,
+          orderId,
+          kind: 'add-chips',
+          handNo: null,
+          at: now,
+        });
+        events.push(this.seatStatus(next, seat.seat, seat.playerId, name));
+      } catch (e) {
+        console.warn(`rebuying busted agent seat ${seat.seat}`, e);
+      }
+    }
+    if (events.length > 0) await this.commit(next, [], events, seatsBefore);
+    return this.state as TableState;
   }
 
   private async startNewHand(state: TableState, seatsBefore: Map<number, string>): Promise<void> {
@@ -1470,9 +1647,11 @@ export class PokerTableDO extends DurableObject<Env> {
     if (!this.adapter) {
       const rate = this.chipValue();
       const asset = this.asset();
+      const symbol = this.assetSymbol();
       this.adapter = createSettlementAdapter((this.meta as TableMeta).settlement, this.env, {
         ...(rate === null ? {} : { chipValue: rate }),
         ...(asset === null ? {} : { asset }),
+        ...(asset === null || symbol === null ? {} : { assetSymbol: symbol }),
         resolveFunding: (req) => this.playerFunding(req.playerId),
       });
     }
@@ -1490,8 +1669,7 @@ export class PokerTableDO extends DurableObject<Env> {
 
   /**
    * This table's settlement asset. THE one currency every amount of money this table moves is
-   * denominated in; `ASSET` is only ever consulted through the pin written at creation (or, for a
-   * table older than the pin, written on first load).
+   * denominated in; `ASSET` is only ever consulted through the pin written at creation.
    */
   private asset(): string | null {
     return pinnedAsset(this.meta, this.env);
@@ -1519,11 +1697,13 @@ export class PokerTableDO extends DurableObject<Env> {
     // treasury, the authority does not travel with them: leaving it attached would let a seat spend
     // from money they never authorised. Absent here means the adapter refuses by name, which is right.
     const boundTo = (rec?.mandateTreasury ?? '').trim().toLowerCase();
-    // …and a mandate authorises ONE CURRENCY to be spent. A mandate signed for MockUSDC says nothing
-    // about the player's Sheqel, so carrying it to a Sheqel table would be reading a signature as
-    // consent to something it never named. The adapter's on-chain check would refuse it anyway
-    // (`checkBuyInMandate` compares the asset); refusing here means the refusal names the currency
-    // instead of arriving as a mismatch deep inside a redemption.
+    // …and a mandate authorises ONE CURRENCY to be spent. KEPT ON PURPOSE with one currency on the
+    // estate: a mandate must be denominated in the asset the table settles in, and that is a safety
+    // property rather than a mixed-currency feature. It should now never fire — which is exactly
+    // when a check earns its keep, because the day it does fire something upstream has gone wrong
+    // and a signature is about to be read as consent to something it never named. The adapter's
+    // on-chain check would refuse it anyway (`checkBuyInMandate` compares the asset); refusing here
+    // means the refusal names the currency instead of arriving deep inside a redemption.
     const mandateAsset = (rec?.mandateAsset ?? '').trim().toLowerCase();
     const tableAsset = (this.asset() ?? '').trim().toLowerCase();
     const sameAsset = !mandateAsset || !tableAsset || mandateAsset === tableAsset;
@@ -1800,35 +1980,6 @@ export function migrateChipValue(meta: TableMeta | null, env: Env): TableMeta | 
   if (!meta || meta.chipValue) return null;
   const rate = unstampedChipValue(env);
   return rate === null ? null : { ...meta, chipValue: rate.toString() };
-}
-
-/**
- * Stamp the CURRENCY a table that predates the pin has been settling in onto it, or `null` when
- * there is nothing to do.
- *
- * The value written is `LEGACY_ASSET` — deliberately NOT today's `ASSET`, for the same reason
- * {@link migrateChipValue} writes the legacy rate, only with more at stake. The deploy that brings
- * asset pinning is the deploy that points `ASSET` at the card room's own coin; stamping that onto a
- * table whose players bought in with MockUSDC would not re-price their stacks, it would change what
- * the table owes them into a different currency. Pure, and exported for the tests.
- */
-export function migrateAsset(meta: TableMeta | null, env: Env): TableMeta | null {
-  if (!meta || meta.asset) return null;
-  const asset = unstampedAsset(env);
-  if (asset === null) return null;
-  const symbol = unstampedAssetSymbol(env);
-  return { ...meta, asset, ...(symbol === null ? {} : { assetSymbol: symbol }) };
-}
-
-/**
- * Every first-load migration, composed: the rate, then the currency. One function so the DO writes
- * the record once and neither migration can be forgotten at the call site. `null` means the record
- * is already complete and nothing should be written.
- */
-export function migrateMeta(meta: TableMeta | null, env: Env): TableMeta | null {
-  const rated = migrateChipValue(meta, env);
-  const assed = migrateAsset(rated ?? meta, env);
-  return assed ?? rated;
 }
 
 /**

@@ -19,6 +19,8 @@
  *   DELETE /tables/:id/seat-agent/:seat → stands that agent up and cashes it out (auth required)
  *   DELETE /tables/:id/seat/:seat       → OPERATOR: clears an abandoned seat and cashes it out
  *                                       (x-operator-token, plus three conditions about the seat)
+ *   DELETE /tables/:id                  → OPERATOR: retires a table nobody is sitting at
+ *                                       (x-operator-token; refused while anyone is seated)
  *   GET  /tables/:id/settlement         → this player's money rows at a table (auth required)
  *   GET  /tables/:id/ws?token=...       → WebSocket to the table DO (no/invalid token = spectator)
  *   GET  /treasury                      → chosen treasury + balance + candidates + mandate (auth required)
@@ -465,6 +467,32 @@ app.delete('/tables/:id/seat/:seat', async (c) => {
   // Never logged, never echoed: the refusal says which gate closed and nothing about the token.
   if (!gate.ok) return c.json({ error: gate.reason, refused: 'operator' }, gate.status);
   return passthrough(await table(c.env, c.req.param('id')).fetch(`https://table/seat/${seat}`, { method: 'DELETE' }));
+});
+
+/**
+ * OPERATOR: retire a table.
+ *
+ * There was no way to close a table at all, so an unplayable one — a table settling in a currency
+ * the card room no longer uses, a test table, a table nobody will ever sit at again — stayed in the
+ * lobby forever. This is the way, and it is gated exactly as the seat clear is: the same
+ * `x-operator-token`, the same constant-time compare, the same 503 on a deployment that has set no
+ * secret. There is no admin role, and no session reaches this.
+ *
+ * The one condition about the TABLE is that nobody is seated at it, checked in the DO where the
+ * truth about the seats lives: a seated table holds somebody's chips, and at a settled table those
+ * chips are their money. The refusal says so and says how many seats are in the way, so the fix
+ * ("stand them up first") is in the answer rather than in someone's head.
+ */
+app.delete('/tables/:id', async (c) => {
+  const gate = await checkOperator(c.env, c.req.raw);
+  // Never logged, never echoed: the refusal says which gate closed and nothing about the token.
+  if (!gate.ok) return c.json({ error: gate.reason, refused: 'operator' }, gate.status);
+  const res = await lobby(c.env, c.req.query('circle')).fetch('https://lobby/retire', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tableId: c.req.param('id') }),
+  });
+  return passthrough(res);
 });
 
 app.delete('/tables/:id/seat-agent/:seat', async (c) => {

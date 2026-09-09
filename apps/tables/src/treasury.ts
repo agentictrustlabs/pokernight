@@ -57,7 +57,7 @@ export function chainId(env: Env): number {
 
 /**
  * The DEPLOYMENT DEFAULT rate: asset base units per chip for a table created right now.
- * `1000000` = 1 USDC per chip at 6 decimals.
+ * `1000000` = 1 Sheqel per chip at 6 decimals.
  *
  * This is the rate a NEW table is stamped with. It is never the rate an EXISTING table settles at:
  * a stack bought at one rate must cash out at that same rate, whatever the operator has since
@@ -125,11 +125,12 @@ export function pinnedChipValue(meta: { chipValue?: string } | null | undefined,
 /**
  * The DEPLOYMENT DEFAULT settlement asset: the token a table created RIGHT NOW is stamped with.
  *
- * The same shape as {@link chipValue}, and for a stronger version of the same reason. A chip rate
- * that moved under an open table mispriced the stacks on it; an ASSET that moved under an open
- * table would collect a buy-in in one currency and pay the cash-out in another — the table would be
- * keeping a promise it never made. So this is read ONCE, when a table is created, and every
- * settlement afterwards reads the table's own pin (see {@link pinnedAsset} and `PokerTableDO`).
+ * The card room settles in exactly one currency — Sheqel — so this and {@link pinnedAsset} always
+ * agree. The pin is kept anyway, and deliberately: one field on the table recording which coin it
+ * settles in is a few bytes, and it makes "which currency is this table?" answerable from the
+ * table's own data instead of from a deployment variable that could be repointed. What was removed
+ * with the currency was the LEGACY fallback and the first-load migration that stamped an old coin
+ * onto older tables — not the record itself.
  */
 export function defaultAsset(env: Env): `0x${string}` | null {
   const v = (env.ASSET ?? '').trim();
@@ -143,72 +144,34 @@ export function defaultAssetSymbol(env: Env): string | null {
 }
 
 /**
- * The asset every table created BEFORE the asset was pinned has been settling in.
- *
- * Exactly the argument behind `LEGACY_CHIP_VALUE`, and it bites harder here: the deploy that
- * introduces asset pinning is the same deploy that points `ASSET` at the card room's own coin, so
- * "today's asset" is the wrong answer for every table that already exists. Those tables took their
- * buy-ins in MockUSDC and hold player money denominated in it. Stamping them with the new coin
- * would not re-price them — it would repudiate them.
- *
- * Delete it once every live table has loaded once. It is not a default for anything new.
- */
-export function legacyAsset(env: Env): `0x${string}` | null {
-  const v = (env.LEGACY_ASSET ?? '').trim();
-  return ADDRESS_RE.test(v) ? (v as `0x${string}`) : null;
-}
-
-export function legacyAssetSymbol(env: Env): string | null {
-  const v = (env.LEGACY_ASSET_SYMBOL ?? '').trim();
-  return v === '' ? null : v.slice(0, 12);
-}
-
-/** What an unstamped table has been settling in: the legacy asset, else today's default. */
-export function unstampedAsset(env: Env): `0x${string}` | null {
-  return legacyAsset(env) ?? defaultAsset(env);
-}
-
-/** The symbol that goes with {@link unstampedAsset}, chosen by the SAME rule so the two agree. */
-export function unstampedAssetSymbol(env: Env): string | null {
-  return legacyAsset(env) ? legacyAssetSymbol(env) : defaultAssetSymbol(env);
-}
-
-/**
- * The asset a table settles in: the one stamped on it, or — for a table created before assets were
- * pinned — the asset such tables have been settling in (`LEGACY_ASSET`, falling back to the
- * deployment default where no such tables can exist). The caller writes the answer onto the table's
- * meta the first time it loads, and from then on this only ever returns the stamped value.
+ * The asset a table settles in: the one stamped on it, else the deployment's. A table stamped at
+ * creation only ever returns its own stamp; the fallback is for a table that predates the field,
+ * and there is nothing else it could honestly be — this card room has one currency.
  */
 export function pinnedAsset(meta: { asset?: string } | null | undefined, env: Env): `0x${string}` | null {
   const raw = (meta?.asset ?? '').trim();
   if (ADDRESS_RE.test(raw)) return raw as `0x${string}`;
-  return unstampedAsset(env);
+  return defaultAsset(env);
 }
 
-/**
- * What a given currency is CALLED, if this deployment knows — `SHQ`, `USDC`, else null.
- *
- * Only the deployment's own currencies have names here, which is the point: an address this card
- * room does not settle in is named by its address, because inventing a ticker for it would be a
- * label nobody checked.
- */
+/** What a given currency is CALLED, if this deployment knows — `SHQ`, else null. An address this
+ *  card room does not settle in is named by its address; inventing a ticker for it would be a label
+ *  nobody checked. */
 export function assetSymbolFor(env: Env, asset: string | null | undefined): string | null {
   const a = (asset ?? '').trim().toLowerCase();
   if (!ADDRESS_RE.test(a)) return null;
-  if (a === defaultAsset(env)?.toLowerCase()) return defaultAssetSymbol(env);
-  if (a === legacyAsset(env)?.toLowerCase()) return legacyAssetSymbol(env);
-  return null;
+  return a === defaultAsset(env)?.toLowerCase() ? defaultAssetSymbol(env) : null;
 }
 
-/** The symbol for {@link pinnedAsset}. A stamped table carries its own; anything else falls back the
- *  same way the address does, so a table can never be labelled with a coin it does not pay in. */
+/** The symbol for {@link pinnedAsset}. A stamped table carries its own, so a table can never be
+ *  labelled with a coin it does not pay in. */
 export function pinnedAssetSymbol(meta: { asset?: string; assetSymbol?: string } | null | undefined, env: Env): string | null {
   const raw = (meta?.asset ?? '').trim();
   if (ADDRESS_RE.test(raw)) {
     const sym = (meta?.assetSymbol ?? '').trim();
     return sym === '' ? null : sym.slice(0, 12);
   }
-  return unstampedAssetSymbol(env);
+  return defaultAssetSymbol(env);
 }
 
 export function rpcUrl(env: Env): string {
@@ -378,26 +341,24 @@ const OPEN_MINT_PROBE = '0x000000000000000000000000000000000f0f0f0f' as `0x${str
  * The faucet, and the seed a new player is given, are only ever allowed to exist against play money,
  * and "the operator set a flag" is not proof of that. The token itself is.
  *
- * This used to read the token's NAME and accept anything calling itself mock or test. That worked
- * while the only test asset on the chain was `Mock USD Coin`, and stopped working the moment the
- * card room minted a currency of its own: `Sheqel` is exactly as mintable as MockUSDC and says
- * neither word. Widening the pattern to "…or Sheqel" would have made the check a list of names —
- * which is a configuration by another route, and wrong for the next coin.
+ * This used to read the token's NAME and accept anything calling itself mock or test — a check that
+ * is really a list of names, which is configuration by another route and wrong for the next coin.
  *
- * So the check no longer reads the label. It asks the CONTRACT the question the faucet actually
+ * So the check no longer reads the label, and it is deliberately NOT gated on a flag or on the fact
+ * that this deployment settles in Sheqel. It asks the CONTRACT the question the faucet actually
  * depends on: simulate `mint(address,uint256)` from an address with no standing in this deployment
- * (`OPEN_MINT_PROBE`) and see whether it would succeed. That is true of MockUSDC, true of Sheqel,
- * and false of every asset whose supply means something: a real USDC has no such function, or gates
- * it behind a minter role, and either way the simulation reverts. Nothing is minted by asking — a
- * simulation changes no state — and the answer is grounded in deployed bytecode rather than in a
- * string the token chose for itself or a variable somebody set.
+ * (`OPEN_MINT_PROBE`) and see whether it would succeed. True of Sheqel, and false of every asset
+ * whose supply means something: a real asset has no such function, or gates it behind a minter
+ * role, and either way the simulation reverts. Nothing is minted by asking — a simulation changes
+ * no state — and the answer is grounded in deployed bytecode rather than in a string the token
+ * chose for itself or a variable somebody set.
  *
  * `name` is still read, and still returned, so a refusal can say WHICH token it refused. It just no
  * longer decides anything.
  */
-export async function isTestAsset(env: Env, asset?: string): Promise<{ ok: true; name: string } | { ok: false; reason: string }> {
+export async function isTestAsset(env: Env): Promise<{ ok: true; name: string } | { ok: false; reason: string }> {
   const client = createPublicClient({ transport: http(rpcUrl(env)) });
-  const address = deployments(env, asset).asset;
+  const address = deployments(env).asset;
 
   let name: string;
   try {

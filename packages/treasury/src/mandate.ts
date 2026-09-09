@@ -2,7 +2,7 @@
  * The buy-in mandate — the only movement whose authority is NOT the house's.
  *
  * A cash-out is the house spending its own funds, so the house custodian signs it and that is the
- * end of the argument (see `client.transferUsdc`). A buy-in is the opposite: the money is the
+ * end of the argument (see `client.transferAsset`). A buy-in is the opposite: the money is the
  * PLAYER's, and the house may move it only because the player signed a `Delegation` that says so,
  * capped by caveats the player's Home showed them before they signed.
  *
@@ -30,7 +30,7 @@ import {
 } from '@agenticprimitives/delegation';
 import { buildClosedMandate, x402, type PaymentMandate } from '@agenticprimitives/payments';
 import { TreasuryError, type Address, type Hex } from './types.js';
-import { formatUsdc } from './units.js';
+import { formatAmount } from './units.js';
 
 export type { Caveat, Delegation, PaymentMandate };
 
@@ -45,7 +45,7 @@ export interface MandateEnforcers {
 export interface BuyInMandateTerms {
   /** Where buy-ins land: the house treasury Smart Agent. */
   payee: Address;
-  /** The settlement asset (6-decimal USDC). */
+  /** The settlement asset (6 decimals). */
   asset: Address;
   enforcers: MandateEnforcers;
   /** Base units the biggest single buy-in or rebuy may move. */
@@ -151,7 +151,8 @@ export function buildBuyInRedemption(input: BuyInRedemptionInput): { to: Address
   const mandate = buildClosedMandate({
     payer: input.payer,
     payee: input.payee,
-    asset: { id: input.asset, symbol: 'USDC', decimals: 6 },
+    // No ticker: the symbol is optional metadata and this package names no currency.
+    asset: { id: input.asset, decimals: 6 },
     amount: input.amount,
     chain: input.chainId,
     rail: 'sponsored-userop',
@@ -201,8 +202,8 @@ export interface BuyInMandatePolicy {
 /** One night, one table's worth of rebuys. Deliberately short: a mandate is not a standing account. */
 export const DEFAULT_BUY_IN_POLICY: BuyInMandatePolicy = {
   // 200 chips. The cap a player consents to is a cap in ASSET (`maxBuyInChips × chipValue`), so this
-  // number only means anything alongside a rate: at the 1-USDC chip the apps default to, it is a
-  // 200 USDC ceiling per buy-in — the same ceiling this policy has always described.
+  // number only means anything alongside a rate: at the one-whole-unit chip the apps default to, it
+  // is a 200-unit ceiling per buy-in — the same ceiling this policy has always described.
   maxBuyInChips: 200,
   maxBuyIns: 5,
   windowSeconds: 12 * 60 * 60,
@@ -340,6 +341,12 @@ export interface BuyInMandateExpectation {
   openDelegate?: Address;
   /** The movement being authorised right now, in base units. Omit to check the mandate alone. */
   amount?: bigint;
+  /**
+   * What the settlement asset is CALLED (`SHQ`), for the one refusal here that quotes an amount a
+   * player has to act on. Optional, and injected: this package names no currency, so absent the
+   * sentence states the number and no ticker rather than a ticker nobody configured.
+   */
+  assetSymbol?: string;
   /** Milliseconds. */
   now: number;
 }
@@ -356,6 +363,9 @@ export function checkBuyInMandate(value: unknown, expect: BuyInMandateExpectatio
   if (!mandate) return 'the stored buy-in mandate is not a delegation this card room can read';
   if (mandate.signature === '0x' || mandate.signature.length < 4) return 'the buy-in mandate carries no signature';
   const eq = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+  // How to write an amount in the one refusal here that quotes money. The ticker is the host's.
+  const ticker = (expect.assetSymbol ?? '').trim();
+  const money = (v: bigint): string => (ticker === '' ? formatAmount(v) : `${formatAmount(v)} ${ticker}`);
 
   if (!eq(mandate.delegator, expect.treasury)) {
     return (
@@ -399,8 +409,8 @@ export function checkBuyInMandate(value: unknown, expect: BuyInMandateExpectatio
   }
   if (expect.amount !== undefined && terms.maxAmountPerCharge < expect.amount) {
     return (
-      `the buy-in mandate allows at most ${formatUsdc(terms.maxAmountPerCharge)} USDC per buy-in, ` +
-      `and this one costs ${formatUsdc(expect.amount)} USDC — sign a new mandate or buy in for less`
+      `the buy-in mandate allows at most ${money(terms.maxAmountPerCharge)} per buy-in, ` +
+      `and this one costs ${money(expect.amount)} — sign a new mandate or buy in for less`
     );
   }
 

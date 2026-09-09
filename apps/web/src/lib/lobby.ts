@@ -20,7 +20,7 @@ export interface TableDetail {
   /** Asset base units per chip, pinned when the table was created. Absent on a table with no rate. */
   chipValue?: string;
   /** What that rate is denominated in, pinned at the same instant. Absent on a table older than the
-   *  pin, which settles in USDC — see `LEGACY_ASSET_TICKER`. */
+   *  pin — see `ASSET_TICKER`. */
   assetSymbol?: string;
   view: TableView;
   names: Record<string, string>;

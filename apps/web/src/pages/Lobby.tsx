@@ -85,7 +85,7 @@ function SignedInLobby({ session, auth }: { session: AppSession; auth: AuthState
         {/* Opening a table is a thing a host does, not a step in playing, so it is folded shut. */}
         <details className="panel lobby-create">
           <summary>Open your own table</summary>
-          <CreateTable session={session} money={(treasury?.assetSymbol ?? '').trim() || 'USDC'} />
+          <CreateTable session={session} money={(treasury?.assetSymbol ?? '').trim() || 'SHQ'} />
         </details>
       </div>
     </div>
@@ -149,7 +149,7 @@ function TableList({ tables, err }: { tables: TableSummary[] | null; err: string
                       </span>
                       {lo.assetText && hi.assetText ? (
                         <span className="cost-asset">
-                          {lo.assetText}–{hi.assetText} {rate?.asset ?? 'USDC'}
+                          {lo.assetText}–{hi.assetText} {rate?.asset ?? 'SHQ'}
                         </span>
                       ) : null}
                     </td>

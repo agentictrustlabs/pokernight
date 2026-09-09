@@ -3,7 +3,7 @@ import type { AppSession } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { shortAddress } from '../lib/format';
 import { startBuyInMandate, type AuthConfig } from '../lib/home';
-import { fmtUsdc, shortRef, type TreasuryView } from '../lib/treasury';
+import { fmtAmount, shortRef, type TreasuryView } from '../lib/treasury';
 
 /**
  * Which Smart Agent funds this player's night.
@@ -18,15 +18,10 @@ import { fmtUsdc, shortRef, type TreasuryView } from '../lib/treasury';
  * authority the player signs; the panel shows the exact caps before asking, and shows them again
  * after, because "authorised" with no numbers is not consent.
  */
-/**
- * What this card room's money is called, as the server states it.
- *
- * `USDC` is the fallback and it is the honest one: a server that names no currency is one that
- * predates the card room having a coin of its own, and USDC is what it settles in. The wrong ticker
- * beside a real balance is worse than a stale one.
- */
+/** What this card room's money is called, as the server states it. `SHQ` is the fallback for a
+ *  server that names none; the wrong ticker beside a real balance is worse than no ticker. */
 function ticker(view: { assetSymbol?: string } | null): string {
-  return (view?.assetSymbol ?? '').trim() || 'USDC';
+  return (view?.assetSymbol ?? '').trim() || 'SHQ';
 }
 
 export function TreasuryPanel({ session, config, bare = false }: { session: AppSession; config: AuthConfig | null; bare?: boolean }) {
@@ -97,7 +92,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
     () =>
       run('fund', async () => {
         const r = await api.fundTreasury(fundAmount.trim(), session.token);
-        return `Minted ${r.mintedUsdc} test ${money} — ${shortRef(r.txHash)}`;
+        return `Minted ${r.mintedText} test ${money} — ${shortRef(r.txHash)}`;
       }),
     [fundAmount, money, run, session.token],
   );
@@ -106,8 +101,8 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
     () =>
       run('mandate', async () => {
         const r = await api.signMandate(undefined, session.token);
-        const per = fmtUsdc(r.maxPerBuyIn) ?? '?';
-        const total = fmtUsdc(r.sessionTotal) ?? '?';
+        const per = fmtAmount(r.maxPerBuyIn) ?? '?';
+        const total = fmtAmount(r.sessionTotal) ?? '?';
         return `Authorised: up to ${per} ${money} per buy-in, ${total} ${money} in total, at most ${r.maxBuyIns} buy-ins, until ${new Date(r.validUntil * 1000).toLocaleString()}.`;
       }),
     [money, run, session.token],
@@ -154,7 +149,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
   }
 
   const chosen = view.chosen;
-  const chosenBalance = fmtUsdc(view.balance);
+  const chosenBalance = fmtAmount(view.balance);
   const empty = view.balance !== null && BigInt(view.balance) === 0n;
   const working = busy !== null;
 
@@ -201,7 +196,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
               <code className="mono" title={c.address}>
                 {shortAddress(c.address)}
               </code>
-              <span className="num">{c.balanceUsdc === null ? (c.error ? '—' : '…') : `${fmtUsdc(c.balance) ?? c.balanceUsdc} ${money}`}</span>
+              <span className="num">{c.balanceText === null ? (c.error ? '—' : '…') : `${fmtAmount(c.balance) ?? c.balanceText} ${money}`}</span>
               {c.address === chosen ? (
                 <span className="hint">in use</span>
               ) : (
@@ -313,33 +308,6 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
 }
 
 /**
- * What the treasury holds in the card room's OTHER currency, when there is one.
- *
- * There is one while a currency change is in flight: new tables settle in Sheqel, and every table
- * opened before it is pinned to MockUSDC and is still paid out in it. A player at one of those
- * tables is spending money this panel would otherwise not show at all, which is not a balance a
- * money panel may leave out. When the older currency is gone from the deployment, so is this line.
- */
-function OtherCurrencies({ view, money }: { view: TreasuryView; money: string }) {
-  const others = (view.balances ?? []).filter((b) => (b.symbol ?? '') !== money);
-  if (others.length === 0) return null;
-  return (
-    <p className="hint treasury-other-currency">
-      Also holds{' '}
-      {others.map((b, i) => (
-        <span key={b.asset}>
-          {i > 0 ? ', ' : ''}
-          <strong>
-            {b.formatted ?? '—'} {b.symbol ?? 'other'}
-          </strong>
-        </span>
-      ))}{' '}
-      — for the tables that opened before {money}, which still settle in it.
-    </p>
-  );
-}
-
-/**
  * The buy-in authority.
  *
  * A cash-out is the house paying out of its own treasury. A buy-in is the opposite: it is the
@@ -374,8 +342,8 @@ function MandateSection({
       </div>
     );
   }
-  const per = fmtUsdc(m.maxPerBuyIn) ?? '?';
-  const total = fmtUsdc(m.sessionTotal) ?? '?';
+  const per = fmtAmount(m.maxPerBuyIn) ?? '?';
+  const total = fmtAmount(m.sessionTotal) ?? '?';
   const until = m.validUntil ? new Date(m.validUntil * 1000).toLocaleString() : 'the end of the night';
   const canSignHere = view.create.mode === 'server';
 

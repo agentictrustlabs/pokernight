@@ -11,7 +11,7 @@ const view = (over: Partial<TreasuryView> = {}): TreasuryView => ({
   chosen: null,
   chosenName: null,
   balance: null,
-  balanceUsdc: null,
+  balanceText: null,
   candidates: [],
   discoveryError: null,
   create: { mode: 'home-portal', portalUrl: 'https://home.example/treasuries', canName: true },
@@ -34,14 +34,14 @@ const view = (over: Partial<TreasuryView> = {}): TreasuryView => ({
 });
 
 const funded = (over: Partial<TreasuryView> = {}): TreasuryView =>
-  view({ chosen: `0x${'ab'.repeat(20)}`, chosenName: 'rowan.treasury', balance: '10000000000', balanceUsdc: '10000.000000', ...over });
+  view({ chosen: `0x${'ab'.repeat(20)}`, chosenName: 'rowan.treasury', balance: '10000000000', balanceText: '10000.000000', ...over });
 
 const result = (over: Partial<StakeResult> = {}): StakeResult => ({
   ready: false,
   treasury: null,
   treasuryName: null,
   balance: null,
-  balanceUsdc: null,
+  balanceText: null,
   steps: [],
   next: { action: 'none', said: '' },
   ...over,
@@ -77,8 +77,8 @@ describe('stakeStage', () => {
 
 describe('what a player is shown instead of an address', () => {
   it('formats the balance as money, with cents', () => {
-    expect(stakeBalance(funded())).toBe('10,000.00 USDC');
-    expect(stakeBalance(view({ balance: '0' }))).toBe('0.00 USDC');
+    expect(stakeBalance(funded())).toBe('10,000.00 SHQ');
+    expect(stakeBalance(view({ balance: '0' }))).toBe('0.00 SHQ');
   });
 
   it('answers null rather than "NaN" for anything it cannot read', () => {
@@ -116,7 +116,7 @@ describe('progressLine', () => {
 
 describe('readyLine', () => {
   it('ends on money, not on machinery', () => {
-    expect(readyLine(result({ ready: true, balance: '10000000000' }))).toBe("You're set up with 10,000.00 USDC to play with.");
+    expect(readyLine(result({ ready: true, balance: '10000000000' }))).toBe("You're set up with 10,000.00 SHQ to play with.");
     // The card room's own currency, where the server states one. There is more than one on the
     // estate now, so the ticker is never assumed.
     expect(readyLine(result({ ready: true, balance: '10000000000' }), 'SHQ')).toBe("You're set up with 10,000.00 SHQ to play with.");

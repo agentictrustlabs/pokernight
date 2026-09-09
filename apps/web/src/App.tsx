@@ -70,7 +70,7 @@ export function App() {
    *
    * The two endings differ in one more way now, and it is the important one. An explicit sign-out
    * GIVES UP the person's seats: the Worker stands them up everywhere and, on a settled table, cashes
-   * them out, so nobody's USDC is left committed to a seat they have walked away from. An EXPIRED
+   * them out, so nobody's money is left committed to a seat they have walked away from. An EXPIRED
    * session does no such thing — it lets the socket close and be treated as a disconnect, which keeps
    * the seat and the chips exactly where they are. An expired token is not consent to move money.
    *

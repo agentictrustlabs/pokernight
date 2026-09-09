@@ -55,7 +55,7 @@ describe('describeSignOut', () => {
       result({ stoodUp: [{ tableId: 't1', tableName: 'Cash Game', seat: 3, chips: 120, settlement: 'play-money', pending: false }] }),
     );
     expect(said).toBe('You were stood up from Cash Game.');
-    expect(said).not.toContain('USDC');
+    expect(said).not.toContain('SHQ');
   });
 
   /** The one thing this must never do: report a queued cash-out as money that has arrived. */

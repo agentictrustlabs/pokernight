@@ -38,7 +38,7 @@ export interface SignOutOutcome {
    * table, cashing them out.
    *
    * True only when the person asked to sign out. That is them saying they are finished, and leaving
-   * their USDC committed to a seat they have walked away from is the bug this closes.
+   * their money committed to a seat they have walked away from is the bug this closes.
    *
    * False when the session merely expired, which must behave like a dropped connection instead: the
    * socket closes, the table sits them out, and their seat and chips stay exactly where they are. An
@@ -83,7 +83,7 @@ export function describeSignOut(result: SignOutResult): string | null {
     }
     if (pending.length > 0) {
       parts.push(
-        `Your chips at ${seatList(pending.map((s) => s.tableName ?? s.tableId))} are being cashed out — the USDC is on its way back to your treasury and has not landed yet.`,
+        `Your chips at ${seatList(pending.map((s) => s.tableName ?? s.tableId))} are being cashed out — the money is on its way back to your treasury and has not landed yet.`,
       );
     }
   }

@@ -3,9 +3,8 @@
  *
  * play-money       chips never leave the DO. Unchanged, and deliberately untouched by everything
  *                  below: a play-money table must behave exactly as it did before money was real.
- * mandate-transfer the TABLE's settlement asset moves between Smart Agent treasuries on chain —
- *                  Sheqel for a table opened now, MockUSDC for one opened before the card room had
- *                  a coin of its own. Cash-outs are paid by the house custodian out of
+ * mandate-transfer the TABLE's settlement asset — Sheqel, the card room's own coin — moves between
+ *                  Smart Agent treasuries on chain. Cash-outs are paid by the house custodian out of
  *                  HOUSE_TREASURY_SA; buy-ins are pulled from the player's own treasury by
  *                  redeeming a mandate THEY signed. See `@pokernight/treasury`.
  * table-escrow     phase 4.
@@ -45,11 +44,14 @@ export interface SettlementAdapterOpts {
    */
   chipValue?: bigint;
   /**
-   * The TABLE's settlement asset. Passed by the DO from its own meta for the same reason the chip
-   * rate is: the deployment default may have moved to a different currency since the table was
-   * created, and a stack bought with one coin must never be paid out in another.
+   * The TABLE's settlement asset, from the DO's own meta. There is one currency, so this always
+   * equals `ASSET` — it is passed anyway so that every amount this adapter moves is denominated in
+   * the coin the TABLE records, not in whatever the deployment variable currently says.
    */
   asset?: string;
+  /** What that asset is CALLED at this table (`SHQ`), so a money refusal a player reads carries a
+   *  ticker. The table's own stamp, not the deployment's — a table names the coin it pays in. */
+  assetSymbol?: string;
   resolveFunding?: FundingResolver;
 }
 
@@ -77,9 +79,9 @@ function createMandateTransferAdapter(env: Env, opts: SettlementAdapterOpts): Se
   let chain: number;
   let deploys;
   try {
-    // The table's own currency wherever the caller knows it, exactly as with the rate below: the
-    // client this builds carries `deployments.asset`, and that is the token every transfer, every
-    // balance check and every mandate check in this adapter is denominated in.
+    // The table's own currency wherever the caller knows it: the client this builds carries
+    // `deployments.asset`, and that is the token every transfer, every balance check and every
+    // mandate check in this adapter is denominated in.
     client = custodialTreasury(env, opts.asset);
     house = houseTreasury(env);
     // The table's own rate wherever the caller knows it. `chipValue(env)` is the fallback for the
@@ -109,6 +111,7 @@ function createMandateTransferAdapter(env: Env, opts: SettlementAdapterOpts): Se
     client,
     houseTreasury: house,
     chipValue: chips,
+    ...(opts.assetSymbol ? { assetSymbol: opts.assetSymbol } : {}),
     chainId: chain,
     openDelegate: OPEN_DELEGATE,
     resolvePlayer: resolve,

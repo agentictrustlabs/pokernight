@@ -17,7 +17,7 @@ Goals
 - Money moves only under caveated delegations signed by the player's own Smart Agent. The house never
   holds a player's keys.
 - Every hand is replayable and auditable; every money movement has an on-chain receipt.
-- Play-money is the default. USDC settlement is an adapter that is switched on per table.
+- Play-money is the default. Sheqel settlement is an adapter that is switched on per table.
 
 Non-goals
 - No custom poker client protocol for third parties in v1; humans use our web client, agents use A2A.
@@ -31,7 +31,7 @@ every game is a sit-and-go with a fixed start stack and escalating blinds; there
 and no mid-table buy-in or cash-out; the server database interface reports only login, game creation,
 final placement, and game end, never chip amounts; tables are created from the GUI and administered
 over IRC with no HTTP API; agents would need a custom protobuf-over-TLS client with SCRAM-SHA-1 auth.
-It solves none of the three hard problems (agents, treasuries, USDC) and its money model is wrong for
+It solves none of the three hard problems (agents, treasuries, on-chain settlement) and its money model is wrong for
 cash games. Details in the project memory note `pokerth-evaluation`.
 
 ## 3. Placement in the faithnet estate
@@ -79,23 +79,31 @@ Six decimals because every amount in this codebase is an integer of 6-decimal ba
 open, which is defensible only for a test asset on a test chain and is documented as such in the
 contract.
 
-Before Sheqel the asset was faithchain's `MockUSDC` (`0xdaE09066A2cc32f6203605619137dcF01A9B49Ae`,
-also 6 decimals, also open mint). It has NOT been deleted: it is `LEGACY_ASSET`, and every table
-opened before Sheqel is pinned to it (below).
+**The Sheqel is the only currency.** There is no second settlement asset, no conversion, no legacy
+fallback and nothing to migrate. An earlier build ran two coins side by side while the card room
+moved off faithchain's MockUSDC; that support is deleted, along with `LEGACY_ASSET`, the first-load
+asset migration, and the per-currency balances and seeding that existed to serve it. A table that
+cannot be opened in Sheqel is not opened, and the four tables that still settled in the old coin were
+retired rather than kept readable.
 
-**The asset belongs to the TABLE, not to the deployment** — the same rule as the chip rate, and for
-a stronger reason. A rate that moved under an open table mispriced the stacks on it; an ASSET that
-moved under an open table would collect the buy-ins in one currency and pay the cash-outs in another,
-which is not a mispricing but a different promise. `ASSET` / `ASSET_SYMBOL` are read once, when a
-table is created, and stamped on it (`PokerTableDO` `meta.asset` / `meta.assetSymbol`); a table older
-than the field is stamped on first load with `LEGACY_ASSET` / `LEGACY_ASSET_SYMBOL`, the currency it
-has actually been settling in. A buy-in mandate carries a currency too (`SessionDO.mandateAsset`), and
-a table will not spend under a mandate denominated in anything but its own — it says which currency
-the authority names instead of claiming the player authorised nothing.
+Two things from that era are KEPT, on purpose:
+
+- **The per-table asset stamp.** `ASSET` / `ASSET_SYMBOL` are read once, when a table is created, and
+  written onto it (`PokerTableDO` `meta.asset` / `meta.assetSymbol`); every settlement reads the
+  table's own record and never the variable. With one currency the two can never disagree — which is
+  what makes the field cheap, not what makes it pointless. One field recording which coin a table
+  settles in makes "which currency is this?" answerable from data rather than from a deployment
+  variable somebody could repoint, and it is the thing that would have to be true before a second
+  currency could ever be considered again.
+- **The mandate-currency check.** A buy-in mandate carries the currency it authorises
+  (`SessionDO.mandateAsset`), and a table will not spend under a mandate denominated in anything but
+  its own — it says which currency the authority names instead of claiming the player authorised
+  nothing. That is a safety property, not a mixed-currency feature: with one coin it should never
+  fire, which is exactly when a check earns its keep.
 
 Units: chips are integers in the table ledger. `chipValue` converts chips to asset base units;
-the deployment default is 1 000 000 = 1 USDC per chip, so a 1/2 table with a 40–200 buy-in reads as
-a normal cash game in dollars. Blinds and buy-in limits are configured in chips.
+the deployment default is 1 000 000 = 1 Sheqel per chip, so a 1/2 table with a 40–200 buy-in reads
+as a normal cash game. Blinds and buy-in limits are configured in chips.
 
 **The rate belongs to the TABLE, not to the deployment.** `CHIP_VALUE` is read once, when a table is
 created, and stamped onto that table (`PokerTableDO` `meta.chipValue`). Every settlement at that
@@ -105,7 +113,7 @@ have actually been settling at — NOT with today's default, because the deploy 
 the same deploy that raises the default. Changing `CHIP_VALUE`
 therefore opens NEW tables at a new rate and re-values nothing that is already on a table. It has to
 be this way round: read at settlement time, a hundredfold change to the variable would have cashed a
-100-chip stack bought for 1 USDC out at 100 USDC of house funds. A settled table's rate is published
+100-chip stack bought for 1 Sheqel out at 100 Sheqels of house funds. A settled table's rate is published
 on `TableSummary` and the table view so a client can show both units without guessing.
 
 ### 5.0 The player's treasury
@@ -130,11 +138,14 @@ The card room never holds the treasury's key, exactly as it does not hold the ho
 email or a social account at their Home — has no treasury, no money and no mandate, and no reason to
 know those are three things. `POST /treasury/quick-start` does the whole sequence in one call and
 answers in money: it finds or creates the treasury, records it on the session, seeds it with
-**10 000 test USDC** if and only if it holds nothing, and signs the buy-in mandate. Every step comes
+**10 000 Sheqels** if and only if it holds nothing, and signs the buy-in mandate. One currency, one
+seeding step: there is nothing to top up in a second asset and nothing to convert. Every step comes
 back as `done`, `kept`, `blocked` or `failed` with its own sentence, and `ready` is true only when a
 settled seat would actually be allowed — the same four conditions `authorizeBuyIn` checks.
 
-The seed is gated on the ASSET calling itself a mock (`isTestAsset`), never on a flag, and is never
+The seed is gated on the ASSET itself answering "anyone may mint me" — `isTestAsset` simulates
+`mint(address,uint256)` from an address with no standing in this deployment and believes the
+bytecode, never a name or a flag, so a real asset can never be minted by this code — and is never
 minted into a treasury that already holds something: a player with money is not given more behind
 their back. Two of the three steps belong to the player's own Home when the player is a real person
 — their Home creates and custodies the treasury (`/treasuries` portal, discovered afterwards through
@@ -246,7 +257,17 @@ plus alarm-driven outbox) and add hibernatable WebSockets.
 - Alarms: turn timer, blind schedule, hand-start delay, outbox retry.
 - Engine: `@pokernight/engine` runs inside the DO; state is serialized after each action.
 
-`LobbyDO` (one per circle): lists tables, membership check, creates tables.
+`LobbyDO` (one per circle): lists tables, membership check, creates tables, retires them.
+
+**Retiring a table** (`DELETE /tables/:id`). A table could be created and never closed, so an
+unplayable one — a test table, or one settling in a currency the card room has stopped using — stayed
+in the lobby forever. Retiring is operator authority and reuses the ONE mechanism this app has for
+it: the `OPERATOR_TOKEN` secret in its own `x-operator-token` header, compared in constant time,
+503 on a deployment that has set none (`apps/tables/src/operator.ts`). There is no admin role, and no
+session reaches it. The single condition about the table is that NOBODY IS SEATED — a seated table
+holds somebody's chips, and at a settled table those chips are their money — checked in the DO, which
+refuses by name and says how many seats are in the way. A retired table deletes its own storage and
+its lobby row, so `GET /tables/:id` answers 404 rather than showing a husk.
 
 Fairness: each hand uses a server-generated 32-byte seed. `sha256(seed)` is broadcast at hand start;
 the seed is revealed at hand end; the deck is derived deterministically from the seed. Anyone can
@@ -303,9 +324,10 @@ rule that `packages/*` never hardcode domains or vendors; all faithnet specifics
 `CHAIN_ID=34348`, `RPC_URL=https://rpc.faithnet.io`, `HOME_ORIGIN=https://www.faithnet.me`,
 `HOME_ZONE=faithnet.me`, `AGENT_CARD_ZONE=faithnet.ai`, `ENTRY_POINT`, `AGENT_ACCOUNT_FACTORY`,
 `DELEGATION_MANAGER`, `PAYMENT_ENFORCER`, `DIGEST_BINDING_ENFORCER`, `PAYMENT_RECEIPT_REGISTRY`,
-`ASSET` (= `MOCK_USDC`), `HOUSE_SA`, `HOUSE_DELEGATE`, `CHIP_VALUE=1000000` (the default for NEW
-tables only), `LEGACY_CHIP_VALUE=10000` (what tables older than the pin settle at — see §5),
-`ALLOWED_ORIGINS`.
+`ASSET` (= the Sheqel) and `ASSET_SYMBOL=SHQ`, `HOUSE_SA`, `HOUSE_DELEGATE`, `CHIP_VALUE=1000000`
+(the default for NEW tables only), `LEGACY_CHIP_VALUE=10000` (what tables older than the rate pin
+settle at — see §5), `ALLOWED_ORIGINS`.
+There is no `LEGACY_ASSET`: one currency, no fallback.
 Secrets via `wrangler secret put`: `SESSION_SECRET`, `RPC_TOKEN`, `AKCS_TOKEN` (or the GCP KMS key name).
 Bindings: DO `TABLES` (`PokerTableDO`, sqlite), DO `LOBBIES` (`LobbyDO`, sqlite), service binding to the
 house Worker. Local dev: `CHAIN_ID=31337`, `RPC_URL=http://127.0.0.1:8545`.
@@ -332,7 +354,7 @@ Phase 2 — agents over A2A
 - Reference LLM agent and rules-based agent; idagents adapter.
 - Exit: a table of six with two humans and four agents runs unattended for an hour on local dev.
 
-Phase 3 — USDC settlement with mandates (faithchain, MockUSDC)
+Phase 3 — on-chain settlement with mandates (faithchain, Sheqel)
 - `mandateTransfer` settlement adapter, outbox with retries, receipts in `PaymentReceiptRegistry`.
 - Consent flow with `poker-buyin` template; budget DO ceiling for the house.
 - Exit: buy-in, play, cash-out reconcile on-chain; balances match ledger to the base unit.
@@ -342,8 +364,9 @@ Phase 4 — trust-minimized escrow
 
 ## 11. Risks and open questions
 
-- Real-money gambling is regulated in most jurisdictions. MockUSDC on a private chain is fine; do not
-  switch `ASSET` to a real stablecoin without a legal answer. The adapter design keeps this a config
+- Real-money gambling is regulated in most jurisdictions. An open-mint test coin on a private chain
+  is fine; do not switch `ASSET` to a real asset without a legal answer. The faucet gates itself on
+  the token being openly mintable, so it would disappear rather than mint — but the tables would not. The adapter design keeps this a config
   change so the engineering does not have to wait.
 - Agent collusion: two agents owned by the same principal at one table is detectable on-chain
   (owner relationship records). Enforce one seat per owner per table in the lobby.

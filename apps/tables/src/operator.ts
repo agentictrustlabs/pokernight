@@ -1,9 +1,11 @@
 /**
  * Operator authority.
  *
- * One route in this app can take a seat away from a player who did not ask to leave:
- * `DELETE /tables/:id/seat/:seat`. That is a real power, and the only thing standing between it and
- * a kick button is what this file does — so it is deliberately small enough to read in one sitting.
+ * Two routes in this app reach past what a player may do for themselves: `DELETE
+ * /tables/:id/seat/:seat` takes a seat away from somebody who did not ask to leave, and `DELETE
+ * /tables/:id` retires a table out of the lobby. Both are real powers, and the only thing standing
+ * between them and a kick button is what this file does — so it is deliberately small enough to
+ * read in one sitting.
  *
  * There is no admin ROLE here. No player is an operator, no session can become one, and no amount of
  * ordinary sign-in gets you past this gate: the authority is a shared secret (`OPERATOR_TOKEN`) held
@@ -11,14 +13,16 @@
  * confused with — or promoted from — a player's `Authorization: Bearer` session token.
  *
  * Three properties this file is responsible for:
- *   1. A deployment with no `OPERATOR_TOKEN` set clears nothing. Absent is not "allow"; it is 503.
+ *   1. A deployment with no `OPERATOR_TOKEN` set clears nothing and retires nothing. Absent is not
+ *      "allow"; it is 503.
  *   2. The comparison leaks no timing. Both sides are SHA-256'd first, so the loop always runs over
  *      32 fixed bytes and the length of the presented token tells an attacker nothing either.
  *   3. The token is never logged, never echoed, and never included in any response body.
  *
- * The token ALONE clears no seat. It is the first of four conditions; the other three are about the
- * seat itself (no live socket, not in a running hand, idle past the threshold) and live in the table
- * DO, which cannot be reached without passing this one first.
+ * The token ALONE does nothing. Clearing a seat has three further conditions about the seat itself
+ * (no live socket, not in a running hand, idle past the threshold); retiring a table has one about
+ * the table (nobody seated). All of them live in the table DO, which cannot be reached without
+ * passing this one first.
  */
 
 import type { Env } from './env.js';
@@ -42,7 +46,8 @@ export async function checkOperator(env: Env, request: Request): Promise<Operato
       ok: false,
       status: 503,
       reason:
-        'operator: this deployment has no OPERATOR_TOKEN set, so no seat can be cleared by an operator. ' +
+        'operator: this deployment has no OPERATOR_TOKEN set, so no seat can be cleared and no table ' +
+        'retired by an operator. ' +
         'Set it with `wrangler secret put OPERATOR_TOKEN --env <env>`.',
     };
   }

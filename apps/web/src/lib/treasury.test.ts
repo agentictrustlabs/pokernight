@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { tableRate } from './money';
 import {
   describeSettlement,
-  fmtUsdc,
+  fmtAmount,
   isTreasuryAddress,
   kindLabel,
   seatBlock,
@@ -24,19 +24,19 @@ const entry = (over: Partial<SettlementEntry> = {}): SettlementEntry => ({
   ...over,
 });
 
-describe('fmtUsdc', () => {
-  it('renders base units as USDC without trailing noise', () => {
-    expect(fmtUsdc('2000000')).toBe('2');
-    expect(fmtUsdc('2500000')).toBe('2.5');
-    expect(fmtUsdc('1')).toBe('0.000001');
-    expect(fmtUsdc(0n)).toBe('0');
-    expect(fmtUsdc('-2000000')).toBe('-2');
+describe('fmtAmount', () => {
+  it('renders base units as SHQ without trailing noise', () => {
+    expect(fmtAmount('2000000')).toBe('2');
+    expect(fmtAmount('2500000')).toBe('2.5');
+    expect(fmtAmount('1')).toBe('0.000001');
+    expect(fmtAmount(0n)).toBe('0');
+    expect(fmtAmount('-2000000')).toBe('-2');
   });
 
   it('answers null for anything it cannot read, rather than "NaN"', () => {
-    expect(fmtUsdc(null)).toBeNull();
-    expect(fmtUsdc('')).toBeNull();
-    expect(fmtUsdc('not a number')).toBeNull();
+    expect(fmtAmount(null)).toBeNull();
+    expect(fmtAmount('')).toBeNull();
+    expect(fmtAmount('not a number')).toBeNull();
   });
 });
 
@@ -52,7 +52,7 @@ describe('statusOf', () => {
 describe('describeSettlement', () => {
   it('says a pending movement is waiting on the chain', () => {
     const e = entry({ receipt: { mode: 'mandate-transfer', orderId: 'o', amount: '2000000', asset: '0xa5', ref: '', at: 1, status: 'pending' } });
-    expect(describeSettlement(e)).toBe('Buy-in of 200 chips (2.00 USDC) — waiting for the chain');
+    expect(describeSettlement(e)).toBe('Buy-in of 200 chips (2.00 SHQ) — waiting for the chain');
     // The TABLE's currency, where the table names one. A row is about money that already moved at a
     // particular table, so it is labelled with that table's coin and not with the deployment's.
     expect(describeSettlement(e, 'SHQ')).toBe('Buy-in of 200 chips (2.00 SHQ) — waiting for the chain');
@@ -70,10 +70,10 @@ describe('describeSettlement', () => {
         ref: '',
         at: 1,
         status: 'failed',
-        error: 'the house treasury holds 1.000000 USDC',
+        error: 'the house treasury holds 1.000000 SHQ',
       },
     });
-    expect(describeSettlement(e)).toBe('Cash-out of 200 chips (2.00 USDC) — did not settle: the house treasury holds 1.000000 USDC');
+    expect(describeSettlement(e)).toBe('Cash-out of 200 chips (2.00 SHQ) — did not settle: the house treasury holds 1.000000 SHQ');
   });
 
   it('never renders a bare "failed" with nothing after it', () => {
@@ -81,7 +81,7 @@ describe('describeSettlement', () => {
     expect(describeSettlement(e)).toMatch(/did not settle: no reason recorded/);
   });
 
-  it('calls play money what it is instead of quoting 0 USDC', () => {
+  it('calls play money what it is instead of quoting 0 SHQ', () => {
     const e = entry({ receipt: { mode: 'play-money', orderId: 'o', amount: '0', asset: 'play', ref: 'play:o', at: 1 } });
     expect(describeSettlement(e)).toBe('Buy-in of 200 chips — play money');
   });
@@ -131,7 +131,7 @@ describe('seatBlock', () => {
     chosen: null,
     chosenName: null,
     balance: null,
-    balanceUsdc: null,
+    balanceText: null,
     candidates: [],
     discoveryError: null,
     create: { mode: 'server', portalUrl: null, canName: true },
@@ -153,14 +153,14 @@ describe('seatBlock', () => {
     ...over,
   });
 
-  const candidate = { address: `0x${'ab'.repeat(20)}`, name: 'alice.treasury', label: 'alice.treasury', balance: '5000000', balanceUsdc: '5.000000' };
+  const candidate = { address: `0x${'ab'.repeat(20)}`, name: 'alice.treasury', label: 'alice.treasury', balance: '5000000', balanceText: '5.000000' };
   const ready = (over: Partial<TreasuryView> = {}): TreasuryView =>
     view({
       candidates: [candidate],
       chosen: candidate.address,
       chosenName: candidate.name,
       balance: candidate.balance,
-      balanceUsdc: candidate.balanceUsdc,
+      balanceText: candidate.balanceText,
       ...over,
     });
 
@@ -191,12 +191,12 @@ describe('seatBlock', () => {
     });
   });
 
-  it('asks for money before it asks for a signature, and names the shortfall in USDC', () => {
+  it('asks for money before it asks for a signature, and names the shortfall in SHQ', () => {
     const b = seatBlock('mandate-transfer', ready(), 100_000, CENT);
     expect(b?.action).toBe('fund-treasury');
-    expect(b?.reason).toMatch(/holds 5.00 USDC/);
-    expect(b?.reason).toMatch(/100,000-chip buy-in costs 1,000.00 USDC/);
-    expect(b?.reason).toMatch(/995.00 USDC short/);
+    expect(b?.reason).toMatch(/holds 5.00 SHQ/);
+    expect(b?.reason).toMatch(/100,000-chip buy-in costs 1,000.00 SHQ/);
+    expect(b?.reason).toMatch(/995.00 SHQ short/);
   });
 
   /**
@@ -208,7 +208,7 @@ describe('seatBlock', () => {
     expect(seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200, CENT)).toBeNull();
     const dearer = seatBlock('mandate-transfer', ready({ mandate: { ...view().mandate, present: true } }), 200, DOLLAR);
     expect(dearer?.action).toBe('fund-treasury');
-    expect(dearer?.reason).toMatch(/195.00 USDC short/);
+    expect(dearer?.reason).toMatch(/195.00 SHQ short/);
   });
 
   it('does not price the buy-in at all when the table has not said what a chip is worth', () => {

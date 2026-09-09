@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   TreasuryError,
   buildTestAssetMintData,
-  buildUsdcTransferCallData,
-  buildUsdcTransferPlan,
+  buildAssetTransferCallData,
+  buildAssetTransferPlan,
 } from '../src/index.js';
 
 // Fixture addresses only — this package must never carry a real deployment address.
@@ -38,9 +38,9 @@ const TRANSFER_ABI = [
   },
 ] as const;
 
-describe('buildUsdcTransferPlan', () => {
+describe('buildAssetTransferPlan', () => {
   it('targets the asset with zero value and transfer(to, amount) calldata', () => {
-    const plan = buildUsdcTransferPlan(ASSET, TO, 250_000n);
+    const plan = buildAssetTransferPlan(ASSET, TO, 250_000n);
     expect(plan.to).toBe(ASSET);
     expect(plan.value).toBe(0n);
     expect(plan.data).toBe(
@@ -49,14 +49,14 @@ describe('buildUsdcTransferPlan', () => {
   });
 
   it('rejects a zero or negative amount', () => {
-    expect(() => buildUsdcTransferPlan(ASSET, TO, 0n)).toThrow(TreasuryError);
-    expect(() => buildUsdcTransferPlan(ASSET, TO, -1n)).toThrow(/amount must be > 0/);
+    expect(() => buildAssetTransferPlan(ASSET, TO, 0n)).toThrow(TreasuryError);
+    expect(() => buildAssetTransferPlan(ASSET, TO, -1n)).toThrow(/amount must be > 0/);
   });
 });
 
-describe('buildUsdcTransferCallData', () => {
+describe('buildAssetTransferCallData', () => {
   it('wraps the transfer in AgentAccount.execute(asset, 0, transfer(...))', () => {
-    const callData = buildUsdcTransferCallData(ASSET, TO, 1_000_000n);
+    const callData = buildAssetTransferCallData(ASSET, TO, 1_000_000n);
     const outer = decodeFunctionData({ abi: EXECUTE_ABI, data: callData });
     expect(outer.functionName).toBe('execute');
     const [target, value, inner] = outer.args;
@@ -70,13 +70,13 @@ describe('buildUsdcTransferCallData', () => {
   });
 
   it('is deterministic — the same inputs sign to the same bytes', () => {
-    expect(buildUsdcTransferCallData(ASSET, TO, 7n)).toBe(buildUsdcTransferCallData(ASSET, TO, 7n));
-    expect(buildUsdcTransferCallData(ASSET, TO, 7n)).not.toBe(buildUsdcTransferCallData(ASSET, TO, 8n));
+    expect(buildAssetTransferCallData(ASSET, TO, 7n)).toBe(buildAssetTransferCallData(ASSET, TO, 7n));
+    expect(buildAssetTransferCallData(ASSET, TO, 7n)).not.toBe(buildAssetTransferCallData(ASSET, TO, 8n));
   });
 
   it('starts with the execute(address,uint256,bytes) selector', () => {
     // 0xb61d27f6 — the ERC-4337 account execute selector every AgentAccount exposes.
-    expect(buildUsdcTransferCallData(ASSET, TO, 1n).slice(0, 10)).toBe('0xb61d27f6');
+    expect(buildAssetTransferCallData(ASSET, TO, 1n).slice(0, 10)).toBe('0xb61d27f6');
   });
 });
 

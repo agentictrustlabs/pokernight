@@ -36,7 +36,7 @@ export interface StakeResult {
   treasury: string | null;
   treasuryName: string | null;
   balance: string | null;
-  balanceUsdc: string | null;
+  balanceText: string | null;
   steps: StakeStep[];
   next: StakeNext;
 }
@@ -90,12 +90,12 @@ export function stakeName(view: TreasuryView | null | undefined): string | null 
 /**
  * `"10,000.00 SHQ"`, or null when there is no balance to state. A balance is money, so it reads as
  * money — and in the currency the card room actually states, because there is more than one on this
- * estate now. `USDC` is the fallback for a server that names none, which is what it settles in.
+ * estate now. `SHQ` is the fallback for a server that names none, which is what it settles in.
  */
 export function stakeBalance(view: TreasuryView | null | undefined): string | null {
   const raw = view?.balance;
   if (raw === null || raw === undefined || !/^-?\d+$/.test(raw.trim())) return null;
-  return `${fmtAsset(BigInt(raw.trim()))} ${(view?.assetSymbol ?? '').trim() || 'USDC'}`;
+  return `${fmtAsset(BigInt(raw.trim()))} ${(view?.assetSymbol ?? '').trim() || 'SHQ'}`;
 }
 
 /**
@@ -124,5 +124,5 @@ export function readyLine(result: StakeResult | null | undefined, symbol?: strin
   if (!result?.ready) return null;
   const raw = result.balance;
   if (!raw || !/^\d+$/.test(raw)) return 'You are ready to sit down.';
-  return `You're set up with ${fmtAsset(BigInt(raw))} ${(symbol ?? '').trim() || 'USDC'} to play with.`;
+  return `You're set up with ${fmtAsset(BigInt(raw))} ${(symbol ?? '').trim() || 'SHQ'} to play with.`;
 }

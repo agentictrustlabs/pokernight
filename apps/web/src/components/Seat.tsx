@@ -52,7 +52,7 @@ export interface SeatProps {
   onSit: (seat: number) => void;
   /** This table's chip rate, so a stack shows the money it is worth. Null on play money. */
   rate?: TableRate | null;
-  /** Two words on an empty seat saying what sitting in it costs: "USDC" or "play money". */
+  /** Two words on an empty seat saying what sitting in it costs: the table's ticker, or "play money". */
   modeLabel?: string;
 }
 
@@ -73,7 +73,7 @@ export function Seat(p: SeatProps) {
             <span className="seat-no">Seat {p.seatNo + 1}</span>
             <span className="sit-cta">Sit here</span>
             {/* What this seat costs, on the seat itself: nobody should learn the table settles in
-                USDC only after they have pressed the button. */}
+                Sheqels only after they have pressed the button. */}
             {p.modeLabel ? <span className={`sit-mode${p.rate ? ' money' : ''}`}>{p.modeLabel}</span> : null}
           </button>
         ) : (

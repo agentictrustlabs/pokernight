@@ -42,6 +42,13 @@ export class LobbyDO extends DurableObject<Env> {
     // Just the ids, with no fan-out to the table DOs. `list` asks every table for its live summary,
     // which is right for a lobby screen and wrong for "which tables might this player be sitting at".
     if (request.method === 'GET' && url.pathname === '/ids') return json({ tableIds: this.tableIds() });
+    // OPERATOR: retire one table. The Worker has checked the operator token before we get here.
+    if (request.method === 'POST' && url.pathname === '/retire') {
+      const { tableId } = (await request.json()) as { tableId?: string };
+      const id = (tableId ?? '').trim();
+      if (!id) return json({ error: 'tableId is required' }, 400);
+      return this.retire(id);
+    }
     if (request.method === 'POST' && url.pathname === '/create') {
       const body = (await request.json()) as CreateTableRequest;
       const result = await this.create(body);
@@ -71,6 +78,25 @@ export class LobbyDO extends DurableObject<Env> {
       createdAt,
     );
     return summary;
+  }
+
+  /**
+   * Take a table out of the lobby and tell it to delete itself.
+   *
+   * The table DO decides whether it MAY go — it is the only thing that knows who is sitting at it —
+   * so its refusal is passed straight back and the row stays. Only once it has retired itself is the
+   * row dropped, so the lobby can never list a table that no longer exists or forget one that does.
+   */
+  private async retire(tableId: string): Promise<Response> {
+    const row = this.ctx.storage.sql.exec<TableRow>('SELECT * FROM tables WHERE table_id = ?', tableId).toArray()[0];
+    if (!row) return json({ error: `no table ${tableId} in this lobby` }, 404);
+    const stub = this.env.TABLES.get(this.env.TABLES.idFromName(tableId));
+    const res = await stub.fetch('https://table/retire', { method: 'POST' });
+    // 404 means the DO never initialised (or has already retired). The lobby row is then the only
+    // trace of it, and dropping it is exactly right.
+    if (!res.ok && res.status !== 404) return json((await res.json()) as Record<string, unknown>, res.status as 409);
+    this.ctx.storage.sql.exec('DELETE FROM tables WHERE table_id = ?', tableId);
+    return json({ retired: true, tableId, name: row.name });
   }
 
   private tableIds(): string[] {

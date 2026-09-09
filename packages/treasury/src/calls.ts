@@ -26,7 +26,7 @@ export const ERC20_BALANCE_OF_ABI = [
 ] as const;
 
 /**
- * `mint(address,uint256)` — present on the faithchain test asset (MockUSDC) and
+ * `mint(address,uint256)` — present on an open-mint test asset and
  * permissionless there. Not part of ERC-20; only `mintTestAsset` uses it and only a
  * test asset will answer to it.
  */
@@ -48,7 +48,7 @@ function assertAmount(amount: bigint): void {
 }
 
 /** The inner ERC-20 transfer the Smart Agent performs: `asset.transfer(to, amount)`. */
-export function buildUsdcTransferPlan(asset: Address, to: Address, amount: bigint): TransferPlan {
+export function buildAssetTransferPlan(asset: Address, to: Address, amount: bigint): TransferPlan {
   assertAmount(amount);
   return buildErc20Transfer(asset, to, amount);
 }
@@ -57,8 +57,8 @@ export function buildUsdcTransferPlan(asset: Address, to: Address, amount: bigin
  * The `callData` field of the UserOp: `AgentAccount.execute(asset, 0, transfer(to, amount))`.
  * This is the exact payload the custodian's signature over the userOpHash authorises.
  */
-export function buildUsdcTransferCallData(asset: Address, to: Address, amount: bigint): Hex {
-  const plan = buildUsdcTransferPlan(asset, to, amount);
+export function buildAssetTransferCallData(asset: Address, to: Address, amount: bigint): Hex {
+  const plan = buildAssetTransferPlan(asset, to, amount);
   return buildExecuteCallData({ to: plan.to, value: plan.value, data: plan.data });
 }
 

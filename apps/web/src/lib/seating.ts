@@ -20,6 +20,15 @@ export interface DealState {
   /** Seats occupied at all, however they are sitting. */
   seatedCount: number;
   /**
+   * Seats with no chips left.
+   *
+   * Counted separately because "sitting out" and "out of chips" are the same seat status and
+   * completely different situations: one is undone by a button, the other needs money. A table that
+   * cannot deal because everybody is broke must say THAT, or the people at it press Sit in, nothing
+   * happens, and the table reads as broken — which is what happened.
+   */
+  brokeCount: number;
+  /**
    * Why no hand can start, or null when one can (or one is already running). The headline is always
    * "Waiting for another player"; this is the line under it that says which kind of waiting it is.
    */
@@ -41,27 +50,65 @@ export function dealState(view: Pick<TableView, 'seats' | 'hand'>): DealState {
   const handRunning = view.hand != null && view.hand.result == null;
   const seatedCount = view.seats.length;
   const activeCount = view.seats.filter((s) => s.status === 'active' && s.stack > 0).length;
+  const brokeCount = view.seats.filter((s) => s.stack === 0).length;
   if (handRunning || activeCount >= MIN_PLAYERS_TO_DEAL) {
-    return { handRunning, activeCount, seatedCount, waiting: null };
+    return { handRunning, activeCount, seatedCount, brokeCount, waiting: null };
   }
-  const satOut = seatedCount - activeCount;
+  const blocked = seatedCount - activeCount;
+  const satOut = blocked - brokeCount;
+  const players = (n: number): string => `${n} ${n === 1 ? 'player' : 'players'}`;
   let waiting: string;
   if (seatedCount === 0) {
     waiting = 'Nobody is seated yet. A hand needs two players.';
-  } else if (activeCount === 0 && satOut > 0) {
+  } else if (brokeCount > 0 && satOut === 0) {
+    // Everybody who is not playing is broke. Naming money rather than seat status is the whole
+    // point: it is the difference between "press Sit in" and "buy back in".
     waiting =
-      satOut === 1
+      blocked === seatedCount
+        ? brokeCount === 1
+          ? 'The one player at this table has run out of chips, so no hand can start. Buying back in starts the next hand.'
+          : `All ${players(brokeCount)} at this table have run out of chips, so no hand can start. Buying back in starts the next hand.`
+        : `Only one player has chips. ${brokeCount === 1 ? 'The other seat has' : `${players(brokeCount)} have`} run out, so no hand can start.`;
+  } else if (brokeCount > 0) {
+    // Both kinds at once — say both, because the fix is different for each of them.
+    waiting = `No hand can start: ${players(satOut)} ${satOut === 1 ? 'is' : 'are'} sitting out and ${players(brokeCount)} ${brokeCount === 1 ? 'has' : 'have'} run out of chips.`;
+  } else if (activeCount === 0) {
+    waiting =
+      blocked === 1
         ? 'The one player at this table is sitting out, so no hand can start.'
-        : `All ${satOut} players at this table are sitting out, so no hand can start.`;
-  } else if (satOut > 0) {
-    waiting = `Only one player is sitting in. ${satOut === 1 ? 'The other seat is' : `${satOut} other seats are`} sitting out, so no hand can start.`;
+        : `All ${players(blocked)} at this table are sitting out, so no hand can start.`;
+  } else if (blocked > 0) {
+    waiting = `Only one player is sitting in. ${blocked === 1 ? 'The other seat is' : `${blocked} other seats are`} sitting out, so no hand can start.`;
   } else {
     waiting = 'Only one player is seated. A hand needs two.';
   }
-  return { handRunning, activeCount, seatedCount, waiting };
+  return { handRunning, activeCount, seatedCount, brokeCount, waiting };
 }
 
 /* ------------------------------------------------------- why am I sitting out? */
+
+/**
+ * What a sat-out player is actually being offered.
+ *
+ * `sit-in` is the answer when they have chips and simply are not being dealt in. It is NOT the
+ * answer when their stack is zero: sitting in with nothing changes nothing, the engine sits them
+ * straight back out at the end of the next hand, and offering it is worse than offering nothing
+ * because it looks like the fix. That was the dead end — a busted player pressing Sit in forever.
+ *
+ * Read from the STACK rather than from `sitOutReason`, deliberately: an empty stack is proof, and it
+ * is right even for a player who was sat out for a different reason and happens also to be broke.
+ * Whatever put them in the chair, money is what gets them out of it.
+ */
+export type SatOutAction = 'sit-in' | 'rebuy';
+
+export function satOutAction(stack: number): SatOutAction {
+  return stack > 0 ? 'sit-in' : 'rebuy';
+}
+
+/** The headline over that action. Two situations, two sentences, never the wrong one. */
+export function satOutHeadline(stack: number): string {
+  return stack > 0 ? 'You are sitting out' : 'You are out of chips';
+}
 
 /**
  * The sentence to put next to "Sit in".
@@ -70,7 +117,12 @@ export function dealState(view: Pick<TableView, 'seats' | 'hand'>): DealState {
  * from their side: they come back to a table that is not dealing them in and no explanation for it.
  * Naming the cause is what turns "this is broken" into "press this".
  */
-export function sitOutNotice(reason: SitOutReason | undefined): string {
+export function sitOutNotice(reason: SitOutReason | undefined, stack = 1): string {
+  // Being broke outranks every other explanation: it is both why they are out and the only thing
+  // that has to change. A player on zero does not need to hear that their connection dropped.
+  if (stack <= 0) {
+    return 'Your chips are gone, so you are not being dealt in. Buy back in and you are in the next hand.';
+  }
   switch (reason) {
     case 'disconnected':
       return 'You were sat out when your connection dropped. Your seat and your chips were kept exactly as they were.';

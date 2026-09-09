@@ -21,9 +21,9 @@ const POLL_MS = 15000;
  */
 export function Landing({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSession) => void }) {
   const live = useLiveLobby();
-  // The card room's currency, as the card room states it (`GET /auth/config`). `USDC` is the
-  // fallback because a deployment that names no coin is one that settles in USDC.
-  const money = (auth.config?.home.buyIn?.symbol ?? '').trim() || 'USDC';
+  // The card room's currency, as the card room states it (`GET /auth/config`). `SHQ` is the
+  // fallback for a deployment that names none.
+  const money = (auth.config?.home.buyIn?.symbol ?? '').trim() || 'SHQ';
   return (
     <main className="landing">
       <Hero live={live} />
@@ -274,7 +274,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
                         </span>
                         {lo.assetText && hi.assetText ? (
                           <span className="cost-asset">
-                            {lo.assetText}–{hi.assetText} {rate?.asset ?? 'USDC'}
+                            {lo.assetText}–{hi.assetText} {rate?.asset ?? 'SHQ'}
                           </span>
                         ) : null}
                       </td>

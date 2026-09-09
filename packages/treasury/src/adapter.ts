@@ -29,7 +29,7 @@ import type { TreasuryClient } from './client.js';
 import { buildBuyInRedemption, checkBuyInMandate, type Delegation, type MandateEnforcers } from './mandate.js';
 import { TREASURY_SETTLEMENT_MODE, toSettlementReceipt } from './settlement.js';
 import { TreasuryError, type Address } from './types.js';
-import { chipsToUsdc, formatUsdc } from './units.js';
+import { chipsToAsset, formatAmount } from './units.js';
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
@@ -65,6 +65,14 @@ export interface TreasuryTransferAdapterOpts {
   houseDelegate?: Address;
   /** Asset base units per chip (`CHIP_VALUE`). */
   chipValue: bigint;
+  /**
+   * What the settlement asset is CALLED (`SHQ`), for the refusals a player reads.
+   *
+   * Injected, and optional, for the same reason every address here is: this package names no
+   * currency. Absent, a money sentence states the number and no ticker — which is right, because a
+   * ticker nobody configured next to a real amount of somebody's money is worse than none.
+   */
+  assetSymbol?: string;
   chainId: number;
   /** Where a mandate is redeemed; absent, buy-ins refuse by name. */
   delegationManager?: Address;
@@ -85,12 +93,23 @@ export interface TreasuryTransferAdapterOpts {
 }
 
 /**
+ * How to write an amount in a sentence a player reads: `40.000000 SHQ`, or just `40.000000` where the
+ * host has not said what its money is called. The ticker is the host's to supply (`assetSymbol`) —
+ * this package names no currency, and there is exactly one on the estate for the host to name.
+ */
+function amountIn(symbol: string | undefined): (v: bigint) => string {
+  const ticker = (symbol ?? '').trim();
+  return ticker === '' ? (v) => formatAmount(v) : (v) => `${formatAmount(v)} ${ticker}`;
+}
+
+/**
  * Why a buy-in cannot be settled right now, said in one sentence that names the missing thing.
  * Returned by `authorizeBuyIn` (so no seat is ever credited against money that cannot move) and
  * thrown by `settleBuyIn` (so an op that somehow got queued still fails closed).
  */
 function buyInBlocker(opts: TreasuryTransferAdapterOpts, funding: PlayerFunding | null, req: BuyInRequest): string | null {
-  const amount = chipsToUsdc(req.chips, opts.chipValue);
+  const amount = chipsToAsset(req.chips, opts.chipValue);
+  const money = amountIn(opts.assetSymbol);
   if (!funding || !funding.treasury) {
     return (
       `no treasury is selected for ${req.playerId} — choose the treasury Smart Agent chartered under ` +
@@ -108,7 +127,7 @@ function buyInBlocker(opts: TreasuryTransferAdapterOpts, funding: PlayerFunding 
     // the template — a claim this code cannot check and which went stale the moment the Home did.
     return (
       `${req.playerId} has not signed a buy-in mandate, so the card room has no authority to move ` +
-      `${formatUsdc(amount)} USDC out of ${funding.treasury}. ` +
+      `${money(amount)} out of ${funding.treasury}. ` +
       `A mandate is signed at the player's Home and authorises this table, up to a cap, for this session.`
     );
   }
@@ -132,6 +151,8 @@ function buyInBlocker(opts: TreasuryTransferAdapterOpts, funding: PlayerFunding 
     alsoAcceptedDelegates: [opts.houseTreasury],
     payee: opts.houseTreasury,
     asset: opts.client.deployments.asset,
+    // The ticker the host gave this adapter, so the mandate's own cap refusal reads as money too.
+    ...(opts.assetSymbol ? { assetSymbol: opts.assetSymbol } : {}),
     paymentEnforcer: opts.enforcers.payment,
     ...(opts.openDelegate ? { openDelegate: opts.openDelegate } : {}),
     amount,
@@ -142,6 +163,7 @@ function buyInBlocker(opts: TreasuryTransferAdapterOpts, funding: PlayerFunding 
 export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts): SettlementAdapter {
   const { client, houseTreasury, chipValue, chainId } = opts;
   const asset = client.deployments.asset;
+  const money = amountIn(opts.assetSymbol);
   const now = opts.now ?? (() => Date.now());
   const chargeTtl = opts.chargeTtlSeconds ?? 600;
 
@@ -161,11 +183,11 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
 
     /**
      * Nothing is credited until this passes: the player has a treasury, that treasury actually holds
-     * the USDC the buy-in is worth, and there is an authority to move it. A seat credited against
+     * the asset the buy-in is worth, and there is an authority to move it. A seat credited against
      * money that cannot move is the one failure this mode must never produce.
      */
     async authorizeBuyIn(req: BuyInRequest): Promise<{ ok: true } | { ok: false; reason: string }> {
-      const amount = chipsToUsdc(req.chips, chipValue);
+      const amount = chipsToAsset(req.chips, chipValue);
       let funding: PlayerFunding | null;
       try {
         funding = await resolve(req);
@@ -176,9 +198,9 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
       if (funding?.treasury && ADDRESS_RE.test(funding.treasury)) {
         let balance: bigint;
         try {
-          balance = await client.readUsdcBalance(funding.treasury);
+          balance = await client.readBalance(funding.treasury);
         } catch (e) {
-          return { ok: false, reason: `could not read the USDC balance of ${funding.treasury}: ${e instanceof Error ? e.message : String(e)}` };
+          return { ok: false, reason: `could not read the balance of ${funding.treasury}: ${e instanceof Error ? e.message : String(e)}` };
         }
         if (balance < amount) {
           // Name the SHORTFALL, not just the two numbers: "not enough" a player has to subtract is
@@ -187,8 +209,8 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
           return {
             ok: false,
             reason:
-              `${funding.treasury} holds ${formatUsdc(balance)} USDC; a ${req.chips}-chip buy-in costs ${formatUsdc(amount)} USDC — ` +
-              `${formatUsdc(amount - balance)} USDC short. Fund the treasury or buy in for less.`,
+              `${funding.treasury} holds ${money(balance)}; a ${req.chips}-chip buy-in costs ${money(amount)} — ` +
+              `${money(amount - balance)} short. Fund the treasury or buy in for less.`,
           };
         }
       }
@@ -202,7 +224,7 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
      * Fails closed and by name whenever the authority is missing — it is never quietly downgraded.
      */
     async settleBuyIn(req: BuyInRequest): Promise<SettlementReceipt> {
-      const amount = chipsToUsdc(req.chips, chipValue);
+      const amount = chipsToAsset(req.chips, chipValue);
       const funding = await resolve(req);
       const blocker = buyInBlocker(opts, funding, req);
       if (blocker) throw new TreasuryError(funding?.mandate ? 'not-configured' : 'no-mandate', blocker);
@@ -221,12 +243,12 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
         named && eqAddr(named, houseTreasury) ? houseTreasury : opts.houseDelegate
       ) as Address;
 
-      const balance = await client.readUsdcBalance(payer);
+      const balance = await client.readBalance(payer);
       if (balance < amount) {
         throw new TreasuryError(
           'insufficient-balance',
-          `${payer} holds ${formatUsdc(balance)} USDC, which does not cover the ${formatUsdc(amount)} USDC buy-in — ` +
-            `${formatUsdc(amount - balance)} USDC short`,
+          `${payer} holds ${money(balance)}, which does not cover the ${money(amount)} buy-in — ` +
+            `${money(amount - balance)} short`,
         );
       }
 
@@ -258,12 +280,12 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
      * signature is the whole authority — this is what settles today.
      */
     async settleCashOut(req: CashOutRequest): Promise<SettlementReceipt> {
-      const amount = chipsToUsdc(req.chips, chipValue);
+      const amount = chipsToAsset(req.chips, chipValue);
       const to = req.playerAddress;
       if (!to || !ADDRESS_RE.test(to)) {
         throw new TreasuryError(
           'not-configured',
-          `seat ${req.seat} at ${req.tableId} has no payout treasury recorded (${req.playerId}), so ${formatUsdc(amount)} USDC has nowhere to go`,
+          `seat ${req.seat} at ${req.tableId} has no payout treasury recorded (${req.playerId}), so ${money(amount)} has nowhere to go`,
         );
       }
       if (amount === 0n) {
@@ -271,16 +293,16 @@ export function createTreasuryTransferAdapter(opts: TreasuryTransferAdapterOpts)
         return { mode: TREASURY_SETTLEMENT_MODE, orderId: req.orderId, amount: '0', asset, ref: `empty:${req.orderId}`, at: now(), status: 'settled' };
       }
 
-      const balance = await client.readUsdcBalance(houseTreasury);
+      const balance = await client.readBalance(houseTreasury);
       if (balance < amount) {
         throw new TreasuryError(
           'insufficient-balance',
-          `the house treasury ${houseTreasury} holds ${formatUsdc(balance)} USDC, which does not cover the ${formatUsdc(amount)} USDC ` +
-            `cash-out for ${req.playerId} — ${formatUsdc(amount - balance)} USDC short`,
+          `the house treasury ${houseTreasury} holds ${money(balance)}, which does not cover the ${money(amount)} ` +
+            `cash-out for ${req.playerId} — ${money(amount - balance)} short`,
         );
       }
 
-      const { txHash } = await client.transferUsdc({ from: houseTreasury, to: to as Address, amount });
+      const { txHash } = await client.transferAsset({ from: houseTreasury, to: to as Address, amount });
       return toSettlementReceipt({ orderId: req.orderId, amount, asset, txHash, at: now() });
     },
   };

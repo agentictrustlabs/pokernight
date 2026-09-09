@@ -41,7 +41,7 @@ export class TreasuryError extends Error {
  * or out of `wrangler.toml` `[env.*.vars]`.
  */
 export interface TreasuryDeployments {
-  /** The settlement ERC-20 (6 decimals). MockUSDC on faithchain today. */
+  /** The settlement ERC-20 (6 decimals). Sheqel on faithchain; injected, never named here. */
   asset: Address;
   /** ERC-4337 EntryPoint the AgentAccounts validate against. */
   entryPoint: Address;
@@ -98,7 +98,7 @@ export interface TreasuryClientOpts {
   callGasLimit?: bigint;
 }
 
-export interface TransferUsdcRequest {
+export interface TransferAssetRequest {
   /** Smart Agent the funds leave (must be deployed and custodied by `signer`). */
   from: Address;
   to: Address;
@@ -106,7 +106,7 @@ export interface TransferUsdcRequest {
   amount: bigint;
 }
 
-export interface TransferUsdcResult {
+export interface TransferAssetResult {
   txHash: Hex;
   receipt: TransactionReceipt;
 }

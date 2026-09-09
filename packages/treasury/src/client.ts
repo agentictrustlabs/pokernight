@@ -26,7 +26,7 @@ import {
 } from '@agenticprimitives/agent-account';
 import {
   buildTestAssetMintData,
-  buildUsdcTransferCallData,
+  buildAssetTransferCallData,
   TEST_ASSET_MINT_ABI,
 } from './calls.js';
 import {
@@ -34,8 +34,8 @@ import {
   type Address,
   type ExecuteCallRequest,
   type Hex,
-  type TransferUsdcRequest,
-  type TransferUsdcResult,
+  type TransferAssetRequest,
+  type TransferAssetResult,
   type TreasuryClientOpts,
   type TreasuryDeployments,
   type TreasurySigner,
@@ -68,22 +68,22 @@ export interface TreasuryClient {
   readonly custodian: Address | null;
 
   /** Base units of the settlement asset held by any address (EOA or Smart Agent). */
-  readUsdcBalance(address: Address): Promise<bigint>;
+  readBalance(address: Address): Promise<bigint>;
 
   /**
    * Move the asset OUT of a Smart Agent this client's signer custodies.
    * Throws `TreasuryError` if the account is not deployed, the signer is not a
    * custodian, or the UserOp lands but reverts.
    */
-  transferUsdc(req: TransferUsdcRequest): Promise<TransferUsdcResult>;
+  transferAsset(req: TransferAssetRequest): Promise<TransferAssetResult>;
 
   /**
    * Make ANY call from a Smart Agent this client's signer custodies, on the same proven rail as
-   * {@link transferUsdc}: `AgentAccount.execute` wrapped in a paymaster-sponsored UserOp. The buy-in
+   * {@link transferAsset}: `AgentAccount.execute` wrapped in a paymaster-sponsored UserOp. The buy-in
    * path uses it to call `DelegationManager.redeemDelegation` as the house — the one movement whose
    * authority comes from the player rather than from the house.
    */
-  executeCall(req: ExecuteCallRequest): Promise<TransferUsdcResult>;
+  executeCall(req: ExecuteCallRequest): Promise<TransferAssetResult>;
 
   /** CREATE2 address for a spec — pure derivation, no deploy. */
   deriveAgentAccount(spec: AgentAccountSpec): Promise<Address>;
@@ -94,10 +94,10 @@ export interface TreasuryClient {
   isCustodian(account: Address, address: Address): Promise<boolean>;
 
   /**
-   * Mint the TEST asset (faithchain's MockUSDC has a permissionless
+   * Mint the TEST asset (the card room's own coin has a permissionless
    * `mint(address,uint256)`). Sent as a plain EOA transaction by the relayer — no
    * Smart Agent is involved. Reverts on any asset without an open mint, which is
-   * exactly what a real USDC deployment should do.
+   * exactly what an asset whose supply means something should do.
    */
   mintTestAsset(to: Address, amount: bigint, minterAccount?: unknown): Promise<Hex>;
 }
@@ -131,7 +131,7 @@ export function createTreasuryClient(opts: TreasuryClientOpts): TreasuryClient {
     factory: deployments.agentAccountFactory,
   });
 
-  async function readUsdcBalance(address: Address): Promise<bigint> {
+  async function readBalance(address: Address): Promise<bigint> {
     return readErc20Balance(
       (args) => publicClient.readContract(args),
       deployments.asset,
@@ -139,14 +139,14 @@ export function createTreasuryClient(opts: TreasuryClientOpts): TreasuryClient {
     );
   }
 
-  async function transferUsdc(req: TransferUsdcRequest): Promise<TransferUsdcResult> {
+  async function transferAsset(req: TransferAssetRequest): Promise<TransferAssetResult> {
     if (req.amount <= 0n) {
       throw new TreasuryError('bad-amount', `amount must be > 0, got ${req.amount}`);
     }
-    return submitFromAgent(req.from, buildUsdcTransferCallData(deployments.asset, req.to, req.amount));
+    return submitFromAgent(req.from, buildAssetTransferCallData(deployments.asset, req.to, req.amount));
   }
 
-  async function executeCall(req: ExecuteCallRequest): Promise<TransferUsdcResult> {
+  async function executeCall(req: ExecuteCallRequest): Promise<TransferAssetResult> {
     return submitFromAgent(
       req.from,
       buildExecuteCallData({ to: req.to, value: req.value ?? 0n, data: req.data }),
@@ -155,7 +155,7 @@ export function createTreasuryClient(opts: TreasuryClientOpts): TreasuryClient {
   }
 
   /** The one movement rail: assert custody, build the UserOp, sign the hash, submit, verify the event. */
-  async function submitFromAgent(from: Address, callData: Hex, gasLimit?: bigint): Promise<TransferUsdcResult> {
+  async function submitFromAgent(from: Address, callData: Hex, gasLimit?: bigint): Promise<TransferAssetResult> {
     const key = requireSigner(`moving the asset out of ${from}`);
     if (!(await accounts.isDeployed(from))) {
       throw new TreasuryError('not-deployed', `${from} has no code — deploy the Smart Agent first`);
@@ -206,8 +206,8 @@ export function createTreasuryClient(opts: TreasuryClientOpts): TreasuryClient {
   return {
     deployments,
     custodian: signer?.address ?? null,
-    readUsdcBalance,
-    transferUsdc,
+    readBalance,
+    transferAsset,
     executeCall,
     deriveAgentAccount: (spec) => accounts.getAddressForAgentAccount(spec),
     deployAgentAccount: (spec, deployerAccount) =>

@@ -6,7 +6,7 @@
  * truth was that no hand existed and none could start.
  */
 import { describe, expect, it } from 'vitest';
-import { MIN_PLAYERS_TO_DEAL, dealState, sitOutNotice } from './seating';
+import { MIN_PLAYERS_TO_DEAL, dealState, satOutAction, satOutHeadline, sitOutNotice } from './seating';
 import { emptyView, flopView, seat } from './mockServer';
 
 describe('dealState', () => {
@@ -56,6 +56,58 @@ describe('dealState', () => {
     expect(dealState(view).activeCount).toBe(1);
     expect(dealState(view).waiting).not.toBeNull();
   });
+
+  /**
+   * THE second bug report: "when one player gets out of money the game gets stuck". Being broke and
+   * being sat out are the same seat STATUS and different situations, and a table that says "sitting
+   * out" to a room full of busted players is telling them to press a button that cannot help.
+   */
+  it('says everyone has run out of chips, not that everyone is sitting out', () => {
+    const view = emptyView([seat(0, 'p-alice', 0, { status: 'sitting-out' }), seat(1, 'p-bob', 0, { status: 'sitting-out' })]);
+    const s = dealState(view);
+    expect(s.brokeCount).toBe(2);
+    expect(s.waiting).toContain('have run out of chips');
+    expect(s.waiting).toContain('Buying back in starts the next hand');
+    expect(s.waiting).not.toContain('sitting out');
+  });
+
+  it('says so for a single busted player', () => {
+    const view = emptyView([seat(0, 'p-alice', 0, { status: 'sitting-out' })]);
+    expect(dealState(view).waiting).toContain('has run out of chips');
+  });
+
+  it('names both kinds when both are in the way, because the fix differs', () => {
+    const view = emptyView([
+      seat(0, 'p-alice', 0, { status: 'sitting-out' }),
+      seat(1, 'p-bob', 100, { status: 'sitting-out' }),
+      seat(2, 'p-cara', 0, { status: 'sitting-out' }),
+    ]);
+    const s = dealState(view);
+    expect(s.brokeCount).toBe(2);
+    expect(s.waiting).toContain('1 player is sitting out');
+    expect(s.waiting).toContain('2 players have run out of chips');
+  });
+
+  it('still says plain "sitting out" when nobody is broke', () => {
+    const view = emptyView([seat(0, 'p-alice', 100, { status: 'sitting-out' }), seat(1, 'p-bob', 100, { status: 'sitting-out' })]);
+    expect(dealState(view).waiting).toBe('All 2 players at this table are sitting out, so no hand can start.');
+  });
+});
+
+/**
+ * Which control a sat-out player is offered. The rule is the whole fix for "the game is stuck": an
+ * action that cannot help is worse than no action, because it looks like the fix.
+ */
+describe('satOutAction', () => {
+  it('offers a rebuy — never a sit-in — to a player with no chips', () => {
+    expect(satOutAction(0)).toBe('rebuy');
+    expect(satOutHeadline(0)).toBe('You are out of chips');
+  });
+
+  it('offers a sit-in to a player who has chips and simply is not being dealt in', () => {
+    expect(satOutAction(120)).toBe('sit-in');
+    expect(satOutHeadline(120)).toBe('You are sitting out');
+  });
 });
 
 describe('sitOutNotice', () => {
@@ -75,5 +127,20 @@ describe('sitOutNotice', () => {
 
   it('still says something useful when the reason is unknown', () => {
     expect(sitOutNotice(undefined)).toContain('not being dealt in');
+  });
+
+  /**
+   * An empty stack outranks every other explanation. A player on zero who is told their connection
+   * dropped is being given a true fact that is not the one standing between them and the next hand.
+   */
+  it('talks about money, not connections, once the chips are gone', () => {
+    const said = sitOutNotice('disconnected', 0);
+    expect(said).toContain('Your chips are gone');
+    expect(said).toContain('Buy back in');
+    expect(said).not.toContain('connection');
+  });
+
+  it('keeps the ordinary explanation for a sat-out player who still has chips', () => {
+    expect(sitOutNotice('disconnected', 250)).toContain('connection dropped');
   });
 });

@@ -1,13 +1,13 @@
 /**
  * @pokernight/treasury — the house money layer.
  *
- * Reads and moves the settlement asset (6-decimal USDC) for Smart Agents the house
+ * Reads and moves the settlement asset (6 decimals) for Smart Agents the house
  * custodies. Every address, URL, chain id and key is INJECTED: this package names no
- * host, no chain and no contract, exactly like the rest of `packages/*`.
+ * host, no chain, no contract and no currency, exactly like the rest of `packages/*`.
  *
  *   const treasury = createTreasuryClient({ rpcUrl, chainId, deployments, signer });
- *   await treasury.readUsdcBalance(houseTreasurySa);
- *   await treasury.transferUsdc({ from: houseTreasurySa, to: player, amount });
+ *   await treasury.readBalance(houseTreasurySa);
+ *   await treasury.transferAsset({ from: houseTreasurySa, to: player, amount });
  */
 
 export { createTreasuryClient, type TreasuryClient } from './client.js';
@@ -18,8 +18,8 @@ export {
   type Hex,
   type TransactionReceipt,
   type ExecuteCallRequest,
-  type TransferUsdcRequest,
-  type TransferUsdcResult,
+  type TransferAssetRequest,
+  type TransferAssetResult,
   type TreasuryClientOpts,
   type TreasuryDeployments,
   type TreasuryErrorCode,
@@ -27,22 +27,22 @@ export {
 } from './types.js';
 
 export {
-  USDC_DECIMALS,
-  USDC_UNIT,
-  chipsToUsdc,
+  ASSET_DECIMALS,
+  ASSET_UNIT,
+  chipsToAsset,
   formatMoney,
-  formatUsdc,
-  parseUsdc,
-  usdcRemainder,
-  usdcToChips,
+  formatAmount,
+  parseAmount,
+  assetRemainder,
+  assetToChips,
 } from './units.js';
 
 export {
   ERC20_BALANCE_OF_ABI,
   TEST_ASSET_MINT_ABI,
   buildTestAssetMintData,
-  buildUsdcTransferCallData,
-  buildUsdcTransferPlan,
+  buildAssetTransferCallData,
+  buildAssetTransferPlan,
   type ContractCall,
   type TransferPlan,
 } from './calls.js';

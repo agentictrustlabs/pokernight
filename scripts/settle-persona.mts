@@ -10,7 +10,7 @@
  *   2. ask their Home which treasuries they have (`GET /connect/related-orgs`, `person-treasury`);
  *   3. if they have none, MAKE one — deployed at their Home under their own custodian, optionally
  *      named `<label>.treasury`, and recorded back in their agent tree so any app can find it;
- *   4. fund it from the test faucet (MockUSDC's open mint);
+ *   4. fund it from the test faucet (the Sheqel's open mint);
  *   5. have them sign a real buy-in mandate: the card room builds the delegation, their Home signs
  *      the EIP-712 digest with their custodian key (`POST /connect/persona-sign`);
  *   6. seat them at a settled table built from the real engine, and settle the BUY-IN by redeeming
@@ -34,12 +34,12 @@ import {
   buyInMandateDigest,
   buyInMandateTerms,
   checkBuyInMandate,
-  chipsToUsdc,
+  chipsToAsset,
   createTreasuryClient,
   createTreasuryTransferAdapter,
   describeBuyInMandate,
-  formatUsdc,
-  parseUsdc,
+  formatAmount,
+  parseAmount,
   unsignedBuyInMandate,
 } from '@pokernight/treasury';
 import {
@@ -63,7 +63,7 @@ const HOME_CLIENT_ID = process.env.HOME_CLIENT_ID ?? 'pokernight';
  * The chip rate this demo settles at. It is self-contained — the same value prices the buy-in and
  * the cash-out below — so it is a demo parameter, not a deployment one. A real table's rate is
  * stamped on the table when it is created (`PokerTableDO` `meta.chipValue`) and is 1 000 000 by
- * default now; this default is left at the older 0.01 USDC chip so the demo moves small amounts.
+ * default now; this default is left at the older 0.01 chip so the demo moves small amounts.
  */
 const CHIP_VALUE = BigInt(process.env.CHIP_VALUE ?? '10000');
 
@@ -78,14 +78,14 @@ function flag(name: string, fallback: string): string {
 
 const HANDLE = flag('handle', 'elena');
 /**
- * The currency to settle in. Defaults to the card room's OWN coin — Sheqel, recorded in
- * `house.faithchain.json` by `pnpm deploy:sheqel` — falling back to the chain's MockUSDC for a
- * checkout that has not deployed one. `--asset 0x…` settles this run in any other 6-decimal token,
- * which is how the same script proves that a table pinned to the older currency still works.
+ * The currency to settle in: the card room's OWN and only coin, Sheqel, recorded in
+ * `house.faithchain.json` by `pnpm deploy:sheqel`. `--asset 0x…` overrides it for a one-off run
+ * against another 6-decimal token; there is no automatic fallback, because a script that moves money
+ * must not quietly move a different currency from the one it says it is moving.
  */
 const ASSET_FLAG = flag('asset', '').trim();
 const CHIPS = Number(flag('chips', '200'));
-const FUND = parseUsdc(flag('fund', '25'));
+const FUND = parseAmount(flag('fund', '25'));
 const LABEL = flag('label', '').trim();
 
 const home: HomeApiConfig = { origin: HOME_ORIGIN, clientId: HOME_CLIENT_ID };
@@ -115,13 +115,17 @@ function loadHouse(): { houseTreasurySa: Address; houseServiceSa: Address; priva
   const key = JSON.parse(readFileSync(KEY_FILE, 'utf8')) as { privateKey?: string };
   if (!house.houseTreasurySa || !house.houseServiceSa) throw new Error(`${HOUSE_FILE} is missing the house Smart Agent addresses`);
   if (!key.privateKey) throw new Error(`${KEY_FILE} has no "privateKey"`);
-  const asset = (ASSET_FLAG || house.contracts?.sheqel || CONTRACTS.mockUsdc) as Address;
+  const sheqel = house.contracts?.sheqel ?? '';
+  if (!ASSET_FLAG && !/^0x[0-9a-fA-F]{40}$/.test(sheqel)) {
+    throw new Error(`${HOUSE_FILE} has no Sheqel address — run \`pnpm deploy:sheqel\` first, or pass --asset 0x…`);
+  }
+  const asset = (ASSET_FLAG || sheqel) as Address;
   return {
     houseTreasurySa: house.houseTreasurySa as Address,
     houseServiceSa: house.houseServiceSa as Address,
     privateKey: key.privateKey as Hex,
     asset,
-    assetName: asset.toLowerCase() === CONTRACTS.mockUsdc.toLowerCase() ? 'USDC' : 'SHQ',
+    assetName: asset.toLowerCase() === (house.contracts?.sheqel ?? '').toLowerCase() ? 'SHQ' : asset,
   };
 }
 
@@ -136,7 +140,7 @@ async function main(): Promise<void> {
   console.log(`  chainId        ${CONTRACTS.chainId}`);
   console.log(`  house treasury ${house.houseTreasurySa}   house delegate ${house.houseServiceSa}`);
   console.log(`  asset          ${house.asset}  ${house.assetName}, 6 decimals`);
-  console.log(`  chip value     ${CHIP_VALUE} base units = ${formatUsdc(CHIP_VALUE)} ${house.assetName} per chip`);
+  console.log(`  chip value     ${CHIP_VALUE} base units = ${formatAmount(CHIP_VALUE)} ${house.assetName} per chip`);
 
   const publicClient = createPublicClient({ transport: http(RPC_URL) });
   const onChainId = await publicClient.getChainId();
@@ -205,21 +209,21 @@ async function main(): Promise<void> {
   /* ------------------------------------------------------------------- 4. fund */
 
   console.log(`\n4. Fund it (${house.assetName} has an open mint; this is test money)`);
-  const need = chipsToUsdc(CHIPS, CHIP_VALUE);
-  let held = await treasury.readUsdcBalance(player);
-  console.log(`  balance        ${formatUsdc(held)} ${house.assetName}, buy-in costs ${formatUsdc(need)} ${house.assetName}`);
+  const need = chipsToAsset(CHIPS, CHIP_VALUE);
+  let held = await treasury.readBalance(player);
+  console.log(`  balance        ${formatAmount(held)} ${house.assetName}, buy-in costs ${formatAmount(need)} ${house.assetName}`);
   if (held < need || FUND > 0n) {
     const top = held < need ? (need - held > FUND ? need - held : FUND) : FUND;
     const before = held;
     const hash = await treasury.mintTestAsset(player, top, account);
-    console.log(`  mint ${formatUsdc(top)} ${house.assetName}  tx ${hash}`);
+    console.log(`  mint ${formatAmount(top)} ${house.assetName}  tx ${hash}`);
     // Wait for the MINT itself to be visible, not merely for "enough": a read replica that is still
     // behind will otherwise deliver the new balance in the middle of the buy-in and make an exact
     // before/after comparison lie about what moved.
-    held = await settled(() => treasury.readUsdcBalance(player), (v) => v >= before + top);
-    console.log(`  balance        ${formatUsdc(held)} ${house.assetName}`);
+    held = await settled(() => treasury.readBalance(player), (v) => v >= before + top);
+    console.log(`  balance        ${formatAmount(held)} ${house.assetName}`);
   }
-  if (held < need) throw new Error(`the treasury still holds ${formatUsdc(held)} ${house.assetName}, under the ${formatUsdc(need)} ${house.assetName} buy-in`);
+  if (held < need) throw new Error(`the treasury still holds ${formatAmount(held)} ${house.assetName}, under the ${formatAmount(need)} ${house.assetName} buy-in`);
 
   /* ---------------------------------------------------------------- 5. mandate */
 
@@ -238,8 +242,8 @@ async function main(): Promise<void> {
     now: Date.now(),
   });
   const consent = describeBuyInMandate(terms);
-  console.log(`  what they are shown: up to ${formatUsdc(consent.maxAmountPerCharge)} ${house.assetName} per buy-in,`);
-  console.log(`  ${formatUsdc(consent.sessionBudget)} ${house.assetName} in total, at most ${consent.maxRedemptionsPerWindow} times,`);
+  console.log(`  what they are shown: up to ${formatAmount(consent.maxAmountPerCharge)} ${house.assetName} per buy-in,`);
+  console.log(`  ${formatAmount(consent.sessionBudget)} ${house.assetName} in total, at most ${consent.maxRedemptionsPerWindow} times,`);
   console.log(`  payable only to ${consent.recipient}, until ${new Date(consent.expiresAt * 1000).toISOString()}`);
 
   const unsigned = unsignedBuyInMandate({
@@ -284,7 +288,7 @@ async function main(): Promise<void> {
   const config = { seats: 6, smallBlind: 1, bigBlind: 2, minBuyIn: 40, maxBuyIn: 20_000 };
   let state = createTable(config);
   state = sitDown(state, 0, `home:${signIn.agent}`, CHIPS);
-  console.log(`  seat 0 buys in for ${CHIPS} chips = ${formatUsdc(need)} ${house.assetName}`);
+  console.log(`  seat 0 buys in for ${CHIPS} chips = ${formatAmount(need)} ${house.assetName}`);
 
   const buyInReq = {
     tableId: 'settle-persona',
@@ -294,29 +298,29 @@ async function main(): Promise<void> {
     chips: CHIPS,
     orderId: `settle-persona-buyin:${Date.now()}`,
   };
-  const houseBeforeBuyIn = await treasury.readUsdcBalance(house.houseTreasurySa);
-  const playerBeforeBuyIn = await treasury.readUsdcBalance(player);
-  console.log(`  before   house ${formatUsdc(houseBeforeBuyIn)}   player ${formatUsdc(playerBeforeBuyIn)}`);
+  const houseBeforeBuyIn = await treasury.readBalance(house.houseTreasurySa);
+  const playerBeforeBuyIn = await treasury.readBalance(player);
+  console.log(`  before   house ${formatAmount(houseBeforeBuyIn)}   player ${formatAmount(playerBeforeBuyIn)}`);
   const auth = await adapter.authorizeBuyIn(buyInReq);
   if (!auth.ok) throw new Error(`authorizeBuyIn refused: ${auth.reason}`);
   console.log('  authorizeBuyIn → ok');
   const buyIn = await adapter.settleBuyIn(buyInReq);
-  const playerAfterBuyIn = await settled(() => treasury.readUsdcBalance(player), (v) => v === playerBeforeBuyIn - need);
-  const houseAfterBuyIn = await settled(() => treasury.readUsdcBalance(house.houseTreasurySa), (v) => v === houseBeforeBuyIn + need);
+  const playerAfterBuyIn = await settled(() => treasury.readBalance(player), (v) => v === playerBeforeBuyIn - need);
+  const houseAfterBuyIn = await settled(() => treasury.readBalance(house.houseTreasurySa), (v) => v === houseBeforeBuyIn + need);
   console.log(`  tx       ${buyIn.ref}`);
-  console.log(`  after    house ${formatUsdc(houseAfterBuyIn)}   player ${formatUsdc(playerAfterBuyIn)}`);
+  console.log(`  after    house ${formatAmount(houseAfterBuyIn)}   player ${formatAmount(playerAfterBuyIn)}`);
   if (playerBeforeBuyIn - playerAfterBuyIn !== need || houseAfterBuyIn - houseBeforeBuyIn !== need) {
-    throw new Error(`buy-in balances did not move by exactly ${formatUsdc(need)} ${house.assetName}`);
+    throw new Error(`buy-in balances did not move by exactly ${formatAmount(need)} ${house.assetName}`);
   }
-  console.log(`  both balances moved by exactly ${formatUsdc(need)} ${house.assetName} ✓`);
+  console.log(`  both balances moved by exactly ${formatAmount(need)} ${house.assetName} ✓`);
 
   console.log('\n7. Stand up, and settle the cash-out');
   const stood = standUp(state, 0);
   const cashOutChips = stood.cashOut;
-  const back = chipsToUsdc(cashOutChips, CHIP_VALUE);
-  console.log(`  seat 0 stands up with ${cashOutChips} chips = ${formatUsdc(back)} ${house.assetName}`);
-  const houseBeforeOut = await treasury.readUsdcBalance(house.houseTreasurySa);
-  const playerBeforeOut = await treasury.readUsdcBalance(player);
+  const back = chipsToAsset(cashOutChips, CHIP_VALUE);
+  console.log(`  seat 0 stands up with ${cashOutChips} chips = ${formatAmount(back)} ${house.assetName}`);
+  const houseBeforeOut = await treasury.readBalance(house.houseTreasurySa);
+  const playerBeforeOut = await treasury.readBalance(player);
   const cashOut = await adapter.settleCashOut({
     tableId: 'settle-persona',
     seat: 0,
@@ -326,21 +330,21 @@ async function main(): Promise<void> {
     historyDigest: 'hands:0:last:0',
     orderId: `settle-persona-cashout:${Date.now()}`,
   });
-  const playerAfterOut = await settled(() => treasury.readUsdcBalance(player), (v) => v === playerBeforeOut + back);
-  const houseAfterOut = await settled(() => treasury.readUsdcBalance(house.houseTreasurySa), (v) => v === houseBeforeOut - back);
+  const playerAfterOut = await settled(() => treasury.readBalance(player), (v) => v === playerBeforeOut + back);
+  const houseAfterOut = await settled(() => treasury.readBalance(house.houseTreasurySa), (v) => v === houseBeforeOut - back);
   console.log(`  tx       ${cashOut.ref}`);
-  console.log(`  after    house ${formatUsdc(houseAfterOut)}   player ${formatUsdc(playerAfterOut)}`);
+  console.log(`  after    house ${formatAmount(houseAfterOut)}   player ${formatAmount(playerAfterOut)}`);
   if (playerAfterOut - playerBeforeOut !== back || houseBeforeOut - houseAfterOut !== back) {
-    throw new Error(`cash-out balances did not move by exactly ${formatUsdc(back)} ${house.assetName}`);
+    throw new Error(`cash-out balances did not move by exactly ${formatAmount(back)} ${house.assetName}`);
   }
-  console.log(`  both balances moved by exactly ${formatUsdc(back)} ${house.assetName} ✓`);
+  console.log(`  both balances moved by exactly ${formatAmount(back)} ${house.assetName} ✓`);
 
   console.log('\nSummary');
   console.log(`  person agent      ${signIn.agent}          (identity — never spent from)`);
   console.log(`  treasury          ${player}  ${playerName}`);
   console.log(`  house treasury    ${house.houseTreasurySa}`);
-  console.log(`  buy-in  tx        ${buyIn.ref}   ${formatUsdc(need)} ${house.assetName}  player → house`);
-  console.log(`  cash-out tx       ${cashOut.ref}   ${formatUsdc(back)} ${house.assetName}  house → player`);
+  console.log(`  buy-in  tx        ${buyIn.ref}   ${formatAmount(need)} ${house.assetName}  player → house`);
+  console.log(`  cash-out tx       ${cashOut.ref}   ${formatAmount(back)} ${house.assetName}  house → player`);
   console.log('  the buy-in moved under a mandate signed at the player\'s Home with a key this card room');
   console.log('  does not hold. That is the whole difference from scripts/settle-demo.mts.');
 }

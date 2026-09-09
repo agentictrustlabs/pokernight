@@ -98,6 +98,69 @@ describe('a player who has been sat out', () => {
   });
 });
 
+/**
+ * "When one player gets out of money the game gets stuck."
+ *
+ * The busted player was shown the sit-out notice and its one control, "Sit in" — which does nothing
+ * for somebody with no chips. The rebuy existed, as an unlabelled number box among the other
+ * controls, with nothing anywhere saying that was what they needed. These assert the two halves of
+ * the fix: the notice names the real situation, and the action it offers is the one that helps.
+ */
+describe('a player who has run out of chips', () => {
+  /** Both seats broke and sat out: the deadlock, from the busted player's side. */
+  const bustedView = (viewerSeat: number | null = 0) =>
+    emptyView([seat(0, 'p-alice', 0, { status: 'sitting-out' }), seat(1, 'p-bob', 0, { status: 'sitting-out' })], viewerSeat);
+
+  it('says they are out of chips, not that they are sitting out', () => {
+    const html = table(reduce(initialState, welcome(bustedView(0))));
+    expect(html).toContain('You are out of chips');
+    expect(html).toContain('Your chips are gone');
+    expect(html).not.toContain('You are sitting out');
+  });
+
+  it('offers a rebuy as the primary action and never "Sit in"', () => {
+    const html = table(reduce(initialState, welcome(bustedView(0))));
+    expect(html).toContain('Buy back in');
+    expect(html).toContain('class="primary sit-in"');
+    // The button that cannot help them is not on the screen at all.
+    expect(html).not.toContain('>Sit in<');
+  });
+
+  /** The reason the drop happened is true and irrelevant: money is what is in the way. */
+  it('talks about money even when they were also disconnected', () => {
+    const w = welcome(bustedView(0));
+    const state = reduce(initialState, {
+      ...w,
+      players: {
+        ...(w as { players: Record<string, unknown> }).players,
+        'p-alice': { playerId: 'p-alice', name: 'Alice', kind: 'human', sitOutReason: 'disconnected' },
+      },
+    } as typeof w);
+    const html = table(state);
+    expect(html).toContain('You are out of chips');
+    expect(html).not.toContain('connection dropped');
+  });
+
+  /** And the table itself says why it cannot deal, in money rather than seat status. */
+  it('says the table cannot deal because the chips are gone', () => {
+    const html = table(reduce(initialState, welcome(bustedView(0))));
+    expect(html).toContain('have run out of chips');
+    expect(html).toContain('Buying back in starts the next hand');
+  });
+
+  /** A rebuy on a settled table is priced in the table's currency before the press. */
+  it('prices the rebuy in the table’s own money', () => {
+    const view = {
+      ...bustedView(0),
+      settlement: 'mandate-transfer' as const,
+    };
+    const state = reduce(initialState, welcome(view));
+    const html = table(state, { settlement: 'mandate-transfer', chipValue: '1000000', assetSymbol: 'SHQ' });
+    expect(html).toContain('Buy back in');
+    expect(html).toContain('40.00 SHQ');
+  });
+});
+
 describe('table render', () => {
   it('draws seats, chips and the board mid-hand', () => {
     const html = table(reduce(initialState, welcome(flopView(0))));
@@ -110,34 +173,34 @@ describe('table render', () => {
   /**
    * Bug 2: on a settled table every chip amount a player reads carries the money it is worth, and
    * the settlement mode is legible before anyone takes a seat. On a play-money table none of it
-   * appears — a bare chip count is honest there and "0.00 USDC" would not be.
+   * appears — a bare chip count is honest there and "0.00 SHQ" would not be.
    */
   it('prices every chip figure on a settled table, at the TABLE’s rate', () => {
     const state = reduce(initialState, welcome(flopView(0)));
     const html = table(state, { settlement: 'mandate-transfer', chipValue: '1000000' });
     // The stack: chips primary, money under it, both in the label a screen reader hears.
-    expect(html).toContain('aria-label="Stack: 194 chips · 194.00 USDC"');
-    expect(html).toContain('194.00 USDC');
+    expect(html).toContain('aria-label="Stack: 194 chips · 194.00 SHQ"');
+    expect(html).toContain('194.00 SHQ');
     // The pot, and the bet sitting in front of Bob.
-    expect(html).toContain('4.00 USDC');
-    expect(html).toContain('6.00 USDC');
+    expect(html).toContain('4.00 SHQ');
+    expect(html).toContain('6.00 SHQ');
     // The mode, on every open seat, before anyone sits.
-    expect(html).toContain('<span class="sit-mode money">USDC</span>');
+    expect(html).toContain('<span class="sit-mode money">SHQ</span>');
 
     // …and on the seat a spectator can actually press, in the label as well as on the plate.
     const spectator = table(reduce(initialState, welcome(flopView(null))), { settlement: 'mandate-transfer', chipValue: '1000000' });
-    expect(spectator).toContain('aria-label="Sit at seat 3 — USDC"');
+    expect(spectator).toContain('aria-label="Sit at seat 3 — SHQ"');
 
     // The SAME table at the rate it would have been opened with last week reads as pennies.
     const cheap = table(state, { settlement: 'mandate-transfer', chipValue: '10000' });
-    expect(cheap).toContain('aria-label="Stack: 194 chips · 1.94 USDC"');
-    expect(cheap).not.toContain('194.00 USDC');
+    expect(cheap).toContain('aria-label="Stack: 194 chips · 1.94 SHQ"');
+    expect(cheap).not.toContain('194.00 SHQ');
   });
 
   it('says nothing about money on a play-money table, and says THAT', () => {
     const html = table(reduce(initialState, welcome(flopView(0))));
     expect(html).toContain('aria-label="Stack: 194 chips"');
-    expect(html).not.toContain('USDC');
+    expect(html).not.toContain('SHQ');
     expect(html).toContain('<span class="sit-mode">play money</span>');
   });
 
@@ -297,7 +360,7 @@ describe('landing and sign-in surfaces', () => {
     const html = renderToStaticMarkup(createElement(Landing, { auth: auth(), onLogin: () => {} }));
     expect(html).toContain('at the same table');
     // The promise a stranger is actually reading for: what they get, and in WHICH money — the card
-    // room's own coin, named by the card room rather than assumed to be USDC.
+    // room's own coin, named by the card room rather than assumed to be SHQ.
     expect(html).toContain('10,000 SHQ to play with');
     expect(html).toContain('How a night works');
     // The panel is ON the page, not linked away to — and its button says both things it does,
@@ -367,7 +430,7 @@ describe('money render', () => {
     chosen: null,
     chosenName: null,
     balance: null,
-    balanceUsdc: null,
+    balanceText: null,
     candidates: [],
     discoveryError: null,
     create: { mode: 'home-portal' as const, portalUrl: 'https://home.example/treasuries', canName: true },
@@ -392,7 +455,7 @@ describe('money render', () => {
     chosen: '0x' + 'ab'.repeat(20),
     chosenName: 'rowan.treasury',
     balance: '10000000000',
-    balanceUsdc: '10000.000000',
+    balanceText: '10000.000000',
   };
 
   const money = (over: Record<string, unknown> = {}) => ({
@@ -432,11 +495,11 @@ describe('money render', () => {
     const view = { ...fundedTreasury, mandate: { ...fundedTreasury.mandate, present: true } };
     const html = renderToStaticMarkup(createElement(MoneyPanel, money({ treasury: view, chipValue: '1000000' })));
     // Money, in money words, by name.
-    expect(html).toContain('10,000.00 USDC');
+    expect(html).toContain('10,000.00 SHQ');
     expect(html).toContain('rowan.treasury');
     // The honest labels stay: what kind of money this is, and what a chip is worth here.
-    expect(html).toContain('Test USDC on faithchain');
-    expect(html).toContain('1.00 USDC');
+    expect(html).toContain('Test SHQ on faithchain');
+    expect(html).toContain('1.00 SHQ');
     // Everything a stranger does not need is inside the disclosure, and nowhere before it.
     const [before, after] = html.split('<summary>Receipts and addresses</summary>');
     expect(after).toBeDefined();
@@ -465,7 +528,7 @@ describe('money render', () => {
   it('leads with the balance by name once a player is set up', () => {
     const ready = { ...fundedTreasury, mandate: { ...fundedTreasury.mandate, present: true } };
     const html = renderToStaticMarkup(createElement(StartPanel, { session: moneySession, config: null, treasury: ready, onChanged: () => {} }));
-    expect(html).toContain('10,000.00 USDC');
+    expect(html).toContain('10,000.00 SHQ');
     expect(html).toContain('rowan.treasury');
     expect(html.split('<details')[0]).not.toContain('0xab');
   });

@@ -13,7 +13,8 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
 - `packages/protocol` zod wire schemas (WebSocket, HTTP, `poker.act` A2A skill). Typed against engine.
 - `packages/ledger`   chip ledger + `SettlementAdapter` (play-money now; on-chain adapters live in apps).
 - `packages/agent-kit` helpers and a rules-based baseline strategy for agents.
-- `packages/treasury` house money layer: read/move 6-decimal USDC from Smart Agents the house custodies.
+- `packages/treasury` house money layer: read/move the 6-decimal settlement asset from Smart Agents the
+  house custodies. Names no currency: the address and ticker are injected by `apps/*`.
   Config injected (rpc, chain id, deployments, signer); no hostnames, no addresses, no keys.
 - `apps/tables`       Cloudflare Worker: `PokerTableDO` (WebSockets, SQLite, alarms) + `LobbyDO`. hono routes.
 - `apps/web`          Vite + React client.
@@ -22,10 +23,17 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
 
 ## Rules
 - Money in the engine is chips (integers). Chip → asset conversion is the ledger's job only.
+- **The Sheqel (SHQ) is the ONLY currency.** No USDC, no second asset, no conversion, no legacy
+  fallback. A table that cannot be opened in Sheqel is not opened.
 - A table is PINNED, at creation, to both its chip rate AND its settlement asset, and neither is ever
   re-read from the environment afterwards. `CHIP_VALUE` / `ASSET` open new tables; `LEGACY_CHIP_VALUE`
-  / `LEGACY_ASSET` are what tables older than each pin have been settling at, stamped on first load.
-  A table that took buy-ins in one currency pays cash-outs in that same currency, always.
+  is what tables older than the RATE pin have been settling at, stamped on first load. There is no
+  `LEGACY_ASSET` and no asset migration — the asset stamp is kept because it makes "which currency is
+  this table?" a question about the table's own data, not because two currencies are supported.
+- The mandate-currency check (`SessionDO.mandateAsset` vs the table's asset) stays. It is a safety
+  property, not a mixed-currency feature: with one coin it should never fire.
+- The faucet and the new-player seed are gated on the ASSET itself simulating an open `mint`
+  (`isTestAsset`), never on a name or a flag. A real asset must never be mintable by this code.
 - `packages/*` never hardcode domains, chain ids, addresses, or vendor SDKs. Those live in `apps/*` config
   (`wrangler.toml` `[env.faithnet]`, `.dev.vars`). Same rule as agenticprimitives.
 - Engine functions are pure: return new state, never mutate input. Errors are `EngineError` with a stable code.
@@ -46,7 +54,7 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
 - `pnpm deploy:sheqel` (deploys `contracts/src/Sheqel.sol` to faithchain with the house custodian key
   and seeds the house treasury; records the address in `house.faithchain.json`)
 - `pnpm provision:house` (idempotent; deploys the house Smart Agents on faithchain, funds the treasury,
-  writes `house.faithchain.json`. Add `--demo-transfer=<usdc>` to also move real USDC treasury → service.
+  writes `house.faithchain.json`. Add `--demo-transfer=<shq>` to also move Sheqels treasury → service.
   The custodian key goes to `.house-key.json` — gitignored, mode 0600, never printed.)
 
 ## Agentic Primitives linkage

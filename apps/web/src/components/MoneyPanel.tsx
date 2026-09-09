@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AppSession } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { shortAddress } from '../lib/format';
-import { describeRate, fmtAsset, tableRate } from '../lib/money';
+import { describeRate, tableRate } from '../lib/money';
 import { stakeBalance, stakeName } from '../lib/stake';
-import { describeMovement, fmtUsdc, seatBlock, shortRef, type TableSettlement, type TreasuryView } from '../lib/treasury';
+import { describeMovement, fmtAmount, seatBlock, shortRef, type TableSettlement, type TreasuryView } from '../lib/treasury';
 
 /** Settlement lands seconds after the ledger row; poll while anything is still in flight. */
 const POLL_MS = 4000;
@@ -83,25 +83,14 @@ export function MoneyPanel({
   // The table's own rate, preferring the summary the page read and falling back to the one the
   // settlement rows carry — both come from the table, neither from the deployment default.
   const rate = tableRate(settlement, chipValue ?? rows?.chipValue ?? null, assetSymbol ?? rows?.assetSymbol ?? null);
-  // The balance in THIS TABLE's currency, which is the only balance that can pay for a seat here.
-  // The treasury's headline balance is in the card room's CURRENT coin, and at a table pinned to an
-  // older one that is the wrong number in the wrong ticker — "10,000.00 SHQ" over a seat that costs
-  // USDC reads as money the player does not have for this table.
-  const here = (treasury?.balances ?? []).find((b) => (b.symbol ?? '') === rate?.asset);
-  // `fmtAsset`, not `fmtUsdc`: the headline is money and reads as money — grouped, two decimals —
-  // exactly as `stakeBalance` renders the same figure everywhere else.
-  const balance =
-    here && here.balance !== null && /^\d+$/.test(here.balance)
-      ? `${fmtAsset(BigInt(here.balance))} ${here.symbol ?? ''}`.trim()
-      : stakeBalance(treasury);
+  // The treasury's balance, which is the balance that pays for a seat here: the card room settles
+  // in one currency, so the money the player holds and the money this table charges are the same.
+  const balance = stakeBalance(treasury);
   const block = seatBlock(settlement, treasury);
   const mandate = treasury?.mandate ?? null;
-  // The mandate names its OWN currency; a mandate signed for the older coin does not become a
-  // Sheqel authority because Sheqel is what the card room opens tables in today.
-  const mandateMoney =
-    ((treasury?.balances ?? []).find((b) => b.asset.toLowerCase() === (mandate?.asset ?? '').toLowerCase())?.symbol ??
-      (treasury?.assetSymbol ?? '').trim()) ||
-    'USDC';
+  // The mandate names its OWN currency. It should always be this card room's, and the check that
+  // says so lives on the server — this is only what to call it in a sentence.
+  const mandateMoney = (treasury?.assetSymbol ?? '').trim() || 'SHQ';
   const entries = rows?.entries ?? [];
 
   return (
@@ -169,8 +158,8 @@ export function MoneyPanel({
           ) : null}
           {mandate?.present ? (
             <p className="hint">
-              Authorised: up to {fmtUsdc(mandate.maxPerBuyIn) ?? '?'} {mandateMoney} per buy-in,{' '}
-              {fmtUsdc(mandate.sessionTotal) ?? '?'} {mandateMoney} in total, at most {mandate.maxBuyIns} times, until{' '}
+              Authorised: up to {fmtAmount(mandate.maxPerBuyIn) ?? '?'} {mandateMoney} per buy-in,{' '}
+              {fmtAmount(mandate.sessionTotal) ?? '?'} {mandateMoney} in total, at most {mandate.maxBuyIns} times, until{' '}
               {mandate.validUntil ? new Date(mandate.validUntil * 1000).toLocaleString() : 'the end of the night'}. Payable only to{' '}
               <code className="mono">{shortAddress(mandate.payee)}</code>, and revocable at your Home.
             </p>

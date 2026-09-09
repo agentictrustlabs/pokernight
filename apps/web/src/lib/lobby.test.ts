@@ -139,10 +139,10 @@ describe('describeMoment', () => {
 
   it('says the pot in money too when the table settles, at the table’s own rate', () => {
     const d = { ...detail(), settlement: 'mandate-transfer', chipValue: '1000000' };
-    expect(describeMoment(d, summarizeRoster(d)).state).toBe('Flop · pot 4 (4.00 USDC)');
+    expect(describeMoment(d, summarizeRoster(d)).state).toBe('Flop · pot 4 (4.00 SHQ)');
     // The same pot at the rate an older table was opened with is a different amount of money.
     const older = { ...d, chipValue: '10000' };
-    expect(describeMoment(older, summarizeRoster(older)).state).toBe('Flop · pot 4 (0.04 USDC)');
+    expect(describeMoment(older, summarizeRoster(older)).state).toBe('Flop · pot 4 (0.04 SHQ)');
   });
 
   it('does not claim a hand is running between hands', () => {

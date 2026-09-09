@@ -3,7 +3,7 @@
  *
  * The bug this file exists for: `chipValue(env)` was read at settlement time, so raising
  * `CHIP_VALUE` re-valued every stack already sitting on every open table. A player seated with 100
- * chips bought for 1.000000 USDC would have cashed out at 100.000000 USDC — a hundredfold overpay
+ * chips bought for 1.000000 would have cashed out at 100.000000 — a hundredfold overpay
  * of house funds, from a config change nobody thought touched live money.
  *
  * So: the rate is stamped on the table when it is created, migrated onto older tables the first
@@ -18,7 +18,7 @@ import { defaultChipValue, legacyChipValue, pinnedChipValue, unstampedChipValue 
 import type { Env } from '../src/env.js';
 import { createTableViaHttp } from './helpers.js';
 
-/** The deployment default in the test config (wrangler.toml `[vars]`): 1 chip = 1 USDC. */
+/** The deployment default in the test config (wrangler.toml `[vars]`): 1 chip = 1 Sheqel. */
 const DEPLOYMENT_DEFAULT = '1000000';
 /** `LEGACY_CHIP_VALUE`: what every table created before the rate was pinned has been settling at. */
 const LEGACY = '10000';

@@ -130,7 +130,7 @@ export const api = {
    * token stops resolving straight away.
    *
    * The answer says which seats were stood up and whether the money has actually moved — on a settled
-   * table it has not yet, and the caller must say so rather than implying the USDC is home. A request
+   * table it has not yet, and the caller must say so rather than implying the money is home. A request
    * that never arrives returns a failure we can describe, not a silent success: we would rather tell
    * someone their seat may still be sitting there than let them believe it is not.
    */
@@ -167,7 +167,7 @@ export const api = {
    *  to have a Home-custodied identity sign the terms this table would ask for. */
   signMandate: (delegation: unknown | undefined, token: string) =>
     request<MandateResult>('/treasury/mandate', { method: 'POST', body: JSON.stringify(delegation ? { delegation } : {}) }, token),
-  /** Mint test USDC into the chosen treasury. Test assets only; the Worker refuses anything else. */
+  /** Mint test Sheqels into the chosen treasury. Test assets only; the Worker refuses anything else. */
   fundTreasury: (amount: string, token: string) =>
     request<FundTreasuryResult>('/treasury/fund', { method: 'POST', body: JSON.stringify({ amount }) }, token),
   /** Where this player's money at a table has got to. Scoped to the caller by the Worker. */

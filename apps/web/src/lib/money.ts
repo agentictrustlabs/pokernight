@@ -2,8 +2,8 @@
  * Chips and what they are worth, in one place.
  *
  * A settled table has two units for the same thing and a player must never have to do the
- * multiplication themselves: 200 chips at this table IS 200.00 USDC, and both numbers belong
- * wherever either one is shown. A play-money table has only chips, and saying "0.00 USDC" there
+ * multiplication themselves: 200 chips at this table IS 200.00 SHQ, and both numbers belong
+ * wherever either one is shown. A play-money table has only chips, and saying "0.00 SHQ" there
  * would be a lie dressed as precision — so the rate is nullable and null means "chips only".
  *
  * Pure: no fetch, no React, no bigint leaking into props. The rate comes off the wire as the
@@ -14,14 +14,12 @@
 /**
  * What a table's money is called when the table does not say.
  *
- * It used to be THE ticker: one deployment, one asset, `USDC` everywhere. That stopped being true
- * when the card room minted a currency of its own — tables now settle in Sheqel, and every table
- * opened before that still settles in USDC and always will. So the ticker comes off the wire, per
- * table (`TableSummary.assetSymbol`), and this is only the answer for a table that names none:
- * those are exactly the tables that predate the app having a coin, so USDC is what they pay in.
- * Naming today's coin here would put the wrong word next to a real amount of somebody's money.
+ * The card room settles in one currency, Sheqel. The ticker still comes off the wire per table
+ * (`TableSummary.assetSymbol`) rather than being assumed here — a table states the coin it pays in,
+ * and that is the label that belongs next to a real amount of somebody's money. This is only the
+ * answer for a table that names none.
  */
-export const LEGACY_ASSET_TICKER = 'USDC';
+export const ASSET_TICKER = 'SHQ';
 const ASSET_UNIT = 1_000_000n;
 const ASSET_DECIMALS = 6;
 /** Money reads as money: two decimal places minimum, even when the rest are zeros. */
@@ -41,13 +39,13 @@ export interface TableRate {
 export function tableRate(
   settlement: string | null | undefined,
   chipValue: string | null | undefined,
-  /** The table's own ticker (`TableSummary.assetSymbol`). Absent, see {@link LEGACY_ASSET_TICKER}. */
+  /** The table's own ticker (`TableSummary.assetSymbol`). Absent, see {@link ASSET_TICKER}. */
   assetSymbol?: string | null,
 ): TableRate | null {
   if (settlement === 'play-money' || !settlement) return null;
   if (!chipValue || !/^\d+$/.test(chipValue.trim())) return null;
   const v = BigInt(chipValue.trim());
-  const asset = (assetSymbol ?? '').trim() || LEGACY_ASSET_TICKER;
+  const asset = (assetSymbol ?? '').trim() || ASSET_TICKER;
   return v > 0n ? { chipValue: v, asset } : null;
 }
 
@@ -76,9 +74,9 @@ export interface DualAmount {
   chipsText: string;
   /** `"1,200.00"`, or null on a table with no rate. */
   assetText: string | null;
-  /** `"1,200.00 USDC"`, or null. What the secondary line renders. */
+  /** `"1,200.00 SHQ"`, or null. What the secondary line renders. */
   assetLabel: string | null;
-  /** `"1,200 chips · 1,200.00 USDC"` — the whole thing on one line, for titles and aria-labels. */
+  /** `"1,200 chips · 1,200.00 SHQ"` — the whole thing on one line, for titles and aria-labels. */
   label: string;
 }
 
@@ -96,13 +94,13 @@ export function dualAmount(chips: number, rate: TableRate | null | undefined): D
   return { chips: n, chipsText, assetText, assetLabel, label: `${chipsText} chips · ${assetLabel}` };
 }
 
-/** `"1 chip = 1.00 USDC"` — the rate itself, for the places that state the terms of the table. */
+/** `"1 chip = 1.00 SHQ"` — the rate itself, for the places that state the terms of the table. */
 export function describeRate(rate: TableRate | null | undefined): string | null {
   if (!rate) return null;
   return `1 chip = ${fmtAsset(rate.chipValue)} ${rate.asset}`;
 }
 
-/** `"40–200 chips · 40.00–200.00 USDC"` — a buy-in range, both units, one line. */
+/** `"40–200 chips · 40.00–200.00 SHQ"` — a buy-in range, both units, one line. */
 export function describeRange(min: number, max: number, rate: TableRate | null | undefined): string {
   const lo = dualAmount(min, rate);
   const hi = dualAmount(max, rate);
@@ -123,7 +121,7 @@ export interface Shortfall {
   held: bigint;
   /** cost − held, always > 0 when this object exists. */
   short: bigint;
-  /** "Your treasury holds 1.00 USDC and this buy-in costs 200.00 USDC — 199.00 USDC short." */
+  /** "Your treasury holds 1.00 SHQ and this buy-in costs 200.00 SHQ — 199.00 SHQ short." */
   reason: string;
 }
 
@@ -157,7 +155,7 @@ export function affordableChips(balance: string | null | undefined, rate: TableR
 /** How a table settles, in the words a player needs before they sit — not after. */
 export interface ModeDescription {
   settles: boolean;
-  /** Two words for a badge: this table's ticker ("SHQ", "USDC") or "Play money". */
+  /** Two words for a badge: this table's ticker ("SHQ") or "Play money". */
   label: string;
   /** One sentence saying what pressing "Sit down" will actually do. */
   line: string;
@@ -171,9 +169,9 @@ export function describeMode(settlement: string | null | undefined, rate: TableR
       line: 'Play money. Nothing moves on chain, and these chips are only good at this table.',
     };
   }
-  // The badge names THIS table's currency, not the deployment's. Two tables in the lobby can settle
-  // in two different coins, and a badge that said the same word on both would be wrong on one.
-  const ticker = rate?.asset ?? LEGACY_ASSET_TICKER;
+  // The badge names THIS table's currency, from the table's own record rather than from anything
+  // the client assumes about the deployment.
+  const ticker = rate?.asset ?? ASSET_TICKER;
   const at = describeRate(rate);
   return {
     settles: true,

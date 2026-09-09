@@ -15,9 +15,9 @@ import {
   tableRate,
 } from './money';
 
-/** The rate every table created before this change carries: 1 chip = 0.01 USDC. */
+/** The rate every table created before this change carries: 1 chip = 0.01 SHQ. */
 const CENT = tableRate('mandate-transfer', '10000');
-/** The deployment default now: 1 chip = 1 USDC. */
+/** The deployment default now: 1 chip = 1 SHQ. */
 const DOLLAR = tableRate('mandate-transfer', '1000000');
 
 describe('tableRate', () => {
@@ -37,22 +37,22 @@ describe('tableRate', () => {
   /**
    * The card room minted a coin of its own, so the ticker is a property of the TABLE and arrives on
    * the wire with the rate. A table that names none is one that predates the coin, and those settle
-   * in USDC — putting today's ticker on them would be the wrong word beside a real amount of money.
+   * in SHQ — putting today's ticker on them would be the wrong word beside a real amount of money.
    */
-  it('names the currency the TABLE states, and falls back to USDC only for a table that states none', () => {
+  it('names the currency the TABLE states, and falls back to SHQ only for a table that states none', () => {
     expect(tableRate('mandate-transfer', '1000000', 'SHQ')?.asset).toBe('SHQ');
-    expect(tableRate('mandate-transfer', '1000000')?.asset).toBe('USDC');
-    expect(tableRate('mandate-transfer', '1000000', '  ')?.asset).toBe('USDC');
+    expect(tableRate('mandate-transfer', '1000000')?.asset).toBe('SHQ');
+    expect(tableRate('mandate-transfer', '1000000', '  ')?.asset).toBe('SHQ');
     expect(dualAmount(200, tableRate('mandate-transfer', '1000000', 'SHQ')).assetLabel).toBe('200.00 SHQ');
     expect(describeRate(tableRate('mandate-transfer', '1000000', 'SHQ'))).toBe('1 chip = 1.00 SHQ');
     // Two tables, two coins, at the same instant. Neither label is the deployment's.
     expect(describeMode('mandate-transfer', tableRate('mandate-transfer', '1000000', 'SHQ')).label).toBe('SHQ');
-    expect(describeMode('mandate-transfer', tableRate('mandate-transfer', '10000')).label).toBe('USDC');
+    expect(describeMode('mandate-transfer', tableRate('mandate-transfer', '10000')).label).toBe('SHQ');
   });
 
   it('reads a settled table’s pinned rate', () => {
-    expect(CENT).toEqual({ chipValue: 10_000n, asset: 'USDC' });
-    expect(DOLLAR).toEqual({ chipValue: 1_000_000n, asset: 'USDC' });
+    expect(CENT).toEqual({ chipValue: 10_000n, asset: 'SHQ' });
+    expect(DOLLAR).toEqual({ chipValue: 1_000_000n, asset: 'SHQ' });
   });
 });
 
@@ -86,14 +86,14 @@ describe('dualAmount', () => {
   });
 
   it('carries both units at the boundaries', () => {
-    expect(dualAmount(0, DOLLAR)).toMatchObject({ chipsText: '0', assetText: '0.00', label: '0 chips · 0.00 USDC' });
-    expect(dualAmount(1, DOLLAR)).toMatchObject({ chipsText: '1', assetLabel: '1.00 USDC' });
-    expect(dualAmount(1, CENT)).toMatchObject({ chipsText: '1', assetLabel: '0.01 USDC' });
+    expect(dualAmount(0, DOLLAR)).toMatchObject({ chipsText: '0', assetText: '0.00', label: '0 chips · 0.00 SHQ' });
+    expect(dualAmount(1, DOLLAR)).toMatchObject({ chipsText: '1', assetLabel: '1.00 SHQ' });
+    expect(dualAmount(1, CENT)).toMatchObject({ chipsText: '1', assetLabel: '0.01 SHQ' });
   });
 
-  it('reads the same 200 chips as 2.00 or 200.00 USDC depending on the TABLE’s rate', () => {
-    expect(dualAmount(200, CENT).assetLabel).toBe('2.00 USDC');
-    expect(dualAmount(200, DOLLAR).assetLabel).toBe('200.00 USDC');
+  it('reads the same 200 chips as 2.00 or 200.00 SHQ depending on the TABLE’s rate', () => {
+    expect(dualAmount(200, CENT).assetLabel).toBe('2.00 SHQ');
+    expect(dualAmount(200, DOLLAR).assetLabel).toBe('200.00 SHQ');
   });
 
   it('survives a stack far larger than any table deals with, exactly', () => {
@@ -105,9 +105,9 @@ describe('dualAmount', () => {
 
   it('shows the odd places a non-round rate produces instead of hiding them', () => {
     const odd = tableRate('mandate-transfer', '333333');
-    expect(dualAmount(1, odd).assetLabel).toBe('0.333333 USDC');
-    expect(dualAmount(3, odd).assetLabel).toBe('0.999999 USDC');
-    expect(dualAmount(7, tableRate('mandate-transfer', '1')).assetLabel).toBe('0.000007 USDC');
+    expect(dualAmount(1, odd).assetLabel).toBe('0.333333 SHQ');
+    expect(dualAmount(3, odd).assetLabel).toBe('0.999999 SHQ');
+    expect(dualAmount(7, tableRate('mandate-transfer', '1')).assetLabel).toBe('0.000007 SHQ');
   });
 
   it('reads a broken number as nothing rather than putting NaN on a money surface', () => {
@@ -118,14 +118,14 @@ describe('dualAmount', () => {
 
 describe('describeRate and describeRange', () => {
   it('states the terms of the table in one line', () => {
-    expect(describeRate(DOLLAR)).toBe('1 chip = 1.00 USDC');
-    expect(describeRate(CENT)).toBe('1 chip = 0.01 USDC');
+    expect(describeRate(DOLLAR)).toBe('1 chip = 1.00 SHQ');
+    expect(describeRate(CENT)).toBe('1 chip = 0.01 SHQ');
     expect(describeRate(null)).toBeNull();
   });
 
   it('gives a buy-in range in both units, and in chips alone on play money', () => {
-    expect(describeRange(40, 200, DOLLAR)).toBe('40–200 chips · 40.00–200.00 USDC');
-    expect(describeRange(40, 200, CENT)).toBe('40–200 chips · 0.40–2.00 USDC');
+    expect(describeRange(40, 200, DOLLAR)).toBe('40–200 chips · 40.00–200.00 SHQ');
+    expect(describeRange(40, 200, CENT)).toBe('40–200 chips · 0.40–2.00 SHQ');
     expect(describeRange(40, 200, null)).toBe('40–200 chips');
   });
 });
@@ -135,9 +135,9 @@ describe('buyInShortfall', () => {
     const s = buyInShortfall(200, '1000000', DOLLAR);
     expect(s).not.toBeNull();
     expect(s!.short).toBe(199_000_000n);
-    expect(s!.reason).toContain('holds 1.00 USDC');
-    expect(s!.reason).toContain('costs 200.00 USDC');
-    expect(s!.reason).toContain('199.00 USDC short');
+    expect(s!.reason).toContain('holds 1.00 SHQ');
+    expect(s!.reason).toContain('costs 200.00 SHQ');
+    expect(s!.reason).toContain('199.00 SHQ short');
   });
 
   it('is null when the treasury covers it, exactly to the base unit', () => {
@@ -171,9 +171,9 @@ describe('describeMode', () => {
   it('says what sitting down will actually do, before it is done', () => {
     const money = describeMode('mandate-transfer', DOLLAR);
     expect(money.settles).toBe(true);
-    expect(money.label).toBe('USDC');
+    expect(money.label).toBe('SHQ');
     expect(money.line).toContain('moves real money out of your treasury');
-    expect(money.line).toContain('1 chip = 1.00 USDC');
+    expect(money.line).toContain('1 chip = 1.00 SHQ');
   });
 
   it('is honest about play money rather than silent about it', () => {
@@ -186,6 +186,6 @@ describe('describeMode', () => {
   });
 
   it('still names the mode when the rate has not arrived yet', () => {
-    expect(describeMode('mandate-transfer', null).line).toBe('Settles in USDC. Buying in moves real money out of your treasury.');
+    expect(describeMode('mandate-transfer', null).line).toBe('Settles in SHQ. Buying in moves real money out of your treasury.');
   });
 });

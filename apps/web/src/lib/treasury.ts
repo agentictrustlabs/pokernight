@@ -19,7 +19,7 @@ export interface TreasuryCandidate {
   name: string;
   label: string;
   balance: string | null;
-  balanceUsdc: string | null;
+  balanceText: string | null;
   error?: string;
 }
 
@@ -48,8 +48,7 @@ export interface MandateView {
 export interface TreasuryView {
   chainId: number;
   asset: string;
-  /** What that asset calls itself (`SHQ`). Stated by the card room, never assumed here: the estate
-   *  has more than one currency on it now. Absent on an older server: fall back to `USDC`. */
+  /** What that asset calls itself (`SHQ`). Stated by the card room rather than assumed here. */
   assetSymbol?: string;
   /**
    * The DEPLOYMENT DEFAULT rate, which is what a new table would be opened at and what a mandate is
@@ -63,10 +62,7 @@ export interface TreasuryView {
   chosen: string | null;
   chosenName: string | null;
   balance: string | null;
-  balanceUsdc: string | null;
-  /** What the chosen treasury holds in every currency this card room settles in, most current
-   *  first. `balance` above is the first entry. Absent on an older server. */
-  balances?: Array<{ asset: string; symbol: string | null; balance: string | null; formatted: string | null; error?: string }>;
+  balanceText: string | null;
   candidates: TreasuryCandidate[];
   discoveryError: string | null;
   create: TreasuryCreationOffer;
@@ -99,17 +95,17 @@ export interface SelectTreasuryResult {
   chosen: string;
   name: string;
   balance: string | null;
-  balanceUsdc: string | null;
+  balanceText: string | null;
   note: string;
 }
 
 export interface FundTreasuryResult {
   treasury: string;
   minted: string;
-  mintedUsdc: string;
+  mintedText: string;
   txHash: string;
   balance: string | null;
-  balanceUsdc: string | null;
+  balanceText: string | null;
   asset: string;
   note: string;
 }
@@ -143,8 +139,7 @@ export interface TableSettlement {
   settlement: 'play-money' | 'mandate-transfer' | 'table-escrow';
   /** The rate THIS table pinned at creation, in base units per chip. Null when it has none. */
   chipValue: string | null;
-  /** The currency THIS table pinned at creation, and what it calls itself. Null on a table older
-   *  than the pin, which settles in USDC. */
+  /** The currency THIS table pinned at creation, and what it calls itself. */
   asset?: string | null;
   assetSymbol?: string | null;
   treasury: string | null;
@@ -158,11 +153,11 @@ export function isTreasuryAddress(v: string): boolean {
 }
 
 /**
- * Base units → a decimal USDC string. Same arithmetic as `formatUsdc` in `@pokernight/treasury`,
+ * Base units → a decimal amount string. Same arithmetic as `formatAmount` in `@pokernight/treasury`,
  * repeated here rather than imported because the web bundle has no business pulling in viem to
  * divide by a million.
  */
-export function fmtUsdc(baseUnits: string | bigint | null | undefined): string | null {
+export function fmtAmount(baseUnits: string | bigint | null | undefined): string | null {
   if (baseUnits === null || baseUnits === undefined || baseUnits === '') return null;
   let v: bigint;
   try {
@@ -203,12 +198,11 @@ export function kindLabel(kind: string): string {
 
 /**
  * What THIS table's money is called. A settlement row is about a movement that already happened at
- * a particular table, so the ticker comes from that table (`TableSettlement.assetSymbol`). `USDC` is
- * the fallback because a table that names no currency is one that opened before the card room had a
- * coin of its own — which is exactly the currency it moved.
+ * a particular table, so the ticker comes from that table (`TableSettlement.assetSymbol`) rather
+ * than from anything the client assumes.
  */
 function ticker(symbol: string | null | undefined): string {
-  return (symbol ?? '').trim() || 'USDC';
+  return (symbol ?? '').trim() || 'SHQ';
 }
 
 /**
@@ -240,7 +234,7 @@ export function describeSettlement(entry: SettlementEntry, symbol?: string | nul
 export interface Movement {
   /** "Bought in", "Added chips", "Cashed out". */
   what: string;
-  /** `"200.00 USDC"` — the asset amount from the receipt, or the chip count when there is none. */
+  /** `"200.00 SHQ"` — the asset amount from the receipt, or the chip count when there is none. */
   amount: string;
   status: SettlementStatus;
   /** "done" · "on its way" · "did not go through". Three words, no jargon. */
@@ -328,7 +322,7 @@ export function seatBlock(
     return { reason: 'Pick which of your money accounts pays for this seat.', action: 'choose-treasury' };
   }
 
-  // Priced at the TABLE's rate, and refused by name — with the shortfall in USDC — before the
+  // Priced at the TABLE's rate, and refused by name — with the shortfall in SHQ — before the
   // button can be pressed. The server refuses again in the same words (`authorizeBuyIn`).
   if (buyInChips !== undefined && rate) {
     const short = buyInShortfall(buyInChips, treasury.balance, rate);

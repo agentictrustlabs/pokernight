@@ -11,14 +11,13 @@
     "treasury": "pokernight.house.treasury.v1"
   },
   "contracts": {
-    "asset": "0xdaE09066A2cc32f6203605619137dcF01A9B49Ae",
     "entryPoint": "0xf7855250B3363AB7649B10957d8908A9AFcdD4B5",
     "agentAccountFactory": "0x464eEe7518c3c97DA570592481329E0627E9a3B8",
     "paymaster": "0xbd93fEC6910ffD74F14709188b5a9B6C6965b2a7",
     "delegationManager": "0x710cb1bF08C234Df397e0910331e0A29710EF4F7",
     "paymentReceiptRegistry": "0x5FfDd6186C1bBc4628187B1c4C1fDaA39F870d43",
     "sheqel": "0xa14E4a9447607c1233DcE34dB6Ead47C094f6141",
-    "_assetNote": "`sheqel` is the SETTLEMENT ASSET for tables opened from now on (Poker Night's own coin, contracts/src/Sheqel.sol, 6 decimals, open mint). `asset` is faithchain MockUSDC — kept, not replaced, because every table opened before Sheqel is PINNED to it and must still be readable and payable. See LEGACY_ASSET in apps/tables/wrangler.toml."
+    "_assetNote": "`sheqel` is THE settlement asset — Poker Night's own and only coin (contracts/src/Sheqel.sol, 6 decimals, open mint), pointed at by ASSET in apps/tables/wrangler.toml. faithchain MockUSDC used to be listed here as `asset`; it is gone, along with LEGACY_ASSET and every table that settled in it. One currency, no conversion."
   },
   "provisionedAt": "2026-09-08T17:39:07.024Z",
   "personaIdentitySa": "0x52b28B0AF0f0e52378651a156A43Cf1044966976",
