@@ -8,7 +8,8 @@
  *                                       → {token, playerId, name, agentName?, address?}  (Home OIDC)
  *   POST /auth/home/demo {idToken, delegation?, authOrigin}
  *                                       → same shape (Home quick-connect / demo users)
- *   POST /auth/signout                  → {ok} (auth required; drops the server-side session record)
+ *   POST /auth/signout                  → SignOutResult (auth required; stands the player up from every
+ *                                       seat they hold, then drops the server-side session record)
  *   POST /dev/session {name}            → {token, playerId, name}   (DEV_AUTH=true only)
  *   GET  /tables                        → TableSummary[]            (LobbyDO "default", or ?circle=)
  *   POST /tables CreateTableRequest     → TableSummary (201)
@@ -16,6 +17,8 @@
  *   GET  /tables/:id/hands/:handNo      → stored hand record (seed reveal, actions, agent calls, result)
  *   POST /tables/:id/seat-agent SeatAgentRequest → seats an A2A agent (auth required) → PlayerInfo (201)
  *   DELETE /tables/:id/seat-agent/:seat → stands that agent up and cashes it out (auth required)
+ *   DELETE /tables/:id/seat/:seat       → OPERATOR: clears an abandoned seat and cashes it out
+ *                                       (x-operator-token, plus three conditions about the seat)
  *   GET  /tables/:id/settlement         → this player's money rows at a table (auth required)
  *   GET  /tables/:id/ws?token=...       → WebSocket to the table DO (no/invalid token = spectator)
  *   GET  /treasury                      → chosen treasury + balance + candidates + mandate (auth required)
@@ -29,10 +32,19 @@
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
-import { CreateTableRequestSchema, DevSessionRequestSchema, POKER_ACT_SKILL, SeatAgentRequestSchema } from '@pokernight/protocol';
+import {
+  CreateTableRequestSchema,
+  DevSessionRequestSchema,
+  POKER_ACT_SKILL,
+  SeatAgentRequestSchema,
+  type SeatStandUpFailure,
+  type SeatStoodUp,
+  type SignOutResult,
+} from '@pokernight/protocol';
 import { agentKindFromCard, fetchAgentCard, hasPokerActSkill, resolveAgentBase } from './a2a.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aTimeoutMs, allowedOrigins, isDevAuth, type Env } from './env.js';
+import { OPERATOR_HEADER, checkOperator } from './operator.js';
 import {
   BUY_IN_TEMPLATE,
   HomeAuthError,
@@ -68,7 +80,7 @@ const app = new Hono<{ Bindings: Env }>();
 const corsMiddleware = cors({
   origin: (origin, c) => (allowedOrigins(c.env as Env).includes(origin) ? origin : null),
   allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['content-type', 'authorization'],
+  allowHeaders: ['content-type', 'authorization', OPERATOR_HEADER],
   maxAge: 600,
 });
 
@@ -257,13 +269,76 @@ app.post('/auth/home/mandate', async (c) => {
   return signMandate(c, session, result.paymentDelegation);
 });
 
-/** Sign out: drop the server-side record so the bearer token stops resolving straight away. */
+/**
+ * Sign out.
+ *
+ * An explicit sign-out is a DIFFERENT ACT from a dropped connection, and this is where the difference
+ * lives. Dropping a connection sits a player out — seat kept, chips kept, nothing settled — because
+ * they have not said they are finished. Signing out says exactly that, so every seat they hold is
+ * given up and, on a settled table, cashed out through the ordinary outbox so their USDC goes home.
+ * Leaving a signed-out person's money committed to a seat they have walked away from is the bug this
+ * route exists to close.
+ *
+ * A session that merely EXPIRED never arrives here: the client's `signOutTo('expired')` does not
+ * revoke, so an expired session behaves like a disconnect and sits out instead of cashing out. That
+ * asymmetry is deliberate — an expired token is not consent to move somebody's money.
+ *
+ * The seats come back in the response with `pending` on each, and the client says what that means.
+ * A queued cash-out is a promise, not a payment, and this route never pretends otherwise.
+ *
+ * Seats are found by asking every table in the default lobby. That is a handful of subrequests today
+ * and it needs no index that could go stale; a table in another circle is not swept, which is why the
+ * operator route exists as the backstop.
+ */
 app.post('/auth/signout', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return c.json({ ok: true });
+  if (!session) return c.json({ ok: true, stoodUp: [], failed: [] } satisfies SignOutResult);
+  // Stand up FIRST: the session record is what the treasury lookups hang off, and a seat given up
+  // after the record is gone would have a harder time saying where the money should go.
+  const { stoodUp, failed } = await standUpEverywhere(c.env, session.playerId);
   await dropSessionRecord(c.env, session.playerId);
-  return c.json({ ok: true });
+  return c.json({ ok: failed.length === 0, stoodUp, failed } satisfies SignOutResult);
 });
+
+/** How many tables one sign-out will sweep. A bound, not a policy: today's lobby holds a handful. */
+const SIGN_OUT_SWEEP_LIMIT = 100;
+
+/** Ask every table in the default lobby to stand this player up, and collect what happened. */
+async function standUpEverywhere(env: Env, playerId: string): Promise<{ stoodUp: SeatStoodUp[]; failed: SeatStandUpFailure[] }> {
+  const stoodUp: SeatStoodUp[] = [];
+  const failed: SeatStandUpFailure[] = [];
+  let tableIds: string[];
+  try {
+    const res = await lobby(env, undefined).fetch('https://lobby/ids');
+    if (!res.ok) return { stoodUp, failed };
+    tableIds = ((await res.json()) as { tableIds?: string[] }).tableIds ?? [];
+  } catch (e) {
+    console.error('sign-out: could not list tables', e);
+    return { stoodUp, failed };
+  }
+  for (const tableId of tableIds.slice(0, SIGN_OUT_SWEEP_LIMIT)) {
+    try {
+      const res = await table(env, tableId).fetch('https://table/stand-up', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      const body = (await res.json()) as ({ seated: false } | ({ seated: true } & SeatStoodUp)) & { error?: string };
+      if (!res.ok) {
+        failed.push({ tableId, reason: body.error ?? `the table refused the stand-up (${res.status})` });
+        continue;
+      }
+      if (body.seated) {
+        const { seated: _seated, ...seat } = body;
+        stoodUp.push(seat);
+      }
+    } catch (e) {
+      // Said out loud rather than swallowed: a seat we could not give up still has their chips on it.
+      failed.push({ tableId, reason: e instanceof Error ? e.message : 'the table could not be reached' });
+    }
+  }
+  return { stoodUp, failed };
+}
 
 app.post('/dev/session', async (c) => {
   if (!isDevAuth(c.env)) return c.json({ error: 'dev auth disabled' }, 404);
@@ -342,6 +417,35 @@ app.post('/tables/:id/seat-agent', async (c) => {
     body: JSON.stringify(body),
   });
   return passthrough(res);
+});
+
+/**
+ * OPERATOR: clear an abandoned seat.
+ *
+ * The one route in this app that can take a seat away from a player who did not ask to leave, which
+ * is exactly why it is fenced four ways and refuses by name:
+ *
+ *   1. operator authority — the `x-operator-token` header, compared in constant time against the
+ *      `OPERATOR_TOKEN` secret (`operator.ts`). There is no admin role: no session, however signed
+ *      in, can reach this. A deployment that has not set the secret can clear nothing at all.
+ *   2. no live socket for that seat  — checked in the DO;
+ *   3. the seat is not in a running hand — checked in the DO;
+ *   4. the seat has been idle past `SEAT_IDLE_MS` — checked in the DO.
+ *
+ * All four must hold. Any one of them failing is what makes this useless as a kick tool: a player who
+ * is connected, or in a hand, or who did anything in the last few minutes, cannot be cleared by
+ * anyone holding any token. The refusal body carries `refused` naming the condition that closed.
+ *
+ * A cleared seat cashes out through the same path as a voluntary stand-up, so the chips go back to
+ * that player's treasury rather than being stranded on the table or quietly kept by the house.
+ */
+app.delete('/tables/:id/seat/:seat', async (c) => {
+  const seat = Number(c.req.param('seat'));
+  if (!Number.isInteger(seat) || seat < 0 || seat > 8) return c.json({ error: 'bad seat' }, 400);
+  const gate = await checkOperator(c.env, c.req.raw);
+  // Never logged, never echoed: the refusal says which gate closed and nothing about the token.
+  if (!gate.ok) return c.json({ error: gate.reason, refused: 'operator' }, gate.status);
+  return passthrough(await table(c.env, c.req.param('id')).fetch(`https://table/seat/${seat}`, { method: 'DELETE' }));
 });
 
 app.delete('/tables/:id/seat-agent/:seat', async (c) => {

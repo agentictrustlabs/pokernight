@@ -1,31 +1,50 @@
-# pokernight-web — static SPA served by Workers Assets.
+# pokernight-web — the Vite SPA on Workers Assets, with a thin Worker in front of it.
 #
-# The client is a Vite build. Anything prefixed VITE_ is read by Vite at BUILD
-# time and inlined into the bundle; it is NOT a runtime Worker variable. The
-# `[env.faithnet.vars]` block below documents the value so it lives next to the
-# other per-universe config, but `vite build --mode faithnet` reads it from
-# `.env.faithnet` (same value). Change both together.
+# The Worker (worker/index.ts) exists for exactly ONE path: `/sso-logout`, the front-channel sign-out
+# the person's Home navigates to when they sign out there. Everything else is handed straight to the
+# asset router. `run_worker_first` is what makes that path REAL: without it the asset router's
+# single-page-application fallback answers `/sso-logout` with index.html, the Home's sign-out chain
+# sees a 200 and moves on, and this card room stays signed in behind its back — which is the bug.
+#
+# The client is a Vite build. Anything prefixed VITE_ is read by Vite at BUILD time and inlined into
+# the bundle; it is NOT a runtime Worker variable. `API_BASE` below IS a runtime Worker var (the
+# Worker fetches the Home config from the tables Worker, and the logout page posts the sign-out
+# there); it carries the same value as VITE_API_BASE and must be changed with it.
 #
 #   pnpm --filter pokernight-web deploy   (WRANGLER_ENV=faithnet)
 
 name = "pokernight-web"
+main = "worker/index.ts"
 compatibility_date = "2025-09-01"
 
 [assets]
 directory = "./dist"
+binding = "ASSETS"
 # Hash routes (#/t/<id>) never reach the server, but a hard reload on a
 # non-root path should still serve the app.
 not_found_handling = "single-page-application"
+# The one path the Worker owns. Everything else keeps being served by the asset router directly.
+run_worker_first = ["/sso-logout", "/sso-logout/"]
+
+[vars]
+# Local dev: the tables Worker on :8787 (see vite.config.ts, which proxies /api there).
+API_BASE = "http://localhost:8787"
 
 [env.faithnet]
 name = "pokernight-web-faithnet"
+main = "worker/index.ts"
 routes = [{ pattern = "poker.faithnet.io", custom_domain = true }]
 
 [env.faithnet.assets]
 directory = "./dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
+run_worker_first = ["/sso-logout", "/sso-logout/"]
 
 [env.faithnet.vars]
+# Runtime, for the Worker: where the logout page posts the sign-out, and where the Home config is
+# read from. Mirrors VITE_API_BASE below, which is the BUILD-time value the SPA bundle carries.
+API_BASE = "https://tables.faithnet.io"
 # Build-time only (see header). Mirrored in .env.faithnet.
 VITE_API_BASE = "https://tables.faithnet.io"
 # Home sign-in needs NO VITE_ var. The client reads GET /auth/config from the tables Worker at

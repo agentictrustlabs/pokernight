@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession } from './lib/types';
 import { ApiError, api, loadSession, saveSession, setUnauthorizedHandler } from './lib/api';
+import { SESSION_KEY } from './lib/ssoLogout';
 import { startHomeSignIn, takeHomeCallback, takeMandateCallback, takeProfileName, type AuthConfig } from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
 import { HOME_HASH, goTo, route, takeReturn } from './lib/routes';
-import { signOutTo, type SignOutReason } from './lib/session';
+import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
 import { Identity } from './components/Identity';
@@ -66,13 +67,28 @@ export function App() {
    * End the session and land on the sign-in page. `signOutTo` decides what that means (see
    * session.ts): a person who clicked "sign out" is owed nothing, a person whose token was refused
    * mid-hand is owed a sentence. Either way they land somewhere they can act, never on a dead table.
+   *
+   * The two endings differ in one more way now, and it is the important one. An explicit sign-out
+   * GIVES UP the person's seats: the Worker stands them up everywhere and, on a settled table, cashes
+   * them out, so nobody's USDC is left committed to a seat they have walked away from. An EXPIRED
+   * session does no such thing — it lets the socket close and be treated as a disconnect, which keeps
+   * the seat and the chips exactly where they are. An expired token is not consent to move money.
+   *
+   * The navigation does not wait on the network: the person leaves the table now, and what happened
+   * to their seats replaces the notice on the sign-in page when the answer arrives. Whatever it says
+   * is what the server actually did — a queued cash-out is reported as queued, never as paid.
    */
   const endSession = useCallback((reason: SignOutReason) => {
     const outcome = signOutTo(reason);
     const current = sessionRef.current;
-    // Best effort: tell the Worker to drop the server-side record so the token dies now, not at exp.
-    // Pointless when the API has already refused it.
-    if (outcome.revoke && current) void api.signOut(current.token);
+    // Tell the Worker to give up the seats and drop the server-side record, so the token dies now
+    // rather than at exp. Pointless when the API has already refused the token.
+    if (outcome.standUp && current) {
+      void api.signOut(current.token).then((result) => {
+        const said = describeSignOut(result);
+        if (said) setNotice(said);
+      });
+    }
     saveSession(outcome.session);
     setSession(outcome.session);
     setNotice(outcome.notice);
@@ -82,6 +98,24 @@ export function App() {
   }, []);
 
   const signOut = useCallback(() => endSession('user'), [endSession]);
+
+  /**
+   * Another tab — or the `/sso-logout` page the person's Home sent them through — has ended the
+   * session. `localStorage` fires this event in every OTHER tab of this origin, which is the only
+   * signal a tab that is not the one being redirected ever gets.
+   *
+   * Nothing is repeated here: whoever cleared the key has already stood the player up and revoked the
+   * token. This tab only has to stop showing a table it can no longer play at.
+   */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== SESSION_KEY && e.key !== null) return;
+      if (e.newValue) return; // a sign-IN elsewhere; this tab keeps what it has
+      if (sessionRef.current) endSession('elsewhere');
+    };
+    addEventListener('storage', onStorage);
+    return () => removeEventListener('storage', onStorage);
+  }, [endSession]);
 
   // Any route refusing a token we sent means this session is over, wherever we were standing.
   useEffect(() => {

@@ -26,3 +26,22 @@ RPC_TOKEN=
 # Rotating it means re-running provisioning with a new key: the Smart Agent addresses are derived
 # from the custodian, so a new key is a new pair of accounts.
 HOUSE_CUSTODIAN_KEY=
+
+# Operator authority for `DELETE /tables/:id/seat/:seat`, the one route that can take a seat away from
+# a player who did not ask to leave. Presented in its OWN header:
+#
+#   curl -X DELETE -H "x-operator-token: $OPERATOR_TOKEN" \
+#        https://tables.faithnet.io/tables/<tableId>/seat/<seat>
+#
+# A separate header from `Authorization: Bearer` on purpose: an operator token must never be
+# mistakeable for a player session, and no session can ever be promoted into one — there is no admin
+# ROLE in this app, and this secret is the whole of the authority. It is compared in CONSTANT TIME
+# (src/operator.ts digests both sides first, so neither the value nor its length leaks through
+# timing), it is never logged and never appears in a response body.
+#
+# Holding it is not enough to clear a seat. Three further conditions about the SEAT must also hold:
+# no live socket, not in a running hand, and idle beyond SEAT_IDLE_MS. Every refusal names which one
+# failed. Leave this UNSET and no seat can be cleared by anyone, which is the right default.
+#
+#   pnpm --filter pokernight-tables exec wrangler secret put OPERATOR_TOKEN --env faithnet
+OPERATOR_TOKEN=

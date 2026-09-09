@@ -156,6 +156,15 @@ export function reduce(state: TableState, msg: ServerMessage): TableState {
           },
         };
       }
+      // Why a seat is sitting out travels with the status change, so the person it happened to can be
+      // told — including the case that matters most, where it happened while they were disconnected
+      // and the `welcome` they reconnect with carries the reason on `players` instead.
+      if (ev.type === 'seat-status') {
+        const known = players[ev.playerId];
+        const base = known ?? { playerId: ev.playerId, name: ev.name ?? names[ev.playerId] ?? ev.playerId, kind: 'human' as const };
+        const { sitOutReason: _dropped, ...rest } = base;
+        players = { ...players, [ev.playerId]: { ...rest, ...(ev.sitOutReason ? { sitOutReason: ev.sitOutReason } : {}) } };
+      }
       if (ev.type === 'seat-left' && players[ev.playerId]) {
         const rest = { ...players };
         delete rest[ev.playerId];
@@ -186,8 +195,9 @@ export function reduce(state: TableState, msg: ServerMessage): TableState {
       return {
         ...state,
         error: { code: msg.code, message: msg.message },
-        // A rejected action means the server no longer expects this turn as we knew it.
-        turn: msg.code === 'stale-hand' || msg.code === 'not-your-turn' ? null : state.turn,
+        // A rejected action means the server no longer expects this turn as we knew it. `no-hand`
+        // belongs here too: there is no hand at all, so there is certainly not a turn in one.
+        turn: msg.code === 'stale-hand' || msg.code === 'not-your-turn' || msg.code === 'no-hand' ? null : state.turn,
       };
     case 'pong':
       return state;

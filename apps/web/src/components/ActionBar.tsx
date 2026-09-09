@@ -109,11 +109,22 @@ export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null }: Ac
 
   const odds = live ? potOdds(toCall, pot) : null;
 
+  /**
+   * What the bar calls itself when it is not your turn.
+   *
+   * "Not your turn" used to be the answer to every idle state, including the one where there is no
+   * hand at all — which is how a table that had gone quiet for want of players ended up telling two
+   * people it was not their turn, sending them looking for a turn that did not exist. When no hand is
+   * running, say that instead; it is both true and the thing that explains the silence.
+   */
+  const handRunning = view.hand != null && view.hand.result == null;
+  const idleTitle = handRunning ? (waitingOn ? `Waiting for ${waitingOn}` : 'Not your turn') : 'No hand running';
+
   return (
     <section className={`actions panel${live ? ' live' : ''}`} aria-label="Your action">
       <div className="act-head">
         <strong className="act-title">
-          {live ? 'Your turn' : waitingOn ? `Waiting for ${waitingOn}` : 'Not your turn'}
+          {live ? 'Your turn' : idleTitle}
           {secs != null ? <span className={`clock num${tone}`}>{secs}s</span> : null}
         </strong>
         {odds ? <span className="odds">{odds}</span> : null}

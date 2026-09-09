@@ -1355,6 +1355,47 @@ label > select {
   margin-top: 0.75rem;
 }
 
+/* ------------------------------------------------------- table notices
+
+   Two states the table used to keep to itself: that it cannot deal, and that
+   YOU are not being dealt in. Both sit above the felt, ahead of everything
+   else, because both are the reason nothing is happening. */
+
+.table-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.table-notice strong {
+  display: block;
+}
+.table-notice .hint {
+  font-size: 0.85rem;
+}
+.table-notice .notice-text {
+  min-width: 0;
+  flex: 1;
+}
+.table-notice.waiting {
+  border-left-color: var(--ink-soft);
+}
+/* The sit-out notice carries the one control that undoes it, so it is the loud one. */
+.table-notice.sat-out {
+  border-left-color: var(--felt);
+}
+.table-notice .sit-in {
+  font-size: 1rem;
+  padding: 0.55rem 1.4rem;
+  white-space: nowrap;
+}
+
 .picker {
   margin-top: 0.75rem;
   border-color: var(--felt);

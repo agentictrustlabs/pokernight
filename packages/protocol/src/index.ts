@@ -120,6 +120,73 @@ export const SeatAgentRequestSchema = z.object({
 });
 export type SeatAgentRequest = z.infer<typeof SeatAgentRequestSchema>;
 
+/* ------------------------------------------------------ sign-out / seat clearing */
+
+/**
+ * What happened to ONE seat a player was holding when something stood them up.
+ *
+ * `pending` is the honest half: on a settled table the cash-out is queued on the table's outbox and
+ * the USDC has NOT moved yet. A client that reports "your money is back" off the back of a 200 here
+ * would be lying, so the shape makes the difference impossible to gloss over.
+ */
+export interface SeatStoodUp {
+  tableId: string;
+  tableName?: string;
+  seat: number;
+  /** Chips that left the seat. */
+  chips: number;
+  settlement: SettlementMode;
+  /** True when a real asset movement is queued and has not settled yet. Always false on play money. */
+  pending: boolean;
+}
+
+/** A seat we could not stand the player up from, and why. Their chips are still on it. */
+export interface SeatStandUpFailure {
+  tableId: string;
+  tableName?: string;
+  reason: string;
+}
+
+/** `POST /auth/signout`. An explicit sign-out gives up every seat; see the route's own comment. */
+export interface SignOutResult {
+  ok: boolean;
+  stoodUp: SeatStoodUp[];
+  failed: SeatStandUpFailure[];
+}
+
+/**
+ * The four conditions `DELETE /tables/:id/seat/:seat` requires, in the order it checks them. A
+ * refusal always names exactly one of them, so an operator is never left guessing which gate closed.
+ *
+ *   'operator'  — the caller did not present the operator token.
+ *   'empty'     — nobody is on that seat.
+ *   'connected' — the seat still has a live socket; a connected player is not abandoned.
+ *   'in-hand'   — the seat is in a hand that is still running.
+ *   'idle'      — the seat has been active more recently than the idle threshold.
+ */
+export const SEAT_CLEAR_REFUSALS = ['operator', 'empty', 'connected', 'in-hand', 'idle'] as const;
+export type SeatClearRefusal = (typeof SEAT_CLEAR_REFUSALS)[number];
+
+/** Body of a refusal from the operator seat-clearing route. */
+export interface SeatClearRefused {
+  error: string;
+  refused: SeatClearRefusal;
+}
+
+/** Body of a successful clear. Same shape of truth as {@link SeatStoodUp}: `pending` is not a lie. */
+export interface SeatCleared {
+  ok: true;
+  tableId: string;
+  seat: number;
+  playerId: string;
+  name: string;
+  chips: number;
+  settlement: SettlementMode;
+  pending: boolean;
+  /** How long the seat had been idle when it was cleared, in ms. */
+  idleMs: number;
+}
+
 /** Dev-only login (DEV_AUTH=true). Production uses the Home OIDC flow. */
 export const DevSessionRequestSchema = z.object({ name: z.string().min(1).max(32) });
 export const SessionSchema = z.object({ token: z.string(), playerId: z.string(), name: z.string() });
@@ -141,6 +208,19 @@ export type ClientCommand = z.infer<typeof ClientCommandSchema>;
 
 /* ------------------------------------------------------- WebSocket: server */
 
+/**
+ * WHY a seat is sitting out. A sit-out is not self-explanatory to the person it happened to: a
+ * player who closed a laptop lid and came back has no idea their seat was taken out of the deal, and
+ * a table that simply stops dealing to them looks broken. Every sit-out therefore carries the reason
+ * it happened, so the client can say it in a sentence next to the button that undoes it.
+ *
+ *   'requested'    — the player pressed "Sit out".
+ *   'disconnected' — their last socket closed. Their seat and chips are untouched; nothing settles.
+ *   'timeouts'     — they missed enough turns in a row that the table stopped dealing them in.
+ */
+export const SIT_OUT_REASONS = ['requested', 'disconnected', 'timeouts'] as const;
+export type SitOutReason = (typeof SIT_OUT_REASONS)[number];
+
 export interface SeatEvent {
   type: 'seat-joined' | 'seat-left' | 'seat-status';
   seat: number;
@@ -148,6 +228,8 @@ export interface SeatEvent {
   name?: string;
   stack?: number;
   status?: 'active' | 'sitting-out';
+  /** Set with `status: 'sitting-out'`; absent when the seat is active again. See {@link SitOutReason}. */
+  sitOutReason?: SitOutReason;
   /** Carried on seat-joined so a client can badge an agent seated mid-session, before any snapshot. */
   kind?: 'human' | 'agent';
   agentName?: string;
@@ -173,6 +255,12 @@ export interface PlayerInfo {
   agentName?: string;
   /** For agents: a short label for the strategy behind it, e.g. "rules" or "claude". */
   agentKind?: string;
+  /**
+   * Why this player's seat is sitting out, when it is. Carried on `players` (and so on `welcome`)
+   * as well as on the `seat-status` event, because the person who most needs the explanation is
+   * exactly the one who was not connected when it happened.
+   */
+  sitOutReason?: SitOutReason;
 }
 
 export type ServerMessage =
@@ -194,6 +282,10 @@ export const WS_ERROR_CODES = [
   'not-seated',
   'buy-in-range',
   'not-your-turn',
+  /** An action arrived while NO hand was running. Distinct from not-your-turn on purpose: telling a
+   *  player it is not their turn when there is no turn to have sends them looking for a hand that
+   *  does not exist. */
+  'no-hand',
   'illegal-action',
   'stale-hand',
   'settlement-failed',

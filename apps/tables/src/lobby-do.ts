@@ -39,6 +39,9 @@ export class LobbyDO extends DurableObject<Env> {
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname === '/list') return json(await this.list());
+    // Just the ids, with no fan-out to the table DOs. `list` asks every table for its live summary,
+    // which is right for a lobby screen and wrong for "which tables might this player be sitting at".
+    if (request.method === 'GET' && url.pathname === '/ids') return json({ tableIds: this.tableIds() });
     if (request.method === 'POST' && url.pathname === '/create') {
       const body = (await request.json()) as CreateTableRequest;
       const result = await this.create(body);
@@ -68,6 +71,13 @@ export class LobbyDO extends DurableObject<Env> {
       createdAt,
     );
     return summary;
+  }
+
+  private tableIds(): string[] {
+    return this.ctx.storage.sql
+      .exec<{ table_id: string }>('SELECT table_id FROM tables ORDER BY created_at DESC')
+      .toArray()
+      .map((r) => r.table_id);
   }
 
   private async list(): Promise<TableSummary[]> {

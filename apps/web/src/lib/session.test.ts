@@ -4,13 +4,25 @@
  */
 import { describe, expect, it } from 'vitest';
 import { seatLabel } from './format';
-import { SESSION_ENDED_NOTICE, displayName, signOutTo } from './session';
+import { SESSION_ENDED_NOTICE, describeSignOut, displayName, signOutTo } from './session';
+import type { SignOutResult } from './types';
 import { SIGNIN_HASH, route } from './routes';
 
 describe('signOutTo', () => {
   it('sends a person who signed out to the sign-in page, saying nothing', () => {
-    expect(signOutTo('user')).toEqual({ session: null, notice: null, hash: SIGNIN_HASH, revoke: true });
+    expect(signOutTo('user')).toEqual({ session: null, notice: null, hash: SIGNIN_HASH, revoke: true, standUp: true });
     expect(route(SIGNIN_HASH)).toEqual({ page: 'signin' });
+  });
+
+  /**
+   * The asymmetry that matters. An explicit sign-out gives up the seats and cashes them out; a
+   * session that merely lapsed does NOT — it behaves like a dropped connection, so the seat and the
+   * chips stay put. An expired token is not consent to move somebody's money.
+   */
+  it('gives up seats only when the person ASKED to sign out, never when a session expired', () => {
+    expect(signOutTo('user').standUp).toBe(true);
+    expect(signOutTo('expired').standUp).toBe(false);
+    expect(signOutTo('expired').revoke).toBe(false);
   });
 
   it('sends a person whose session was refused to the same place, with a reason', () => {
@@ -28,6 +40,39 @@ describe('signOutTo', () => {
       expect(out.hash).not.toBe('#/');
       expect(route(out.hash).page).toBe('signin');
     }
+  });
+});
+
+describe('describeSignOut', () => {
+  const result = (over: Partial<SignOutResult> = {}): SignOutResult => ({ ok: true, stoodUp: [], failed: [], ...over });
+
+  it('says nothing when there were no seats to give up', () => {
+    expect(describeSignOut(result())).toBeNull();
+  });
+
+  it('says a play-money seat was given up, and claims nothing about money', () => {
+    const said = describeSignOut(
+      result({ stoodUp: [{ tableId: 't1', tableName: 'Cash Game', seat: 3, chips: 120, settlement: 'play-money', pending: false }] }),
+    );
+    expect(said).toBe('You were stood up from Cash Game.');
+    expect(said).not.toContain('USDC');
+  });
+
+  /** The one thing this must never do: report a queued cash-out as money that has arrived. */
+  it('says a settled cash-out is on its way, NOT that it is back', () => {
+    const said = describeSignOut(
+      result({ stoodUp: [{ tableId: 't2', tableName: 'Real Money', seat: 0, chips: 200, settlement: 'mandate-transfer', pending: true }] }),
+    ) as string;
+    expect(said).toContain('on its way back to your treasury and has not landed yet');
+    expect(said).not.toMatch(/back in your treasury|has been returned|refunded/);
+  });
+
+  it('names a seat it could not give up, and says the chips are still on it', () => {
+    const said = describeSignOut(
+      result({ ok: false, failed: [{ tableId: 't3', tableName: 'Dollar Table', reason: 'the table could not be reached' }] }),
+    ) as string;
+    expect(said).toContain('Dollar Table');
+    expect(said).toContain('Your chips are still on that seat.');
   });
 });
 

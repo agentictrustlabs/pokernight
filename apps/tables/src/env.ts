@@ -75,8 +75,24 @@ export interface Env {
   /** How long a signed mandate lasts, in seconds. One night, not one year. */
   MANDATE_VALID_SECONDS?: string;
 
+  /**
+   * How long a seat must have been silent before an operator may clear it, in ms. The fourth of the
+   * four conditions on `DELETE /tables/:id/seat/:seat`; see `SEAT_IDLE_MS` in wrangler.toml.
+   */
+  SEAT_IDLE_MS?: string;
+
   /** Secrets. */
   SESSION_SECRET?: string;
+  /**
+   * Operator authority for `DELETE /tables/:id/seat/:seat`, presented as `x-operator-token`.
+   *
+   * There is no admin ROLE in this app — no player is an operator and no session can become one —
+   * so the one route that can take a seat away from somebody is gated on a shared secret held by
+   * whoever runs the deployment. It is compared in constant time (`operator.ts`), it is never
+   * logged, and on its own it clears nothing: three further conditions about the seat itself must
+   * also hold. `wrangler secret put OPERATOR_TOKEN --env <env>`; never a var, never in git.
+   */
+  OPERATOR_TOKEN?: string;
   RPC_TOKEN?: string;
   /**
    * Private key of the EOA that custodies HOUSE_SERVICE_SA / HOUSE_TREASURY_SA. It SIGNS the
@@ -122,4 +138,16 @@ export const DEFAULT_A2A_TIMEOUT_MS = 20_000;
 export function a2aTimeoutMs(env: Env): number {
   const n = Number(env.A2A_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_A2A_TIMEOUT_MS;
+}
+
+/**
+ * How long a seat must have been silent before an operator may clear it. Default five minutes: long
+ * enough that a player refilling a glass of water cannot be cleared out from under their chips,
+ * short enough that a table silted up with abandoned seats is recoverable the same evening.
+ */
+export const DEFAULT_SEAT_IDLE_MS = 5 * 60 * 1000;
+
+export function seatIdleMs(env: Env): number {
+  const n = Number(env.SEAT_IDLE_MS);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_SEAT_IDLE_MS;
 }

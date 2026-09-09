@@ -55,14 +55,19 @@ import {
   type PlayerInfo,
   type PokerActInput,
   type PokerActOutput,
+  type SeatCleared,
+  type SeatClearRefusal,
   type SeatEvent,
+  type SeatStoodUp,
   type ServerMessage,
   type SettlementMode,
+  type SitOutReason,
   type TableEvent,
   type TableSummary,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, callPokerAct, resolveAgentBase } from './a2a.js';
 import { readSessionRecord } from './auth.js';
+import { seatIdleMs } from './env.js';
 import type { Env } from './env.js';
 import { createSettlementAdapter } from './settlement.js';
 import { defaultChipValue, pinnedChipValue, unstampedChipValue } from './treasury.js';
@@ -134,6 +139,27 @@ export interface SeatRecord {
    * up — and a stack with nowhere to be paid is the one way this table could lose someone's money.
    */
   treasury?: string;
+  /**
+   * Why this seat is sitting out, when it is. Cleared the moment the seat sits back in or stands up.
+   *
+   * It lives on the seat RECORD rather than on the engine state because the engine's `SeatStatus` is
+   * two words wide by design, and the reason is a story about the outside world — a socket that
+   * closed, a clock that ran out — not about the game.
+   */
+  sitOutReason?: SitOutReason;
+  /**
+   * When this seat last did anything: sat down, sent a command, acted, opened or closed a socket.
+   *
+   * The ONLY input to the fourth condition on the operator clear route, and therefore a large part of
+   * what stops that route being a way to knock a thinking player out of their seat. Written through
+   * {@link PokerTableDO.touchSeat}, which keeps the in-memory value exact and throttles the persisted
+   * one — a value stale by half a minute cannot matter against a threshold measured in minutes, and a
+   * storage write per poker action would.
+   *
+   * Absent on a seat taken before this field existed; {@link PokerTableDO.seatActiveAt} then falls
+   * back to that player's last money row, which is a real lower bound on when they were last here.
+   */
+  lastActiveAt?: number;
 }
 
 /** Body of `POST /seat-agent`: the Worker has already resolved and validated the agent card. */
@@ -264,6 +290,12 @@ const OUTBOX_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000] as const;
  */
 const MAX_OUTBOX_ATTEMPTS = 6;
 const MAX_TIMEOUTS_BEFORE_SIT_OUT = 2;
+/**
+ * How stale a seat's persisted `lastActiveAt` is allowed to get. The in-memory value is always
+ * exact; this only bounds how often it is written to storage, because a write per poker action would
+ * double this DO's write rate to sharpen a number that is read against a five-minute threshold.
+ */
+const ACTIVITY_WRITE_INTERVAL_MS = 30_000;
 /** Subtracted from an agent's turn budget so a reply that lands on the deadline is still applied. */
 const AGENT_DEADLINE_HEADROOM_MS = 1000;
 
@@ -338,6 +370,20 @@ export class PokerTableDO extends DurableObject<Env> {
       const seat = Number(path.slice('/seat-agent/'.length));
       if (!Number.isInteger(seat) || seat < 0) return json({ error: 'bad seat' }, 400);
       return this.serial(() => this.unseatAgent(seat));
+    }
+    // The operator clear. The Worker has already checked the operator token; the three conditions
+    // that are about the SEAT rather than the caller are checked here, where the truth about the
+    // seat lives, and a refusal names the one that failed.
+    if (request.method === 'DELETE' && path.startsWith('/seat/')) {
+      const seat = Number(path.slice('/seat/'.length));
+      if (!Number.isInteger(seat) || seat < 0) return json({ error: 'bad seat' }, 400);
+      return this.serial(() => this.clearSeat(seat));
+    }
+    if (request.method === 'POST' && path === '/stand-up') {
+      const body = (await request.json()) as { playerId?: string };
+      const playerId = (body.playerId ?? '').trim();
+      if (!playerId) return json({ error: 'playerId is required' }, 400);
+      return this.serial(() => this.standUpPlayer(playerId));
     }
     if (request.method === 'GET' && path === '/summary') {
       return json(this.summary());
@@ -450,6 +496,10 @@ export class PokerTableDO extends DurableObject<Env> {
     const client = pair[0];
     const server = pair[1];
     const attachment: Attachment = { playerId, name, seat: playerId ? this.seatOf(playerId) : null };
+    // Reconnecting is activity, and it counts even though it deliberately does NOT sit the player
+    // back in: choosing to be dealt in again is theirs to do, but a seat whose owner is at the
+    // keyboard is not an abandoned seat and must stop looking like one to the operator route.
+    if (playerId) void this.touchSeat(playerId);
     this.ctx.acceptWebSocket(server, playerId ? [playerId] : []);
     server.serializeAttachment(attachment);
     const state = this.state as TableState;
@@ -493,14 +543,75 @@ export class PokerTableDO extends DurableObject<Env> {
     });
   }
 
+  /**
+   * A socket has gone. If it was the LAST one a seated player had, sit them out.
+   *
+   * Real card rooms sit you out the moment you drop, and for the same reason: a seat that is dealt in
+   * and posts blinds with nobody behind it bleeds that player's money and stalls everyone else for
+   * two turn clocks a hand. So the seat comes out of the deal — and nothing else happens to it. The
+   * seat is kept, the chips are kept, and NO settlement is queued: dropping a connection is not
+   * standing up, and a disconnect that moved somebody's USDC would be a far worse bug than the one
+   * this fixes.
+   *
+   * A hand already running continues under the existing turn clock. Their chips are in the pot; the
+   * clock will check or fold for them at the deadline, which is the ordinary treatment of a silent
+   * seat and strictly better than folding a live hand out from under them the instant a tab closes.
+   *
+   * Two hibernation-API details this has to get right:
+   *   - a player may hold several sockets (a second tab, a reconnect that overlapped), so only the
+   *     last one closing counts — `stillConnected` asks the runtime, excluding this socket;
+   *   - `webSocketClose` can fire for a socket that was already replaced, so the decision is made
+   *     from the authoritative state and the live socket set, never from the closing socket's own
+   *     (possibly stale) attachment `seat`.
+   */
   override async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
     void reason;
     void wasClean;
+    // Read the attachment BEFORE closing: it is the only thing that says whose socket this was.
+    const playerId = attachmentOf(ws).playerId;
     try {
       ws.close(code, 'closing');
     } catch {
       /* already closed */
     }
+    if (!playerId) return; // a spectator has no seat to sit out
+    await this.serial(() => this.sitOutOnDisconnect(playerId, ws));
+  }
+
+  /** The sit-out half of {@link webSocketClose}, on the serial queue so it cannot interleave a hand. */
+  private async sitOutOnDisconnect(playerId: string, gone: WebSocket): Promise<void> {
+    const state = this.state;
+    if (!state) return;
+    if (this.stillConnected(playerId, gone)) return; // another tab, or a reconnect that already landed
+    const seat = this.seatOf(playerId);
+    if (seat === null) return; // they had stood up, or never sat down
+    const record = this.players[playerId];
+    // An AGENT seat has no socket at all and is reached over A2A every turn, so a socket closing
+    // says nothing about it. Guarded explicitly rather than relying on agents never being tagged
+    // with a socket: the cost of being wrong here is silently benching every bot at the table.
+    if (record && record.transport !== 'ws') return;
+    const occupant = state.seats.find((x) => x.seat === seat);
+    if (!occupant || occupant.status !== 'active') return; // already sitting out; nothing to say
+    const seatsBefore = seatMap(state);
+    const next = sitOut(state, seat);
+    await this.noteSitOut(playerId, 'disconnected');
+    const name = record?.name ?? this.names[playerId] ?? playerId;
+    await this.commit(next, [], [this.seatStatus(next, seat, playerId, name)], seatsBefore);
+  }
+
+  /**
+   * Does this player still have a live socket on this table?
+   *
+   * `except` is the socket whose close is being handled: the runtime may still list it. Anything not
+   * OPEN is on its way out and does not count as a connection either — an operator clearing a seat
+   * must not be blocked by a socket that is already closing.
+   */
+  private stillConnected(playerId: string, except?: WebSocket): boolean {
+    for (const ws of this.ctx.getWebSockets(playerId)) {
+      if (ws === except) continue;
+      if (ws.readyState === WS_OPEN) return true;
+    }
+    return false;
   }
 
   override async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -519,6 +630,10 @@ export class PokerTableDO extends DurableObject<Env> {
     const meta = this.meta as TableMeta;
     const seatsBefore = seatMap(state);
     const now = Date.now();
+    // Anything a seated player says is proof they are still here, and the operator clear route reads
+    // that. Done for EVERY command (chat and ping included) because being at the keyboard is the
+    // thing being measured, not being good at poker.
+    await this.touchSeat(playerId, now);
 
     switch (cmd.type) {
       case 'join': {
@@ -566,6 +681,10 @@ export class PokerTableDO extends DurableObject<Env> {
         const seat = this.seatOf(playerId);
         if (seat === null) throw new EngineError('not-seated', 'you are not seated');
         const next = cmd.type === 'sit-out' ? sitOut(state, seat) : sitIn(state, seat);
+        // Sitting in is always the player's own decision, however they came to be out — a reconnect
+        // never makes it for them. Recording 'requested' on the way out keeps the client's
+        // explanation honest: "you asked to sit out" is a different sentence from "you dropped".
+        await this.noteSitOut(playerId, cmd.type === 'sit-out' ? 'requested' : null);
         await this.commit(next, [], [this.seatStatus(next, seat, playerId, name)], seatsBefore);
         return;
       }
@@ -601,8 +720,13 @@ export class PokerTableDO extends DurableObject<Env> {
       case 'act': {
         const seat = this.seatOf(playerId);
         if (seat === null) throw new EngineError('not-seated', 'you are not seated');
-        const current = state.hand?.handNo ?? null;
-        if (current === null || cmd.handNo !== current) return sendError(ws, 'stale-hand', `hand ${cmd.handNo} is not the current hand`);
+        // Two different situations that used to share one message. "Not the current hand" sent a
+        // player looking for a hand that had moved on; when there is no hand at all — the table is
+        // short of players, or between deals — the true answer is that there is nothing to act in.
+        const hand = state.hand;
+        const running = hand !== null && hand.result === undefined;
+        if (!running) return sendError(ws, 'no-hand', 'no hand is running at this table right now');
+        if (cmd.handNo !== hand.handNo) return sendError(ws, 'stale-hand', `hand ${cmd.handNo} is not the current hand`);
         const { state: next, events } = applyAction(state, seat, cmd.action as Action);
         await this.commit(next, events, [], seatsBefore);
         return;
@@ -691,8 +815,15 @@ export class PokerTableDO extends DurableObject<Env> {
     return json({ seat, playerId: occupant.playerId });
   }
 
-  /** Shared stand-up: engine standUp, cash-out ledger row, settlement outbox op, `seat-left`. */
-  private async standUpSeat(seat: number, playerId: string, name: string, seatsBefore: Map<number, string>, now: number): Promise<void> {
+  /**
+   * Shared stand-up: engine standUp, cash-out ledger row, settlement outbox op, `seat-left`.
+   *
+   * The ONE path a seat's chips leave by. A voluntary `leave`, an agent being unseated, an explicit
+   * sign-out and an operator clearing an abandoned seat all come through here, so the money goes back
+   * to the same place by the same mechanism in all four cases and there is exactly one piece of code
+   * that has to be right about it. A disconnect is deliberately NOT one of them.
+   */
+  private async standUpSeat(seat: number, playerId: string, name: string, seatsBefore: Map<number, string>, now: number): Promise<StoodUp> {
     const state = this.state as TableState;
     const meta = this.meta as TableMeta;
     const { state: next, cashOut, events } = standUp(state, seat);
@@ -727,8 +858,155 @@ export class PokerTableDO extends DurableObject<Env> {
       JSON.stringify(payload),
       now,
     );
+    // The seat is gone, so any reason it was sitting out is history too.
+    await this.noteSitOut(playerId, null);
     const ev: SeatEvent = { type: 'seat-left', seat, playerId, name, stack: cashOut };
     await this.commit(next, events, [ev], seatsBefore);
+    // `pending` is the honest half of the answer: on a settled table the USDC has NOT moved yet — the
+    // outbox op above is a promise to move it, with retries and a failure that gets written onto the
+    // ledger row. Callers report this verbatim rather than saying the money is back.
+    return { seat, playerId, name, chips: cashOut, settlement: meta.settlement, pending: this.settles };
+  }
+
+  /* ------------------------------------------------- stand-up on sign-out */
+
+  /**
+   * Stand this player up from the seat they hold here, if they hold one.
+   *
+   * Reached from `POST /auth/signout`. An explicit sign-out is a DIFFERENT ACT from a dropped
+   * connection and is treated as one: a person who signs out has said they are done, so the seat is
+   * given up and the money is sent home through the ordinary cash-out path. A session that merely
+   * expired never reaches here — the client's `signOutTo('expired')` does not revoke, the socket
+   * simply closes, and `webSocketClose` sits them out with their chips untouched.
+   *
+   * Answering `{ seated: false }` for a player who is not here is not an error: sign-out asks every
+   * table, and most of them have never heard of this person.
+   */
+  private async standUpPlayer(playerId: string): Promise<Response> {
+    const state = this.state as TableState;
+    const meta = this.meta as TableMeta;
+    const seat = this.seatOf(playerId);
+    if (seat === null) return json({ seated: false, tableId: meta.tableId });
+    const name = this.players[playerId]?.name ?? this.names[playerId] ?? playerId;
+    const out = await this.standUpSeat(seat, playerId, name, seatMap(state), Date.now());
+    const result: SeatStoodUp = {
+      tableId: meta.tableId,
+      tableName: meta.name,
+      seat: out.seat,
+      chips: out.chips,
+      settlement: out.settlement,
+      pending: out.pending,
+    };
+    return json({ seated: true, ...result });
+  }
+
+  /* ------------------------------------------------- operator seat clearing */
+
+  /**
+   * Clear an abandoned seat. THE route that can take a seat away from somebody who did not ask.
+   *
+   * The operator token was checked by the Worker before this was reached (`operator.ts`); it is the
+   * first of four conditions and, on its own, clears nothing. The three below are about the seat
+   * itself, and together they are what stops this being a kick button: an operator holding the token
+   * still cannot touch a seat whose player is connected, is in a hand, or has done anything at all
+   * recently. Every refusal names which one closed, because "403" tells an operator nothing about
+   * whether to wait, to look again, or to stop.
+   *
+   * Clearing cashes out through {@link standUpSeat} — the same path a voluntary stand-up takes — so
+   * the chips go back to that player's treasury. The house does not keep them and they are not
+   * stranded on a seat nobody can reach.
+   */
+  private async clearSeat(seat: number): Promise<Response> {
+    const state = this.state as TableState;
+    const meta = this.meta as TableMeta;
+    const now = Date.now();
+
+    const occupant = state.seats.find((s) => s.seat === seat);
+    if (!occupant) return refuse('empty', `seat ${seat + 1} is empty — there is nothing to clear`, 404);
+    const playerId = occupant.playerId;
+    const name = this.players[playerId]?.name ?? this.names[playerId] ?? playerId;
+
+    // 2. No live socket. Somebody sitting there with the page open is not an abandoned seat, whatever
+    //    else is true of them, and this is the condition that makes the route impossible to aim at a
+    //    player who is present.
+    if (this.stillConnected(playerId)) {
+      return refuse('connected', `seat ${seat + 1} (${name}) still has a live connection — a connected player is not an abandoned seat`, 409);
+    }
+
+    // 3. Not in a running hand. Their chips are in the pot and other people's money is riding on how
+    //    that pot resolves; the turn clock is already the right answer to a silent seat mid-hand.
+    const hand = state.hand;
+    if (hand && hand.result === undefined && hand.seats.some((h) => h.seat === seat)) {
+      return refuse('in-hand', `seat ${seat + 1} (${name}) is in hand #${hand.handNo}, which is still running — the turn clock owns that seat until the hand ends`, 409);
+    }
+
+    // 4. Idle past the threshold. The one that turns "not connected right now" into "gone".
+    const threshold = seatIdleMs(this.env);
+    const activeAt = this.seatActiveAt(playerId);
+    const idleMs = Math.max(0, now - activeAt);
+    if (idleMs < threshold) {
+      return refuse(
+        'idle',
+        `seat ${seat + 1} (${name}) was active ${Math.round(idleMs / 1000)}s ago; a seat must be silent for ${Math.round(threshold / 1000)}s before it can be cleared`,
+        409,
+      );
+    }
+
+    const out = await this.standUpSeat(seat, playerId, name, seatMap(state), now);
+    const body: SeatCleared = {
+      ok: true,
+      tableId: meta.tableId,
+      seat: out.seat,
+      playerId: out.playerId,
+      name: out.name,
+      chips: out.chips,
+      settlement: out.settlement,
+      pending: out.pending,
+      idleMs,
+    };
+    return json(body);
+  }
+
+  /**
+   * When this seat was last known to be here.
+   *
+   * `lastActiveAt` is the live answer. A seat taken before that field existed has none, and the
+   * fallback is that player's most recent money row at this table — their buy-in, at the latest —
+   * which is a real lower bound on when they were last doing something, not a guess. Failing that,
+   * the table's own creation time, which cannot be later than the seat.
+   */
+  private seatActiveAt(playerId: string): number {
+    const known = this.players[playerId]?.lastActiveAt;
+    if (typeof known === 'number') return known;
+    const row = this.ctx.storage.sql
+      .exec<{ at: number | null }>('SELECT MAX(at) AS at FROM ledger WHERE player_id = ?', playerId)
+      .toArray()[0];
+    if (row && row.at !== null) return row.at;
+    return (this.meta as TableMeta).createdAt;
+  }
+
+  /** Record that this player is here. See {@link SeatRecord.lastActiveAt} for why the write is throttled. */
+  private async touchSeat(playerId: string, now = Date.now()): Promise<void> {
+    const rec = this.players[playerId];
+    if (!rec) return;
+    const last = rec.lastActiveAt ?? 0;
+    rec.lastActiveAt = now;
+    if (now - last < ACTIVITY_WRITE_INTERVAL_MS) return;
+    await this.ctx.storage.put('players', this.players);
+  }
+
+  /** Set (or clear) why a seat is sitting out, and persist it. Null means "no longer sitting out". */
+  private async noteSitOut(playerId: string, reason: SitOutReason | null): Promise<void> {
+    const rec = this.players[playerId];
+    if (!rec) return;
+    if (reason === null) {
+      if (rec.sitOutReason === undefined) return;
+      delete rec.sitOutReason;
+    } else {
+      if (rec.sitOutReason === reason) return;
+      rec.sitOutReason = reason;
+    }
+    await this.ctx.storage.put('players', this.players);
   }
 
   /* ----------------------------------------------------------- agent turn */
@@ -876,6 +1154,7 @@ export class PokerTableDO extends DurableObject<Env> {
           if (s && s.status === 'active' && s.timeouts >= MAX_TIMEOUTS_BEFORE_SIT_OUT) {
             try {
               next = sitOut(next, seat);
+              await this.noteSitOut(s.playerId, 'timeouts');
               extra.push(this.seatStatus(next, seat, s.playerId, this.names[s.playerId] ?? s.playerId));
             } catch (e) {
               console.warn('sit-out after timeouts failed', e);
@@ -1129,13 +1408,19 @@ export class PokerTableDO extends DurableObject<Env> {
       const info: PlayerInfo = { playerId: p.playerId, name: p.name, kind: p.kind };
       if (p.agentName) info.agentName = p.agentName;
       if (p.agentKind) info.agentKind = p.agentKind;
+      // Carried on `welcome` as well as on the event, so the person who reconnects to a seat that was
+      // sat out while they were away is told why by the first message they receive.
+      if (p.sitOutReason) info.sitOutReason = p.sitOutReason;
       out[id] = info;
     }
     return out;
   }
 
   private async putPlayer(record: SeatRecord): Promise<void> {
-    this.players[record.playerId] = record;
+    // Taking a seat is the first thing this player did at this table. Stamped here so a seat is never
+    // idle the instant it is taken — the operator clear route reads this, and a brand-new seat with
+    // no activity stamp would otherwise be judged on a fallback rather than on the truth.
+    this.players[record.playerId] = { ...record, lastActiveAt: record.lastActiveAt ?? Date.now() };
     this.names[record.playerId] = record.name;
     await this.ctx.storage.put({ names: this.names, players: this.players });
   }
@@ -1208,7 +1493,8 @@ export class PokerTableDO extends DurableObject<Env> {
 
   private seatStatus(state: TableState, seat: number, playerId: string, name: string): SeatEvent {
     const s = state.seats.find((x) => x.seat === seat);
-    return { type: 'seat-status', seat, playerId, name, stack: s?.stack, status: s?.status };
+    const reason = s?.status === 'sitting-out' ? this.players[playerId]?.sitOutReason : undefined;
+    return { type: 'seat-status', seat, playerId, name, stack: s?.stack, status: s?.status, ...(reason ? { sitOutReason: reason } : {}) };
   }
 
   /**
@@ -1358,6 +1644,25 @@ export class PokerTableDO extends DurableObject<Env> {
 }
 
 /* ------------------------------------------------------------ module utils */
+
+/** `WebSocket.READY_STATE_OPEN`. Spelled out so the check reads the same in every runtime. */
+const WS_OPEN = 1;
+
+/** What {@link PokerTableDO.standUpSeat} tells its four callers about the seat it just emptied. */
+interface StoodUp {
+  seat: number;
+  playerId: string;
+  name: string;
+  chips: number;
+  settlement: SettlementMode;
+  /** True when a real asset movement is queued and has not landed. Never true on play money. */
+  pending: boolean;
+}
+
+/** A refusal from the operator clear route, naming which of its conditions failed. */
+function refuse(which: SeatClearRefusal, error: string, status: number): Response {
+  return json({ error, refused: which }, status);
+}
 
 /**
  * The ledger kinds that MOVE AN ASSET, and so are the only ones a settlement view can honestly

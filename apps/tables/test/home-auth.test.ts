@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { verifyHomeSession } from '../src/auth.js';
 import type { Env } from '../src/env.js';
 import { cleanProfileName, isAllowedHomeOrigin, shortAddress } from '../src/home.js';
+import { TestClient, createTableViaHttp, engineReady } from './helpers.js';
 
 const HOME = 'http://localhost:3000';
 const KID = 'test-broker-01';
@@ -242,6 +243,48 @@ describe('POST /auth/home', () => {
     });
     expect(after.status).toBe(401);
   });
+
+  /**
+   * The server half of single sign-out, which `/sso-logout` in the web app drives.
+   *
+   * When a person signs out at their Home, the Home navigates them through this card room's
+   * `/sso-logout`, which posts exactly this request. So it has to do BOTH halves in one go: give up
+   * the seat (a Home-initiated sign-out is a deliberate act, not a dropped connection, so the chips
+   * come off the table rather than the seat merely being sat out) and kill the session record so the
+   * bearer token stops resolving. Doing only one of them is the bug — a signed-out person with money
+   * still committed to a seat, or a dead-looking session whose token still works.
+   */
+  it.skipIf(!engineReady)('signing out gives up the seat AND kills the token, in one call', async () => {
+    mockHome(await signIdToken(claimsFor({ nonce: 'sso-nonce' })));
+    const r = await postHome(goodRequest({ nonce: 'sso-nonce' }));
+    expect(r.status).toBe(200);
+    const token = String(r.body.token);
+    const playerId = String(r.body.playerId);
+
+    // In the DEFAULT lobby, which is the set of tables a sign-out sweeps (see the route's comment:
+    // a table in another circle is not reachable from here, and the operator route is its backstop).
+    const table = await createTableViaHttp('single sign-out');
+    const client = await TestClient.connect(table.tableId, token);
+    client.send({ type: 'join', seat: 0, buyIn: 100 });
+    await client.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined');
+
+    const out = await SELF.fetch('http://tables.test/auth/signout', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: '{}',
+    });
+    expect(out.status).toBe(200);
+    const body = (await out.json()) as { stoodUp: Array<{ tableId: string; seat: number; chips: number }> };
+    expect(body.stoodUp).toEqual([expect.objectContaining({ tableId: table.tableId, seat: 0, chips: 100 })]);
+
+    // The seat is empty…
+    const view = (await (await SELF.fetch(`http://tables.test/tables/${table.tableId}`)).json()) as { view: { seats: unknown[] } };
+    expect(view.view.seats).toEqual([]);
+    // …and the session is genuinely revoked, not just forgotten by the browser.
+    expect(await verifyHomeSession(env, token)).toBeNull();
+    void playerId;
+    client.close();
+  }, 30_000);
 
   it('falls back to a truncated address when the Home issued no agent_name', async () => {
     mockHome(await signIdToken(claimsFor({ agent_name: undefined })));

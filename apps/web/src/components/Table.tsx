@@ -6,6 +6,7 @@ import { describeMode, describeRange, dualAmount, tableRate } from '../lib/money
 import { seatLabel, summarizeResult, type FormatContext } from '../lib/format';
 
 import { awardedTo, blindSeats, lastActions, netBySeat, potTotal, shownCards, winningCards, winningSeats } from '../lib/hand';
+import { dealState, sitOutNotice } from '../lib/seating';
 import { useNow, usePrefersReducedMotion } from '../lib/hooks';
 import { ActionBar } from './ActionBar';
 import { Announcer } from './Announcer';
@@ -167,6 +168,11 @@ export function Table({
   const awardTotal = result ? result.awards.reduce((a, w) => a + w.amount, 0) : 0;
   const pots = hand?.pots ?? [];
   const potShown = moment ? awardTotal : potTotal(view);
+  // Whether a hand can start at all, and — if not — the sentence that says why. Derived from the
+  // view rather than asked for: everything the answer needs is already on screen.
+  const deal = dealState(view);
+  const sittingOut = me != null && me.status === 'sitting-out';
+  const myReason = me != null ? state.players[me.playerId]?.sitOutReason : undefined;
   const canSit = session != null && view.viewerSeat == null;
   const waitingOn = inHand && hand?.toAct != null && hand.toAct !== view.viewerSeat ? nameOf(hand.toAct) : null;
 
@@ -206,6 +212,34 @@ export function Table({
     <div className="table-main">
       <Announcer message={announce} />
       <StatusBar view={view} lastHand={ended} />
+
+      {/* Two things the table used to leave unsaid, said before anything else on the felt.
+
+          A table with fewer than two players sitting in cannot deal, and until now it simply went
+          quiet: no hand, no message, and an action bar claiming it was not your turn. That is the
+          state the user walked into and read as the table being broken.
+
+          And a player who has been sat out — by a dropped connection, or by missing two turns — is
+          not being dealt in and has no way to know why. The reason and the button that undoes it
+          belong together, at the top, not as a small control among the others. */}
+      {deal.waiting ? (
+        <div className="table-notice waiting" role="status">
+          <strong>Waiting for another player</strong>
+          <span className="hint">{deal.waiting}</span>
+        </div>
+      ) : null}
+
+      {sittingOut ? (
+        <div className="table-notice sat-out" role="status">
+          <div className="notice-text">
+            <strong>You are sitting out</strong>
+            <span className="hint">{sitOutNotice(myReason)}</span>
+          </div>
+          <button className="primary sit-in" onClick={() => send({ type: 'sit-in' })}>
+            Sit in
+          </button>
+        </div>
+      ) : null}
 
       <div className={`arena${moment ? ' moment' : ''}`}>
         <div className="felt">
@@ -399,11 +433,10 @@ export function Table({
 
       {me ? (
         <div className="controls row">
-          {me.status === 'sitting-out' ? (
-            <button onClick={() => send({ type: 'sit-in' })}>Sit in</button>
-          ) : (
-            <button onClick={() => send({ type: 'sit-out' })}>Sit out</button>
-          )}
+          {/* "Sit in" lives in the notice at the top of the table, next to the reason it is needed,
+              so it is not repeated here — two identical buttons in two places is worse than one in
+              the right place. "Sit out" has no such story to tell and stays with the other controls. */}
+          {me.status === 'sitting-out' ? null : <button onClick={() => send({ type: 'sit-out' })}>Sit out</button>}
           <form
             className="row"
             onSubmit={(e) => {

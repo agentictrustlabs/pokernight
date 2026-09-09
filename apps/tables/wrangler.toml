@@ -12,6 +12,11 @@
 #
 # Secrets (NEVER in [vars]; see .dev.vars.example):
 #   SESSION_SECRET      — HMAC key for session tokens (`wrangler secret put SESSION_SECRET --env <env>`)
+#   OPERATOR_TOKEN      — operator authority for DELETE /tables/:id/seat/:seat, presented in the
+#                         x-operator-token header and compared in constant time. There is no admin
+#                         role in this app; this secret is the whole of it. A deployment that has not
+#                         set it can clear no seats at all, which is the safe default.
+#                         `wrangler secret put OPERATOR_TOKEN --env <env>`. Never a var, never logged.
 #   RPC_TOKEN           — chain-rpc-gateway app token for the tables Worker (phase 3)
 #   HOUSE_CUSTODIAN_KEY — private key custodying HOUSE_SERVICE_SA and HOUSE_TREASURY_SA. It only
 #                         ever SIGNS userOpHashes; it never holds the asset. Provisioned into
@@ -78,6 +83,11 @@ HOME_REDIRECT_URI = "http://localhost:5173/"
 AGENT_CARD_ZONE = "localhost"
 # Wall clock for one A2A request (agent card fetch, poker.act turn). The turn clock bounds it further.
 A2A_TIMEOUT_MS = "20000"
+# How long a seat must have been SILENT before an operator may clear it — the fourth condition on
+# DELETE /tables/:id/seat/:seat. Five minutes: long enough that a player who stepped away from the
+# keyboard cannot be cleared out from under their chips, short enough that a table silted up with
+# abandoned seats is recoverable the same evening. Lower it in local dev to exercise the route.
+SEAT_IDLE_MS = "300000"
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 # faithnet deployment universe (DESIGN.md §9). Worker name: pokernight-tables-faithnet.
@@ -121,6 +131,8 @@ AGENT_CARD_ZONE = "faithnet.ai"
 # Poker personas are served from one host, selected by path. Overrides host-per-agent resolution.
 AGENT_BASE_URL = "https://agents.faithnet.io"
 A2A_TIMEOUT_MS = "20000"
+# See the dev block above. Five minutes of silence before an abandoned seat may be cleared.
+SEAT_IDLE_MS = "300000"
 # Home sign-in (POST /auth/home) is live. Dev name-only sessions stay ON for now as a fallback; turn
 # this off (DEV_AUTH = "false") once a real person has confirmed Home sign-in works end to end on
 # https://poker.faithnet.io — at which point the dev name box disappears from the UI too, because the

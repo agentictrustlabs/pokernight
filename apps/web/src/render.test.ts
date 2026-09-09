@@ -19,7 +19,7 @@ import { SignInPage } from './pages/SignInPage';
 import { mapDemoPersonas } from './lib/demo';
 import { SESSION_ENDED_NOTICE } from './lib/session';
 import { initialState, reduce, type TableState } from './lib/tableSocket';
-import { endOfHandScript, flopView, welcome } from './lib/mockServer';
+import { emptyView, endOfHandScript, event, flopView, seat, welcome } from './lib/mockServer';
 
 const session = { token: 't', playerId: 'p-alice', name: 'Alice' };
 const ctx = { seatName: (n: number) => ['Alice', 'Bob'][n] ?? `Seat ${n + 1}`, viewerSeat: 0 };
@@ -27,6 +27,76 @@ const ctx = { seatName: (n: number) => ['Alice', 'Bob'][n] ?? `Seat ${n + 1}`, v
 function table(state: TableState, over: Record<string, unknown> = {}): string {
   return renderToStaticMarkup(createElement(Table, { state, session, send: () => {}, ...over }));
 }
+
+/**
+ * A table with two seated players who are both sitting out: no hand, none possible, and — before this
+ * — nothing on screen to explain either. This is the state the user walked into.
+ */
+function stalledView(viewerSeat: number | null = 0) {
+  return emptyView(
+    [seat(0, 'p-alice', 194, { status: 'sitting-out' }), seat(1, 'p-bob', 192, { status: 'sitting-out' })],
+    viewerSeat,
+  );
+}
+
+describe('a table that cannot deal', () => {
+  it('says it is waiting for another player, and why, instead of going silent', () => {
+    const html = table(reduce(initialState, welcome(stalledView(0))));
+    expect(html).toContain('Waiting for another player');
+    expect(html).toContain('All 2 players at this table are sitting out, so no hand can start.');
+  });
+
+  /** The misleading message: with no hand running, "Not your turn" is a claim about a hand that
+   *  does not exist. */
+  it('does not claim it is somebody else’s turn when there is no hand at all', () => {
+    const html = table(reduce(initialState, welcome(stalledView(0))));
+    expect(html).toContain('No hand running');
+    expect(html).not.toContain('Not your turn');
+  });
+
+  it('keeps quiet while a hand is actually running', () => {
+    const html = table(reduce(initialState, welcome(flopView(0))));
+    expect(html).not.toContain('Waiting for another player');
+    expect(html).not.toContain('No hand running');
+  });
+});
+
+describe('a player who has been sat out', () => {
+  it('offers "Sit in" prominently, with the reason they are out', () => {
+    // The reason arrives the way it does on a reconnect: on `players`, in the welcome.
+    const w = welcome(stalledView(0));
+    const state = reduce(initialState, {
+      ...w,
+      players: { ...(w as { players: Record<string, unknown> }).players, 'p-alice': { playerId: 'p-alice', name: 'Alice', kind: 'human', sitOutReason: 'disconnected' } },
+    } as typeof w);
+    const html = table(state);
+    expect(html).toContain('You are sitting out');
+    expect(html).toContain('You were sat out when your connection dropped');
+    expect(html).toContain('class="primary sit-in"');
+    // And the old, easily-missed duplicate is gone: one button, next to its reason.
+    expect(html.match(/Sit in/g)?.length).toBe(1);
+  });
+
+  it('picks up the reason from a live seat-status event too', () => {
+    let state = reduce(initialState, welcome(emptyView([seat(0, 'p-alice', 194), seat(1, 'p-bob', 192)], 0)));
+    state = reduce(
+      state,
+      event({ type: 'seat-status', seat: 0, playerId: 'p-alice', name: 'Alice', stack: 194, status: 'sitting-out', sitOutReason: 'timeouts' }, stalledView(0)),
+    );
+    expect(state.players['p-alice']?.sitOutReason).toBe('timeouts');
+    expect(table(state)).toContain('You were sat out after two missed turns');
+  });
+
+  it('drops the reason again once the seat is active', () => {
+    let state = reduce(initialState, welcome(stalledView(0)));
+    state = reduce(
+      state,
+      event({ type: 'seat-status', seat: 0, playerId: 'p-alice', name: 'Alice', stack: 194, status: 'active' }, emptyView([seat(0, 'p-alice', 194), seat(1, 'p-bob', 192)], 0)),
+    );
+    expect(state.players['p-alice']?.sitOutReason).toBeUndefined();
+    expect(table(state)).not.toContain('You are sitting out');
+  });
+});
 
 describe('table render', () => {
   it('draws seats, chips and the board mid-hand', () => {

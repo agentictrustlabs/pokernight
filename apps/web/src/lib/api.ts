@@ -1,4 +1,5 @@
-import type { CreateTableRequest, Session, TableSummary } from '@pokernight/protocol';
+import type { CreateTableRequest, Session, SignOutResult, TableSummary } from '@pokernight/protocol';
+import { SESSION_KEY } from './ssoLogout';
 import type { AppSession } from './types';
 import type { AuthConfig } from './home';
 import type { TableDetail } from './lobby';
@@ -14,8 +15,6 @@ import type {
 
 /** Base URL of the tables API. `/api` is proxied by Vite in dev; baked at build otherwise. */
 export const API_BASE: string = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/+$/, '');
-
-const SESSION_KEY = 'pokernight.session';
 
 export function loadSession(): AppSession | null {
   try {
@@ -126,9 +125,23 @@ export const api = {
   authConfig: () => request<AuthConfig>('/auth/config'),
   homeLogin: (body: HomeAuthBody) => request<HomeSessionResponse>('/auth/home', { method: 'POST', body: JSON.stringify(body) }),
   demoLogin: (body: DemoAuthBody) => request<HomeSessionResponse>('/auth/home/demo', { method: 'POST', body: JSON.stringify(body) }),
-  /** Best effort: drops the server-side session record so the token stops resolving straight away.
-   *  Never reports a 401 upward — we are already on our way out. */
-  signOut: (token: string) => request<{ ok: boolean }>('/auth/signout', { method: 'POST', body: '{}' }, token, false).catch(() => ({ ok: false })),
+  /**
+   * Sign out: give up every seat this person holds, then drop the server-side session record so the
+   * token stops resolving straight away.
+   *
+   * The answer says which seats were stood up and whether the money has actually moved — on a settled
+   * table it has not yet, and the caller must say so rather than implying the USDC is home. A request
+   * that never arrives returns a failure we can describe, not a silent success: we would rather tell
+   * someone their seat may still be sitting there than let them believe it is not.
+   */
+  signOut: (token: string) =>
+    request<SignOutResult>('/auth/signout', { method: 'POST', body: '{}' }, token, false).catch(
+      (): SignOutResult => ({
+        ok: false,
+        stoodUp: [],
+        failed: [{ tableId: 'your table', reason: 'the card room could not be reached' }],
+      }),
+    ),
   /** Finish a `poker-buyin` ceremony the player ran at their Home. The Worker exchanges the code,
    *  checks the mandate against this session's treasury, and stores it — or says what came back. */
   homeMandate: (body: HomeAuthBody, token: string) =>
