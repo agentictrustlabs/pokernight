@@ -56,6 +56,8 @@ export function Roster({
       <h2>
         {view.name} <span className="club-role">{standingLabel(view.you.standing)}</span>
       </h2>
+      <Welcome view={view} session={session} host={host} onChanged={onChanged} />
+      <Calendar clubId={view.clubId} clubName={view.name} session={session} />
       <Charter view={view} config={config} />
       {err ? <div className="form-error">{err}</div> : null}
       <ul className="club-roster">
@@ -173,6 +175,135 @@ function Retire({
           {busy ? 'Closing…' : `Close ${view.name} for good`}
         </button>
       </form>
+    </details>
+  );
+}
+
+/**
+ * WHAT THE HOST WANTS SAID about their club — and it is not decoration.
+ *
+ * This text IS the invitation. The Home's mailer composes the email itself and accepts only an
+ * address, a link and a name, so a host's own words cannot ride in the mail; what the link opens
+ * carries them instead. So the editor says where the words will appear, because a host writing into a
+ * box that does not say what it is for writes nothing.
+ *
+ * A member sees it too — it is what the club is, not a sales pitch aimed only at strangers.
+ */
+function Welcome({ view, session, host, onChanged }: { view: ClubView; session: AppSession; host: boolean; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(view.welcome ?? '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!editing) {
+    if (!view.welcome && !host) return null;
+    return (
+      <div className="club-welcome">
+        {view.welcome ? <p>{view.welcome}</p> : null}
+        {host ? (
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setText(view.welcome ?? '');
+              setEditing(true);
+            }}
+          >
+            {view.welcome ? 'Change what invitations say' : 'Say what this club is'}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="club-welcome editing"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (busy) return;
+        setBusy(true);
+        setErr(null);
+        try {
+          await api.setWelcome(view.clubId, text, session.token);
+          setEditing(false);
+          onChanged();
+        } catch (ex) {
+          setErr(ex instanceof ApiError ? ex.message : 'That could not be saved.');
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <label>
+        What this club is
+        <textarea
+          value={text}
+          maxLength={2000}
+          rows={5}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="We play most Thursdays, cards at eight, and there is always food. Newcomers welcome — half the table learned canasta here."
+        />
+      </label>
+      <p className="hint">
+        This is what an invitation says. Whoever opens the link reads it, above the dates and the games — so tell them
+        what the evening is actually like.
+      </p>
+      {err ? <div className="form-error">{err}</div> : null}
+      <div className="row">
+        <button className="primary" type="submit" disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" className="link-button" onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * The club's nights, in your own calendar.
+ *
+ * A SUBSCRIPTION, not a download. A club's nights change — one gets called off, the schedule moves —
+ * and a handful of events frozen at the moment somebody pressed a button would be wrong within a
+ * month, silently, in the one place they are trusting.
+ *
+ * `webcal:` is what makes a phone offer to subscribe rather than to import once. The https URL is
+ * shown too, because that is the one that works when pasted into a desktop calendar.
+ */
+function Calendar({ clubId, clubName, session }: { clubId: string; clubName: string; session: AppSession }) {
+  const [cal, setCal] = useState<{ url: string; webcal: string } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    // A deployment that cannot publish calendars simply does not show this — better than a button
+    // that leads to a 404 every time.
+    void api
+      .calendarUrl(clubId, session.token)
+      .then((c) => alive && setCal(c))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [clubId, session.token]);
+
+  if (!cal) return null;
+  return (
+    <details className="club-calendar">
+      <summary>Put {clubName}&rsquo;s nights in your calendar</summary>
+      <p className="hint">
+        It keeps up with the club: nights added, moved or called off all follow. Each one links straight to the game.
+      </p>
+      <p>
+        <a className="cta-quiet" href={cal.webcal}>
+          Subscribe
+        </a>
+      </p>
+      <label>
+        Or paste this into a calendar
+        <input className="mono" readOnly value={cal.url} onFocus={(e) => e.currentTarget.select()} aria-label="calendar link" />
+      </label>
     </details>
   );
 }

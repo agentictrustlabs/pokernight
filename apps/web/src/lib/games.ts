@@ -52,3 +52,21 @@ export function gameLabel(game: string | null | undefined): string {
   if (!game) return NAMES[DRAWN_GAME] as string;
   return NAMES[game] ?? game;
 }
+
+/**
+ * WHAT EACH GAME IS, in a sentence, for somebody who has not played it.
+ *
+ * An invitation names a game, and "Canasta" tells a person nothing if they have never played canasta.
+ * One sentence about what happens and one about what it takes is the difference between an invitation
+ * somebody accepts and one they leave in the inbox to think about.
+ */
+const BLURBS: Record<string, string> = {
+  poker: 'Texas Hold’em: two cards each, five shared, and the betting is the game. Two to nine players; a hand takes a few minutes.',
+  canasta:
+    'Canasta: four players in two partnerships, collecting sevens of a kind. Played to 5,000 for score rather than for money — the friendliest way in if you have never played either.',
+};
+
+/** One sentence about a game, or null when this client has nothing honest to say about it. */
+export function gameBlurb(game: string | null | undefined): string | null {
+  return BLURBS[game ?? DRAWN_GAME] ?? null;
+}

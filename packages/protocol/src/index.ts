@@ -117,6 +117,7 @@ export const ClubIdSchema = z.string().regex(/^[0-9a-f-]{36}$/);
 
 export * from './when.js';
 export * from './recurrence.js';
+export * from './ics.js';
 
 /** What someone IS to a club, derived from the club's own records and never asserted by a caller. */
 export const ClubStandingSchema = z.enum(['host', 'member', 'none']);
@@ -153,6 +154,15 @@ export const ClubSummarySchema = z.object({
   createdBy: z.string(),
   /** The `<label>.workspace` Smart Agent, once the charter ceremony has run. */
   agent: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+  /**
+   * WHAT THE HOST WANTS SAID about their club: what it is, which games, how the evening goes.
+   *
+   * It is the invitation's content. The Home's mailer composes the email itself and takes only an
+   * address, a link and a name — so a host's own words cannot ride in the mail, and this is what the
+   * link opens onto instead. That is the better place for it anyway: mail clients strip formatting
+   * and block images, and a page can show the schedule and the next few dates live.
+   */
+  welcome: z.string().max(2000).optional(),
   members: z.number().int(),
 });
 export type ClubSummary = z.infer<typeof ClubSummarySchema>;
@@ -333,12 +343,34 @@ export type ClubInvite = z.infer<typeof ClubInviteSchema>;
  * email is not echoed back — the person reading the page already knows their own address, and a
  * page that prints it would print it for anyone who guessed the token.
  */
+/**
+ * WHAT AN INVITATION SAYS, before anybody has proved who they are.
+ *
+ * The email is a short link — the Home composes the mail itself and takes only an address, a link and
+ * a name — so everything an invitation actually communicates has to be on the page that link opens.
+ * This is that: who invited you, to what, what the host wants said about it, when they meet, and the
+ * next few dates.
+ *
+ * DELIBERATELY LESS THAN THE CLUB'S RECORD. No roster, no member count, no addresses. Somebody
+ * holding an unclaimed link has not joined anything yet, and a link that leaks a group's membership
+ * to whoever it was forwarded to is a link nobody should send.
+ */
 export const InviteGreetingSchema = z.object({
   clubName: z.string(),
   invitedByName: z.string(),
   expiresAt: z.number().int(),
   /** `open` is claimable. The other two say exactly why it is not, so the page can say so. */
   state: z.enum(['open', 'claimed', 'expired']),
+  /** The host's own words about the club. Absent when they have not written any. */
+  welcome: z.string().optional(),
+  /** When they meet, as a rule — enough to say "every other Thursday at eight" and no more. */
+  meets: z
+    .object({ startLocal: z.string(), timezone: z.string(), recurrence: RecurrenceSchema })
+    .optional(),
+  /** The next few dates, so an invitation is about something specific rather than about a group. */
+  nights: z.array(z.object({ startsAt: z.number().int(), timezone: z.string(), title: z.string().optional() })).optional(),
+  /** Which games this club deals, so somebody can tell whether it is for them. */
+  games: z.array(z.string()).optional(),
 });
 export type InviteGreeting = z.infer<typeof InviteGreetingSchema>;
 

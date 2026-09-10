@@ -140,6 +140,17 @@ export function allowedOrigins(env: Env): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Where the SITE is — the thing a person opens, not the API.
+ *
+ * A calendar entry has to carry a link somebody can press from their phone, and a Worker only knows
+ * its own origin. The first allowed origin IS the site (that is what the list is: the browsers this
+ * API answers), so this needs no new configuration to be right on every deployment.
+ */
+export function siteOrigin(env: Env): string {
+  return allowedOrigins(env)[0] ?? 'https://poker.faithnet.io';
+}
+
 export function isDevAuth(env: Env): boolean {
   return env.DEV_AUTH === 'true';
 }

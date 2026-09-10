@@ -133,6 +133,8 @@ type ClubRow = {
   created_by: string;
   created_by_name: string;
   agent: string | null;
+  /** The host's own words. Null on every club made before there was a field for it. */
+  welcome: string | null;
 };
 
 type InviteRow = {
@@ -171,6 +173,14 @@ export class ClubDO extends DurableObject<Env> {
           created_by_name TEXT NOT NULL,
           agent           TEXT
         )`);
+      // WHAT THE HOST WANTS SAID. Added after the fact, so it is an ALTER rather than a column in the
+      // CREATE — every club that already exists has to keep working, and a DO's storage is not
+      // migrated by redeploying.
+      try {
+        ctx.storage.sql.exec('ALTER TABLE club ADD COLUMN welcome TEXT');
+      } catch {
+        /* already there: this runs on every load and the second one is a no-op */
+      }
       ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS members (
           member      TEXT PRIMARY KEY,
@@ -283,6 +293,10 @@ export class ClubDO extends DurableObject<Env> {
     }
 
     /* ----------------------------------------------------------- when it meets */
+
+    if (request.method === 'PUT' && path === '/welcome') {
+      return await this.setWelcome((await request.json()) as { welcome?: string }, club);
+    }
 
     if (request.method === 'PUT' && path === '/schedule') {
       return await this.setSchedule((await request.json()) as SetScheduleBody, club);
@@ -762,11 +776,34 @@ export class ClubDO extends DurableObject<Env> {
     // tokens must learn nothing, including whether a guess was close.
     if (!row) return json({ error: 'that invitation is not one this club sent' }, 404);
     const state: InviteGreeting['state'] = row.claimed_by ? 'claimed' : row.expires_at <= now ? 'expired' : 'open';
+    const schedule = this.scheduleRow();
+    // The next few dates, so the invitation is about a Thursday rather than about a group. Cancelled
+    // and skipped ones are left out: an invitation is not the place to explain a night that is off.
+    const soon = this.ctx.storage.sql
+      .exec<NightRow>("SELECT * FROM nights WHERE starts_at >= ? AND status NOT IN ('cancelled','skipped') ORDER BY starts_at ASC LIMIT 3", now)
+      .toArray();
+    const games = [...new Set(soon.map((n) => n.game).filter((g): g is string => !!g))];
     const greeting: InviteGreeting = {
       clubName: club.name,
       invitedByName: row.invited_by_name,
       expiresAt: row.expires_at,
       state,
+      // WHAT THE HOST WANTS SAID, and when they meet. Everything an invitation communicates lives on
+      // the page the link opens, because the Home composes the mail itself and takes only a link.
+      ...(club.welcome ? { welcome: club.welcome } : {}),
+      ...(schedule
+        ? {
+            meets: {
+              startLocal: schedule.start_local,
+              timezone: schedule.timezone,
+              recurrence: JSON.parse(schedule.recurrence) as ClubSchedule['recurrence'],
+            },
+          }
+        : {}),
+      ...(soon.length > 0
+        ? { nights: soon.map((n) => ({ startsAt: n.starts_at, timezone: n.timezone, ...(n.title ? { title: n.title } : {}) })) }
+        : {}),
+      ...(games.length > 0 ? { games } : {}),
     };
     return json(greeting);
   }
@@ -868,6 +905,13 @@ export class ClubDO extends DurableObject<Env> {
     };
   }
 
+  /** The host's own words about their club, for the invitation and the club's own page. */
+  private async setWelcome(body: { welcome?: string }, club: ClubRow): Promise<Response> {
+    const text = (body.welcome ?? '').trim().slice(0, 2000);
+    this.ctx.storage.sql.exec('UPDATE club SET welcome = ? WHERE club_id = ?', text || null, club.club_id);
+    return json({ welcome: text || undefined });
+  }
+
   private summary(club: ClubRow): ClubSummary {
     const members = this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM members').toArray()[0]?.n ?? 0;
     return {
@@ -876,6 +920,7 @@ export class ClubDO extends DurableObject<Env> {
       createdAt: club.created_at,
       createdBy: club.created_by,
       ...(club.agent ? { agent: club.agent } : {}),
+      ...(club.welcome ? { welcome: club.welcome } : {}),
       members,
     };
   }

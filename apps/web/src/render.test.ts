@@ -20,6 +20,7 @@ import { TablesPage } from './pages/TablesPage';
 import { ClubPage } from './pages/ClubPage';
 import { NewClubPage } from './pages/NewClubPage';
 import { Nights } from './components/Nights';
+import { JoinPage } from './pages/JoinPage';
 import { Landing } from './pages/Landing';
 import { SignInPage } from './pages/SignInPage';
 import { mapDemoPersonas } from './lib/demo';
@@ -675,6 +676,17 @@ describe('a club page for a club you are not in', () => {
       createElement(ClubPage, { clubId: 'c1', session, config: null, money: 'SHQ', onChanged: () => {} } as never),
     );
     expect(html).toContain('Reading the club');
+  });
+});
+
+describe('an invitation, to somebody who has never heard of the club', () => {
+  const auth0 = { config: null, configError: null, busy: false, error: null, signInWithHome: () => {}, dismissError: () => {}, personas: [], demoBusy: null, demoError: null, connectAsDemo: () => {}, notice: null } as never;
+  const page = (greeting: unknown): string =>
+    renderToStaticMarkup(createElement(JoinPage, { clubId: 'c1', token: 't', session: null, auth: auth0, onLogin: () => {} } as never));
+
+  it('renders before the greeting has arrived, without claiming anything', () => {
+    // The first frame a person sees after pressing a link in their mail.
+    expect(page(null)).toContain('Reading the invitation');
   });
 });
 

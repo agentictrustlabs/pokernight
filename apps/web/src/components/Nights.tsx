@@ -3,6 +3,7 @@ import type { AppSession, ClubSchedule, Night } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { nextNight, nightWhen, scheduleLine, type Recurrence } from '../lib/nights';
 import { WEEKDAY_LABELS, WEEKDAY_ORDER } from '../lib/nightsForm';
+import { BOARDS, DRAWN_GAME, gameBlurb, gameLabel } from '../lib/games';
 
 /**
  * WHEN THIS CLUB MEETS, on the club's page.
@@ -113,6 +114,7 @@ function NextNight({ night, now }: { night: Night; now: number }) {
       <p className="next-when">
         <strong>{night.title ?? 'Next night'}</strong> — {w.day} at {w.time}
         <span className="tag">{w.phrase}</span>
+        {night.game ? <span className="tag">{gameLabel(night.game)}</span> : null}
       </p>
       {/* The reader's own clock, only when it says something different. */}
       {w.alsoYours ? <p className="hint">Where you are, that is {w.alsoYours}.</p> : null}
@@ -186,6 +188,14 @@ function ScheduleForm({
   const [time, setTime] = useState(current?.startLocal ?? '20:00');
   const [interval, setInterval] = useState<1 | 2>(current?.recurrence.kind === 'weekly' && current.recurrence.interval === 2 ? 2 : 1);
   const [zone, setZone] = useState(current?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC');
+  /**
+   * WHICH GAME these nights deal.
+   *
+   * It was not asked, so nights carried no game, and an invitation could not say what was played —
+   * which is the one thing somebody who has never been needs in order to decide. A club is not a
+   * poker club: it can run either, and the answer belongs to the schedule rather than to the club.
+   */
+  const [game, setGame] = useState<string>(current?.defaults.game ?? DRAWN_GAME);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -206,7 +216,7 @@ function ScheduleForm({
               startLocal: time,
               timezone: zone,
               recurrence: { kind: 'weekly', weekdays: days as never, ...(interval === 2 ? { interval: 2 as const } : {}) },
-              defaults: {},
+              defaults: { game },
             },
             session.token,
           );
@@ -241,6 +251,17 @@ function ScheduleForm({
           </select>
         </label>
       </div>
+      <label>
+        What you play
+        <select value={game} onChange={(e) => setGame(e.target.value)}>
+          {BOARDS.map((g) => (
+            <option key={g} value={g}>
+              {gameLabel(g)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="hint">{gameBlurb(game)}</p>
       <label>
         Time zone
         <input type="text" value={zone} onChange={(e) => setZone(e.target.value)} />

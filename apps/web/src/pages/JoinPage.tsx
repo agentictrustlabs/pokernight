@@ -3,7 +3,11 @@ import type { AppSession, InviteGreeting } from '../lib/types';
 import type { AuthState } from '../App';
 import { ApiError, api } from '../lib/api';
 import { PRODUCT_NAME } from '../lib/brand';
-import { clubHash, rememberReturn } from '../lib/routes';
+import { nightWhen, scheduleLine } from '../lib/nights';
+import { gameBlurb, gameLabel } from '../lib/games';
+import { MONEY_HASH, clubHash, rememberReturn } from '../lib/routes';
+import { stakeStage } from '../lib/stake';
+import type { TreasuryView } from '../lib/treasury';
 import { SignInPage } from './SignInPage';
 
 /**
@@ -112,9 +116,12 @@ export function JoinPage({
           {greeting.invitedByName} put you on the roster. {greeting.clubName}&rsquo;s tables are private to its members,
           and they are on its page.
         </p>
+        {/* THE THREE THINGS A NEW MEMBER NEEDS, in the order they need them: the nights in their own
+            calendar, money to play with, and the club itself. Each is one press, here, rather than
+            something to go and find. */}
+        {session ? <Landed clubId={clubId} clubName={greeting.clubName} session={session} /> : null}
         {/* THE CLUB, not the front door. An invitation that lands somebody at a lobby which does not
-            mention the club they were invited to has made them go and find it — and before clubs were
-            a route there was nowhere to send them. */}
+            mention the club they were invited to has made them go and find it. */}
         <a className="small" href={clubHash(clubId)}>
           Go to {greeting.clubName} →
         </a>
@@ -124,10 +131,10 @@ export function JoinPage({
 
   return (
     <Frame title={`${greeting.invitedByName} invited you to ${greeting.clubName}`}>
-      <p>
-        {greeting.clubName} is a club at {PRODUCT_NAME}: a group who play together, at tables only its members can see.
-        Sign in with your Home and you are on the roster.
-      </p>
+      {/* WHAT THE INVITATION ACTUALLY SAYS lives here, not in the email. The Home composes the mail
+          itself and takes only an address, a link and a name — and this is the better place for it
+          anyway: mail clients strip formatting and block images, and this can show the real dates. */}
+      <Pitch greeting={greeting} />
       {err ? <div className="form-error">{err}</div> : null}
       {session ? (
         <p className="hint">{claiming ? 'Joining…' : 'One moment…'}</p>
@@ -140,6 +147,105 @@ export function JoinPage({
         </>
       )}
     </Frame>
+  );
+}
+
+/**
+ * WHAT A NEW MEMBER GETS, the moment they are on the roster.
+ *
+ * "Once they are in the system, send them a calendar invite that shows up in their calendar with a
+ * link that takes them right into the game" — and the onboarding sets up their money.
+ *
+ * Both are offered HERE rather than left to be discovered, because this is the one moment somebody
+ * is definitely looking. The calendar is a SUBSCRIPTION rather than a download: a club's nights
+ * change, and eight events frozen at the moment of joining would be wrong within a month.
+ */
+function Landed({ clubId, clubName, session }: { clubId: string; clubName: string; session: AppSession }) {
+  const [cal, setCal] = useState<{ url: string; webcal: string } | null>(null);
+  const [stake, setStake] = useState<TreasuryView | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    // Neither of these is allowed to fail the join. A calendar that cannot be published and money
+    // that cannot be read are both reasons to show less, never reasons to undo a membership.
+    void api.calendarUrl(clubId, session.token).then((c) => alive && setCal(c)).catch(() => undefined);
+    void api.getTreasury(session.token).then((t) => alive && setStake(t)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [clubId, session.token]);
+
+  const ready = stakeStage(stake) === 'ready';
+  return (
+    <div className="join-landed">
+      {cal ? (
+        <p>
+          <a className="cta-quiet" href={cal.webcal}>
+            Put {clubName}&rsquo;s nights in your calendar
+          </a>
+          <span className="hint"> — it keeps up with the club, and each night links straight to the game.</span>
+        </p>
+      ) : null}
+      {stake && !ready ? (
+        <p>
+          <a className="cta-quiet" href={MONEY_HASH}>
+            Set up your money
+          </a>
+          <span className="hint"> — an account of your own, and something to play with. It takes a few seconds.</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The club, as somebody who has never heard of it needs it: what the host says it is, when they meet,
+ * the next few actual dates, and what is dealt.
+ *
+ * IN THE READER'S OWN TIME as well as the club's, whenever those differ. A Denver night at eight is
+ * two in the morning in London, the next day — and somebody deciding whether to accept an invitation
+ * is exactly the person who has not yet learned where the club is.
+ */
+function Pitch({ greeting }: { greeting: InviteGreeting }) {
+  const now = Date.now();
+  return (
+    <>
+      {greeting.welcome ? <p className="join-welcome">{greeting.welcome}</p> : null}
+      <p>
+        {greeting.clubName} is a club at {PRODUCT_NAME}: a group who play together, at tables only its members can see.
+      </p>
+
+      {greeting.meets ? <p className="join-meets">{scheduleLine(greeting.meets as never)}</p> : null}
+
+      {greeting.nights && greeting.nights.length > 0 ? (
+        <ul className="join-nights">
+          {greeting.nights.map((n) => {
+            const w = nightWhen(n, now);
+            return (
+              <li key={n.startsAt}>
+                <strong>{w.day}</strong> at {w.time}
+                {w.alsoYours ? <span className="hint"> — {w.alsoYours} where you are</span> : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      {greeting.games && greeting.games.length > 0 ? (
+        <ul className="join-games">
+          {greeting.games.map((g) => (
+            <li key={g}>{gameBlurb(g) ?? gameLabel(g)}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {/* WHAT HAPPENS NEXT, said before they press anything. Signing in is the whole of joining, and
+          the money is set up for them — a newcomer should not have to wonder what a treasury is. */}
+      <p className="hint">
+        Sign in with your Home and you are on the roster. There is no account to create: we set you up
+        with an account of your own and money to play with, and the club’s nights go into your calendar.
+      </p>
+    </>
   );
 }
 

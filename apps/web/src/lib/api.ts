@@ -322,6 +322,13 @@ export const api = {
     request<ClubSummary>(`/clubs/${encodeURIComponent(clubId)}/charter`, { method: 'POST', body: JSON.stringify(body) }, token),
   removeMember: (clubId: string, member: string, token: string) =>
     request<{ removed: string }>(`/clubs/${encodeURIComponent(clubId)}/members/${encodeURIComponent(member)}`, { method: 'DELETE' }, token),
+  /** The host's own words about their club. It is what an invitation actually says. */
+  setWelcome: (clubId: string, welcome: string, token: string) =>
+    request<{ welcome?: string }>(`/clubs/${encodeURIComponent(clubId)}/welcome`, { method: 'PUT', body: JSON.stringify({ welcome }) }, token),
+  /** This person's own subscription URL for the club's nights. `webcal:` is the one a phone wants. */
+  calendarUrl: (clubId: string, token: string) =>
+    request<{ url: string; webcal: string }>(`/clubs/${encodeURIComponent(clubId)}/calendar`, {}, token),
+
   /* ------------------------------------------------- when the club meets */
 
   /** The rule, or null. A member may read it; only a host may set it. */

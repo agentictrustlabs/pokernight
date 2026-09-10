@@ -55,13 +55,15 @@ import {
   type SeatStandUpFailure,
   type SeatStoodUp,
   SetScheduleRequestSchema,
+  icsCalendar,
   type ClubStanding,
+  type Night,
   type SignOutResult,
   type TableSummary,
 } from '@pokernight/protocol';
 import { agentKindFromCard, fetchAgentCard, hasActSkill, resolveAgentBase } from './a2a.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
-import { a2aTimeoutMs, allowedOrigins, isDevAuth, type Env } from './env.js';
+import { a2aTimeoutMs, allowedOrigins, isDevAuth, siteOrigin, type Env } from './env.js';
 import { OPERATOR_HEADER, checkOperator } from './operator.js';
 import {
   BUY_IN_TEMPLATE,
@@ -96,6 +98,7 @@ import { CLUB_ID_RE, belongs, clubStub, memberIdOf, resolveInvitee, standingAt }
 import { mailInvite } from './invite-mail.js';
 import { gameFor } from './games.js';
 import { ensurePracticeTable } from './practice.js';
+import { feedPlayer, feedToken } from './feed-token.js';
 import type { AddMemberRequest, ClaimInviteRequest, CreateInviteRequest, InitClubRequest } from './club-do.js';
 
 export { PokerTableDO } from './table-do.js';
@@ -570,6 +573,115 @@ app.get('/clubs/:clubId', async (c) => {
   if (!CLUB_ID_RE.test(clubId)) return c.json({ error: 'no such club' }, 404);
   const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(session.playerId)}`);
   return passthrough(res);
+});
+
+/**
+ * WHAT THE HOST WANTS SAID about their club.
+ *
+ * This is the invitation's content. The Home's mailer composes the email itself and takes only an
+ * address, a link and a name — so a host's own words cannot ride in the mail, and this is what the
+ * link opens onto instead. Which is the better place for it: mail clients strip formatting and block
+ * images, and a page can show the schedule and the next few dates as they actually are.
+ */
+app.put('/clubs/:clubId/welcome', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const body = (await c.req.json().catch(() => null)) as { welcome?: unknown } | null;
+  if (typeof body?.welcome !== 'string') return c.json({ error: 'welcome must be text' }, 400);
+  return passthrough(
+    await clubStub(c.env, gate.clubId).fetch('https://club/welcome', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ welcome: body.welcome }),
+    }),
+  );
+});
+
+/**
+ * THE CLUB'S NIGHTS, AS A CALENDAR SUBSCRIPTION.
+ *
+ * "A recurring calendar invite that shows up in their calendar with a link that takes them right into
+ * the game." A calendar client fetches this every half hour from a phone with no session and no way
+ * to be prompted for anything, so the URL carries the authority — see `feed-token.ts` for what that
+ * token is and is not.
+ *
+ * MEMBERSHIP IS STILL CHECKED, every fetch. The token says who is asking; the club says whether they
+ * still belong. So a feed stops answering when somebody leaves, with nothing to revoke and nothing to
+ * remember to clean up.
+ *
+ * Discrete events rather than one RRULE, and why, is in `packages/protocol/src/ics.ts`.
+ */
+app.get('/clubs/:clubId/calendar/:token', async (c) => {
+  const clubId = c.req.param('clubId') ?? '';
+  // `.ics` on the end is what makes a phone open this with a calendar rather than a text viewer.
+  const token = (c.req.param('token') ?? '').replace(/\.ics$/, '');
+  const player = await feedPlayer(c.env, clubId, token);
+  if (!player) return c.json({ error: 'no such calendar' }, 404);
+  const answer = await standingAt(c.env, clubId, player);
+  if (!answer || !belongs(answer.standing)) return c.json({ error: 'no such calendar' }, 404);
+
+  const sum = await clubStub(c.env, clubId).fetch('https://club/summary');
+  if (!sum.ok) return c.json({ error: 'no such calendar' }, 404);
+  const club = (await sum.json()) as { name: string; welcome?: string };
+  const got = await clubStub(c.env, clubId).fetch('https://club/nights?limit=50');
+  const nights = got.ok ? ((await got.json()) as { nights: Night[] }).nights : [];
+
+  const site = siteOrigin(c.env);
+  // THE LINK THAT OPENS THE GAME. The club's page: it is where that night's table appears when it is
+  // opened, and it is a link that is true today rather than one pointing at a table id that does not
+  // exist yet.
+  const url = `${site}/#/clubs/${encodeURIComponent(clubId)}`;
+  const body = icsCalendar({
+    name: club.name,
+    ...(club.welcome ? { description: club.welcome } : {}),
+    domain: new URL(site).hostname,
+    nights: nights.map((n) => ({
+      nightId: n.nightId,
+      startsAt: n.startsAt,
+      // A phone's calendar shows the SUMMARY and often nothing else, so the game goes in it. "Thursday
+      // Night" and "Thursday Night — Canasta" are the difference between a reminder and a decision.
+      title: n.game ? `${n.title ?? club.name} — ${gameName(n.game)}` : (n.title ?? club.name),
+      description: `${club.name} at ${site.replace(/^https?:\/\//, '')}\n\n${club.welcome ?? ''}`.trim(),
+      url,
+      ...(n.status ? { status: n.status } : {}),
+    })),
+  });
+  return new Response(body, {
+    headers: {
+      'content-type': 'text/calendar; charset=utf-8',
+      'content-disposition': `inline; filename="${club.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'club'}.ics"`,
+      // Never cached by anything in between: a night called off has to reach a subscriber.
+      'cache-control': 'no-store',
+    },
+  });
+});
+
+/** What a game is called, for a calendar entry. The client has the full list; this needs the names. */
+function gameName(game: string): string {
+  return game === 'canasta' ? 'Canasta' : game === 'poker' ? "Texas Hold'em" : game;
+}
+
+/** The subscription URL for the caller's own feed of this club. A member's, not a host's, to have. */
+app.get('/clubs/:clubId/calendar', async (c) => {
+  const gate = await clubMember(c);
+  if ('refused' in gate) return gate.refused;
+  let token: string;
+  try {
+    token = await feedToken(c.env, gate.clubId, gate.session.playerId);
+  } catch {
+    // A deployment with no signing secret has no feeds, and says so rather than handing out a URL
+    // that will 404 forever.
+    return c.json({ error: 'this card room cannot publish calendars' }, 503);
+  }
+  // This Worker's own origin, because that is what a calendar client will fetch.
+  const api = new URL(c.req.url).origin;
+  const url = `${api}/clubs/${encodeURIComponent(gate.clubId)}/calendar/${token}.ics`;
+  return c.json({
+    url,
+    // `webcal:` is what makes a phone offer to SUBSCRIBE rather than to import once — the difference
+    // between a calendar that keeps up with the club and eight events frozen at the moment of download.
+    webcal: url.replace(/^https?:/, 'webcal:'),
+  });
 });
 
 /**

@@ -3122,6 +3122,69 @@ a.button.primary:hover {
   font-weight: 600;
 }
 
+/* WHAT THE HOST SAYS the club is — the invitation's own words, so it reads as prose rather than as a
+   field. Set off from the roster below it because it is about the club, not about who is in it. */
+.club-welcome {
+  display: grid;
+  gap: 0.4rem;
+}
+.club-welcome > p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.club-welcome.editing textarea {
+  width: 100%;
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+.club-welcome .link-button {
+  justify-self: start;
+}
+
+.club-calendar > summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.club-calendar input {
+  width: 100%;
+}
+
+/* THE INVITATION as somebody who has never heard of the club reads it. */
+.join-welcome {
+  white-space: pre-wrap;
+  border-left: 3px solid var(--felt);
+  padding-left: 0.8rem;
+}
+.join-meets {
+  font-weight: 600;
+}
+.join-nights,
+.join-games {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+.join-games {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+.join-landed {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.8rem 0;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.join-landed p {
+  margin: 0;
+}
+
 /* CLOSING A CLUB. Folded, quiet, and last — a destructive act should never be the thing a hand lands
    on, and it should not be shouting from the page either. It reads as danger only once it is open. */
 .club-retire {
