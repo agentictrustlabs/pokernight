@@ -38,6 +38,7 @@ import {
   type BuyInMandateTerms,
 } from '@pokernight/treasury';
 import { patchSessionRecord, readSessionRecord, setSessionTreasury, type SessionClaims } from './auth.js';
+import { chosenNotice, pickTreasury } from './treasury-pick.js';
 import type { Env } from './env.js';
 import {
   HomeApiError,
@@ -543,19 +544,80 @@ export async function getTreasury(c: Ctx, session: SessionClaims): Promise<Respo
     base.mandate = mandateView(c.env, promoted.mandate, promoted.treasury, promoted.treasury, now);
   }
 
+  // ALL AT ONCE. This was a `for … await`, so a person with five treasuries paid five sequential
+  // round trips to the chain before their money screen said anything — fourteen seconds, measured.
+  // The reads do not depend on each other, and one failing must not lose the others, so each keeps
+  // its own error exactly as it did before.
   const client = readOnlyTreasury(c.env);
-  for (const candidate of base.candidates) {
-    try {
-      const balance = await client.readBalance(candidate.address as Address);
-      candidate.balance = balance.toString();
-      candidate.balanceText = formatAmount(balance);
-      if (candidate.address === chosen) {
-        base.balance = candidate.balance;
-        base.balanceText = candidate.balanceText;
-        base.chosenName = candidate.name || base.chosenName;
+  await Promise.all(
+    base.candidates.map(async (candidate) => {
+      try {
+        const balance = await client.readBalance(candidate.address as Address);
+        candidate.balance = balance.toString();
+        candidate.balanceText = formatAmount(balance);
+      } catch (e) {
+        candidate.error = `could not read the balance of ${candidate.address}: ${e instanceof Error ? e.message : String(e)}`;
       }
-    } catch (e) {
-      candidate.error = `could not read the balance of ${candidate.address}: ${e instanceof Error ? e.message : String(e)}`;
+    }),
+  );
+
+  /**
+   * CHOOSE ONE, IF THEY HAVE NOT.
+   *
+   * Their Home lists treasuries they already own; the card room used to show them as candidates,
+   * leave `chosen` null, and then tell them they had no stake — offering to CREATE one. So somebody
+   * arriving with a funded treasury was made a second, empty account, and then a third. That is not a
+   * hypothetical: it is how a demo person ended up with five, one holding all the money and none of
+   * them selected.
+   *
+   * Safe, because nothing is ever spent without a buy-in mandate the person signs at their own Home,
+   * where they are shown the account and the amounts. This only decides which account that
+   * authorisation will be about — and the alternative was never "nothing is touched", it was "a new
+   * account is created", which is the more surprising of the two by a distance.
+   */
+  if (!chosen) {
+    /**
+     * A MANDATE ALREADY SIGNED WINS. Choosing a treasury clears the buy-in authority, because an
+     * authority names the one account it may be redeemed against — so picking "the one with the most
+     * money" over an account the person has already authorised would throw away a signature they made
+     * at their Home and send them back to make it again. If a stored mandate names a treasury that is
+     * still theirs, that is the choice.
+     */
+    const signed = typeof record?.mandateTreasury === 'string' ? record.mandateTreasury.toLowerCase() : null;
+    const held = signed ? base.candidates.find((t) => t.address === signed) : undefined;
+    const pick = held ?? pickTreasury(base.candidates);
+    if (pick) {
+      chosen = pick.address.toLowerCase();
+      base.chosen = chosen;
+      base.chosenName = pick.name || null;
+      base.notice = chosenNotice(pick, money);
+
+      /**
+       * PERSIST THE CHOICE WITHOUT DESTROYING THE AUTHORITY.
+       *
+       * `setSessionTreasury` clears the buy-in mandate, and it is right to: CHANGING treasury moves
+       * the account an authority may be redeemed against, so the old signature stops applying. But
+       * this is not a change. There was no choice before, so there is nothing to invalidate — and
+       * calling it here wiped the mandate the person had signed at their Home seconds earlier, so the
+       * screen went straight back to "authorise buy-ins" and the ceremony could never complete.
+       *
+       * So: adopting the treasury a signed mandate already names writes only the choice. Picking a
+       * DIFFERENT account still clears the mandate, because then the authority genuinely does name
+       * money this session is no longer spending from.
+       */
+      if (signed && chosen === signed) {
+        await patchSessionRecord(c.env, session.playerId, { treasury: chosen, treasuryName: pick.name || '' });
+      } else {
+        await setSessionTreasury(c.env, session.playerId, chosen, pick.name || '');
+      }
+    }
+  }
+
+  for (const candidate of base.candidates) {
+    if (candidate.address === chosen) {
+      base.balance = candidate.balance;
+      base.balanceText = candidate.balanceText;
+      base.chosenName = candidate.name || base.chosenName;
     }
   }
 

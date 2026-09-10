@@ -19,6 +19,7 @@ import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
 import { PRODUCT_NAME } from './lib/brand';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
+import { NewBuild } from './components/NewBuild';
 import { Identity } from './components/Identity';
 import { JoinPage } from './pages/JoinPage';
 import { TableRoute } from './pages/TableRoute';
@@ -61,6 +62,15 @@ export function App() {
   const [personas, setPersonas] = useState<DemoPersona[]>([]);
   const [demoBusy, setDemoBusy] = useState<string | null>(null);
   const [demoError, setDemoError] = useState<string | null>(null);
+  /**
+   * Bumped whenever something OUTSIDE the money screen changes the money.
+   *
+   * The buy-in authorisation is a ceremony at the person's own Home: they leave, sign, and come back
+   * to a page whose treasury was read before they went. It said "one thing left: authorise buy-ins"
+   * to somebody who had just authorised buy-ins, until they happened to reload — so the ceremony
+   * looked like it had failed every single time it succeeded.
+   */
+  const [moneyStamp, setMoneyStamp] = useState(0);
 
   // The 401 handler needs the CURRENT session without re-registering on every change.
   const sessionRef = useRef(session);
@@ -197,6 +207,8 @@ export function App() {
       )
       .then(() => {
         setNotice('Buy-ins are authorised — you can take a seat.');
+        // Tell the room to read the money again; it last read it before this person left for their Home.
+        setMoneyStamp((n) => n + 1);
         // Back to the table they were sitting at when they left, not to the front door.
         const back = takeReturn();
         if (back) goTo(back);
@@ -366,6 +378,7 @@ export function App() {
   return (
     <div className="app">
       <CardDefs />
+      <NewBuild />
       <div className="topbar">
         <a className="brand" href="#/">
           {PRODUCT_NAME}
@@ -386,7 +399,7 @@ export function App() {
         <Landing auth={auth} onLogin={login} session={session} />
       ) : (
         <div className="page">
-          {r.page === 'signin' || !session ? <SignInPage auth={auth} onLogin={login} /> : <Room r={r} session={session} auth={auth} onLogin={login} />}
+          {r.page === 'signin' || !session ? <SignInPage auth={auth} onLogin={login} /> : <Room r={r} session={session} auth={auth} onLogin={login} moneyStamp={moneyStamp} />}
         </div>
       )}
     </div>

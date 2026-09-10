@@ -30,12 +30,25 @@ const POLL_MS = 5000;
  * about money is the one thing not allowed. The club list is read here too, because the rail draws it on
  * every page.
  */
-export function Room({ r, session, auth, onLogin }: { r: Route; session: AppSession | null; auth: AuthState; onLogin: (s: AppSession) => void }) {
+export function Room({
+  r,
+  session,
+  auth,
+  onLogin,
+  moneyStamp = 0,
+}: {
+  r: Route;
+  session: AppSession | null;
+  auth: AuthState;
+  onLogin: (s: AppSession) => void;
+  /** Changes when a ceremony elsewhere moved this person's money. See `App.tsx`. */
+  moneyStamp?: number;
+}) {
   if (!session) return <SignInPage auth={auth} onLogin={onLogin} />;
-  return <SignedIn r={r} session={session} auth={auth} />;
+  return <SignedIn r={r} session={session} auth={auth} moneyStamp={moneyStamp} />;
 }
 
-function SignedIn({ r, session, auth }: { r: Route; session: AppSession; auth: AuthState }) {
+function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSession; auth: AuthState; moneyStamp: number }) {
   const [treasury, setTreasury] = useState<TreasuryView | null>(null);
   const [clubs, setClubs] = useState<ClubListing[] | null>(null);
   const [tables, setTables] = useState<TableSummary[] | null>(null);
@@ -59,7 +72,10 @@ function SignedIn({ r, session, auth }: { r: Route; session: AppSession; auth: A
   }, [session.token]);
   useEffect(() => {
     void loadTreasury();
-  }, [loadTreasury]);
+    // `moneyStamp` is the buy-in authorisation coming back from the person's Home. Without it the
+    // room keeps the answer it read BEFORE they left to sign, and tells somebody who has just
+    // authorised buy-ins that they still need to.
+  }, [loadTreasury, moneyStamp]);
 
   const loadClubs = useCallback(async () => {
     try {
