@@ -19,6 +19,7 @@ import { PlayPage } from './pages/PlayPage';
 import { TablesPage } from './pages/TablesPage';
 import { ClubPage } from './pages/ClubPage';
 import { NewClubPage } from './pages/NewClubPage';
+import { Nights } from './components/Nights';
 import { Landing } from './pages/Landing';
 import { SignInPage } from './pages/SignInPage';
 import { mapDemoPersonas } from './lib/demo';
@@ -674,6 +675,27 @@ describe('a club page for a club you are not in', () => {
       createElement(ClubPage, { clubId: 'c1', session, config: null, money: 'SHQ', onChanged: () => {} } as never),
     );
     expect(html).toContain('Reading the club');
+  });
+});
+
+describe('a club’s nights', () => {
+  const session = { token: 't', playerId: 'dev:barb', name: 'Barb' } as never;
+
+  it('says it is reading rather than claiming there are none', () => {
+    const html = renderToStaticMarkup(createElement(Nights, { clubId: 'c1', session, host: false } as never));
+    expect(html).toContain('Reading');
+    expect(html).not.toContain('No nights are scheduled');
+  });
+
+  it('leads with Nights, which is what a member came to find out', () => {
+    const html = renderToStaticMarkup(createElement(Nights, { clubId: 'c1', session, host: false } as never));
+    expect(html).toContain('<h2>Nights</h2>');
+  });
+
+  it('offers a host the control and a member nothing to press', () => {
+    // Offering somebody a button they will be refused at is worse than saying nothing.
+    expect(renderToStaticMarkup(createElement(Nights, { clubId: 'c1', session, host: true } as never))).toContain('Set when it meets');
+    expect(renderToStaticMarkup(createElement(Nights, { clubId: 'c1', session, host: false } as never))).not.toContain('Set when it meets');
   });
 });
 

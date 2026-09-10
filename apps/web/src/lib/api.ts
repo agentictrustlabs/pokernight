@@ -1,9 +1,12 @@
 import type {
   ClubInvite,
   ClubMember,
+  ClubSchedule,
   ClubSummary,
   ClubView,
   CreateTableRequest,
+  Night,
+  SetScheduleRequest as SetSchedule,
   InviteGreeting,
   KnownPerson,
   Session,
@@ -107,7 +110,22 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string, 
   const headers: Record<string, string> = { accept: 'application/json' };
   if (init.body) headers['content-type'] = 'application/json';
   if (token) headers.authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...headers, ...(init.headers as Record<string, string>) } });
+  /**
+   * A request that never ARRIVED is a different thing from one the card room refused, and it used to
+   * be indistinguishable: `fetch` rejects with a bare `TypeError` for a blocked preflight, a dropped
+   * connection or a DNS failure, that is not an `ApiError`, and every caller's `instanceof ApiError`
+   * check fell through to its own generic sentence. A CORS method missing from the allow-list read on
+   * screen as "that could not be saved", which is true and says nothing anybody can act on.
+   *
+   * Status 0 says exactly that: it never got there. Nothing treats it as a refusal, and the message
+   * names the possibilities rather than inventing one.
+   */
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...headers, ...(init.headers as Record<string, string>) } });
+  } catch {
+    throw new ApiError(0, `Could not reach the card room — it may be offline, or this request was blocked before it left the browser (${init.method ?? 'GET'} ${path})`);
+  }
   const text = await res.text();
   let body: unknown = null;
   try {
@@ -304,6 +322,32 @@ export const api = {
     request<ClubSummary>(`/clubs/${encodeURIComponent(clubId)}/charter`, { method: 'POST', body: JSON.stringify(body) }, token),
   removeMember: (clubId: string, member: string, token: string) =>
     request<{ removed: string }>(`/clubs/${encodeURIComponent(clubId)}/members/${encodeURIComponent(member)}`, { method: 'DELETE' }, token),
+  /* ------------------------------------------------- when the club meets */
+
+  /** The rule, or null. A member may read it; only a host may set it. */
+  getSchedule: (clubId: string, token: string) =>
+    request<{ schedule: ClubSchedule | null }>(`/clubs/${encodeURIComponent(clubId)}/schedule`, {}, token),
+  /** Set or replace it. Comes back with the nights it materialised, so the screen needs no second read. */
+  setSchedule: (clubId: string, body: SetSchedule, token: string) =>
+    request<{ schedule: ClubSchedule; nights: Night[] }>(
+      `/clubs/${encodeURIComponent(clubId)}/schedule`,
+      { method: 'PUT', body: JSON.stringify(body) },
+      token,
+    ),
+  /** Stop meeting on a rule. The nights it already made are left alone — people were told about those. */
+  clearSchedule: (clubId: string, token: string) =>
+    request<{ retired: true }>(`/clubs/${encodeURIComponent(clubId)}/schedule`, { method: 'DELETE' }, token),
+  /** The next few, materialised ahead so an invitation always has a night to be about. */
+  getNights: (clubId: string, token: string, limit = 8) =>
+    request<{ nights: Night[] }>(`/clubs/${encodeURIComponent(clubId)}/nights?limit=${limit}`, {}, token),
+  /** `skip` takes just this one out of the series; without it the night is called off. */
+  cancelNight: (clubId: string, nightId: string, body: { reason?: string; skip?: boolean }, token: string) =>
+    request<{ night: Night }>(
+      `/clubs/${encodeURIComponent(clubId)}/nights/${encodeURIComponent(nightId)}/cancel`,
+      { method: 'POST', body: JSON.stringify(body) },
+      token,
+    ),
+
   /**
    * Close a club for good. Its host only, and only when nobody is sitting at one of its tables.
    *

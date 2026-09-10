@@ -4,7 +4,6 @@ import { ApiError, api } from '../lib/api';
 import { CHARTER_BLURB, canInvite, charterState, checkMember, confirmsRetire, memberAction, retireConsequences, standingLabel } from '../lib/clubs';
 import { startClubCharter, type AuthConfig } from '../lib/home';
 import { shortAddress } from '../lib/format';
-import { TABLES_HASH } from '../lib/routes';
 import { retiredLine } from '../lib/clubs';
 
 /**
@@ -29,6 +28,7 @@ export function Roster({
   config,
   tables,
   onChanged,
+  onRetired,
 }: {
   view: ClubView;
   session: AppSession;
@@ -36,6 +36,8 @@ export function Roster({
   /** How many tables this club has open, so closing it can say how many it closes. */
   tables: number;
   onChanged: () => void;
+  /** What to do when this club has been closed — the page says so, because this panel is going. */
+  onRetired: (line: string) => void;
 }) {
   const host = canInvite(view.you.standing);
   /**
@@ -96,7 +98,7 @@ export function Roster({
             : `Open a table for ${view.name} below. Its members find it on this page, and you can send them the table's link.`}
         </p>
       ) : null}
-      {host ? <Retire view={view} session={session} tables={tables} onChanged={onChanged} /> : null}
+      {host ? <Retire view={view} session={session} tables={tables} onRetired={onRetired} /> : null}
     </section>
   );
 }
@@ -119,33 +121,17 @@ function Retire({
   view,
   session,
   tables,
-  onChanged,
+  onRetired,
 }: {
   view: ClubView;
   session: AppSession;
   tables: number;
-  onChanged: () => void;
+  /** Hand the outcome up: this component is about to stop existing. */
+  onRetired: (line: string) => void;
 }) {
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  /** What the card room did, once it has done it. */
-  const [done, setDone] = useState<string | null>(null);
-
-  // AFTERWARDS, SAID HERE. The obvious alternative was to navigate away carrying the sentence in the
-  // URL, which puts prose in the address bar and in the back button. This page cannot re-read the club
-  // — it answers 404 now, correctly — so it stops being a club page and becomes the receipt.
-  if (done) {
-    return (
-      <div className="club-retire done">
-        <p>{done}</p>
-        <a className="small" href={TABLES_HASH}>
-          See what is running →
-        </a>
-      </div>
-    );
-  }
-
   const sure = confirmsRetire(typed, view.name);
 
   return (
@@ -165,9 +151,12 @@ function Retire({
           setErr(null);
           try {
             const result = await api.retireClub(view.clubId, session.token);
-            setDone(retiredLine(result));
-            // The rail is holding a club that is gone; it has to be told before somebody presses it.
-            onChanged();
+            // THE RECEIPT IS THE PAGE'S, NOT THIS COMPONENT'S. It lived here first, and it never
+            // appeared: the page re-reads the club the moment anything changes, the club now answers
+            // 404 — correctly — and the whole roster including this receipt was replaced by "not a
+            // club you are in". Which is true, and is a terrible thing to say to somebody who has just
+            // deliberately closed their own club.
+            onRetired(retiredLine(result));
           } catch (ex) {
             // The one refusal a host will actually meet: somebody is still sitting at a table. The
             // card room names them, so this prints its sentence rather than inventing a shorter one.

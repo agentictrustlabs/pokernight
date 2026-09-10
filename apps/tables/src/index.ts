@@ -54,6 +54,8 @@ import {
   type KnownPerson,
   type SeatStandUpFailure,
   type SeatStoodUp,
+  SetScheduleRequestSchema,
+  type ClubStanding,
   type SignOutResult,
   type TableSummary,
 } from '@pokernight/protocol';
@@ -105,7 +107,12 @@ const app = new Hono<{ Bindings: Env }>();
 
 const corsMiddleware = cors({
   origin: (origin, c) => (allowedOrigins(c.env as Env).includes(origin) ? origin : null),
-  allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  // PUT is here because replacing a club's schedule IS a PUT — one resource, replaced whole, and
+  // idempotent, which POST is not. It was missing, so the browser's preflight refused the request
+  // before it left, the route was never reached, and the failure arrived as a bare TypeError with no
+  // status on it. Nothing in the test suite could have caught that: `SELF.fetch` in the Workers pool
+  // calls the Worker directly and never preflights anything.
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['content-type', 'authorization', OPERATOR_HEADER],
   maxAge: 600,
 });
@@ -486,6 +493,38 @@ async function clubGate(c: Context<{ Bindings: Env }>, clubId: string | undefine
   return !answer || !belongs(answer.standing) ? c.json({ error: 'no such table' }, 404) : null;
 }
 
+/**
+ * The two gates every club route needs, said once.
+ *
+ * `clubMember` is "may you see this club at all"; `clubHost` is "may you change it". Both resolve the
+ * session, DERIVE standing from the club's own roster, and refuse in the two different ways the whole
+ * design turns on:
+ *
+ *   NO STANDING → 404, identical to a club that does not exist, because confirming that a club is
+ *   real is confirming a fact about other people's private arrangements.
+ *   MEMBER, where a host is needed → 403 BY NAME. They can already see the club, so telling them who
+ *   may do this leaks nothing, and "only a host can" is a sentence somebody can act on.
+ */
+type ClubGate = { refused: Response } | { clubId: string; session: { playerId: string; name?: string }; standing: ClubStanding };
+
+async function clubMember(c: Context<{ Bindings: Env }>): Promise<ClubGate> {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return { refused: c.json({ error: 'unauthenticated' }, 401) };
+  const clubId = c.req.param('clubId') ?? '';
+  const answer = await standingAt(c.env, clubId, session.playerId);
+  if (!answer || !belongs(answer.standing)) return { refused: c.json({ error: 'no such club' }, 404) };
+  return { clubId, session, standing: answer.standing };
+}
+
+async function clubHost(c: Context<{ Bindings: Env }>): Promise<ClubGate> {
+  const gate = await clubMember(c);
+  if ('refused' in gate) return gate;
+  if (gate.standing !== 'host') {
+    return { refused: c.json({ error: `only a host of this club can do that — you are on its roster, not running it` }, 403) };
+  }
+  return gate;
+}
+
 /* ------------------------------------------------------------------ clubs */
 
 /**
@@ -531,6 +570,78 @@ app.get('/clubs/:clubId', async (c) => {
   if (!CLUB_ID_RE.test(clubId)) return c.json({ error: 'no such club' }, 404);
   const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(session.playerId)}`);
   return passthrough(res);
+});
+
+/**
+ * WHEN THIS CLUB MEETS, and the nights that come of it.
+ *
+ * READING is a member's right and SETTING is a host's — the same split as every other club route, and
+ * the same 404 for anybody with no standing, because a club they are not in must stay
+ * indistinguishable from one that does not exist.
+ *
+ * The schedule is a RULE and stores a wall clock; a night is one OCCURRENCE and stores an instant
+ * resolved once, at materialisation, and never resolved again (`packages/protocol/src/when.ts`).
+ * Nights are materialised AHEAD, because an invitation cannot be sent to an occurrence that does not
+ * exist and "who is coming on the 12th" cannot be asked of a formula.
+ *
+ * Everything the materialiser cannot honour is refused by NAME at this boundary rather than stored:
+ * a schedule accepted and silently misread produces nights at the wrong time for months, and nobody
+ * looks at the schedule again because it was accepted.
+ */
+app.get('/clubs/:clubId/schedule', async (c) => {
+  const gate = await clubMember(c);
+  if ('refused' in gate) return gate.refused;
+  return passthrough(await clubStub(c.env, gate.clubId).fetch('https://club/schedule'));
+});
+
+app.put('/clubs/:clubId/schedule', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const parsed = SetScheduleRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  return passthrough(
+    await clubStub(c.env, gate.clubId).fetch('https://club/schedule', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...parsed.data, createdBy: gate.session.playerId }),
+    }),
+  );
+});
+
+/**
+ * Stop meeting on a rule.
+ *
+ * The nights it already made are LEFT ALONE. People were told about those; withdrawing a recurrence
+ * is not the same as calling off a Thursday, and deleting somebody's night because the host edited a
+ * rule is exactly the behaviour that makes people stop trusting a calendar.
+ */
+app.delete('/clubs/:clubId/schedule', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  return passthrough(await clubStub(c.env, gate.clubId).fetch('https://club/schedule', { method: 'DELETE' }));
+});
+
+app.get('/clubs/:clubId/nights', async (c) => {
+  const gate = await clubMember(c);
+  if ('refused' in gate) return gate.refused;
+  const q = new URLSearchParams();
+  if (c.req.query('from')) q.set('from', c.req.query('from') as string);
+  if (c.req.query('limit')) q.set('limit', c.req.query('limit') as string);
+  return passthrough(await clubStub(c.env, gate.clubId).fetch(`https://club/nights?${q.toString()}`));
+});
+
+/** Call one off (`cancelled`), or take just this one out of the series (`skip: true` → `skipped`). */
+app.post('/clubs/:clubId/nights/:nightId/cancel', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const body = (await c.req.json().catch(() => ({}))) as { reason?: string; skip?: boolean };
+  return passthrough(
+    await clubStub(c.env, gate.clubId).fetch(`https://club/nights/${encodeURIComponent(c.req.param('nightId') ?? '')}/cancel`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: body.reason, skip: body.skip === true }),
+    }),
+  );
 });
 
 /**

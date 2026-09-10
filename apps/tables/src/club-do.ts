@@ -31,7 +31,8 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
-import type { ClubInvite, ClubMember, ClubStanding, ClubSummary, ClubView, InviteGreeting, MembershipClass } from '@pokernight/protocol';
+import type { ClubInvite, ClubMember, ClubSchedule, ClubStanding, ClubSummary, ClubView, InviteGreeting, MembershipClass, Night } from '@pokernight/protocol';
+import { occurrencesFrom, schedulingProblem } from '@pokernight/protocol';
 import type { Env } from './env.js';
 
 export interface InitClubRequest {
@@ -84,6 +85,46 @@ export interface StandingAnswer {
   standing: ClubStanding;
   because: string;
 }
+
+type ScheduleRow = {
+  schedule_id: string;
+  start_local: string;
+  timezone: string;
+  recurrence: string;
+  defaults: string;
+  active_from: number;
+  active_until: number | null;
+  created_by: string;
+  created_at: number;
+  status: string;
+};
+
+type NightRow = {
+  night_id: string;
+  schedule_id: string | null;
+  local_date: string;
+  starts_at: number;
+  start_local: string;
+  timezone: string;
+  status: string;
+  title: string | null;
+  seat_cap: number | null;
+  game: string | null;
+  created_at: number;
+  cancelled_at: number | null;
+  reason: string | null;
+};
+
+/** What the Worker hands down when a host sets the schedule. Validated HERE, not taken on trust. */
+type SetScheduleBody = {
+  startLocal?: string;
+  timezone?: string;
+  recurrence: ClubSchedule['recurrence'];
+  defaults?: ClubSchedule['defaults'];
+  activeFrom?: number;
+  activeUntil?: number;
+  createdBy?: string;
+};
 
 type ClubRow = {
   club_id: string;
@@ -153,6 +194,43 @@ export class ClubDO extends DurableObject<Env> {
           claimed_by      TEXT,
           claimed_at      INTEGER
         )`);
+      // WHEN THIS CLUB MEETS. At most one active schedule for now — `docs/WORKSPACES.md` §7.1 allows
+      // several and nothing here forbids it, but a club with two rules and no screen to tell them
+      // apart is a club whose nights nobody can explain.
+      ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS schedules (
+          schedule_id  TEXT PRIMARY KEY,
+          start_local  TEXT NOT NULL,
+          timezone     TEXT NOT NULL,
+          recurrence   TEXT NOT NULL,
+          defaults     TEXT NOT NULL,
+          active_from  INTEGER NOT NULL,
+          active_until INTEGER,
+          created_by   TEXT NOT NULL,
+          created_at   INTEGER NOT NULL,
+          status       TEXT NOT NULL
+        )`);
+      // EACH OCCASION, materialised ahead rather than computed on demand. `(schedule_id, local_date)`
+      // is the idempotency key that lets a daily alarm just run the materialiser: `INSERT OR IGNORE`
+      // on it creates nothing the second time.
+      ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS nights (
+          night_id     TEXT PRIMARY KEY,
+          schedule_id  TEXT,
+          local_date   TEXT NOT NULL,
+          starts_at    INTEGER NOT NULL,
+          start_local  TEXT NOT NULL,
+          timezone     TEXT NOT NULL,
+          status       TEXT NOT NULL,
+          title        TEXT,
+          seat_cap     INTEGER,
+          game         TEXT,
+          created_at   INTEGER NOT NULL,
+          cancelled_at INTEGER,
+          reason       TEXT
+        )`);
+      ctx.storage.sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS nights_key ON nights (schedule_id, local_date)`);
+      ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS nights_when ON nights (starts_at)`);
     });
   }
 
@@ -202,6 +280,37 @@ export class ClubDO extends DurableObject<Env> {
     // table of its is still holding anybody.
     if (request.method === 'POST' && path === '/retire') {
       return await this.retire(club);
+    }
+
+    /* ----------------------------------------------------------- when it meets */
+
+    if (request.method === 'PUT' && path === '/schedule') {
+      return await this.setSchedule((await request.json()) as SetScheduleBody, club);
+    }
+
+    if (request.method === 'GET' && path === '/schedule') {
+      const row = this.scheduleRow();
+      return json({ schedule: row ? this.toSchedule(row, club) : null });
+    }
+
+    if (request.method === 'DELETE' && path === '/schedule') {
+      this.ctx.storage.sql.exec("UPDATE schedules SET status = 'retired'");
+      // The nights it already made are LEFT ALONE. People answered them; a rule being withdrawn is
+      // not the same as a night being called off, and silently deleting somebody's Thursday because
+      // the host edited a recurrence is the behaviour that makes people stop trusting a calendar.
+      return json({ retired: true });
+    }
+
+    if (request.method === 'GET' && path === '/nights') {
+      const from = Number(url.searchParams.get('from') ?? Date.now());
+      const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 8)));
+      await this.materialise(club);
+      return json({ nights: this.nights(from, limit, club) });
+    }
+
+    if (request.method === 'POST' && path.startsWith('/nights/') && path.endsWith('/cancel')) {
+      const nightId = decodeURIComponent(path.slice('/nights/'.length, -'/cancel'.length));
+      return this.cancelNight(nightId, (await request.json().catch(() => ({}))) as { reason?: string; skip?: boolean }, club);
     }
 
     /* ------------------------------------------------------------- invitations */
@@ -428,6 +537,186 @@ export class ClubDO extends DurableObject<Env> {
     });
   }
 
+
+  /* ------------------------------------------------------- when the club meets */
+
+  private scheduleRow(): ScheduleRow | undefined {
+    return this.ctx.storage.sql.exec<ScheduleRow>("SELECT * FROM schedules WHERE status = 'active' LIMIT 1").toArray()[0];
+  }
+
+  private toSchedule(row: ScheduleRow, club: ClubRow): ClubSchedule {
+    return {
+      scheduleId: row.schedule_id,
+      club: club.club_id,
+      startLocal: row.start_local,
+      timezone: row.timezone,
+      recurrence: JSON.parse(row.recurrence) as ClubSchedule['recurrence'],
+      defaults: JSON.parse(row.defaults) as ClubSchedule['defaults'],
+      activeFrom: row.active_from,
+      ...(row.active_until === null ? {} : { activeUntil: row.active_until }),
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+      status: row.status as ClubSchedule['status'],
+    };
+  }
+
+  /**
+   * Set — or replace — when this club meets.
+   *
+   * ONE ACTIVE SCHEDULE. Replacing retires the old one rather than deleting it, and LEAVES ITS NIGHTS
+   * ALONE. A night somebody has already answered is theirs as much as the host's; a recurrence being
+   * edited is not a reason for their Thursday to quietly disappear (`docs/WORKSPACES.md` §7.1). What
+   * changes is what gets materialised from here on.
+   *
+   * Refused BY NAME on anything the materialiser cannot honour, because a schedule accepted and
+   * silently misread produces nights at the wrong time for months and nobody looks at it again.
+   */
+  private async setSchedule(body: SetScheduleBody, club: ClubRow): Promise<Response> {
+    const now = Date.now();
+    const wanted = {
+      startLocal: (body.startLocal ?? '').trim(),
+      timezone: (body.timezone ?? '').trim(),
+      recurrence: body.recurrence,
+      activeFrom: body.activeFrom ?? now,
+      ...(body.activeUntil === undefined ? {} : { activeUntil: body.activeUntil }),
+    };
+    const problem = schedulingProblem(wanted);
+    if (problem) return json({ error: problem }, 400);
+
+    this.ctx.storage.sql.exec("UPDATE schedules SET status = 'retired' WHERE status = 'active'");
+    const scheduleId = crypto.randomUUID();
+    this.ctx.storage.sql.exec(
+      'INSERT INTO schedules (schedule_id, start_local, timezone, recurrence, defaults, active_from, active_until, created_by, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      scheduleId,
+      wanted.startLocal,
+      wanted.timezone,
+      JSON.stringify(wanted.recurrence),
+      JSON.stringify(body.defaults ?? {}),
+      wanted.activeFrom,
+      wanted.activeUntil ?? null,
+      body.createdBy ?? club.created_by,
+      now,
+      'active',
+    );
+    await this.materialise(club);
+    const row = this.scheduleRow() as ScheduleRow;
+    return json({ schedule: this.toSchedule(row, club), nights: this.nights(Date.now(), HORIZON_NIGHTS, club) }, 200);
+  }
+
+  /**
+   * Top the horizon back up, and schedule the next top-up.
+   *
+   * IDEMPOTENT, by `(schedule_id, local_date)` — `INSERT OR IGNORE` on that unique index means running
+   * this twice creates nothing, which is exactly what lets both a daily alarm and every read of the
+   * nights list call it without coordinating.
+   *
+   * A night that already exists is never rewritten, even if the schedule has changed underneath it.
+   * That is the same rule as the pinned instant: a materialised night is a durable thing people have
+   * been told about, not a cache of the rule.
+   */
+  private async materialise(club: ClubRow): Promise<void> {
+    const row = this.scheduleRow();
+    if (!row) return;
+    const schedule = this.toSchedule(row, club);
+    const now = Date.now();
+    let made = 0;
+    for (const o of occurrencesFrom(schedule, now, HORIZON_NIGHTS)) {
+      const defaults = schedule.defaults;
+      const before = this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM nights').toArray()[0]?.n ?? 0;
+      this.ctx.storage.sql.exec(
+        'INSERT OR IGNORE INTO nights (night_id, schedule_id, local_date, starts_at, start_local, timezone, status, title, seat_cap, game, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        crypto.randomUUID(),
+        schedule.scheduleId,
+        o.localDate,
+        o.startsAt,
+        schedule.startLocal,
+        schedule.timezone,
+        'scheduled',
+        defaults.title ?? null,
+        defaults.seatCap ?? null,
+        defaults.game ?? null,
+        now,
+      );
+      const after = this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM nights').toArray()[0]?.n ?? 0;
+      if (after > before) made++;
+    }
+    // The alarm is the daily top-up. Set it whenever there is a schedule, and never past it: an alarm
+    // that is only set when something was made stops for good the first time nothing was.
+    const existing = await this.ctx.storage.getAlarm();
+    if (existing === null || existing > now + MATERIALISE_EVERY_MS) {
+      await this.ctx.storage.setAlarm(now + MATERIALISE_EVERY_MS);
+    }
+    void made;
+  }
+
+  /**
+   * The daily top-up.
+   *
+   * This is the first alarm `ClubDO` has ever had. The pattern is `PokerTableDO`'s: do the work,
+   * then set the next one — never rely on the one that just fired to have chained anything.
+   */
+  override async alarm(): Promise<void> {
+    const club = this.club();
+    if (!club) return;
+    await this.materialise(club);
+    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + MATERIALISE_EVERY_MS);
+  }
+
+  private nights(from: number, limit: number, club: ClubRow): Night[] {
+    return this.ctx.storage.sql
+      .exec<NightRow>('SELECT * FROM nights WHERE starts_at >= ? ORDER BY starts_at ASC LIMIT ?', from, limit)
+      .toArray()
+      .map((r) => this.toNight(r, club));
+  }
+
+  private toNight(r: NightRow, club: ClubRow): Night {
+    return {
+      nightId: r.night_id,
+      club: club.club_id,
+      ...(r.schedule_id === null ? {} : { scheduleId: r.schedule_id }),
+      startsAt: r.starts_at,
+      startLocal: r.start_local,
+      timezone: r.timezone,
+      localDate: r.local_date,
+      status: r.status as Night['status'],
+      ...(r.title === null ? {} : { title: r.title }),
+      ...(r.seat_cap === null ? {} : { seatCap: r.seat_cap }),
+      ...(r.game === null ? {} : { game: r.game }),
+      createdAt: r.created_at,
+      ...(r.cancelled_at === null ? {} : { cancelledAt: r.cancelled_at }),
+      ...(r.reason === null ? {} : { reason: r.reason }),
+    };
+  }
+
+  /**
+   * Call one off, or take just this one out of the series.
+   *
+   * TWO WORDS FOR TWO DIFFERENT THINGS. `skipped` is the schedule generated this one and the host
+   * removed it; `cancelled` is the host called it off. Both stop the night happening and only one of
+   * them is a thing that happened TO the people who were coming — which matters the moment there is
+   * anybody to tell.
+   *
+   * The row STAYS, marked. Deleting it would let the materialiser put it straight back, since the
+   * whole point of `(schedule_id, local_date)` is that the date is the identity.
+   */
+  private cancelNight(nightId: string, body: { reason?: string; skip?: boolean }, club: ClubRow): Response {
+    const row = this.ctx.storage.sql.exec<NightRow>('SELECT * FROM nights WHERE night_id = ?', nightId).toArray()[0];
+    if (!row) return json({ error: 'no such night' }, 404);
+    if (row.status === 'finished' || row.status === 'playing') {
+      return json({ error: 'that night has already been played' }, 409);
+    }
+    const status = body.skip === true ? 'skipped' : 'cancelled';
+    this.ctx.storage.sql.exec(
+      'UPDATE nights SET status = ?, cancelled_at = ?, reason = ? WHERE night_id = ?',
+      status,
+      Date.now(),
+      (body.reason ?? '').trim() || null,
+      nightId,
+    );
+    const after = this.ctx.storage.sql.exec<NightRow>('SELECT * FROM nights WHERE night_id = ?', nightId).toArray()[0] as NightRow;
+    return json({ night: this.toNight(after, club) });
+  }
+
   /* --------------------------------------------------------------- invitations */
 
   /**
@@ -599,6 +888,21 @@ export class ClubDO extends DurableObject<Env> {
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
+
+
+/* --------------------------------------------------------- when the club meets */
+
+/**
+ * How many occurrences are kept materialised ahead of now.
+ *
+ * Eight, because that is a couple of months of a weekly game — far enough ahead that an invitation
+ * always has a night to be about, and short enough that a schedule edit does not have to rewrite a
+ * year of rows.
+ */
+const HORIZON_NIGHTS = 8;
+
+/** How often the alarm tops the horizon back up. */
+const MATERIALISE_EVERY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * ClubIndexDO — one instance per PLAYER. "Which clubs am I in?"

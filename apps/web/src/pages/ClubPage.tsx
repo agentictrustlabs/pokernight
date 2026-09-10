@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AppSession, ClubView, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { Roster } from '../components/ClubDetail';
+import { Nights } from '../components/Nights';
 import { CreateTable, TableList } from './TablesPage';
 import { canOpenTable, noTablesLine } from '../lib/clubs';
 import { HOME_HASH, TABLES_HASH } from '../lib/routes';
@@ -47,6 +48,14 @@ export function ClubPage({
 }) {
   const [view, setView] = useState<ClubView | null>(null);
   const [missing, setMissing] = useState(false);
+  /**
+   * What happened, when this person has just closed this club.
+   *
+   * It is checked BEFORE `missing`, and that order is the whole point: closing a club makes it answer
+   * 404 to everybody including the host who closed it, so the honest-but-useless "this is not a club
+   * you are in" is exactly what a successful close would otherwise show.
+   */
+  const [retired, setRetired] = useState<string | null>(null);
   const [tables, setTables] = useState<TableSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -85,6 +94,18 @@ export function ClubPage({
       clearInterval(h);
     };
   }, [session.token, clubId]);
+
+  if (retired) {
+    return (
+      <section className="panel">
+        <h2>Closed</h2>
+        <p>{retired}</p>
+        <a className="small" href={TABLES_HASH}>
+          See what is running →
+        </a>
+      </section>
+    );
+  }
 
   if (missing) {
     return (
@@ -131,6 +152,9 @@ export function ClubPage({
           )
         }
       />
+      {/* WHEN, before WHO. A member arriving at a club wants to know if there is a game and when it is;
+          the roster is the thing they cannot act on. */}
+      <Nights clubId={clubId} session={session} host={host} />
       <Roster
         view={view}
         session={session}
@@ -138,6 +162,13 @@ export function ClubPage({
         // How many of its tables closing it would close. Null (not read yet) counts as none rather than
         // as a guess: a sentence saying "its 3 tables close" has to be true when it is shown.
         tables={tables?.length ?? 0}
+        onRetired={(line) => {
+          setRetired(line);
+          // AND TELL THE RAIL. Moving the receipt up here dropped this, and the club stayed in the
+          // navigation after it was closed — a row that 404s the moment anybody presses it, which is
+          // the exact failure the awaited index write was added to prevent.
+          onChanged();
+        }}
         onChanged={() => {
           void loadView();
           onChanged();

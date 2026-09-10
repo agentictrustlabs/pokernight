@@ -3039,6 +3039,89 @@ a.button.primary:hover {
    The club PICKER that used to live here is gone: picking a club is navigating to it
    now, and the rail (`.sidenav-*`) draws that list. */
 
+/* WHEN THE CLUB MEETS. The next night reads as a sentence; the rest are a quiet list under it. */
+.nights {
+  display: grid;
+  gap: 0.7rem;
+}
+.nights > h2 {
+  margin: 0;
+}
+.next-night {
+  border-left: 3px solid var(--felt);
+  padding-left: 0.7rem;
+}
+.next-when {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.next-night .hint {
+  margin: 0.2rem 0 0;
+}
+.night-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+.night {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+/* A night that is not happening stays on the list — its absence is information — but reads as spent. */
+.night.off .night-when {
+  text-decoration: line-through;
+  color: var(--ink-soft);
+}
+.night-rule {
+  margin: 0;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--rule);
+}
+
+.schedule-form {
+  display: grid;
+  gap: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+.schedule-form .days {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.schedule-form .days legend {
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+.schedule-form .day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.schedule-form .day.on {
+  background: var(--felt-soft);
+  border-color: var(--felt);
+  color: var(--felt-deep);
+  font-weight: 600;
+}
+
 /* CLOSING A CLUB. Folded, quiet, and last — a destructive act should never be the thing a hand lands
    on, and it should not be shouting from the page either. It reads as danger only once it is open. */
 .club-retire {

@@ -148,6 +148,51 @@ const hashOf = (page) => `#${(page.url().split('#')[1] ?? '')}`;
     await page.waitForTimeout(1000);
     check('#/clubs is not a directory', await page.locator('.play-card').count(), (n) => n >= 2);
 
+    // WHEN THE CLUB MEETS. A host sets a rule, the nights materialise at once, and the page leads
+    // with the next one rather than with the roster.
+    step('setting when the club meets');
+    // Back to the club: the checks above deliberately wandered off it (a club you are not in, then
+    // #/clubs) and the page is on Play by now.
+    await page.goto(`${SITE}${clubHash}`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('.nights', { timeout: 30_000 });
+    check('the club page has a Nights section, above the roster', await page.locator('.nights').count(), 1);
+    // The roster's heading is the club's name plus its standing, which is upper-cased by CSS and
+    // comes back that way from innerText — so this match is case-insensitive. It was not, `findIndex`
+    // returned -1, and "1 < -1" failed against a page that was in the right order all along.
+    const order = (await page.locator('.room-main .panel h2').allInnerTexts()).map(tidy);
+    check('and it comes before the roster', order, (h) => h.indexOf('Nights') < h.findIndex((x) => /host|member/i.test(x)));
+
+    await page.locator('.nights button', { hasText: /Set when it meets/ }).click();
+    await page.waitForSelector('.schedule-form', { timeout: 10_000 });
+    // Thursday is already selected when the form opens, so clicking it would turn it OFF and leave
+    // the form with no days and a dead Save button. Assert the default instead, and add a second day.
+    check('the form opens with a day already chosen', await page.locator('.schedule-form .day.on').count(), 1);
+    await page.locator('.schedule-form .day', { hasText: 'Tue' }).click();
+    check('and picking another keeps both', await page.locator('.schedule-form .day.on').count(), 2);
+    await page.locator('.schedule-form .day', { hasText: 'Tue' }).click();
+    await page.locator('.schedule-form input[type=time]').fill('20:00');
+    await page.locator('.schedule-form button[type=submit]').click();
+    await page.waitForSelector('.next-night', { timeout: 30_000 });
+
+    const nextWhen = tidy(await page.locator('.next-when').innerText());
+    check('a next night appears, with a day and a time', nextWhen, (t) => /Thursday/.test(t) && /\d:\d\d/.test(t));
+    check('and the rest of the horizon is listed', await page.locator('.night-list .night').count(), (n) => n >= 5);
+    check('the rule is stated in words', tidy(await page.locator('.night-rule').innerText()), (t) => /Every Thursday at 20:00/.test(t));
+
+    // MATERIALISED, NOT COMPUTED. A refresh must show the same nights — a generator would produce a
+    // fresh set and nothing could ever be invited to one of them.
+    const before = (await page.locator('.night .night-when').allInnerTexts()).map(tidy);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('.next-night', { timeout: 30_000 });
+    check('the same nights survive a refresh', (await page.locator('.night .night-when').allInnerTexts()).map(tidy), (a) =>
+      JSON.stringify(a) === JSON.stringify(before),
+    );
+
+    // Calling one off keeps it on the list, struck through: its absence is information.
+    await page.locator('.night button', { hasText: 'Call it off' }).first().click();
+    await page.waitForTimeout(2000);
+    check('a night called off stays listed, marked', await page.locator('.night.off').count(), (n) => n >= 1);
+
     step(`closing "${clubName}" again`);
     await page.goto(`${SITE}${clubHash}`, { waitUntil: 'networkidle' });
     await page.waitForSelector('.club-retire summary', { timeout: 30_000 });
@@ -162,8 +207,11 @@ const hashOf = (page) => `#${(page.url().split('#')[1] ?? '')}`;
     await page.locator('.club-retire input').fill(clubName);
     check('and lives for the right one', await page.locator('.club-retire button[type=submit]').isDisabled(), false);
     await page.locator('.club-retire button[type=submit]').click();
-    await page.waitForSelector('.club-retire.done', { timeout: 30_000 });
-    check('it says what it did', tidy(await page.locator('.club-retire.done p').innerText()), (t) => t.includes(clubName) && /closed/i.test(t));
+    // The receipt is the PAGE's, not the panel's: closing the club makes it 404 to everybody, so the
+    // panel that held the button is gone by the time there is anything to say.
+    await page.waitForSelector('.room-main h2', { timeout: 30_000 });
+    await page.waitForFunction(() => /Closed/.test(document.querySelector('.room-main h2')?.textContent ?? ''), { timeout: 30_000 });
+    check('it says what it did', tidy(await page.locator('.room-main p').first().innerText()), (t) => t.includes(clubName) && /closed/i.test(t));
 
     await page.goto(`${SITE}/#/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(1500);
