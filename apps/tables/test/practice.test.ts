@@ -11,7 +11,7 @@
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import type { TableSummary } from '@pokernight/protocol';
-import { TestClient, devSession, engineReady, sleep } from './helpers.js';
+import { TestClient, devSession, engineReady, sleep, until } from './helpers.js';
 
 async function practice(token?: string, game = 'canasta'): Promise<Response> {
   return SELF.fetch('http://tables.test/practice', {
@@ -110,20 +110,28 @@ describe('dealing again', () => {
       await c.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined');
       clients.push(c);
     }
-    await sleep(1500);
-    const playing = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
-      view: { roundNo: number; seats: unknown[] };
-    };
+    // Wait for the ROUND, not for a second and a half. This was `sleep(1500)`, which is long enough
+    // on a quiet machine and not long enough under a full suite — so it failed only when everything
+    // ran together and passed every time it was run alone, which reads as flakiness and is not.
+    const playing = await until(
+      'the round to deal',
+      async () =>
+        (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as { view: { roundNo: number; seats: unknown[] } },
+      (v) => v.view.roundNo > 0,
+    );
     expect(playing.view.seats).toHaveLength(4);
-    expect(playing.view.roundNo).toBeGreaterThan(0);
 
     const res = await reset(tableId, token);
     expect(res.status).toBe(200);
-    await sleep(500);
 
-    const after = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
-      view: { roundNo: number; scores: Record<string, number>; seats: unknown[] };
-    };
+    const after = await until(
+      'the reset to land',
+      async () =>
+        (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
+          view: { roundNo: number; scores: Record<string, number>; seats: unknown[] };
+        },
+      (v) => v.view.scores[0] === 0 && v.view.scores[1] === 0,
+    );
     // SEATS KEPT, SCORES GONE. That is the whole difference between this and opening a new table,
     // and it is what makes a practice table a place rather than a thing you keep making.
     expect(after.view.seats, 'a reset emptied the table').toHaveLength(4);

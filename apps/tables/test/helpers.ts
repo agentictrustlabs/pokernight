@@ -182,3 +182,26 @@ export function waitForAny(clients: TestClient[], pred: (m: PokerServerMessage) 
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Wait for a condition to become true, rather than for a length of time.
+ *
+ * `await sleep(1500); expect(dealt)` is a test that passes on a quiet machine and fails under load —
+ * which is exactly what it did: the practice-reset test went red only when the whole suite ran, and
+ * green every time it was run on its own, so it read as flakiness rather than as a bad wait. A fixed
+ * sleep is either too short (a false failure) or too long (a slow suite), and there is no value that
+ * is neither on every machine.
+ *
+ * The deadline is the backstop, not the mechanism. `what` names the condition so a real timeout says
+ * which one gave up instead of "expected 0 to be greater than 0".
+ */
+export async function until<T>(what: string, read: () => Promise<T>, ok: (v: T) => boolean, timeoutMs = 15_000): Promise<T> {
+  const stopAt = Date.now() + timeoutMs;
+  let last: T = await read();
+  while (!ok(last)) {
+    if (Date.now() > stopAt) throw new Error(`timed out waiting for ${what}; last saw ${JSON.stringify(last)}`);
+    await sleep(100);
+    last = await read();
+  }
+  return last;
+}

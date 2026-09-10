@@ -185,9 +185,22 @@ function play(n: number, opts: { verify?: boolean } = {}): { state: CanastaState
 /* ------------------------------------------------------------------ tests */
 
 describe('invariants under random play', () => {
+  /**
+   * The deck is conserved: three hundred whole rounds of random legal play, and after every single
+   * move the cards in hands, melds, stock and discard are still exactly the two packs they started as.
+   *
+   * THE TIMEOUT IS EXPLICIT because this test is legitimately slow — three hundred rounds verified
+   * move by move — and vitest's default is five seconds. It ran in about four alone and about nine
+   * under a full suite, so it passed on its own and failed when everything ran together, which reads
+   * as flakiness and is nothing of the kind. Turbo's cache then hid it: a cached pass is reported as
+   * a pass, so `pnpm test` said 22/22 while `pnpm test --force` said 19/22.
+   *
+   * Sixty seconds, not six: the number is a backstop against a hang, not a performance budget. If
+   * this ever genuinely takes a minute, the engine has a problem worth failing over.
+   */
   it('hold for 300 rounds — no card created, lost or duplicated', () => {
     for (let n = 1; n <= 300; n++) play(n, { verify: true });
-  });
+  }, 60_000);
 
   it('always end a round, either by going out or by running the stock dry', () => {
     for (let n = 1; n <= 80; n++) {
