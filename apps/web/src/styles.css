@@ -3151,6 +3151,20 @@ a.button.primary:hover {
 .club-calendar input {
   width: 100%;
 }
+.club-calendar p {
+  margin: 0.4rem 0;
+}
+.club-calendar label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+/* The keeps-up half is separated from the instant half, because they answer different questions. */
+.cal-keeps-up {
+  margin-top: 0.9rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
 
 /* THE INVITATION as somebody who has never heard of the club reads it. */
 .join-welcome {

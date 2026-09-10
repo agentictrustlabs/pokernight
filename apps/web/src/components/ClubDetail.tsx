@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AppSession, ClubInvite, ClubView, KnownPerson } from '../lib/types';
+import type { AppSession, ClubInvite, ClubView, KnownPerson, Night } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { CHARTER_BLURB, canInvite, charterState, checkMember, confirmsRetire, memberAction, retireConsequences, standingLabel } from '../lib/clubs';
 import { startClubCharter, type AuthConfig } from '../lib/home';
 import { shortAddress } from '../lib/format';
+import { clubHash } from '../lib/routes';
+import { downloadUrl, googleCalendarLink, nextNight } from '../lib/nights';
+import { gameBlurb } from '../lib/games';
 import { retiredLine } from '../lib/clubs';
 
 /**
@@ -274,6 +277,7 @@ function Welcome({ view, session, host, onChanged }: { view: ClubView; session: 
  */
 function Calendar({ clubId, clubName, session }: { clubId: string; clubName: string; session: AppSession }) {
   const [cal, setCal] = useState<{ url: string; webcal: string } | null>(null);
+  const [next, setNext] = useState<Night | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -282,6 +286,11 @@ function Calendar({ clubId, clubName, session }: { clubId: string; clubName: str
     void api
       .calendarUrl(clubId, session.token)
       .then((c) => alive && setCal(c))
+      .catch(() => undefined);
+    // The next night, for the one-press Google link. Failing to read it costs that link and nothing else.
+    void api
+      .getNights(clubId, session.token)
+      .then((n) => alive && setNext(nextNight(n.nights, Date.now())))
       .catch(() => undefined);
     return () => {
       alive = false;
@@ -292,18 +301,52 @@ function Calendar({ clubId, clubName, session }: { clubId: string; clubName: str
   return (
     <details className="club-calendar">
       <summary>Put {clubName}&rsquo;s nights in your calendar</summary>
-      <p className="hint">
-        It keeps up with the club: nights added, moved or called off all follow. Each one links straight to the game.
+
+      {/* THE FAST WAYS FIRST, because they are the ones that answer "did that work?". */}
+      {next ? (
+        <p>
+          <a
+            className="cta-quiet"
+            href={googleCalendarLink({
+              startsAt: next.startsAt,
+              title: next.title ?? clubName,
+              url: `${location.origin}/${clubHash(clubId)}`,
+              ...(next.game ? { details: gameBlurb(next.game) ?? '' } : {}),
+            })}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Add the next night to Google Calendar
+          </a>
+        </p>
+      ) : null}
+      <p>
+        <a className="cta-quiet" href={downloadUrl(cal.url)}>
+          Download the next {'8'} nights
+        </a>
+        <span className="hint"> — opens in any calendar, straight away.</span>
+      </p>
+
+      {/* AND THE ONE THAT KEEPS UP, with the caveat that is the whole reason somebody thinks this is
+          broken: Google fetches a subscribed URL on its own schedule and ignores every refresh hint
+          in the file. Saying so is the difference between a slow feature and a broken one. */}
+      <p className="hint cal-keeps-up">
+        To have it <strong>keep up</strong> with the club — nights added, moved or called off — subscribe instead:
       </p>
       <p>
         <a className="cta-quiet" href={cal.webcal}>
           Subscribe
         </a>
+        <span className="hint"> — Apple Calendar and Outlook. Most desktop browsers do nothing with this; use the link below.</span>
       </p>
       <label>
-        Or paste this into a calendar
+        In Google Calendar, use <em>Other calendars → From URL</em> and paste this
         <input className="mono" readOnly value={cal.url} onFocus={(e) => e.currentTarget.select()} aria-label="calendar link" />
       </label>
+      <p className="hint">
+        Google fetches a subscribed calendar on its own schedule — often several hours before the first one appears, and it
+        ignores how often this feed says to look. That is Google, not the card room; the two links above are instant.
+      </p>
     </details>
   );
 }

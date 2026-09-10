@@ -130,3 +130,60 @@ export type Recurrence =
   | { kind: 'once' }
   | { kind: 'weekly'; weekdays: string[]; interval?: 1 | 2 | 3 | 4 }
   | { kind: 'monthly-nth'; weekday: string; nth: 1 | 2 | 3 | 4 | -1 };
+
+/* ------------------------------------------------------- getting it into a calendar */
+
+/**
+ * THREE WAYS IN, because they are not interchangeable and the fast one was missing.
+ *
+ * A SUBSCRIPTION keeps up with the club and is the right long-term answer — but Google Calendar
+ * fetches a subscribed URL on its own schedule, ignores `REFRESH-INTERVAL` and `X-PUBLISHED-TTL`
+ * entirely, and can take many hours before the first fetch. So a person who subscribes and then looks
+ * at their calendar sees nothing, and reasonably concludes it is broken. It is not broken; it is
+ * Google, and the honest thing is to say so rather than to let them wonder.
+ *
+ * `webcal:` is what Apple Calendar and Outlook want, and on most DESKTOP browsers it is registered to
+ * nothing at all — the link does nothing whatsoever, silently. That made "Subscribe" a dead control
+ * for a large share of people.
+ *
+ * A DOWNLOAD imports instantly into anything, and a Google TEMPLATE link puts one night in with a
+ * single press. Neither keeps up, and both are what somebody actually wants when they are trying to
+ * find out whether this works.
+ */
+
+/** `20260911T020000Z/20260911T050000Z` — the range format Google's template link takes. */
+function googleRange(startsAt: number, minutes: number): string {
+  const at = (ms: number): string => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  return `${at(startsAt)}/${at(startsAt + minutes * 60_000)}`;
+}
+
+/**
+ * A one-press link that puts ONE night into Google Calendar, now.
+ *
+ * The instant answer to "did it work?", and the thing that was missing: a subscription is the right
+ * shape and it is invisible for hours.
+ */
+export function googleCalendarLink(opts: {
+  startsAt: number;
+  title: string;
+  details?: string;
+  url?: string;
+  minutes?: number;
+}): string {
+  const q = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: opts.title,
+    dates: googleRange(opts.startsAt, opts.minutes ?? 180),
+  });
+  // The link that opens the game goes in the DETAILS, where Google makes it clickable, and in
+  // `location`, which is what a phone shows on the entry itself.
+  const details = [opts.details, opts.url].filter(Boolean).join('\n\n');
+  if (details) q.set('details', details);
+  if (opts.url) q.set('location', opts.url);
+  return `https://calendar.google.com/calendar/render?${q.toString()}`;
+}
+
+/** The same feed, asked for as a file rather than as a subscription. */
+export function downloadUrl(feedUrl: string): string {
+  return `${feedUrl}${feedUrl.includes('?') ? '&' : '?'}download=1`;
+}

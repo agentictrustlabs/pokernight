@@ -646,10 +646,17 @@ app.get('/clubs/:clubId/calendar/:token', async (c) => {
       ...(n.status ? { status: n.status } : {}),
     })),
   });
+  // `?download=1` asks for a FILE rather than a subscription. It matters because the two are
+  // different answers to different questions: a subscription keeps up with the club and is invisible
+  // in Google Calendar for hours, and a download appears the moment it is opened and never changes
+  // again. `attachment` is what makes a browser save it rather than show it as text — and the
+  // `download` attribute on a link cannot do that job here, because the feed is on another origin.
+  const asFile = c.req.query('download') === '1';
+  const file = `${club.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'club'}.ics`;
   return new Response(body, {
     headers: {
       'content-type': 'text/calendar; charset=utf-8',
-      'content-disposition': `inline; filename="${club.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'club'}.ics"`,
+      'content-disposition': `${asFile ? 'attachment' : 'inline'}; filename="${file}"`,
       // Never cached by anything in between: a night called off has to reach a subscriber.
       'cache-control': 'no-store',
     },
