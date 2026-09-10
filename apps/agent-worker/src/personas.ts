@@ -16,6 +16,15 @@ import { agentNameToHost } from '@pokernight/protocol';
 
 export type StrategyName = 'rules' | 'claude';
 
+/**
+ * WHICH GAME a persona plays.
+ *
+ * An agent that plays poker cannot play canasta, and the two must never be handed each other's
+ * turns. The table already refuses to seat an agent whose card does not advertise its own game's
+ * skill; this is the other half of that — the persona says which skill it advertises at all.
+ */
+export type PersonaGame = 'poker' | 'canasta';
+
 export interface Persona {
   /** Short id, unique. Also accepted as an `?agent=` value. */
   id: string;
@@ -24,6 +33,8 @@ export interface Persona {
   /** Name at the table and on the agent card. */
   displayName: string;
   description: string;
+  /** Absent is poker, which is what every persona was before there was a second game. */
+  game?: PersonaGame;
   strategy: StrategyName;
   /** Style knob for the rules strategy. Ignored by `claude`. */
   style?: 'tight-aggressive' | 'loose-passive';
@@ -78,9 +89,51 @@ export const PERSONAS: readonly Persona[] = [
       'You are not reckless — you still fold to real strength when the price is wrong — but when in doubt you apply pressure.',
     ].join(' '),
   },
+  /*
+   * CANASTA. Four-handed partnership, which is the reason these exist at all: poker deals to two,
+   * so a person with one friend can play. Canasta needs exactly four, so a person alone cannot sit
+   * down at all without somebody to fill the other seats. These are that somebody.
+   */
+  {
+    id: 'melder',
+    agentName: 'melder.svc',
+    displayName: 'Melder',
+    description:
+      'Rules-based canasta partner: opens as soon as it legally can, builds toward canastas, holds wild cards back, and takes the pile when it is worth taking.',
+    game: 'canasta',
+    strategy: 'rules',
+  },
+  {
+    id: 'pilehawk',
+    agentName: 'pilehawk.svc',
+    displayName: 'Pile Hawk',
+    description:
+      'The same canasta engine, seated as an opponent. Plays its own side of the table with the same discipline — there is no easy seat.',
+    game: 'canasta',
+    strategy: 'rules',
+  },
+  {
+    id: 'redthree',
+    agentName: 'redthree.svc',
+    displayName: 'Red Three',
+    description:
+      'The third canasta seat. A table seats an agent by its NAME, so filling three empty chairs needs three distinct agents — this is the one that makes a solo game possible.',
+    game: 'canasta',
+    strategy: 'rules',
+  },
 ];
 
 export const DEFAULT_PERSONA: Persona = PERSONAS[0]!;
+
+/** The game a persona plays. Absent is poker, which is what every persona was before canasta. */
+export function gameOf(persona: Persona): PersonaGame {
+  return persona.game ?? 'poker';
+}
+
+/** Every persona that plays `game` — what a lobby offers when it wants to fill a seat. */
+export function personasFor(game: PersonaGame): readonly Persona[] {
+  return PERSONAS.filter((p) => gameOf(p) === game);
+}
 
 /** `sharkbot.svc` -> `sharkbot-svc`. The host label half of `agentNameToHost`. */
 export function agentNameToLabel(agentName: string): string {

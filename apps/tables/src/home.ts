@@ -258,13 +258,28 @@ export async function completeHomeSignIn(env: Env, req: HomeAuthRequest, now = D
  * question the same way; the only thing that ever differed between them was which fields the caller
  * bothered to read, which is exactly the kind of difference that goes stale.
  */
+/**
+ * What a `workspace-create` ceremony hands back, on the `org` field of the Home's `/token` answer.
+ *
+ * `org` for a workspace as well as an organization: one field, because to the Home both are "the
+ * agent this ceremony deployed under you". The card room reads only what it needs — the address, the
+ * name it was given, and the stewardship wire that proves the person custodies it.
+ */
+export interface HomeWorkspacePayload {
+  orgAgent?: string;
+  orgName?: string;
+  person?: string;
+  purpose?: string;
+  delegation?: unknown;
+}
+
 async function exchangeAtHome(
   env: Env,
   req: HomeAuthRequest,
-): Promise<{ idToken: string; delegation?: WireDelegation; paymentDelegation?: unknown }> {
+): Promise<{ idToken: string; delegation?: WireDelegation; paymentDelegation?: unknown; org?: HomeWorkspacePayload }> {
   const clientId = (env.HOME_CLIENT_ID ?? '').trim();
   if (!clientId) throw new HomeAuthError('home sign-in is not configured: HOME_CLIENT_ID is not set');
-  let body: { id_token?: string; delegation?: WireDelegation; paymentDelegation?: unknown; error?: string };
+  let body: { id_token?: string; delegation?: WireDelegation; paymentDelegation?: unknown; org?: HomeWorkspacePayload; error?: string };
   try {
     const res = await fetch(new URL('/token', req.authOrigin).toString(), {
       method: 'POST',
@@ -289,6 +304,7 @@ async function exchangeAtHome(
     idToken: body.id_token,
     ...(body.delegation ? { delegation: body.delegation } : {}),
     ...(body.paymentDelegation ? { paymentDelegation: body.paymentDelegation } : {}),
+    ...(body.org ? { org: body.org } : {}),
   };
 }
 
@@ -365,6 +381,55 @@ export interface HomeMandateResult {
  * exchange (`exchangeAtHome`), same identity verification as every other sign-in path, so nothing
  * about who the player is rests on this route.
  */
+/** The curated template that charters a club as a `<label>.workspace` Smart Agent at the Home. */
+export const CLUB_TEMPLATE = 'workspace-create';
+
+/** The `purpose` a club's link carries at the Home, so a person can see WHY that agent exists. */
+export const CLUB_PURPOSE = 'poker-club';
+
+export interface HomeCharterResult {
+  identity: HomeIdentity;
+  /** The workspace Smart Agent the Home deployed, lowercased. */
+  agent: string;
+  /** What it was named at the Home. May be absent; the club keeps its own name either way. */
+  agentName?: string;
+  /** The workspace → person stewardship wire. Kept because it is the evidence the person custodies
+   *  the club, and the thing a later vault read would present. Never inspected here. */
+  stewardship?: unknown;
+}
+
+/**
+ * Finish a `workspace-create` ceremony the host ran at their Home.
+ *
+ * The SAME shape as the mandate ceremony and for the same reason: the browser does the front half,
+ * the Worker exchanges the code, and the identity in the id_token is checked against the session
+ * before anything is recorded — so a charter completed by one person can never be recorded onto
+ * another person's club.
+ *
+ * A ceremony that comes back with no workspace address is a FAILURE, not a partial success. The Home
+ * returning an id_token means somebody signed in; it does not mean an agent was deployed, and
+ * recording a club as chartered when nothing was chartered is the worst of the three outcomes.
+ */
+export async function completeCharterCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<HomeCharterResult> {
+  if (!isAllowedHomeOrigin(env, req.authOrigin)) {
+    throw new HomeAuthError(`home origin "${req.authOrigin}" is not a trusted issuer for this deployment`);
+  }
+  if (!req.nonce) throw new HomeAuthError('id_token nonce does not match the authorisation request');
+
+  const token = await exchangeAtHome(env, req);
+  const identity = await verifyHomeIdToken(env, req.authOrigin, token.idToken, req.nonce, now);
+  const agent = (token.org?.orgAgent ?? '').trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(agent)) {
+    throw new HomeAuthError('your Home completed the ceremony but deployed no club agent, so there is nothing to record');
+  }
+  return {
+    identity,
+    agent,
+    ...(token.org?.orgName ? { agentName: token.org.orgName } : {}),
+    ...(token.org?.delegation ? { stewardship: token.org.delegation } : {}),
+  };
+}
+
 export async function completeMandateCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<HomeMandateResult> {
   if (!isAllowedHomeOrigin(env, req.authOrigin)) {
     throw new HomeAuthError(`home origin "${req.authOrigin}" is not a trusted issuer for this deployment`);

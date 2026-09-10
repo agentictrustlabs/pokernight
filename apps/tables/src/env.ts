@@ -1,3 +1,4 @@
+import type { ClubDO, ClubIndexDO } from './club-do.js';
 import type { LobbyDO } from './lobby-do.js';
 import type { SessionDO } from './session-do.js';
 import type { PokerTableDO } from './table-do.js';
@@ -8,6 +9,10 @@ export interface Env {
   LOBBIES: DurableObjectNamespace<LobbyDO>;
   /** One instance per playerId; holds the server-side half of a Home session (see session-do.ts). */
   SESSIONS: DurableObjectNamespace<SessionDO>;
+  /** One instance per club; holds its roster and answers standing (see club-do.ts). */
+  CLUBS: DurableObjectNamespace<ClubDO>;
+  /** One instance per playerId; the index of clubs they are in. A projection, never the record. */
+  CLUB_INDEX: DurableObjectNamespace<ClubIndexDO>;
 
   CHAIN_ID: string;
   RPC_URL: string;
@@ -42,6 +47,15 @@ export interface Env {
   AGENT_CARD_ZONE: string;
   /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
   A2A_TIMEOUT_MS?: string;
+  /**
+   * How long an agent's answer WAITS before it is applied, in ms. Default 1400; 0 disables.
+   *
+   * An agent answers in a couple of hundred milliseconds, so three of them take a whole round of
+   * turns between two frames and a person at the table sees results without ever seeing the moves.
+   * The pause is spent after the agent has already thought, so it costs the table nothing on the
+   * clock — it uses time the turn was allowed anyway — and it is what makes a bot game watchable.
+   */
+  AGENT_PACE_MS?: string;
 
   /**
    * The settlement asset — Poker Night's own coin, Sheqel (`contracts/src/Sheqel.sol`), and the
@@ -66,6 +80,14 @@ export interface Env {
   ALLOWED_METHODS_ENFORCER?: string;
   /** `AgentNameRegistry` and the `.treasury` subregistry — only the optional label needs them. */
   AGENT_NAME_REGISTRY?: string;
+  /**
+   * `AgentNameUniversalResolver` — the one contract that answers "what address is `carol.me`?".
+   *
+   * Wired so a host can put somebody on a club roster by the name they know them by. Absent means
+   * this deployment cannot resolve names, and every invitation by name is refused saying exactly
+   * that rather than falling back to a guess.
+   */
+  AGENT_NAME_UNIVERSAL_RESOLVER?: string;
   TREASURY_SUBREGISTRY?: string;
   PAYMENT_RECEIPT_REGISTRY?: string;
   /** Paymaster that sponsors the house's UserOps (dev mode on faithchain). */
@@ -143,10 +165,27 @@ export function allowAgentEndpoint(env: Env): boolean {
 
 /** Default wall clock for one A2A request. The turn clock always bounds it further. */
 export const DEFAULT_A2A_TIMEOUT_MS = 20_000;
+/**
+ * Long enough to watch a card move and hear the line that goes with it.
+ *
+ * Arrived at by playing: 1400 was reported as about twice too fast, 2800 was closer, and 3500 is
+ * where a line of commentary finishes before the next move starts. A pace shorter than the spoken
+ * line means the voice is permanently behind the table. A table can set its own — `TableMeta.paceMs`
+ * — and a person who knows the game will want it faster.
+ */
+export const DEFAULT_AGENT_PACE_MS = 3500;
 
 export function a2aTimeoutMs(env: Env): number {
   const n = Number(env.A2A_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_A2A_TIMEOUT_MS;
+}
+
+/** How long an agent's answer waits before it lands. `0` turns the pacing off entirely. */
+export function agentPaceMs(env: Env): number {
+  const raw = (env.AGENT_PACE_MS ?? '').trim();
+  if (!raw) return DEFAULT_AGENT_PACE_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 5000) : DEFAULT_AGENT_PACE_MS;
 }
 
 /**

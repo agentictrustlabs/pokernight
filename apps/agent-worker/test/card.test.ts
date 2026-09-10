@@ -1,10 +1,10 @@
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import type { AgentCardV1 } from '@agenticprimitives/a2a/standard';
-import { A2A_AGENT_CARD_PATH, POKER_ACT_SKILL, agentNameToHost } from '@pokernight/protocol';
+import { A2A_AGENT_CARD_PATH, CANASTA_ACT_SKILL, POKER_ACT_SKILL, agentNameToHost } from '@pokernight/protocol';
 import { endpointFor } from '../src/card.js';
 import type { Env } from '../src/env.js';
-import { PERSONAS } from '../src/personas.js';
+import { PERSONAS, gameOf } from '../src/personas.js';
 
 const ZONE = 'faithnet.ai';
 
@@ -33,10 +33,15 @@ describe('agent card', () => {
         protocolBinding: 'JSONRPC',
         protocolVersion: '1.0',
       });
+      // ONE SKILL, AND IT IS THE PERSONA'S OWN GAME'S. The table asks for its game's skill by name
+      // and refuses to seat an agent whose card does not advertise it, so a poker persona and a
+      // canasta persona can never be handed each other's turns — or seated at each other's tables.
+      const game = gameOf(p);
+      const skill = game === 'canasta' ? CANASTA_ACT_SKILL : POKER_ACT_SKILL;
       expect(c.skills).toHaveLength(1);
-      expect(c.skills[0]!.id).toBe(POKER_ACT_SKILL);
-      // The tables app reads agentKind off the first tag past the id and "poker".
-      expect(c.skills[0]!.tags.slice(0, 3)).toEqual([POKER_ACT_SKILL, 'poker', p.strategy]);
+      expect(c.skills[0]!.id).toBe(skill);
+      // The tables app reads agentKind off the first tag past the id and the game's own name.
+      expect(c.skills[0]!.tags.slice(0, 3)).toEqual([skill, game, p.strategy]);
     }
   });
 

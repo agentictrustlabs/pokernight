@@ -11,7 +11,10 @@
 
 import WebSocket from 'ws';
 import { decide } from '@pokernight/agent-kit';
-import { SessionSchema, type ClientCommand, type PokerActInput, type ServerMessage, type Session } from '@pokernight/protocol';
+// THIS BOT PLAYS POKER, and this is where it says so. The protocol carries a game's view, legal
+// actions and events opaquely so it can serve every game; a client serves one, and narrows once at
+// its own socket boundary rather than casting at every field.
+import { POKER_ACT_SKILL, SessionSchema, type ClientCommand, type PokerActInput, type PokerServerMessage, type Session } from '@pokernight/protocol';
 import type { LegalActions, TableView } from '@pokernight/engine';
 
 /* ------------------------------------------------------------------- args */
@@ -135,9 +138,9 @@ class Bot {
       this.pingTimer = setInterval(() => this.send({ type: 'ping' }), 20_000);
     });
     ws.on('message', (data) => {
-      let msg: ServerMessage;
+      let msg: PokerServerMessage;
       try {
-        msg = JSON.parse(data.toString()) as ServerMessage;
+        msg = JSON.parse(data.toString()) as PokerServerMessage;
       } catch {
         log('unparseable message', data.toString().slice(0, 120));
         return;
@@ -170,7 +173,7 @@ class Bot {
     this.send({ type: 'join', seat: this.seat, buyIn: this.args.buyIn });
   }
 
-  private onMessage(msg: ServerMessage): void {
+  private onMessage(msg: PokerServerMessage): void {
     switch (msg.type) {
       case 'welcome':
         this.playerId = msg.playerId;
@@ -204,7 +207,7 @@ class Bot {
     }
   }
 
-  private onEvent(msg: Extract<ServerMessage, { type: 'event' }>): void {
+  private onEvent(msg: Extract<PokerServerMessage, { type: 'event' }>): void {
     const ev = msg.event;
     switch (ev.type) {
       case 'seat-joined':
@@ -251,6 +254,7 @@ class Bot {
   private onTurn(handNo: number, legal: LegalActions, deadline: number): void {
     if (!this.view || this.view.viewerSeat === null) return;
     const input: PokerActInput = {
+      skill: POKER_ACT_SKILL,
       tableId: this.args.table,
       handNo,
       seat: this.view.viewerSeat,

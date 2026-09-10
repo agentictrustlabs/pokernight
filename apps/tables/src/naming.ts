@@ -1,0 +1,76 @@
+/**
+ * Turning an AGENT NAME into the person behind it.
+ *
+ * A host knows their friends by name. `carol.me` is a name in exactly the sense a person means it:
+ * Carol chose it, it is hers on chain, and it resolves to her Smart Agent. Asking a host to go and
+ * find a forty-character hex string before they can add her to their poker night is asking them to
+ * do the registry's job by hand — which is the whole reason the registry exists.
+ *
+ * ONE READ, NO FALLBACK. `AgentNamingClient.resolveName` is a single `readContract` against the
+ * universal resolver, and a name with no answer resolves to nobody. There is no log walk, no guess
+ * at a similar name and no "assume it is an address if it looks like one" — a club roster row is an
+ * authorization, and the wrong person on it is somebody who can sit at a private table.
+ *
+ * Configured entirely from `apps/tables` env, per the rule in CLAUDE.md: no address is written down
+ * in a package, and a deployment with no registry configured says so rather than guessing.
+ */
+
+import { AgentNamingClient, isValidAgentName, normalizeAgentName } from '@agenticprimitives/agent-naming';
+import type { Env } from './env.js';
+import { chainId, rpcUrl } from './treasury.js';
+
+/** A dotted agent name — at least two labels, so `carol.me` is one and `carol` is not. */
+const NAME_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i;
+
+/**
+ * Does this LOOK like an agent name?
+ *
+ * Shape only. It says which of the four things a host could have typed this is, so the caller can
+ * route it; whether the name exists is a question for the chain, one call later.
+ */
+export function looksLikeAgentName(raw: string): boolean {
+  const v = (raw ?? '').trim();
+  if (!v || v.includes('@') || v.startsWith('0x')) return false;
+  return NAME_RE.test(v) && isValidAgentName(v);
+}
+
+/** Whether this deployment can resolve names at all. False in a dev env with no registry wired. */
+export function namingConfigured(env: Env): boolean {
+  return Boolean(env.AGENT_NAME_REGISTRY && env.AGENT_NAME_UNIVERSAL_RESOLVER && env.RPC_URL);
+}
+
+export type NameAnswer = { ok: true; name: string; address: `0x${string}` } | { ok: false; error: string };
+
+/**
+ * Resolve an agent name to the address it names.
+ *
+ * Every refusal names the name. "carol.me is not a name this chain knows" is a sentence a host can
+ * act on — they can check the spelling, or ask Carol what hers is; a bare 400 sends them to support.
+ */
+export async function resolveAgentName(env: Env, raw: string): Promise<NameAnswer> {
+  const typed = (raw ?? '').trim();
+  if (!namingConfigured(env)) {
+    return { ok: false, error: 'this card room cannot look up agent names yet — add them by their Smart Agent address' };
+  }
+  let name: string;
+  try {
+    name = normalizeAgentName(typed);
+  } catch {
+    return { ok: false, error: `"${typed}" is not a well-formed agent name` };
+  }
+  const client = new AgentNamingClient({
+    rpcUrl: rpcUrl(env),
+    chainId: chainId(env),
+    registry: env.AGENT_NAME_REGISTRY as `0x${string}`,
+    universalResolver: env.AGENT_NAME_UNIVERSAL_RESOLVER as `0x${string}`,
+  });
+  let address: `0x${string}` | null;
+  try {
+    address = (await client.resolveName(name)) as `0x${string}` | null;
+  } catch {
+    // The chain is a dependency, not an authority on whether the person exists. Say which it was.
+    return { ok: false, error: `the name registry could not be reached to look up ${name}` };
+  }
+  if (!address) return { ok: false, error: `${name} is not a name this chain knows — check the spelling with them` };
+  return { ok: true, name, address };
+}

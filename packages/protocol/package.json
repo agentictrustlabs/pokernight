@@ -6,7 +6,9 @@
   "description": "Wire protocol for Pokernight: zod schemas for client commands, server messages, and the poker.act A2A skill.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -14,7 +16,11 @@
   },
   "dependencies": {
     "@pokernight/engine": "workspace:*",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "@pokernight/canasta": "workspace:*"
   },
-  "devDependencies": { "typescript": "^5.6.3", "vitest": "^3.2.4" }
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4"
+  }
 }

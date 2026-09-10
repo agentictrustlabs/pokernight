@@ -19,7 +19,8 @@ import { A2A_AGENT_CARD_PATH, A2A_JSONRPC_PATH, agentNameToHost } from '@pokerni
 import { buildCard, cardFor, endpointFor } from './card.js';
 import type { Env } from './env.js';
 import { createPokerActExecutor } from './executor.js';
-import { PERSONAS, resolvePersona, type Resolution } from './personas.js';
+import { createCanastaActExecutor } from './canasta-executor.js';
+import { PERSONAS, gameOf, resolvePersona, type Resolution } from './personas.js';
 
 /** Server-to-server traffic needs no CORS, but a browser poking at the card should not be blocked. */
 const CORS: Record<string, string> = {
@@ -39,7 +40,13 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 function a2aServer(resolution: Resolution, env: Env, url: URL) {
   return createStandardA2aServer({
     card: cardFor(resolution, env, url),
-    executor: createPokerActExecutor(resolution.persona, env),
+    // ONE EXECUTOR PER GAME. They share the envelope — one data part in, one out, a message and not
+    // a task — and share nothing else, because a canasta view has no pot and a canasta move has no
+    // amount. Which one answers is decided by the persona, not by sniffing the request.
+    executor:
+      gameOf(resolution.persona) === 'canasta'
+        ? createCanastaActExecutor(resolution.persona)
+        : createPokerActExecutor(resolution.persona, env),
     // PHASE 2: NO ADMISSION. `principal` is deliberately omitted, so every caller is admitted and
     // `ctx.principal` is null. That is safe only while a seat cannot move money.
     //
@@ -71,14 +78,20 @@ export default {
       });
     }
 
+    // `?game=canasta` narrows the list to the personas that play it. A lobby filling an empty seat
+    // must never be offered an agent for a game other than the one at the table — and this is the
+    // cheapest place to answer that, because it is the only place that knows which persona is which.
     if (request.method === 'GET' && path === '/agents') {
+      const want = (url.searchParams.get('game') ?? '').trim();
+      const listed = want ? PERSONAS.filter((p) => gameOf(p) === want) : PERSONAS;
       return json({
         zone: zone || null,
-        agents: PERSONAS.map((p) => ({
+        agents: listed.map((p) => ({
           id: p.id,
           agentName: p.agentName,
           displayName: p.displayName,
           description: p.description,
+          game: gameOf(p),
           strategy: p.strategy,
           ...(p.style ? { style: p.style } : {}),
           host: zone ? agentNameToHost(p.agentName, zone) : null,

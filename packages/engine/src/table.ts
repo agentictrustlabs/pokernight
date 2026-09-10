@@ -19,7 +19,7 @@ import type {
 } from './types.js';
 import { EngineError } from './types.js';
 import { fullDeck } from './cards.js';
-import { bytesToHex, seedCommit, seededShuffle } from './rng.js';
+import { bytesToHex, seedCommit, seededShuffle } from '@pokernight/deal';
 import { evaluateHand } from './evaluate.js';
 
 export const DEFAULT_CONFIG: TableConfig = {

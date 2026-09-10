@@ -15,7 +15,7 @@ import {
   type Street,
   type TableView,
 } from '@pokernight/engine';
-import type { PokerActInput } from '@pokernight/protocol';
+import { POKER_ACT_SKILL, type PokerActInput } from '@pokernight/protocol';
 
 export const CONFIG = {
   seats: 6,
@@ -130,7 +130,7 @@ export function legalFor(view: TableView, overrides: Partial<LegalActions> = {})
 }
 
 export function makeInput(view: TableView, legal: LegalActions = legalFor(view)): PokerActInput {
-  return { tableId: 't1', handNo: view.handNo, seat: view.viewerSeat ?? 0, view, legal, deadlineMs: 5000 };
+  return { skill: POKER_ACT_SKILL, tableId: 't1', handNo: view.handNo, seat: view.viewerSeat ?? 0, view, legal, deadlineMs: 5000 };
 }
 
 /* ------------------------------------------------------- fake evaluator */

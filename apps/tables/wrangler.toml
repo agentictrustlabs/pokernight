@@ -37,6 +37,8 @@ bindings = [
   { name = "TABLES", class_name = "PokerTableDO" },
   { name = "LOBBIES", class_name = "LobbyDO" },
   { name = "SESSIONS", class_name = "SessionDO" },
+  { name = "CLUBS", class_name = "ClubDO" },
+  { name = "CLUB_INDEX", class_name = "ClubIndexDO" },
 ]
 
 # Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
@@ -48,6 +50,12 @@ new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["SessionDO"]
+
+# Clubs (docs/WORKSPACES.md). `ClubDO` holds one club's roster; `ClubIndexDO` is one player's list of
+# the clubs they are in — a projection the club writes to, never the record.
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["ClubDO", "ClubIndexDO"]
 
 # Local dev (Anvil on :8545, Vite on :5173). DEV_AUTH=true enables POST /dev/session.
 [vars]
@@ -108,6 +116,8 @@ bindings = [
   { name = "TABLES", class_name = "PokerTableDO" },
   { name = "LOBBIES", class_name = "LobbyDO" },
   { name = "SESSIONS", class_name = "SessionDO" },
+  { name = "CLUBS", class_name = "ClubDO" },
+  { name = "CLUB_INDEX", class_name = "ClubIndexDO" },
 ]
 
 [[env.faithnet.migrations]]
@@ -117,6 +127,12 @@ new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
 [[env.faithnet.migrations]]
 tag = "v2"
 new_sqlite_classes = ["SessionDO"]
+
+# Clubs (docs/WORKSPACES.md). `ClubDO` holds one club's roster; `ClubIndexDO` is one player's list of
+# the clubs they are in — a projection the club writes to, never the record.
+[[env.faithnet.migrations]]
+tag = "v3"
+new_sqlite_classes = ["ClubDO", "ClubIndexDO"]
 
 [env.faithnet.vars]
 CHAIN_ID = "34348"
@@ -191,6 +207,9 @@ ALLOWED_METHODS_ENFORCER = "0xdBb2E47793393C499efB0f3fcbf6Ca8669791a41"
 # treasury is allowed to be nameless and that is the default — the Smart Agent address is its id.
 AGENT_NAME_REGISTRY = "0x60E949D52660A9D4143ecB0fdA56c0457f20aED9"
 TREASURY_SUBREGISTRY = "0xf1df2D9b779C62a8BF5707C799d8E6842382892B"
+# …and the resolver that answers "what address is `carol.me`?", so a host can put somebody on a club
+# roster by the name they know them by instead of by a forty-character hex string.
+AGENT_NAME_UNIVERSAL_RESOLVER = "0xF343054e046A4145ccae499ECB28197394eE0798"
 # What a night's buy-in mandate may cover. These are the caps the player sees before signing and the
 # ones the on-chain PaymentEnforcer holds: at most 200 chips (200 Sheqels at the chip rate above) per
 # buy-in, five buy-ins, and twelve hours. A mandate is one night at a table, not a standing account.

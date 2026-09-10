@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fullDeck, type ActionRecord, type Card, type LegalActions, type Street, type TableView } from '@pokernight/engine';
-import type { PokerActInput } from '@pokernight/protocol';
+import { POKER_ACT_SKILL, type PokerActInput } from '@pokernight/protocol';
 import { decide, isLegal, legalize } from './strategy.js';
 import { fakeEvaluate, legalFor, makeInput, makeView, seededRng } from './test-helpers.js';
 
@@ -99,7 +99,7 @@ function randomFixture(rng: () => number): PokerActInput {
   if (!legal.fold && !legal.check && !(legal.call && legal.call > 0) && !legal.bet && !legal.raise && legal.allIn === 0) {
     legal.fold = true;
   }
-  return { tableId: 't', handNo: 7, seat: viewer, view, legal, deadlineMs: 1000 };
+  return { skill: POKER_ACT_SKILL, tableId: 't', handNo: 7, seat: viewer, view, legal, deadlineMs: 1000 };
 }
 
 describe('decide is always legal', () => {

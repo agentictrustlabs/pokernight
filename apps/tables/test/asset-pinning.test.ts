@@ -21,7 +21,7 @@ import type { TableMeta } from '../src/table-do.js';
 import { defaultAsset, defaultAssetSymbol, pinnedAsset, pinnedAssetSymbol } from '../src/treasury.js';
 import type { Env } from '../src/env.js';
 import { putSessionRecord } from '../src/auth.js';
-import { createTableViaHttp } from './helpers.js';
+import { createTableViaHttp, soloClub } from './helpers.js';
 
 /** The deployment default in the test config (wrangler.toml `[vars]`): the card room's own coin. */
 const DEPLOYMENT_ASSET = '0x1111111111111111111111111111111111111111';
@@ -52,7 +52,7 @@ async function evict(tableId: string): Promise<void> {
 
 describe('a table records the currency it settles in', () => {
   it('stamps the deployment default onto a new table, with its name', async () => {
-    const t = await createTableViaHttp('asset stamped', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('asset stamped', {}, await soloClub());
     expect(t.asset).toBe(DEPLOYMENT_ASSET);
     expect(t.assetSymbol).toBe(DEPLOYMENT_SYMBOL);
     const s = await summaryOf(t.tableId);
@@ -65,7 +65,7 @@ describe('a table records the currency it settles in', () => {
    * repointing `ASSET` under an open table changes nothing about the money already on it.
    */
   it('keeps that currency when the deployment default moves under it', async () => {
-    const t = await createTableViaHttp('asset pinned', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('asset pinned', {}, await soloClub());
     expect(t.asset).toBe(DEPLOYMENT_ASSET);
 
     await runInDurableObject(stubFor(t.tableId), (inst) => {
@@ -88,7 +88,7 @@ describe('a table records the currency it settles in', () => {
   });
 
   it('says which currency it settles in on the settlement view a player reads', async () => {
-    const t = await createTableViaHttp('ledger names the coin', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('ledger names the coin', {}, await soloClub());
     const res = await stubFor(t.tableId).fetch('https://table/ledger?playerId=nobody');
     const body = (await res.json()) as { asset: string | null; assetSymbol: string | null };
     expect(body.asset).toBe(DEPLOYMENT_ASSET);
@@ -97,7 +97,7 @@ describe('a table records the currency it settles in', () => {
 
   /** No migration any more: a table with no stamp reads today's currency, because there is only one. */
   it('reads the deployment currency for a table written before the field existed', async () => {
-    const t = await createTableViaHttp('unstamped', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('unstamped', {}, await soloClub());
     await runInDurableObject(stubFor(t.tableId), async (inst, state) => {
       const meta = (await state.storage.get('meta')) as TableMeta;
       delete (meta as { asset?: string }).asset;
@@ -118,7 +118,7 @@ describe('a mandate is an authority over ONE currency', () => {
    * which is precisely why the check stays.
    */
   it('is offered to a table settling in that currency, and withheld from one that is not', async () => {
-    const t = await createTableViaHttp('currency-bound mandate', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('currency-bound mandate', {}, await soloClub());
     const playerId = `home:0x${'ab'.repeat(20)}`;
     const treasury = `0x${'cd'.repeat(20)}`;
     await putSessionRecord(env as unknown as Env, {

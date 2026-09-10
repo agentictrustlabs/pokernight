@@ -12,7 +12,9 @@ export * from './types.js';
 
 export { parseCard, cardToString, fullDeck, RANKS, SUITS, rankValue } from './cards.js';
 export { evaluateHand, compareHands } from './evaluate.js';
-export { seededShuffle, seedCommit, randomSeed, bytesToHex, hexToBytes } from './rng.js';
+// The dealing primitives are `@pokernight/deal`'s and belong to no game; re-exported so poker's
+// own public surface is unchanged by their moving out.
+export { seededShuffle, seedCommit, randomSeed, bytesToHex, hexToBytes } from '@pokernight/deal';
 export {
   createTable,
   sitDown,
@@ -30,3 +32,6 @@ export {
   redactEvent,
   DEFAULT_CONFIG,
 } from './table.js';
+
+// Poker as a game the table service can host — the adapter, never the rules (`game.ts`).
+export { pokerGame, POKER_GAME_ID } from './game.js';

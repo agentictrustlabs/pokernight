@@ -43,18 +43,19 @@ import {
   type HandResult,
   type LegalActions,
   type TableConfig,
-  type TableState,
   type TableView,
 } from '@pokernight/engine';
 import { failedReceipt, pendingReceipt, type LedgerEntryKind, type SettlementAdapter, type SettlementReceipt } from '@pokernight/ledger';
+import type { HostedGame, TableSnapshot } from '@pokernight/table-game';
+import { DEFAULT_GAME, gameFor } from './games.js';
 import type { PlayerFunding } from '@pokernight/treasury';
 import {
   parseClientCommand,
   type ChatEvent,
   type ClientCommand,
   type PlayerInfo,
-  type PokerActInput,
-  type PokerActOutput,
+  type ActInput,
+  type ActOutput,
   type SeatCleared,
   type SeatClearRefusal,
   type SeatEvent,
@@ -65,9 +66,9 @@ import {
   type TableEvent,
   type TableSummary,
 } from '@pokernight/protocol';
-import { a2aTimeoutMs, callPokerAct, resolveAgentBase } from './a2a.js';
+import { a2aTimeoutMs, callAct, resolveAgentBase } from './a2a.js';
 import { readSessionRecord } from './auth.js';
-import { seatIdleMs } from './env.js';
+import { agentPaceMs, seatIdleMs } from './env.js';
 import type { Env } from './env.js';
 import { createSettlementAdapter } from './settlement.js';
 import {
@@ -117,14 +118,76 @@ export interface TableMeta {
   /** What {@link TableMeta.asset} calls itself (`SHQ`). A label for the address, stamped at the same
    *  instant and by the same rule, so a table can never name a coin it does not pay in. */
   assetSymbol?: string;
+  /**
+   * The club this table belongs to, stamped when it was created and never re-read.
+   *
+   * Absent means a PICKUP table — public, joinable by anyone with a session, which is what every
+   * table was before clubs existed. Present means the card room asks the club who this person is
+   * before it lets them see the table at all, let alone sit at it.
+   *
+   * Pinned for the same reason the rate and the asset are: "whose table is this?" is answerable from
+   * the table's own record rather than from something a caller could point somewhere else.
+   */
+  club?: string;
+  /** That club's name at the instant the table was created. A label, not a lookup. */
+  clubName?: string;
+  /**
+   * WHICH GAME this table plays, stamped at creation and never re-read.
+   *
+   * Same rule as the chip rate, the asset and the club, and for a sharper reason than any of them: a
+   * table whose game was looked up rather than recorded could be dealt a different game than the one
+   * its players sat down to, with their money already on it. Absent means poker — every table opened
+   * before games were named is a poker table, and `DEFAULT_GAME` is how they read.
+   */
+  game?: string;
+  /**
+   * WHOSE PRACTICE TABLE this is, if it is one.
+   *
+   * A practice table belongs to one person, is in no lobby, and may be reset by its owner back to a
+   * fresh game. Absent on every ordinary table, which is every table but these.
+   */
+  practiceFor?: string;
+  /**
+   * How long an agent's answer waits before it lands, in ms. Absent uses the deployment's default.
+   *
+   * A TABLE'S OWN SETTING, because how fast is comfortable is not a property of the deployment. A
+   * person learning wants to watch each move and hear the line that goes with it; somebody who
+   * knows the game wants it out of the way. Only a practice table can set it, since only there does
+   * one person's preference not slow everybody else down.
+   */
+  paceMs?: number;
+  /**
+   * PAUSED, on a practice table.
+   *
+   * Somebody learning needs to stop and read what just happened, and a table that keeps dealing
+   * while they do turns a lesson into a race. Pausing holds three things at once: the turn clock
+   * stops running down, the agents stop answering, and the next round does not deal. Resuming pushes
+   * every deadline forward by however long the pause lasted, so no time is taken off anybody.
+   *
+   * Practice tables only — a pause anywhere else is one person stopping everybody's game.
+   */
+  pausedAt?: number;
 }
 
 export interface InitRequest {
   tableId: string;
   name: string;
-  config?: Partial<TableConfig>;
+  /** The game's own config, unopened. The game validates it and refuses by name. */
+  config?: unknown;
   settlement: SettlementMode;
   createdAt?: number;
+  /** The club that owns it. The Worker has already checked the creator is one of its hosts. */
+  club?: string;
+  clubName?: string;
+  /** Which game to deal. Absent is poker. Refused at creation if this deployment does not have it. */
+  game?: string;
+  /**
+   * WHOSE PRACTICE TABLE this is, if it is one.
+   *
+   * A practice table belongs to one person, is in no lobby, and may be reset by its owner back to a
+   * fresh game. Absent on every ordinary table, which is every table but these.
+   */
+  practiceFor?: string;
 }
 
 /** What each hibernated socket remembers about itself. */
@@ -328,7 +391,16 @@ const AGENT_DEADLINE_HEADROOM_MS = 1000;
 
 export class PokerTableDO extends DurableObject<Env> {
   private meta: TableMeta | null = null;
-  private state: TableState | null = null;
+  /**
+   * The game's own state, OPAQUE to this object.
+   *
+   * It was `TableState` — poker's — and typing it that way is what made this a poker table rather
+   * than a table. Everything this object needs to know about the state without understanding it
+   * comes through `this.snap()`; everything it needs to DO comes through `this.game`.
+   */
+  private state: unknown = null;
+  /** The game this table deals, resolved from `meta.game` on load and never from anywhere else. */
+  private game: HostedGame = gameFor(undefined);
   private names: Record<string, string> = {};
   private players: Record<string, SeatRecord> = {};
   private adapter: SettlementAdapter | null = null;
@@ -348,7 +420,10 @@ export class PokerTableDO extends DurableObject<Env> {
       ctx.storage.sql.exec(SCHEMA);
       const kv = await ctx.storage.get<unknown>(['meta', 'state', 'names', 'players']);
       this.meta = (kv.get('meta') as TableMeta | undefined) ?? null;
-      this.state = (kv.get('state') as TableState | undefined) ?? null;
+      this.state = (kv.get('state') as unknown) ?? null;
+      // Resolved once, from the table's own stamp. A table stamped with a game this deployment does
+      // not ship throws HERE, on load, rather than dealing the wrong game to people already seated.
+      if (this.meta) this.game = gameFor(this.meta.game);
       this.names = (kv.get('names') as Record<string, string> | undefined) ?? {};
       // Migration: a table created before phase 2 has `names` but no `players`. Everyone in it was a
       // human on a WebSocket, so the record is derivable; it is persisted on the next seat change.
@@ -372,7 +447,7 @@ export class PokerTableDO extends DurableObject<Env> {
       // So a table with seats and no hand running gets exactly ONE between-hands tick on load. The
       // tick is where {@link settleBustedAgents} runs and where a hand is started if one can be; if
       // neither applies it schedules nothing further and the table goes straight back to sleep.
-      if (this.state && this.state.seats.length > 0 && (this.state.hand === null || this.state.hand.result !== undefined)) {
+      if (this.state && this.snap().seats.length > 0 && !this.snap().roundInProgress) {
         if ((await ctx.storage.get<number>('next-hand-at')) === undefined) {
           await ctx.storage.put('next-hand-at', Date.now() + HAND_START_DELAY_MS);
         }
@@ -397,15 +472,88 @@ export class PokerTableDO extends DurableObject<Env> {
       return json({
         tableId: this.meta.tableId,
         name: this.meta.name,
+        // WHICH GAME, on the one-table read as well as on the lobby summary.
+        //
+        // A client picks its board from this, and a CLUB table is not in the public lobby — so a
+        // client that could only learn the game by listing tables could not learn it for exactly the
+        // tables that are private, which is the half that matters most to a club.
+        game: this.game.id,
         settlement: this.meta.settlement,
         ...(this.meta.chipValue ? { chipValue: this.meta.chipValue } : {}),
         ...(this.meta.asset ? { asset: this.meta.asset } : {}),
         ...(this.meta.assetSymbol ? { assetSymbol: this.meta.assetSymbol } : {}),
-        view: viewFor(this.state, null),
+        // The club is on the SPECTATOR view too, and not only on the summary: this is the response
+        // the Worker gates `GET /tables/:id` on, and a view that did not carry it was a club table
+        // that answered a stranger in full.
+        ...(this.meta.club ? { club: this.meta.club } : {}),
+        ...(this.meta.clubName ? { clubName: this.meta.clubName } : {}),
+        // Whose practice table this is and how fast it plays, so the client can offer "deal again"
+        // and the pace control only where they mean something — and read the current pace back.
+        ...(this.meta.practiceFor ? { practiceFor: this.meta.practiceFor } : {}),
+        ...(this.meta.paceMs === undefined ? {} : { paceMs: this.meta.paceMs }),
+        ...(this.meta.pausedAt === undefined ? {} : { paused: true }),
+        view: this.game.viewFor(this.state, null),
         names: this.names,
         players: this.publicPlayers(),
       });
     }
+    /**
+     * WHAT WOULD A GOOD PLAYER DO HERE, and why — for one seat, from that seat's own view.
+     *
+     * The coach reads exactly what the player reads: `viewFor(state, seat)` and `legalFor`, the same
+     * redacted pair a human or an agent gets. A coach that reasoned from the full state would teach
+     * with cards the learner cannot see, which is worse than not teaching — it produces reasoning
+     * they can never reproduce for themselves.
+     *
+     * Only for a game that HAS a coach, and only for the seat asking. The Worker has already checked
+     * that the caller holds that seat.
+     */
+    if (request.method === 'GET' && path === '/advice') {
+      const seat = Number(url.searchParams.get('seat'));
+      if (!Number.isInteger(seat) || seat < 0) return json({ error: 'which seat?' }, 400);
+      const advice = this.game.advise?.(this.state, seat);
+      if (!advice) return json({ error: 'this game has no coach' }, 404);
+      return json(advice);
+    }
+
+    /**
+     * START THE GAME AGAIN, on a PRACTICE table only.
+     *
+     * A practice table is for learning, and learning means "that went badly, deal again" — not
+     * living with a scoreboard for the rest of the week. This throws the state away and builds a
+     * fresh one from the same game and config, then puts everybody back in the seat they were in.
+     *
+     * SEATS ARE KEPT, SCORES ARE NOT. That is the whole difference between this and opening a new
+     * table, and it is what makes a practice table a place rather than a thing you keep making.
+     *
+     * The Worker has already checked the caller owns it. This refuses on any other table, because a
+     * reset at a real one would wipe a game people are in the middle of.
+     */
+    /** Stop, or start again. Practice tables only; the Worker has checked the caller owns it. */
+    if (request.method === 'POST' && path === '/pause') {
+      const meta = this.meta as TableMeta;
+      if (!meta.practiceFor) return json({ error: 'only a practice table can be paused' }, 409);
+      const body = (await request.json()) as { paused?: unknown };
+      return this.serial(() => this.setPaused(body?.paused === true));
+    }
+
+    /** How fast this table plays. Practice tables only; the Worker has checked the caller owns it. */
+    if (request.method === 'POST' && path === '/pace') {
+      const meta = this.meta as TableMeta;
+      if (!meta.practiceFor) return json({ error: 'only a practice table sets its own pace' }, 409);
+      const body = (await request.json()) as { ms?: unknown };
+      const ms = Number(body?.ms);
+      if (!Number.isFinite(ms) || ms < 0 || ms > 8000) return json({ error: 'a pace is 0 to 8000 ms' }, 400);
+      const next: TableMeta = { ...meta, paceMs: Math.floor(ms) };
+      this.meta = next;
+      await this.ctx.storage.put('meta', next);
+      return json({ paceMs: next.paceMs });
+    }
+
+    if (request.method === 'POST' && path === '/reset') {
+      return this.serial(() => this.reset());
+    }
+
     if (request.method === 'POST' && path === '/seat-agent') {
       const body = (await request.json()) as SeatAgentBody;
       return this.serial(() => this.seatAgent(body));
@@ -453,12 +601,151 @@ export class PokerTableDO extends DurableObject<Env> {
     return json({ error: 'not found' }, 404);
   }
 
+  /**
+   * Stop the table, or start it again.
+   *
+   * PAUSING TAKES NO TIME OFF ANYBODY. The turn clock and the next-round timer are both absolute
+   * instants, so resuming moves them forward by exactly the length of the pause — a seat that had
+   * twenty seconds left still has twenty seconds. The alternative, letting them run, would mean
+   * every pause cost somebody their turn.
+   */
+  /**
+   * WHICH GAME THIS TABLE IS ON, counted in memory and bumped by every reset.
+   *
+   * A reset deals from round one again, so the round number alone cannot tell an agent's answer to
+   * the OLD round one from an answer to the new one — and `draw` is legal in both, so a stale reply
+   * would simply be applied. Anybody watching sees the other players carry on playing a game that
+   * no longer exists. The generation is what makes the two rounds different.
+   *
+   * In memory on purpose: an evicted object has no calls in flight to be confused about.
+   */
+  private generation = 0;
+
+  private async setPaused(paused: boolean): Promise<Response> {
+    const meta = this.meta as TableMeta;
+    const already = meta.pausedAt !== undefined;
+    if (paused === already) return json({ paused: already });
+    const now = Date.now();
+
+    if (paused) {
+      this.meta = { ...meta, pausedAt: now };
+      await this.ctx.storage.put('meta', this.meta);
+    } else {
+      const held = Math.max(0, now - (meta.pausedAt ?? now));
+      const { pausedAt: _gone, ...rest } = meta;
+      this.meta = rest;
+      await this.ctx.storage.put('meta', this.meta);
+      // Everything that was counting down gets the held time back.
+      const state = this.state;
+      if (state) {
+        const at = this.snap(state);
+        if (at.deadline !== null) {
+          this.state = this.game.setDeadline(state, at.deadline + held);
+          await this.ctx.storage.put('state', this.state);
+        }
+      }
+      const nextAt = await this.ctx.storage.get<number>('next-hand-at');
+      if (nextAt !== undefined) {
+        // The NEXT DEAL is not a clock somebody is racing, so it is capped rather than shifted.
+        // Shifting it by the whole pause meant a table paused overnight sat there the next morning
+        // waiting out a delay that had already elapsed — no cards, no turn, nothing to press.
+        await this.ctx.storage.put('next-hand-at', Math.min(nextAt + held, now + HAND_START_DELAY_MS));
+      }
+    }
+
+    // Say so, and put the clock back on screen with the right number on it.
+    for (const ws of this.ctx.getWebSockets()) {
+      send(ws, {
+        type: 'snapshot',
+        view: this.wireView(this.game.viewFor(this.state, this.viewerSeat(ws))),
+        names: this.names,
+        players: this.publicPlayers(),
+      });
+    }
+    await this.scheduleAlarm();
+    // Whoever was on the clock when we stopped is asked again, so an agent that was waiting resumes.
+    if (!paused && this.state) {
+      const at = this.snap(this.state);
+      if (at.toAct !== null && at.deadline !== null) this.notifyTurn(this.state, at.toAct, at.deadline);
+    }
+    return json({ paused });
+  }
+
+  /** Whether this table is holding. Nothing moves while it is. */
+  private get paused(): boolean {
+    return (this.meta as TableMeta | null)?.pausedAt !== undefined;
+  }
+
+  /** Throw the game away and deal from the start, keeping whoever is sitting there. */
+  private async reset(): Promise<Response> {
+    const meta = this.meta as TableMeta | null;
+    if (!meta || !this.state) return json({ error: 'table not initialized' }, 404);
+    if (!meta.practiceFor) return json({ error: 'only a practice table can be reset' }, 409);
+
+    const before = this.snap(this.state);
+    let fresh: unknown;
+    try {
+      // The table's own config, handed straight back. Opaque to the host, which is the point: the
+      // game validated it once when the table opened and will validate it again here.
+      fresh = this.game.create(this.game.config(this.state) as Partial<unknown>);
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+    // Back into the chairs they were in. A reset that also emptied the table would make the person
+    // set the whole thing up again, which is the errand this exists to remove.
+    for (const seat of before.seats) {
+      try {
+        fresh = this.game.sitDown(fresh, seat.seat, seat.playerId, seat.stack);
+      } catch {
+        // A seat the fresh game will not take (a rule that changed under it) is simply not re-taken.
+        // Better a table with a gap somebody can fill than one that refuses to reset at all.
+      }
+    }
+    // NOTHING FROM THE OLD GAME MAY LAND ON THIS ONE. Agents answer out of band, so a call made a
+    // moment ago is still on the wire — and after a reset its round number matches the new round's.
+    this.generation++;
+    this.inFlightTurns.clear();
+
+    this.state = fresh;
+    await this.ctx.storage.put('state', fresh);
+    // The old round's history belongs to the old game. Leaving it would make the next round #1 land
+    // on top of rows from a game that no longer exists.
+    const sql = this.ctx.storage.sql;
+    sql.exec('DELETE FROM events');
+    sql.exec('DELETE FROM actions');
+    sql.exec('DELETE FROM hands');
+    await this.ctx.storage.delete('seed');
+    await this.ctx.storage.delete('next-hand-at');
+
+    // Everyone watching gets the whole new table, not a diff: nothing of the old game survives.
+    for (const ws of this.ctx.getWebSockets()) {
+      send(ws, {
+        type: 'snapshot',
+        view: this.wireView(this.game.viewFor(fresh, this.viewerSeat(ws))),
+        names: this.names,
+        players: this.publicPlayers(),
+      });
+    }
+    // …and deal, once there are enough of them again.
+    if (this.game.canStart(fresh)) await this.ctx.storage.put('next-hand-at', Date.now() + HAND_START_DELAY_MS);
+    await this.scheduleAlarm();
+    return json({ reset: true, tableId: meta.tableId });
+  }
+
   private async init(body: InitRequest): Promise<Response> {
     if (this.meta && this.state) return json(this.summary());
     const config = body.config ?? {};
-    let state: TableState;
+    // WHICH GAME, resolved BEFORE anything is created and refused by name if this deployment does
+    // not deal it. Everything below — the state, the config validation, the settlement adapter — is
+    // the game's answer, so getting this wrong would build a table out of the wrong rules.
     try {
-      state = createTable(config);
+      this.game = gameFor(body.game);
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+    let state: unknown;
+    try {
+      state = this.game.create(config);
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
@@ -477,6 +764,12 @@ export class PokerTableDO extends DurableObject<Env> {
       ...(rate === null ? {} : { chipValue: rate.toString() }),
       ...(asset === null ? {} : { asset }),
       ...(asset === null || assetSymbol === null ? {} : { assetSymbol }),
+      ...(body.club ? { club: body.club } : {}),
+      ...(body.club && body.clubName ? { clubName: body.clubName } : {}),
+      // Always stamped, including when it is the default. A field that is present only for the
+      // non-default case is a field you cannot tell apart from an old row that predates it.
+      game: this.game.id,
+      ...(body.practiceFor ? { practiceFor: body.practiceFor } : {}),
     };
     // Adapter must exist for this mode before we accept the table — a table that cannot settle must
     // fail here, not at someone's cash-out. Built with the same funding resolver `settlement()` uses,
@@ -499,22 +792,68 @@ export class PokerTableDO extends DurableObject<Env> {
     return json(this.summary());
   }
 
+  /**
+   * What the table is doing, without this object knowing what game it is.
+   *
+   * Every question this object used to answer by reaching into poker's `TableState` — who is seated,
+   * what they hold, which round it is, whose turn it is, when their clock runs out — is asked here
+   * instead. The game answers in words that are true of any seated turn-based game, which is what
+   * lets a second one be added without editing this file.
+   */
+  private snap(state: unknown = this.state): TableSnapshot {
+    return this.game.snapshot(state);
+  }
+
+  /**
+   * THE WIRE IS STILL POKER-SHAPED, and these three functions are the whole of what that now costs.
+   *
+   * `@pokernight/protocol` types the table view, the legal actions and the events as poker's, so a
+   * game's own values are cast on their way out — here, in one named place, rather than at forty
+   * call sites. Everything else in this object is game-agnostic; generalising the protocol is the
+   * next step and this is exactly where it starts.
+   */
+  private wireView(view: unknown): TableView {
+    return view as TableView;
+  }
+
+  private wireLegal(legal: unknown): LegalActions {
+    return legal as LegalActions;
+  }
+
+  private wireEvents(events: readonly unknown[]): EngineEvent[] {
+    return events as EngineEvent[];
+  }
+
   private summary(): TableSummary {
     const meta = this.meta as TableMeta;
-    const state = this.state as TableState;
+    const at = this.snap();
     return {
       tableId: meta.tableId,
       name: meta.name,
-      config: state.config,
+      config: at.config,
+      // The game's own — poker's blinds — carried for a client that knows this game.
+      gameConfig: this.game.config(this.state),
       settlement: meta.settlement,
-      seated: state.seats.length,
-      handNo: state.handNo,
+      seated: at.seats.length,
+      handNo: at.round,
       createdAt: meta.createdAt,
       // Said out loud so a client can convert chips to money instead of guessing at a rate — and
       // NAME that money, instead of assuming every table on the estate settles in the same coin.
       ...(meta.chipValue ? { chipValue: meta.chipValue } : {}),
       ...(meta.asset ? { asset: meta.asset } : {}),
       ...(meta.assetSymbol ? { assetSymbol: meta.assetSymbol } : {}),
+      // Said out loud so the Worker can gate on it without a second round trip, and so a client can
+      // tell a club table from a pickup one at a glance.
+      ...(meta.club ? { club: meta.club } : {}),
+      ...(meta.clubName ? { clubName: meta.clubName } : {}),
+      // Said out loud so a lobby can show what is being dealt without opening the table, and so a
+      // client can pick the right board to draw before the first snapshot arrives.
+      game: meta.game ?? DEFAULT_GAME,
+      // Whose practice table this is, if it is one — so the Worker can gate a reset on the table's
+      // own record, and a client can offer "deal again" only where it means something.
+      ...(meta.practiceFor ? { practiceFor: meta.practiceFor } : {}),
+      ...(meta.paceMs === undefined ? {} : { paceMs: meta.paceMs }),
+      ...(meta.pausedAt === undefined ? {} : { paused: true }),
     };
   }
 
@@ -573,12 +912,15 @@ export class PokerTableDO extends DurableObject<Env> {
     if (playerId) void this.serial(() => this.sitInOnReconnect(playerId));
     this.ctx.acceptWebSocket(server, playerId ? [playerId] : []);
     server.serializeAttachment(attachment);
-    const state = this.state as TableState;
+    const state = this.state;
     const welcome: ServerMessage = {
       type: 'welcome',
       tableId: (this.meta as TableMeta).tableId,
+      // Which game this socket deals, in the same frame as the first view — so a client narrows the
+      // payloads it is about to be sent instead of guessing from a table list it may not have read.
+      game: this.game.id,
       playerId,
-      view: viewFor(state, attachment.seat),
+      view: this.wireView(this.game.viewFor(state, attachment.seat)),
       names: this.names,
       players: this.publicPlayers(),
     };
@@ -607,7 +949,8 @@ export class PokerTableDO extends DurableObject<Env> {
       try {
         await this.handleCommand(ws, cmd, playerId, name);
       } catch (e) {
-        if (e instanceof EngineError) return sendError(ws, e.code, e.message);
+        const refusal = ruleRefusal(e);
+        if (refusal) return sendError(ws, refusal.code, refusal.message);
         console.error('command failed', cmd.type, e);
         sendError(ws, 'bad-command', e instanceof Error ? e.message : 'internal error');
       }
@@ -659,12 +1002,18 @@ export class PokerTableDO extends DurableObject<Env> {
     if (this.players[playerId]?.sitOutReason !== 'disconnected') return;
     const seat = this.seatOf(playerId);
     if (seat === null) return;
-    const occupant = state.seats.find((x) => x.seat === seat);
-    // No chips means the sit-out that matters now is being broke, not being away: sitting them in
-    // would change nothing and hide the rebuy they actually need.
-    if (!occupant || occupant.status !== 'sitting-out' || occupant.stack <= 0) return;
-    const seatsBefore = seatMap(state);
-    const next = sitIn(state, seat);
+    const occupant = this.snap(state).seats.find((x) => x.seat === seat);
+    if (!occupant || occupant.status !== 'sitting-out') return;
+    // At a STAKED table, no chips means the sit-out that matters now is being broke rather than
+    // being away: sitting them in would change nothing and hide the rebuy they actually need.
+    //
+    // At an UNSTAKED one there is no such thing as broke — canasta reports every seat's stack as
+    // zero because a seat's holding in that game is its cards. Reading a zero there as "they cannot
+    // afford to play" left a canasta player who blinked their connection sat out permanently, at a
+    // table with no rebuy to offer them and, until this was found, no way back at all.
+    if (this.game.staked && occupant.stack <= 0) return;
+    const seatsBefore = seatMap(this.snap(state));
+    const next = this.game.sitIn(state, seat);
     await this.noteSitOut(playerId, null);
     const name = this.players[playerId]?.name ?? this.names[playerId] ?? playerId;
     await this.commit(next, [], [this.seatStatus(next, seat, playerId, name)], seatsBefore);
@@ -682,10 +1031,10 @@ export class PokerTableDO extends DurableObject<Env> {
     // says nothing about it. Guarded explicitly rather than relying on agents never being tagged
     // with a socket: the cost of being wrong here is silently benching every bot at the table.
     if (record && record.transport !== 'ws') return;
-    const occupant = state.seats.find((x) => x.seat === seat);
+    const occupant = this.snap(state).seats.find((x) => x.seat === seat);
     if (!occupant || occupant.status !== 'active') return; // already sitting out; nothing to say
-    const seatsBefore = seatMap(state);
-    const next = sitOut(state, seat);
+    const seatsBefore = seatMap(this.snap(state));
+    const next = this.game.sitOut(state, seat);
     await this.noteSitOut(playerId, 'disconnected');
     const name = record?.name ?? this.names[playerId] ?? playerId;
     await this.commit(next, [], [this.seatStatus(next, seat, playerId, name)], seatsBefore);
@@ -718,9 +1067,9 @@ export class PokerTableDO extends DurableObject<Env> {
   /* ------------------------------------------------------------- commands */
 
   private async handleCommand(ws: WebSocket, cmd: ClientCommand, playerId: string, name: string): Promise<void> {
-    const state = this.state as TableState;
+    const state = this.state;
     const meta = this.meta as TableMeta;
-    const seatsBefore = seatMap(state);
+    const seatsBefore = seatMap(this.snap(state));
     const now = Date.now();
     // Anything a seated player says is proof they are still here, and the operator clear route reads
     // that. Done for EVERY command (chat and ping included) because being at the keyboard is the
@@ -740,7 +1089,7 @@ export class PokerTableDO extends DurableObject<Env> {
           ...(funding?.treasury ? { playerAddress: funding.treasury } : {}),
         });
         if (!auth.ok) return sendError(ws, 'settlement-failed', auth.reason);
-        const next = sitDown(state, cmd.seat, playerId, cmd.buyIn);
+        const next = this.game.sitDown(state, cmd.seat, playerId, cmd.buyIn);
         // Play money settles inline (nothing leaves the DO). A settled table queues the movement and
         // never blocks the seat on it — the money path must not be able to stall a hand.
         await this.settleBuyInOrQueue({
@@ -756,7 +1105,7 @@ export class PokerTableDO extends DurableObject<Env> {
         });
         await this.putPlayer({ playerId, name, kind: 'human', transport: 'ws', ...(funding?.treasury ? { treasury: funding.treasury } : {}) });
         this.setAttachmentSeat(playerId, cmd.seat);
-        const stack = next.seats.find((s) => s.seat === cmd.seat)?.stack ?? cmd.buyIn;
+        const stack = this.snap(next).seats.find((s) => s.seat === cmd.seat)?.stack ?? cmd.buyIn;
         const ev: SeatEvent = { type: 'seat-joined', seat: cmd.seat, playerId, name, stack, status: 'active', kind: 'human' };
         await this.commit(next, [], [ev], seatsBefore);
         return;
@@ -772,7 +1121,7 @@ export class PokerTableDO extends DurableObject<Env> {
       case 'sit-in': {
         const seat = this.seatOf(playerId);
         if (seat === null) throw new EngineError('not-seated', 'you are not seated');
-        const next = cmd.type === 'sit-out' ? sitOut(state, seat) : sitIn(state, seat);
+        const next = cmd.type === 'sit-out' ? this.game.sitOut(state, seat) : this.game.sitIn(state, seat);
         // Sitting in is always the player's own decision, however they came to be out — a reconnect
         // never makes it for them. Recording 'requested' on the way out keeps the client's
         // explanation honest: "you asked to sit out" is a different sentence from "you dropped".
@@ -799,11 +1148,11 @@ export class PokerTableDO extends DurableObject<Env> {
         // "Sit in" was the only control on offer to somebody it could not help. So the two halves
         // happen together, and only in that exact case: a player who CHOSE to sit out and then tops
         // up keeps the choice they made.
-        const brokeBefore = (state.seats.find((x) => x.seat === seat)?.stack ?? 0) === 0;
-        const wasSittingOut = state.seats.find((x) => x.seat === seat)?.status === 'sitting-out';
-        let next = addChips(state, seat, cmd.amount);
-        if (brokeBefore && wasSittingOut && (next.seats.find((x) => x.seat === seat)?.stack ?? 0) > 0) {
-          next = sitIn(next, seat);
+        const brokeBefore = (this.snap(state).seats.find((x) => x.seat === seat)?.stack ?? 0) === 0;
+        const wasSittingOut = this.snap(state).seats.find((x) => x.seat === seat)?.status === 'sitting-out';
+        let next = this.game.addStake(state, seat, cmd.amount);
+        if (brokeBefore && wasSittingOut && (this.snap(next).seats.find((x) => x.seat === seat)?.stack ?? 0) > 0) {
+          next = this.game.sitIn(next, seat);
           await this.noteSitOut(playerId, null);
         }
         await this.settleBuyInOrQueue({
@@ -813,7 +1162,7 @@ export class PokerTableDO extends DurableObject<Env> {
           chips: cmd.amount,
           orderId,
           kind: 'add-chips',
-          handNo: state.hand?.handNo ?? null,
+          handNo: this.snap(state).round,
           at: now,
           ...(treasury ? { playerAddress: treasury } : {}),
         });
@@ -823,15 +1172,23 @@ export class PokerTableDO extends DurableObject<Env> {
       case 'act': {
         const seat = this.seatOf(playerId);
         if (seat === null) throw new EngineError('not-seated', 'you are not seated');
+        // A PAUSED TABLE IS PAUSED FOR EVERYBODY, including the person who paused it. Holding only
+        // the clock and the agents left a human's moves going through, so anything still playing
+        // this seat kept the whole table moving and a pause took a minute to look like one.
+        if (this.paused) return sendError(ws, 'paused', 'this table is paused');
         // Two different situations that used to share one message. "Not the current hand" sent a
         // player looking for a hand that had moved on; when there is no hand at all — the table is
         // short of players, or between deals — the true answer is that there is nothing to act in.
-        const hand = state.hand;
-        const running = hand !== null && hand.result === undefined;
-        if (!running) return sendError(ws, 'no-hand', 'no hand is running at this table right now');
-        if (cmd.handNo !== hand.handNo) return sendError(ws, 'stale-hand', `hand ${cmd.handNo} is not the current hand`);
-        const { state: next, events } = applyAction(state, seat, cmd.action as Action);
-        await this.commit(next, events, [], seatsBefore);
+        const at = this.snap(state);
+        if (!at.roundInProgress) return sendError(ws, 'no-hand', 'no hand is running at this table right now');
+        if (cmd.handNo !== at.round) return sendError(ws, 'stale-hand', `hand ${cmd.handNo} is not the current hand`);
+        // THE GAME PARSES ITS OWN ACTION and then judges it. A malformed move and an illegal one are
+        // different answers and only the game can tell them apart.
+        const parsed = this.game.parseAction(cmd.action);
+        if (!parsed.ok) return sendError(ws, 'bad-command', parsed.reason);
+        const applied = this.game.apply(state, seat, parsed.action);
+        if (!applied.ok) return sendError(ws, 'illegal-action', applied.reason);
+        await this.commit(applied.state, this.wireEvents(applied.events), [], seatsBefore);
         return;
       }
       case 'chat': {
@@ -852,21 +1209,22 @@ export class PokerTableDO extends DurableObject<Env> {
    * buy-in, announce) with a synthetic playerId and an 'a2a' seat record.
    */
   private async seatAgent(body: SeatAgentBody): Promise<Response> {
-    const state = this.state as TableState;
+    const state = this.state;
     const meta = this.meta as TableMeta;
     const agentName = body.agentName.trim();
     if (!agentName) return json({ error: 'agentName is required' }, 400);
     const playerId = agentPlayerId(agentName);
     const name = (body.displayName ?? agentName).slice(0, 32);
-    const seatsBefore = seatMap(state);
+    const seatsBefore = seatMap(this.snap(state));
     const now = Date.now();
     const orderId = `${meta.tableId}:${playerId}:${body.seat}:${now}`;
 
-    let next: TableState;
+    let next: unknown;
     try {
-      next = sitDown(state, body.seat, playerId, body.buyIn);
+      next = this.game.sitDown(state, body.seat, playerId, body.buyIn);
     } catch (e) {
-      if (e instanceof EngineError) return json({ error: e.message, code: e.code }, 409);
+      const refusal = ruleRefusal(e);
+      if (refusal) return json({ error: refusal.message, code: refusal.code }, 409);
       throw e;
     }
     const auth = await this.settlement().authorizeBuyIn({ tableId: meta.tableId, seat: body.seat, playerId, chips: body.buyIn, orderId });
@@ -890,7 +1248,7 @@ export class PokerTableDO extends DurableObject<Env> {
       endpoint: body.endpoint,
       agentKind: body.agentKind,
     });
-    const stack = next.seats.find((s) => s.seat === body.seat)?.stack ?? body.buyIn;
+    const stack = this.snap(next).seats.find((s) => s.seat === body.seat)?.stack ?? body.buyIn;
     const ev: SeatEvent = {
       type: 'seat-joined',
       seat: body.seat,
@@ -909,12 +1267,12 @@ export class PokerTableDO extends DurableObject<Env> {
 
   /** Stand an agent up (cash-out through the outbox, like a human `leave`). Refuses human seats. */
   private async unseatAgent(seat: number): Promise<Response> {
-    const state = this.state as TableState;
-    const occupant = state.seats.find((s) => s.seat === seat);
+    const state = this.state;
+    const occupant = this.snap(state).seats.find((s) => s.seat === seat);
     if (!occupant) return json({ error: `seat ${seat} is empty`, code: 'not-seated' }, 404);
     const record = this.players[occupant.playerId];
     if (record?.transport !== 'a2a') return json({ error: `seat ${seat} is not an agent seat`, code: 'not-an-agent' }, 400);
-    await this.standUpSeat(seat, occupant.playerId, record.name, seatMap(state), Date.now());
+    await this.standUpSeat(seat, occupant.playerId, record.name, seatMap(this.snap(state)), Date.now());
     return json({ seat, playerId: occupant.playerId });
   }
 
@@ -927,9 +1285,9 @@ export class PokerTableDO extends DurableObject<Env> {
    * that has to be right about it. A disconnect is deliberately NOT one of them.
    */
   private async standUpSeat(seat: number, playerId: string, name: string, seatsBefore: Map<number, string>, now: number): Promise<StoodUp> {
-    const state = this.state as TableState;
+    const state = this.state;
     const meta = this.meta as TableMeta;
-    const { state: next, cashOut, events } = standUp(state, seat);
+    const { state: next, refund: cashOut, events } = this.game.standUp(state, seat);
     const ledgerId = crypto.randomUUID();
     const orderId = `${meta.tableId}:${playerId}:${seat}:out:${now}`;
     this.writeLedger({
@@ -938,7 +1296,7 @@ export class PokerTableDO extends DurableObject<Env> {
       playerId,
       kind: 'cash-out',
       chips: -cashOut,
-      handNo: state.hand?.handNo ?? null,
+      handNo: this.snap(state).round,
       at: now,
       // A settled table owes this player real money from this instant; say so until it has moved.
       ...(this.settles ? { receipt: this.pending(orderId, cashOut, now) } : {}),
@@ -964,7 +1322,7 @@ export class PokerTableDO extends DurableObject<Env> {
     // The seat is gone, so any reason it was sitting out is history too.
     await this.noteSitOut(playerId, null);
     const ev: SeatEvent = { type: 'seat-left', seat, playerId, name, stack: cashOut };
-    await this.commit(next, events, [ev], seatsBefore);
+    await this.commit(next, this.wireEvents(events), [ev], seatsBefore);
     // `pending` is the honest half of the answer: on a settled table the money has NOT moved yet — the
     // outbox op above is a promise to move it, with retries and a failure that gets written onto the
     // ledger row. Callers report this verbatim rather than saying the money is back.
@@ -986,12 +1344,12 @@ export class PokerTableDO extends DurableObject<Env> {
    * table, and most of them have never heard of this person.
    */
   private async standUpPlayer(playerId: string): Promise<Response> {
-    const state = this.state as TableState;
+    const state = this.state;
     const meta = this.meta as TableMeta;
     const seat = this.seatOf(playerId);
     if (seat === null) return json({ seated: false, tableId: meta.tableId });
     const name = this.players[playerId]?.name ?? this.names[playerId] ?? playerId;
-    const out = await this.standUpSeat(seat, playerId, name, seatMap(state), Date.now());
+    const out = await this.standUpSeat(seat, playerId, name, seatMap(this.snap(state)), Date.now());
     const result: SeatStoodUp = {
       tableId: meta.tableId,
       tableName: meta.name,
@@ -1033,17 +1391,17 @@ export class PokerTableDO extends DurableObject<Env> {
    * retire it. The refusal says exactly that, and how many seats are in the way.
    */
   private async retire(): Promise<Response> {
-    const state = this.state as TableState;
+    const state = this.state;
     const meta = this.meta as TableMeta;
-    if (state.seats.length > 0) {
+    if (this.snap(state).seats.length > 0) {
       return json(
         {
           error:
-            `${meta.name} still has ${state.seats.length} ${state.seats.length === 1 ? 'player' : 'players'} seated, so it cannot be ` +
+            `${meta.name} still has ${this.snap(state).seats.length} ${this.snap(state).seats.length === 1 ? 'player' : 'players'} seated, so it cannot be ` +
             `retired — their chips are at this table and retiring it would strand them. Stand them up first (a cash-out pays them ` +
             `out through the ordinary path), then retire it.`,
           refused: 'seated',
-          seated: state.seats.length,
+          seated: this.snap().seats.length,
         },
         409,
       );
@@ -1061,11 +1419,11 @@ export class PokerTableDO extends DurableObject<Env> {
   }
 
   private async clearSeat(seat: number): Promise<Response> {
-    const state = this.state as TableState;
+    const state = this.state;
     const meta = this.meta as TableMeta;
     const now = Date.now();
 
-    const occupant = state.seats.find((s) => s.seat === seat);
+    const occupant = this.snap(state).seats.find((s) => s.seat === seat);
     if (!occupant) return refuse('empty', `seat ${seat + 1} is empty — there is nothing to clear`, 404);
     const playerId = occupant.playerId;
     const name = this.players[playerId]?.name ?? this.names[playerId] ?? playerId;
@@ -1079,9 +1437,13 @@ export class PokerTableDO extends DurableObject<Env> {
 
     // 3. Not in a running hand. Their chips are in the pot and other people's money is riding on how
     //    that pot resolves; the turn clock is already the right answer to a silent seat mid-hand.
-    const hand = state.hand;
-    if (hand && hand.result === undefined && hand.seats.some((h) => h.seat === seat)) {
-      return refuse('in-hand', `seat ${seat + 1} (${name}) is in hand #${hand.handNo}, which is still running — the turn clock owns that seat until the hand ends`, 409);
+    // A ROUND IN PROGRESS OWNS EVERY SEAT AT THE TABLE. This used to ask whether the seat was in the
+    // hand, which is a poker question — a canasta round deals everybody in, and there is no shorter
+    // way to ask it that is true of both. The turn clock is the right answer to a silent seat either
+    // way, so refusing the whole time a round is running costs nothing and is correct at any game.
+    const at = this.snap(state);
+    if (at.roundInProgress) {
+      return refuse('in-hand', `seat ${seat + 1} (${name}) is in hand #${at.round}, which is still running — the turn clock owns that seat until the hand ends`, 409);
     }
 
     // 4. Idle past the threshold. The one that turns "not connected right now" into "gone".
@@ -1096,7 +1458,7 @@ export class PokerTableDO extends DurableObject<Env> {
       );
     }
 
-    const out = await this.standUpSeat(seat, playerId, name, seatMap(state), now);
+    const out = await this.standUpSeat(seat, playerId, name, seatMap(this.snap(state)), now);
     const body: SeatCleared = {
       ok: true,
       tableId: meta.tableId,
@@ -1156,24 +1518,30 @@ export class PokerTableDO extends DurableObject<Env> {
   /* ----------------------------------------------------------- agent turn */
 
   /**
-   * Fire the `poker.act` call for an agent seat. Detached on purpose: the serial queue stays free so
+   * Fire this game's act call for an agent seat. Detached on purpose: the serial queue stays free so
    * WebSocket commands and — crucially — the turn-clock alarm can run while the agent thinks.
    * `ctx.waitUntil` asks the runtime to keep the DO alive for it; if the DO is evicted anyway, the
    * persisted alarm still fires at the deadline and applies the default action.
    */
-  private startAgentTurn(state: TableState, handNo: number, seat: number, deadline: number, record: SeatRecord): void {
+  private startAgentTurn(state: unknown, handNo: number, seat: number, deadline: number, record: SeatRecord): void {
     const key = `${handNo}:${seat}:${deadline}`;
+    if (this.paused) return; // a paused table is one nobody is playing at, agents included
     if (this.inFlightTurns.has(key)) return; // a re-announced turn must not call the agent twice
     this.inFlightTurns.add(key);
-    const input: PokerActInput = {
+    // The game this call belongs to. A reset makes it a different one, whatever the round says.
+    const gen = this.generation;
+    const input: ActInput = {
+      // WHICH GAME is asking. The agent on the other end reads its own game's view out of this
+      // message, and an agent that plays poker must never be handed a canasta turn.
+      skill: this.game.actSkill,
       tableId: (this.meta as TableMeta).tableId,
       handNo,
       seat,
-      view: viewFor(state, seat),
-      legal: legalActions(state, seat),
+      view: this.wireView(this.game.viewFor(state, seat)),
+      legal: this.wireLegal(this.game.legalFor(state, seat)),
       deadlineMs: Math.max(500, deadline - Date.now() - AGENT_DEADLINE_HEADROOM_MS),
     };
-    const done = this.runAgentTurn(key, record, input, deadline).catch((e) => {
+    const done = this.runAgentTurn(key, record, input, deadline, gen).catch((e) => {
       this.inFlightTurns.delete(key);
       console.error('agent turn crashed', key, e);
     });
@@ -1184,7 +1552,7 @@ export class PokerTableDO extends DurableObject<Env> {
     }
   }
 
-  private async runAgentTurn(key: string, record: SeatRecord, input: PokerActInput, deadline: number): Promise<void> {
+  private async runAgentTurn(key: string, record: SeatRecord, input: ActInput, deadline: number, gen: number): Promise<void> {
     const requestedAt = Date.now();
     // Bounded by whichever is nearer: the configured A2A budget or the turn clock itself.
     const budget = Math.max(250, Math.min(a2aTimeoutMs(this.env), deadline - requestedAt));
@@ -1204,9 +1572,29 @@ export class PokerTableDO extends DurableObject<Env> {
     }
     let result;
     try {
-      result = await callPokerAct(base, input, budget);
+      result = await callAct(base, input, budget);
     } finally {
       this.inFlightTurns.delete(key);
+    }
+
+    /**
+     * A PAUSE BEFORE THE MOVE LANDS, so a person can watch it happen.
+     *
+     * An agent answers in a couple of hundred milliseconds, so three of them take their whole turn
+     * between two frames — cards move, melds appear, and a human at the table sees the result
+     * without ever seeing the move. At a real table you watch somebody draw, think, and lay
+     * something down, and that watching is most of how you learn a game.
+     *
+     * So the answer waits. Deliberately AFTER the call, not before: the agent has already thought,
+     * so this costs the table nothing on the clock — it spends the time the turn was allowed anyway.
+     * Never past the deadline, because a paced move that arrives late is a move that is not played.
+     */
+    // The TABLE's own pace if it has one, else the deployment's.
+    const pace = (this.meta as TableMeta | null)?.paceMs ?? agentPaceMs(this.env);
+    if (pace > 0) {
+      const room = deadline - Date.now() - AGENT_DEADLINE_HEADROOM_MS;
+      const wait = Math.max(0, Math.min(pace, room));
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     }
     if (!result.ok) {
       // Nothing to apply: the turn clock alarm owns the default, and two of these in a row sit the
@@ -1216,36 +1604,44 @@ export class PokerTableDO extends DurableObject<Env> {
       return;
     }
     const output = result.output;
-    await this.serial(() => this.applyAgentAction(record, input, output, requestedAt));
+    await this.serial(() => this.applyAgentAction(record, input, output, requestedAt, gen));
   }
 
   /** Re-validate against the CURRENT state before applying: the world moved while the agent thought. */
-  private async applyAgentAction(record: SeatRecord, input: PokerActInput, output: PokerActOutput, requestedAt: number): Promise<void> {
+  private async applyAgentAction(record: SeatRecord, input: ActInput, output: ActOutput, requestedAt: number, gen: number): Promise<void> {
     const drop = (why: string): void => {
       console.warn(`dropping agent action for seat ${input.seat} hand ${input.handNo}: ${why}`);
       this.finishAgentCall(input, requestedAt, false, output, why);
     };
+    // The table was reset while this answer was on the wire. Round numbers restart at one, so this
+    // is the ONLY thing that can tell the old game's round one from the new game's.
+    if (gen !== this.generation) return drop('the table was reset while this move was in flight');
+    if (this.paused) return drop('the table is paused');
     const state = this.state;
     if (!state) return drop('table not initialized');
-    const hand = state.hand;
-    if (!hand || hand.result !== undefined || hand.handNo !== input.handNo) return drop(`hand ${input.handNo} is no longer running`);
-    if (hand.toAct !== input.seat) return drop(`seat ${input.seat} is no longer to act`);
-    const occupant = state.seats.find((s) => s.seat === input.seat);
+    const now = this.snap(state);
+    if (!now.roundInProgress || now.round !== input.handNo) return drop(`hand ${input.handNo} is no longer running`);
+    if (now.toAct !== input.seat) return drop(`seat ${input.seat} is no longer to act`);
+    const occupant = this.snap(state).seats.find((s) => s.seat === input.seat);
     if (!occupant || occupant.playerId !== record.playerId) return drop(`seat ${input.seat} changed hands`);
-    if (!isLegalAction(legalActions(state, input.seat), output.action)) return drop(`illegal action ${JSON.stringify(output.action)}`);
+    // WHAT CAME BACK IS THE GAME'S, and only the game can read it. Parse it into that game's action
+    // shape first — a malformed reply is refused by name here — and then let `apply` judge whether
+    // it is legal, which it does by the same rules it judges a human's move by. This used to be a
+    // poker legality check, which is why a canasta seat could not be filled by an agent at all.
+    const parsed = this.game.parseAction(output.action);
+    if (!parsed.ok) return drop(parsed.reason);
 
-    const seatsBefore = seatMap(state);
-    let applied: { state: TableState; events: EngineEvent[] };
-    try {
-      applied = applyAction(state, input.seat, output.action);
-    } catch (e) {
-      return drop(e instanceof EngineError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
-    }
+    const seatsBefore = seatMap(this.snap(state));
+    const result = this.game.apply(state, input.seat, parsed.action);
+    if (!result.ok) return drop(result.reason);
+    // The game REFUSES rather than throwing, so an illegal reply from an agent is an answer this
+    // object can log and drop — it never has to catch a rules exception off the wire.
+    const applied = { state: result.state, events: this.wireEvents(result.events) };
     this.finishAgentCall(input, requestedAt, true, output, null);
     await this.commit(applied.state, applied.events, [], seatsBefore);
   }
 
-  private finishAgentCall(input: PokerActInput, requestedAt: number, ok: boolean, output: PokerActOutput | null, error: string | null): void {
+  private finishAgentCall(input: ActInput, requestedAt: number, ok: boolean, output: ActOutput | null, error: string | null): void {
     this.ctx.storage.sql.exec(
       'UPDATE agent_calls SET responded_at = ?, ok = ?, action_json = ?, note = ?, error = ? WHERE hand_no = ? AND seat = ? AND requested_at = ?',
       Date.now(),
@@ -1283,29 +1679,30 @@ export class PokerTableDO extends DurableObject<Env> {
   override async alarm(): Promise<void> {
     await this.serial(async () => {
       const now = Date.now();
+      // A PAUSED TABLE DOES NOT TICK. Nothing times out and nothing deals, and the alarm simply
+      // comes round again — resuming is what puts the deadlines back and restarts the clock.
+      if (this.paused) return this.scheduleAlarm();
       const state = this.state;
       if (state) {
-        const seatsBefore = seatMap(state);
-        const hand = state.hand;
-        // A finished hand stays on the state (with `result`) until the next startHand replaces it.
-        const running = hand !== null && hand.result === undefined;
-        if (hand && running && hand.toAct !== null && hand.actionDeadline !== null && now >= hand.actionDeadline) {
-          const seat = hand.toAct;
-          const r = timeoutAction(state, seat);
+        const seatsBefore = seatMap(this.snap(state));
+        const at = this.snap(state);
+        if (at.roundInProgress && at.toAct !== null && at.deadline !== null && now >= at.deadline) {
+          const seat = at.toAct;
+          const r = this.game.timeout(state, seat);
           let next = r.state;
           const extra: TableEvent[] = [];
-          const s = next.seats.find((x) => x.seat === seat);
+          const s = this.snap(next).seats.find((x) => x.seat === seat);
           if (s && s.status === 'active' && s.timeouts >= MAX_TIMEOUTS_BEFORE_SIT_OUT) {
             try {
-              next = sitOut(next, seat);
+              next = this.game.sitOut(next, seat);
               await this.noteSitOut(s.playerId, 'timeouts');
               extra.push(this.seatStatus(next, seat, s.playerId, this.names[s.playerId] ?? s.playerId));
             } catch (e) {
               console.warn('sit-out after timeouts failed', e);
             }
           }
-          await this.commit(next, r.events, extra, seatsBefore);
-        } else if (!running) {
+          await this.commit(next, this.wireEvents(r.events), extra, seatsBefore);
+        } else if (!at.roundInProgress) {
           const nextAt = await this.ctx.storage.get<number>('next-hand-at');
           if (nextAt !== undefined && now >= nextAt) {
             await this.ctx.storage.delete('next-hand-at');
@@ -1313,7 +1710,7 @@ export class PokerTableDO extends DurableObject<Env> {
             // moment its stack is final and no hand is riding on it. Returns the state to start
             // from, which may differ from `state` if any agent was rebought or stood up.
             const settled = await this.settleBustedAgents(state, seatsBefore);
-            if (canStartHand(settled)) await this.startNewHand(settled, seatMap(settled));
+            if (this.game.canStart(settled)) await this.startNewHand(settled, seatMap(this.snap(settled)));
           }
         }
       }
@@ -1343,34 +1740,34 @@ export class PokerTableDO extends DurableObject<Env> {
    *               someone who can pay for it. Inventing house money for a bot at a money table is
    *               the one thing this must not do.
    */
-  private async settleBustedAgents(state: TableState, seatsBefore: Map<number, string>): Promise<TableState> {
+  private async settleBustedAgents(state: unknown, seatsBefore: Map<number, string>): Promise<unknown> {
     const meta = this.meta as TableMeta;
-    const busted = state.seats.filter((s) => s.stack === 0 && this.players[s.playerId]?.transport === 'a2a');
+    const busted = this.snap(state).seats.filter((s) => s.stack === 0 && this.players[s.playerId]?.transport === 'a2a');
     if (busted.length === 0) return state;
 
     if (this.settles) {
       for (const seat of busted) {
         const name = this.players[seat.playerId]?.name ?? this.names[seat.playerId] ?? seat.playerId;
         try {
-          await this.standUpSeat(seat.seat, seat.playerId, name, seatMap(this.state as TableState), Date.now());
+          await this.standUpSeat(seat.seat, seat.playerId, name, seatMap(this.snap()), Date.now());
         } catch (e) {
           console.warn(`standing up busted agent seat ${seat.seat}`, e);
         }
       }
-      return this.state as TableState;
+      return this.state;
     }
 
     let next = state;
     const events: TableEvent[] = [];
     const now = Date.now();
     for (const seat of busted) {
-      const amount = next.config.minBuyIn;
+      const amount = this.snap(next).config.minStake;
       const name = this.players[seat.playerId]?.name ?? this.names[seat.playerId] ?? seat.playerId;
       const orderId = `${meta.tableId}:${seat.playerId}:${seat.seat}:add:${now}`;
       try {
-        next = addChips(next, seat.seat, amount);
-        if (next.seats.find((x) => x.seat === seat.seat)?.status === 'sitting-out') {
-          next = sitIn(next, seat.seat);
+        next = this.game.addStake(next, seat.seat, amount);
+        if (this.snap(next).seats.find((x) => x.seat === seat.seat)?.status === 'sitting-out') {
+          next = this.game.sitIn(next, seat.seat);
           await this.noteSitOut(seat.playerId, null);
         }
         await this.settleBuyInOrQueue({
@@ -1389,22 +1786,22 @@ export class PokerTableDO extends DurableObject<Env> {
       }
     }
     if (events.length > 0) await this.commit(next, [], events, seatsBefore);
-    return this.state as TableState;
+    return this.state;
   }
 
-  private async startNewHand(state: TableState, seatsBefore: Map<number, string>): Promise<void> {
+  private async startNewHand(state: unknown, seatsBefore: Map<number, string>): Promise<void> {
     const seed = randomSeed();
-    const { state: next, events } = startHand(state, seed);
+    const { state: next, events: started } = this.game.start(state, seed);
     // The seed stays in KV (never sent) until hand-ended writes it to `hands.seed_reveal`.
     await this.ctx.storage.put('seed', bytesToHex(seed));
-    await this.commit(next, events, [], seatsBefore);
+    await this.commit(next, this.wireEvents(started), [], seatsBefore);
   }
 
   /** Sets the single DO alarm to the earliest pending deadline (turn clock, hand start, outbox retry). */
   private async scheduleAlarm(): Promise<void> {
     const candidates: number[] = [];
-    const deadline = this.state?.hand?.actionDeadline;
-    if (typeof deadline === 'number' && this.state?.hand?.toAct !== null) candidates.push(deadline);
+    const at = this.state ? this.snap() : null;
+    if (at && at.deadline !== null && at.toAct !== null) candidates.push(at.deadline);
     const nextHandAt = await this.ctx.storage.get<number>('next-hand-at');
     if (nextHandAt !== undefined) candidates.push(nextHandAt);
     const outbox = this.ctx.storage.sql
@@ -1506,13 +1903,13 @@ export class PokerTableDO extends DurableObject<Env> {
    * Apply a new engine state: persist it (plus the hand/action/event/ledger rows the events imply),
    * then fan out redacted events and per-viewer views, then the `turn` message and alarm.
    */
-  private async commit(next: TableState, engineEvents: EngineEvent[], tableEvents: TableEvent[], seatsBefore: Map<number, string>): Promise<void> {
+  private async commit(next: unknown, engineEvents: EngineEvent[], tableEvents: TableEvent[], seatsBefore: Map<number, string>): Promise<void> {
     const now = Date.now();
     let state = next;
-    if (state.hand && state.hand.toAct !== null && engineEvents.some((e) => e.type === 'turn')) {
-      state = setActionDeadline(state, now + state.config.actionTimeoutMs);
+    if (this.snap(state).toAct !== null && engineEvents.some((e) => e.type === 'turn')) {
+      state = this.game.setDeadline(state, now + this.snap(state).config.turnMs);
     }
-    const handNo = state.hand?.handNo ?? state.handNo;
+    const handNo = this.snap(state).round;
     const sql = this.ctx.storage.sql;
     let eventIdx = nextIdx(sql, 'events', handNo);
     let actionIdx = nextIdx(sql, 'actions', handNo);
@@ -1537,12 +1934,18 @@ export class PokerTableDO extends DurableObject<Env> {
             JSON.stringify(ev.result),
             ev.handNo,
           );
-          for (const [seatStr, chips] of Object.entries(ev.result.net)) {
-            const seat = Number(seatStr);
-            const playerId = seatsBefore.get(seat) ?? state.seats.find((s) => s.seat === seat)?.playerId ?? 'unknown';
-            this.writeLedger({ seat, playerId, kind: 'hand-result', chips, handNo: ev.handNo, at: now });
+          // THE LEDGER IS FOR MONEY, and only a staked game has any. Canasta's rounds produce a
+          // SCORE, and writing it into a chip ledger would put numbers in a money column that no
+          // money corresponds to — and then a settlement view would read them back as amounts owed.
+          // The game's own flag decides, which is what `staked` is for.
+          if (this.game.staked) {
+            for (const [seatStr, chips] of Object.entries(ev.result.net)) {
+              const seat = Number(seatStr);
+              const playerId = seatsBefore.get(seat) ?? this.snap(state).seats.find((s) => s.seat === seat)?.playerId ?? 'unknown';
+              this.writeLedger({ seat, playerId, kind: 'hand-result', chips, handNo: ev.handNo, at: now });
+            }
+            if (ev.result.rake > 0) this.writeLedger({ seat: -1, playerId: 'house', kind: 'rake', chips: ev.result.rake, handNo: ev.handNo, at: now });
           }
-          if (ev.result.rake > 0) this.writeLedger({ seat: -1, playerId: 'house', kind: 'rake', chips: ev.result.rake, handNo: ev.handNo, at: now });
           await this.ctx.storage.delete('seed');
           break;
         }
@@ -1558,9 +1961,9 @@ export class PokerTableDO extends DurableObject<Env> {
     if (handEnded) {
       await this.ctx.storage.put('next-hand-at', now + NEXT_HAND_DELAY_MS);
     } else if (
-      (!state.hand || state.hand.result !== undefined) &&
+      !this.snap(state).roundInProgress &&
       (await this.ctx.storage.get<number>('next-hand-at')) === undefined &&
-      canStartHand(state)
+      this.game.canStart(state)
     ) {
       await this.ctx.storage.put('next-hand-at', now + HAND_START_DELAY_MS);
     }
@@ -1568,45 +1971,46 @@ export class PokerTableDO extends DurableObject<Env> {
     // Fan out.
     this.broadcastTableEvents(state, tableEvents);
     this.broadcastEngineEvents(state, engineEvents);
-    if (state.hand && state.hand.toAct !== null && state.hand.actionDeadline !== null) {
-      this.notifyTurn(state, state.hand.toAct, state.hand.actionDeadline);
+    const clock = this.snap(state);
+    if (clock.toAct !== null && clock.deadline !== null) {
+      this.notifyTurn(state, clock.toAct, clock.deadline);
     }
     await this.scheduleAlarm();
   }
 
-  private broadcastTableEvents(state: TableState, events: TableEvent[]): void {
+  private broadcastTableEvents(state: unknown, events: TableEvent[]): void {
     if (events.length === 0) return;
     for (const ws of this.ctx.getWebSockets()) {
       const seat = this.viewerSeat(ws);
-      const view = viewFor(state, seat);
+      const view = this.wireView(this.game.viewFor(state, seat));
       for (const event of events) send(ws, { type: 'event', event, view });
     }
   }
 
-  private broadcastEngineEvents(state: TableState, events: EngineEvent[]): void {
+  private broadcastEngineEvents(state: unknown, events: EngineEvent[]): void {
     if (events.length === 0) return;
     for (const ws of this.ctx.getWebSockets()) {
       const seat = this.viewerSeat(ws);
-      const view = viewFor(state, seat);
+      const view = this.wireView(this.game.viewFor(state, seat));
       for (const ev of events) {
-        const red = redactEvent(ev, seat);
+        const red = this.game.redact(ev, seat) as TableEvent | null;
         if (red) send(ws, { type: 'event', event: red, view });
       }
     }
   }
 
-  private notifyTurn(state: TableState, seat: number, deadline: number): void {
-    const hand = state.hand;
-    if (!hand) return;
+  private notifyTurn(state: unknown, seat: number, deadline: number): void {
+    const at = this.snap(state);
+    if (!at.roundInProgress) return;
     const record = this.recordForSeat(state, seat);
     if (record?.transport === 'a2a') {
       // Out of band: the A2A call must never hold the serial queue, or the table would stall for the
       // whole agent budget and the turn-clock alarm could not preempt it.
-      this.startAgentTurn(state, hand.handNo, seat, deadline, record);
+      this.startAgentTurn(state, at.round, seat, deadline, record);
       return;
     }
-    const legal = legalActions(state, seat);
-    const msg: ServerMessage = { type: 'turn', handNo: hand.handNo, seat, legal, deadline };
+    const legal = this.wireLegal(this.game.legalFor(state, seat));
+    const msg: ServerMessage = { type: 'turn', handNo: at.round, seat, legal, deadline };
     for (const ws of this.ctx.getWebSockets()) {
       if (this.viewerSeat(ws) === seat) send(ws, msg);
     }
@@ -1614,8 +2018,8 @@ export class PokerTableDO extends DurableObject<Env> {
 
   /* -------------------------------------------------------------- helpers */
 
-  private recordForSeat(state: TableState | null, seat: number): SeatRecord | undefined {
-    const playerId = state?.seats.find((s) => s.seat === seat)?.playerId;
+  private recordForSeat(state: unknown, seat: number): SeatRecord | undefined {
+    const playerId = state ? this.snap(state).seats.find((s) => s.seat === seat)?.playerId : undefined;
     return playerId ? this.players[playerId] : undefined;
   }
 
@@ -1732,7 +2136,8 @@ export class PokerTableDO extends DurableObject<Env> {
   }
 
   private seatOf(playerId: string): number | null {
-    const s = this.state?.seats.find((x) => x.playerId === playerId);
+    if (!this.state) return null;
+    const s = this.snap().seats.find((x) => x.playerId === playerId);
     return s ? s.seat : null;
   }
 
@@ -1749,10 +2154,14 @@ export class PokerTableDO extends DurableObject<Env> {
     }
   }
 
-  private seatStatus(state: TableState, seat: number, playerId: string, name: string): SeatEvent {
-    const s = state.seats.find((x) => x.seat === seat);
+  private seatStatus(state: unknown, seat: number, playerId: string, name: string): SeatEvent {
+    const s = this.snap(state).seats.find((x) => x.seat === seat);
     const reason = s?.status === 'sitting-out' ? this.players[playerId]?.sitOutReason : undefined;
-    return { type: 'seat-status', seat, playerId, name, stack: s?.stack, status: s?.status, ...(reason ? { sitOutReason: reason } : {}) };
+    // The wire says a seat is playing or sitting out and knows no third answer. A game may have one
+    // — poker's `waiting` is a seat dealt in from the next hand — and to a client that is a seat
+    // that is not sitting out, which is what `active` means to them.
+    const status = s ? (s.status === 'sitting-out' ? ('sitting-out' as const) : ('active' as const)) : undefined;
+    return { type: 'seat-status', seat, playerId, name, stack: s?.stack, status, ...(reason ? { sitOutReason: reason } : {}) };
   }
 
   /**
@@ -2005,8 +2414,8 @@ function isLegalAction(legal: LegalActions, action: Action): boolean {
   }
 }
 
-function seatMap(state: TableState): Map<number, string> {
-  return new Map(state.seats.map((s) => [s.seat, s.playerId]));
+function seatMap(snap: TableSnapshot): Map<number, string> {
+  return new Map(snap.seats.map((s) => [s.seat, s.playerId]));
 }
 
 function attachmentOf(ws: WebSocket): Attachment {
@@ -2020,6 +2429,26 @@ function send(ws: WebSocket, msg: ServerMessage): void {
   } catch {
     /* socket already gone; hibernation API drops it */
   }
+}
+
+/**
+ * A RULES REFUSAL from whichever game this table hosts, told apart from a genuine fault.
+ *
+ * This used to be `e instanceof EngineError`, which is POKER's error class — so every refusal
+ * canasta made came back as `bad-command`. The message was right and the code said the client had
+ * sent nonsense, which is the opposite of what happened: the client sent exactly the right thing
+ * and the RULES said no. A player trying to take the fourth seat at a table between rounds was
+ * told their software was broken.
+ *
+ * Recognised structurally rather than by class, because the host must not import either engine's
+ * error type — and a game that arrives tomorrow will have its own. The contract both engines
+ * already keep is the one checked here: an Error carrying a short, stable, lower-case `code`.
+ */
+function ruleRefusal(e: unknown): { code: string; message: string } | null {
+  if (!(e instanceof Error)) return null;
+  const code = (e as { code?: unknown }).code;
+  if (typeof code !== 'string' || !/^[a-z][a-z0-9-]{1,31}$/.test(code)) return null;
+  return { code, message: e.message };
 }
 
 function sendError(ws: WebSocket, code: string, message: string): void {

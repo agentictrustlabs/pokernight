@@ -16,10 +16,10 @@ import {
   A2A_SEND_MESSAGE,
   POKER_ACT_SKILL,
   agentNameToHost,
-  decodePokerActReply,
-  encodePokerActParts,
-  type PokerActInput,
-  type PokerActOutput,
+  decodeActReply,
+  encodeActParts,
+  type ActInput,
+  type ActOutput,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, agentBaseUrl, allowAgentEndpoint, type Env } from './env.js';
 
@@ -99,10 +99,16 @@ export async function fetchAgentCard(base: string, timeoutMs: number): Promise<C
   return { ok: true, card: card as AgentCardLike };
 }
 
-/** True when the card advertises `poker.act` as a skill id, name, or tag. */
-export function hasPokerActSkill(card: AgentCardLike): boolean {
+/**
+ * True when the card advertises the skill this table's game asks agents to answer on.
+ *
+ * The skill is the GAME's, not this file's: an agent that plays poker cannot play canasta, and the
+ * two must not be able to be handed each other's turns. `poker.act` is the default because it is the
+ * only skill this deployment deals today.
+ */
+export function hasActSkill(card: AgentCardLike, skill: string = POKER_ACT_SKILL): boolean {
   return (card.skills ?? []).some(
-    (s) => !!s && (s.id === POKER_ACT_SKILL || s.name === POKER_ACT_SKILL || (s.tags ?? []).includes(POKER_ACT_SKILL)),
+    (s) => !!s && (s.id === skill || s.name === skill || (s.tags ?? []).includes(skill)),
   );
 }
 
@@ -110,23 +116,31 @@ export function hasPokerActSkill(card: AgentCardLike): boolean {
  * A short label for the strategy behind an agent, for `PlayerInfo.agentKind` ("rules", "claude", ...).
  * Convention: the first tag on the `poker.act` skill that is not the skill id or the generic "poker".
  */
-export function agentKindFromCard(card: AgentCardLike): string | undefined {
-  const skill = (card.skills ?? []).find((s) => !!s && (s.id === POKER_ACT_SKILL || s.name === POKER_ACT_SKILL));
-  const tag = (skill?.tags ?? []).find((t) => t && t !== POKER_ACT_SKILL && t !== 'poker');
+export function agentKindFromCard(card: AgentCardLike, want: string = POKER_ACT_SKILL): string | undefined {
+  const skill = (card.skills ?? []).find((s) => !!s && (s.id === want || s.name === want));
+  // The game's own name is not a strategy label — "rules" and "claude" are, and are what this is for.
+  const game = want.split('.')[0] ?? '';
+  const tag = (skill?.tags ?? []).find((t) => t && t !== want && t !== game);
   return tag ? tag.slice(0, 32) : undefined;
 }
 
-export type ActResult = { ok: true; output: PokerActOutput } | { ok: false; error: string };
+export type ActResult = { ok: true; output: ActOutput } | { ok: false; error: string };
 
-/** One synchronous `poker.act` turn call. Never throws; every failure comes back as `{ ok: false }`. */
-export async function callPokerAct(base: string, input: PokerActInput, timeoutMs: number): Promise<ActResult> {
+/**
+ * One synchronous turn call to an agent seat. Never throws; every failure comes back as `{ ok: false }`.
+ *
+ * The SKILL rides on the input, so this call is the same for every game and the message says which
+ * one is asking. What comes back is an opaque action; the table validates it against the game that
+ * asked, because that is the only thing that can tell a legal move from a malformed one.
+ */
+export async function callAct(base: string, input: ActInput, timeoutMs: number): Promise<ActResult> {
   const url = a2aUrl(base, A2A_JSONRPC_PATH);
   const body = {
     jsonrpc: '2.0',
     id: `${input.tableId}:${input.handNo}:${input.seat}`,
     method: A2A_SEND_MESSAGE,
     params: {
-      message: { messageId: crypto.randomUUID(), role: 'user', parts: encodePokerActParts(input) },
+      message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeActParts(input) },
     },
   };
   let res: Response;
@@ -138,22 +152,22 @@ export async function callPokerAct(base: string, input: PokerActInput, timeoutMs
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
-    return { ok: false, error: `poker.act call to ${url} failed: ${errText(e)}` };
+    return { ok: false, error: `${input.skill} call to ${url} failed: ${errText(e)}` };
   }
-  if (!res.ok) return { ok: false, error: `poker.act call to ${url} returned ${res.status}` };
+  if (!res.ok) return { ok: false, error: `${input.skill} call to ${url} returned ${res.status}` };
   let payload: unknown;
   try {
     payload = await res.json();
   } catch {
-    return { ok: false, error: `poker.act reply from ${url} is not JSON` };
+    return { ok: false, error: `${input.skill} reply from ${url} is not JSON` };
   }
   const env = payload as { error?: { code?: number; message?: string }; result?: unknown };
   if (env && typeof env === 'object' && env.error) {
-    return { ok: false, error: `poker.act JSON-RPC error ${env.error.code ?? '?'}: ${env.error.message ?? 'unknown'}` };
+    return { ok: false, error: `${input.skill} JSON-RPC error ${env.error.code ?? '?'}: ${env.error.message ?? 'unknown'}` };
   }
   const parts = replyParts(env?.result);
-  if (parts.length === 0) return { ok: false, error: 'poker.act reply carried no message parts' };
-  const decoded = decodePokerActReply(parts);
+  if (parts.length === 0) return { ok: false, error: `${input.skill} reply carried no message parts` };
+  const decoded = decodeActReply(parts);
   if ('error' in decoded) return { ok: false, error: decoded.error };
   return { ok: true, output: decoded };
 }

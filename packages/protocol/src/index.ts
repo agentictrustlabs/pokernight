@@ -12,6 +12,8 @@
 
 import { z } from 'zod';
 import type { Action, LegalActions, TableConfig, TableView, EngineEvent } from '@pokernight/engine';
+import type { CanastaAction, CanastaConfig, CanastaLegal } from '@pokernight/canasta';
+import type { CanastaEvent, CanastaView } from '@pokernight/canasta';
 
 export type { Action, LegalActions, TableConfig, TableView, EngineEvent };
 
@@ -53,6 +55,44 @@ export const TableConfigSchema: z.ZodType<TableConfig> = z.object({
 
 export const TableConfigPatchSchema = (TableConfigSchema as unknown as z.AnyZodObject).partial();
 
+/**
+ * What EVERY table has, whatever it deals: how many seats, what a seat costs, how long a turn is.
+ *
+ * The game's own configuration — poker's blinds and antes — rides beside this as `gameConfig`, and
+ * is opaque here for the same reason every other payload is. A lobby can list any table from these
+ * four numbers; only a client that knows the game can say what the blinds are.
+ */
+export const TableSetupSchema = z.object({
+  seats: z.number().int().min(2).max(9),
+  /** The smallest a seat may sit down for, in the game's own units. Zero for a game with no stakes. */
+  minStake: z.number().int().nonnegative(),
+  maxStake: z.number().int().nonnegative(),
+  /** How long a seat gets on the clock, in ms. */
+  turnMs: z.number().int().positive(),
+});
+export type TableSetup = z.infer<typeof TableSetupSchema>;
+
+/* ------------------------------------------------------------ game payloads */
+
+/**
+ * THE ENVELOPE IS THE HOST'S; THE PAYLOAD IS THE GAME'S.
+ *
+ * The table service owns seats, chat, turns, errors, the round counter and the settlement — the
+ * things every seated card game has and none of them owns. A game owns its view, its legal actions,
+ * its actions and its own events, and the host carries those without reading inside them.
+ *
+ * So they cross the wire as `unknown`. Not laziness: a type here would have to be a union of every
+ * game the deployment ever ships, which means adding a game would mean editing this file and every
+ * other game's client would recompile against it. Opaque payloads are what let a second game arrive
+ * as a package.
+ *
+ * WHO DOES READ THEM. The game that produced one, and a client that knows that game. The poker
+ * client narrows these to poker's types at its own socket boundary, in one named place, exactly as
+ * `PokerTableDO` widens them at its. See `docs/GAMES.md`.
+ */
+export type GamePayload = unknown;
+export const GamePayloadSchema = z.unknown();
+
 /* --------------------------------------------------------- table settlement */
 
 export const SettlementModeSchema = z.enum(['play-money', 'mandate-transfer', 'table-escrow']);
@@ -60,11 +100,198 @@ export type SettlementMode = z.infer<typeof SettlementModeSchema>;
 
 /* --------------------------------------------------------------- HTTP API */
 
+/* -------------------------------------------------------------------- clubs */
+
+/**
+ * A CLUB is the group a poker night belongs to: a set of people who play together, the tables they
+ * play at, and (later) the schedule and season that hang off it. See `docs/WORKSPACES.md`.
+ *
+ * WHY AN OPAQUE ID AND NOT AN ADDRESS. A club is destined to be a `<label>.workspace` Smart Agent,
+ * and the design pins the AGENT on every table. It is not one yet — chartering it is a ceremony at
+ * the member's Home — and minting the id from something that does not exist yet is how a stable
+ * identifier ends up needing a migration. So `clubId` is minted here, is opaque, and never changes;
+ * `agent` is the workspace address and is simply absent until the charter lands. Nothing that
+ * references a club has to move when it does.
+ */
+export const ClubIdSchema = z.string().regex(/^[0-9a-f-]{36}$/);
+
+/** What someone IS to a club, derived from the club's own records and never asserted by a caller. */
+export const ClubStandingSchema = z.enum(['host', 'member', 'none']);
+export type ClubStanding = z.infer<typeof ClubStandingSchema>;
+
+/**
+ * Membership shapes, narrowed from the substrate's `MembershipClass`.
+ *
+ * `guest` is the friend somebody brings once: a real membership with a validity window, not a
+ * special case. When the window passes the row is not deleted — it expires, which is a different
+ * fact and a better one, because "Elena played once in March" stays answerable.
+ */
+export const MembershipClassSchema = z.enum(['standard', 'guest', 'observer']);
+export type MembershipClass = z.infer<typeof MembershipClassSchema>;
+
+export const ClubMemberSchema = z.object({
+  /** The member's `playerId` — `home:0x…` for a person, `dev:…` in local dev. */
+  member: z.string().min(1).max(128),
+  name: z.string().min(1).max(64),
+  class: MembershipClassSchema,
+  joinedAt: z.number().int(),
+  /** Who put them on the roster. Absent for the person who created the club. */
+  invitedBy: z.string().max(128).optional(),
+  /** A guest's window. Absent means it does not close. */
+  validUntil: z.number().int().optional(),
+});
+export type ClubMember = z.infer<typeof ClubMemberSchema>;
+
+export const ClubSummarySchema = z.object({
+  clubId: ClubIdSchema,
+  name: z.string(),
+  createdAt: z.number().int(),
+  /** The `playerId` of whoever started it. They are the club's first host. */
+  createdBy: z.string(),
+  /** The `<label>.workspace` Smart Agent, once the charter ceremony has run. */
+  agent: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+  members: z.number().int(),
+});
+export type ClubSummary = z.infer<typeof ClubSummarySchema>;
+
+/** A club as somebody with standing in it sees it. `you` is why they were shown it at all. */
+export const ClubViewSchema = ClubSummarySchema.extend({
+  roster: z.array(ClubMemberSchema),
+  you: z.object({ standing: ClubStandingSchema, because: z.string() }),
+});
+export type ClubView = z.infer<typeof ClubViewSchema>;
+
+export const CreateClubRequestSchema = z.object({
+  name: z.string().min(1).max(64),
+});
+export type CreateClubRequest = z.infer<typeof CreateClubRequestSchema>;
+
+export const InviteMemberRequestSchema = z.object({
+  /**
+   * WHO, in whichever way the host knows them.
+   *
+   * Three shapes reach the roster the same day: a `playerId`, a bare Smart Agent address, or an
+   * AGENT NAME (`carol.me`), which the card room resolves on chain to the address behind it. A
+   * fourth — an email — cannot, because nobody's address is known from their email; that one opens
+   * a pending invitation instead and lands here when they claim it.
+   *
+   * An address is the shape a host is LEAST likely to have to hand, and it was the only one this
+   * accepted for its first month. Every other shape here exists because a host knows their friends
+   * by name and should not have to go and find a hex string to add one.
+   */
+  member: z.string().min(1).max(128),
+  name: z.string().min(1).max(64).optional(),
+  class: MembershipClassSchema.default('standard'),
+  validUntil: z.number().int().positive().optional(),
+});
+export type InviteMemberRequest = z.infer<typeof InviteMemberRequestSchema>;
+
+/* ------------------------------------------------------- invitations by email */
+
+/**
+ * An invitation to somebody whose Smart Agent the card room does not know.
+ *
+ * A roster row needs a `playerId`, and an email address is not one and cannot be turned into one:
+ * nothing on chain maps an inbox to an agent, and inventing a row keyed by the email would create a
+ * membership nobody's session can ever satisfy — an invitation that looks accepted and is not.
+ *
+ * So an email invitation is a SEPARATE record with its own life: it is created here, it is mailed by
+ * the host's Home (the card room never holds a mail key), it is claimed by whoever opens the link
+ * and signs in, and only THEN does a roster row exist — keyed by the agent that actually signed in.
+ * Until then the club has a pending invitation, which is the true state and is shown as one.
+ */
+export const ClubInviteRequestSchema = z.object({
+  email: z.string().email().max(200),
+  /** What to call them on the roster once they claim it. */
+  name: z.string().min(1).max(64).optional(),
+  class: MembershipClassSchema.default('standard'),
+  validUntil: z.number().int().positive().optional(),
+});
+export type ClubInviteRequest = z.infer<typeof ClubInviteRequestSchema>;
+
+export const ClubInviteSchema = z.object({
+  /** The claim token. It IS the invitation — whoever holds it can claim it, once, before it expires. */
+  token: z.string().min(16).max(128),
+  clubId: ClubIdSchema,
+  clubName: z.string(),
+  email: z.string(),
+  name: z.string().optional(),
+  class: MembershipClassSchema,
+  invitedBy: z.string().max(128),
+  invitedByName: z.string().max(64),
+  createdAt: z.number().int(),
+  expiresAt: z.number().int(),
+  /** The `playerId` that claimed it, once somebody has. A claimed invitation is spent. */
+  claimedBy: z.string().max(128).optional(),
+  claimedAt: z.number().int().optional(),
+  validUntil: z.number().int().optional(),
+});
+export type ClubInvite = z.infer<typeof ClubInviteSchema>;
+
+/**
+ * What an invitation looks like to whoever OPENS the link, before they have signed in.
+ *
+ * Deliberately less than the record: who invited them, to what, and whether it is still good. The
+ * email is not echoed back — the person reading the page already knows their own address, and a
+ * page that prints it would print it for anyone who guessed the token.
+ */
+export const InviteGreetingSchema = z.object({
+  clubName: z.string(),
+  invitedByName: z.string(),
+  expiresAt: z.number().int(),
+  /** `open` is claimable. The other two say exactly why it is not, so the page can say so. */
+  state: z.enum(['open', 'claimed', 'expired']),
+});
+export type InviteGreeting = z.infer<typeof InviteGreetingSchema>;
+
+/**
+ * Somebody the caller already plays with: a member of one of their OWN clubs.
+ *
+ * The card room knows these people by name because a host typed the name when they added them. It
+ * is the answer to "add the people I already play with", which is the most common invitation there
+ * is and the one that should never require an identifier at all.
+ */
+export const KnownPersonSchema = z.object({
+  member: z.string().min(1).max(128),
+  name: z.string().min(1).max(64),
+  /** The clubs of the caller's that this person is in, by name. Their reason for being on the list. */
+  clubs: z.array(z.string()),
+});
+export type KnownPerson = z.infer<typeof KnownPersonSchema>;
+
+/** Which game a table deals. An id the deployment knows (`poker`); absent means poker. */
+export const GameIdSchema = z.string().min(1).max(32).regex(/^[a-z0-9-]+$/);
+export type GameId = z.infer<typeof GameIdSchema>;
+
 export const CreateTableRequestSchema = z.object({
   name: z.string().min(1).max(64),
-  config: TableConfigPatchSchema.optional(),
+  /**
+   * The game. Absent is poker, which is what every table opened before games were named is.
+   *
+   * A deployment that does not deal the named game refuses the table rather than opening a poker one
+   * — a table is dealt the rules its players sat down to, and a silent substitution is the one
+   * failure here that would take somebody's money with it.
+   */
+  game: GameIdSchema.optional(),
+  /**
+   * The game's own configuration, unvalidated here on purpose.
+   *
+   * Blinds mean nothing to canasta and a meld limit means nothing to poker, so the only thing that
+   * can judge this object is the game being opened — which refuses the table by name if it cannot
+   * deal what it was handed. A schema here would be poker's schema wearing a general name.
+   */
+  config: GamePayloadSchema.optional(),
   settlement: SettlementModeSchema.default('play-money'),
-  /** Circle (context agent) that owns the table; optional in phase 1. */
+  /**
+   * The club this table belongs to. Absent opens a PICKUP table — public, joinable by anyone with a
+   * session, which is what every table was before clubs existed and is how a stranger tries the card
+   * room without being invited to anything.
+   *
+   * Present requires HOST standing at that club, and stamps the table (see `TableMeta.club`).
+   */
+  club: ClubIdSchema.optional(),
+  /** @deprecated The pre-club name for {@link CreateTableRequestSchema.club}, kept for one release
+   *  so nothing in flight breaks. It selected a lobby and was never validated or persisted. */
   circle: z.string().optional(),
 });
 export type CreateTableRequest = z.infer<typeof CreateTableRequestSchema>;
@@ -100,7 +327,10 @@ export const AssetSymbolSchema = z.string().min(1).max(12);
 export const TableSummarySchema = z.object({
   tableId: z.string(),
   name: z.string(),
-  config: TableConfigSchema,
+  /** The generic setup — enough to list any table, whatever it deals. */
+  config: TableSetupSchema,
+  /** The game's own configuration. A poker client reads its blinds out of here. */
+  gameConfig: GamePayloadSchema.optional(),
   settlement: SettlementModeSchema,
   seated: z.number().int(),
   handNo: z.number().int(),
@@ -111,6 +341,25 @@ export const TableSummarySchema = z.object({
   asset: AssetAddressSchema.optional(),
   /** What that asset calls itself. See {@link AssetSymbolSchema}. */
   assetSymbol: AssetSymbolSchema.optional(),
+  /** The club that owns this table, pinned when it was created. Absent on a pickup table. */
+  club: ClubIdSchema.optional(),
+  /** That club's name at the instant the table was created. A label, not a lookup — a table whose
+   *  club has been renamed still says what it was called on the night it was played. */
+  clubName: z.string().max(64).optional(),
+  /** The game this table deals, stamped at creation. Always present on a table opened since games
+   *  were named; absent only on one older than the stamp, which is poker. */
+  game: GameIdSchema.optional(),
+  /**
+   * Whose PRACTICE table this is, if it is one.
+   *
+   * A practice table belongs to one person, is in no lobby, and can be reset to a fresh game by its
+   * owner. Absent on every ordinary table, which is every table but these.
+   */
+  practiceFor: z.string().max(128).optional(),
+  /** How long an agent's answer waits before it lands, in ms. A practice table's own setting. */
+  paceMs: z.number().int().min(0).max(8000).optional(),
+  /** True while the table is holding: no clock, no agents, no next round. Practice tables only. */
+  paused: z.boolean().optional(),
 });
 export type TableSummary = z.infer<typeof TableSummarySchema>;
 
@@ -221,7 +470,8 @@ export const ClientCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sit-out') }),
   z.object({ type: z.literal('sit-in') }),
   z.object({ type: z.literal('add-chips'), amount: z.number().int().positive() }),
-  z.object({ type: z.literal('act'), handNo: z.number().int(), action: ActionSchema }),
+  // The ACTION is the game's, and only the game can tell a legal one from a malformed one.
+  z.object({ type: z.literal('act'), handNo: z.number().int(), action: GamePayloadSchema }),
   z.object({ type: z.literal('chat'), text: z.string().min(1).max(280) }),
   z.object({ type: z.literal('ping') }),
 ]);
@@ -265,7 +515,25 @@ export interface ChatEvent {
   at: number;
 }
 
-export type TableEvent = EngineEvent | SeatEvent | ChatEvent;
+/**
+ * An event the GAME emitted, already redacted for whoever is receiving it.
+ *
+ * Carried, never inspected. `type` is present because the host routes and logs by it; everything
+ * else in the object belongs to the game, and the client that knows that game reads it.
+ */
+export interface GameEvent {
+  type: string;
+  [field: string]: unknown;
+}
+
+/**
+ * Everything that can arrive on the socket as an event.
+ *
+ * Two of the three are the HOST's — a seat changed, somebody spoke — and are the same at any table.
+ * The third is whatever the game emitted. A client narrows that third to its own game's events at
+ * its socket boundary; the protocol does not, because it would have to know every game to try.
+ */
+export type TableEvent = SeatEvent | ChatEvent | GameEvent;
 
 /** Who occupies a seat. `names` stays for compatibility; `players` carries the richer record. */
 export interface PlayerInfo {
@@ -285,14 +553,102 @@ export interface PlayerInfo {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; tableId: string; playerId: string | null; view: TableView; names: Record<string, string>; players?: Record<string, PlayerInfo> }
-  | { type: 'snapshot'; view: TableView; names: Record<string, string>; players?: Record<string, PlayerInfo> }
+  /**
+   * The first frame on a socket, and the one that says WHICH GAME this table deals.
+   *
+   * `game` is here rather than only on the table's summary because the view arrives in this same
+   * frame. A client that had to fetch the game over HTTP would be racing its own socket, and the
+   * race it loses is the one where it draws a poker board against another game's view. Absent means
+   * poker, for a host older than named games.
+   */
+  | { type: 'welcome'; tableId: string; game?: GameId; playerId: string | null; view: GamePayload; names: Record<string, string>; players?: Record<string, PlayerInfo> }
+  | { type: 'snapshot'; view: GamePayload; names: Record<string, string>; players?: Record<string, PlayerInfo> }
   /** One event plus the fresh view after it. `event` is already redacted for this viewer. */
-  | { type: 'event'; event: TableEvent; view: TableView }
-  /** It is the viewer's turn. `deadline` is an absolute ms timestamp. */
+  | { type: 'event'; event: TableEvent; view: GamePayload }
+  /**
+   * It is the viewer's turn. `deadline` is an absolute ms timestamp.
+   *
+   * `handNo` is the ROUND number. The word is poker's and it is kept because renaming it costs a
+   * migration of a SQL column, three clients and a published A2A skill, and buys no capability: a
+   * second game reads it as "which round is this" and is right.
+   */
+  | { type: 'turn'; handNo: number; seat: number; legal: GamePayload; deadline: number }
+  | { type: 'error'; code: string; message: string }
+  | { type: 'pong'; at: number };
+
+/* --------------------------------------- the wire, read as poker by a poker client */
+
+/**
+ * THE SAME MESSAGES, with the game's payloads narrowed to poker's types.
+ *
+ * A generic wire is only half the story: something has to read it, and whatever reads it knows one
+ * game. This is that binding for poker — the web client, the reference bot and the table tests all
+ * speak it, and each narrows once at its own socket boundary rather than casting at every field.
+ *
+ * A second game brings its own binding. When there are three, these should move out to each game's
+ * own package and this file should stop importing an engine; until then one binding beside the
+ * generic wire is cheaper than a package that exists to hold six type aliases.
+ */
+export type PokerTableEvent = EngineEvent | SeatEvent | ChatEvent;
+
+export type PokerServerMessage =
+  | { type: 'welcome'; tableId: string; game?: GameId; playerId: string | null; view: TableView; names: Record<string, string>; players?: Record<string, PlayerInfo> }
+  | { type: 'snapshot'; view: TableView; names: Record<string, string>; players?: Record<string, PlayerInfo> }
+  | { type: 'event'; event: PokerTableEvent; view: TableView }
   | { type: 'turn'; handNo: number; seat: number; legal: LegalActions; deadline: number }
   | { type: 'error'; code: string; message: string }
   | { type: 'pong'; at: number };
+
+/** Poker's own table configuration, as it rides on `TableSummary.gameConfig`. */
+export type PokerGameConfig = TableConfig;
+
+/** Read a table's poker configuration off a summary. `null` when the table is not dealing poker,
+ *  which is the honest answer for a client that only knows how to draw a poker table. */
+export function pokerConfigOf(summary: { game?: string; gameConfig?: unknown }): PokerGameConfig | null {
+  if (summary.game && summary.game !== 'poker') return null;
+  const c = summary.gameConfig;
+  return c && typeof c === 'object' ? (c as PokerGameConfig) : null;
+}
+
+/* ------------------------------------- the wire, read as canasta by a canasta client */
+
+/**
+ * THE SAME MESSAGES AGAIN, narrowed to canasta.
+ *
+ * The second binding, and the one that proves the first was not poker in disguise. Nothing in the
+ * generic wire above changed to admit it: a canasta client narrows the same three opaque payloads at
+ * its own socket boundary, against its own game's types, exactly as the poker client does.
+ *
+ * When a third arrives, these bindings should move out to each game's own package and this file
+ * should stop importing an engine. Two of them beside the generic wire is still cheaper than a
+ * package that exists to hold a dozen type aliases.
+ */
+export type CanastaTableEvent = CanastaEvent | SeatEvent | ChatEvent;
+
+export type CanastaServerMessage =
+  | { type: 'welcome'; tableId: string; game?: GameId; playerId: string | null; view: CanastaView; names: Record<string, string>; players?: Record<string, PlayerInfo> }
+  | { type: 'snapshot'; view: CanastaView; names: Record<string, string>; players?: Record<string, PlayerInfo> }
+  | { type: 'event'; event: CanastaTableEvent; view: CanastaView }
+  /** `handNo` is the ROUND number here. The word is poker's and the wire kept it; see `ServerMessage`. */
+  | { type: 'turn'; handNo: number; seat: number; legal: CanastaLegal; deadline: number }
+  | { type: 'error'; code: string; message: string }
+  | { type: 'pong'; at: number };
+
+/** Canasta's own view and legal-move set, re-exported so a client narrows against ONE import. */
+export type { CanastaView, CanastaLegal, CanastaEvent };
+
+/** Canasta's own table configuration, as it rides on `TableSummary.gameConfig`. */
+export type CanastaGameConfig = CanastaConfig;
+
+/** A move in canasta, as it rides on `ClientCommand.act`. */
+export type CanastaClientAction = CanastaAction;
+
+/** Read a table's canasta configuration off a summary. `null` when the table is not dealing canasta. */
+export function canastaConfigOf(summary: { game?: string; gameConfig?: unknown }): CanastaGameConfig | null {
+  if (summary.game !== 'canasta') return null;
+  const c = summary.gameConfig;
+  return c && typeof c === 'object' ? (c as CanastaGameConfig) : null;
+}
 
 export const WS_ERROR_CODES = [
   'unauthenticated',
@@ -309,31 +665,68 @@ export const WS_ERROR_CODES = [
   'no-hand',
   'illegal-action',
   'stale-hand',
+  /** The table is holding. Practice tables only, and it holds for everybody including whoever
+   *  pressed it — a pause that let one seat carry on kept the whole table moving. */
+  'paused',
   'settlement-failed',
 ] as const;
 export type WsErrorCode = (typeof WS_ERROR_CODES)[number];
 
-/* ---------------------------------------------------------- A2A poker.act */
+/* -------------------------------------------------- A2A: asking an agent to move */
 
 export const POKER_ACT_SKILL = 'poker.act';
+export const CANASTA_ACT_SKILL = 'canasta.act';
 
-export interface PokerActInput {
+/**
+ * THE TURN REQUEST, with the game's own three fields carried opaquely.
+ *
+ * Same split as the WebSocket wire, for the same reason and with the same seam: the ENVELOPE is the
+ * host's — which table, which round, which seat, how long you have — and the VIEW, the LEGAL MOVES
+ * and the ACTION belong to the game. A host that validated a poker action here could only ever seat
+ * a poker agent, which is exactly what it could do before this: `poker.act` was baked into the call,
+ * so a canasta table could deal itself but had nobody to deal to.
+ *
+ * `skill` names which game is asking, so the agent on the other end knows what it is being handed
+ * before it reads it — the same job `welcome.game` does on the socket.
+ */
+export interface ActInput {
+  skill: string;
   tableId: string;
+  /** The ROUND number. Poker's word, kept; a second game reads it as "which round is this". */
   handNo: number;
   seat: number;
-  /** Redacted view for this seat (own hole cards included). */
-  view: TableView;
-  legal: LegalActions;
+  /** Redacted view for this seat — its own cards included, nobody else's. */
+  view: GamePayload;
+  legal: GamePayload;
   /** Milliseconds the agent has to answer before the table applies the default. */
   deadlineMs: number;
 }
 
+export const ActOutputSchema = z.object({
+  /** The game's own action. Only the game can tell a legal one from a malformed one. */
+  action: GamePayloadSchema,
+  /** Optional short rationale, logged with the hand history, never shown to other players mid-round. */
+  note: z.string().max(280).optional(),
+});
+export type ActOutput = z.infer<typeof ActOutputSchema>;
+
+/** Poker's binding of the turn request, for the poker agent that reads it. */
+export interface PokerActInput extends ActInput {
+  view: TableView;
+  legal: LegalActions;
+}
+
 export const PokerActOutputSchema = z.object({
   action: ActionSchema,
-  /** Optional short rationale, logged with the hand history, never shown to other players during the hand. */
   note: z.string().max(280).optional(),
 });
 export type PokerActOutput = z.infer<typeof PokerActOutputSchema>;
+
+/** Canasta's binding of the same request. */
+export interface CanastaActInput extends ActInput {
+  view: CanastaView;
+  legal: CanastaLegal;
+}
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -360,13 +753,19 @@ export function agentNameToHost(agentName: string, zone: string): string {
   return `${label}.${zone}`;
 }
 
-/** The turn request as A2A message parts: one data part carrying PokerActInput. */
-export function encodePokerActParts(input: PokerActInput): Array<{ kind: 'data'; data: Record<string, unknown> }> {
-  return [{ kind: 'data', data: { skill: POKER_ACT_SKILL, input: input as unknown as Record<string, unknown> } }];
+/** The turn request as A2A message parts: one data part carrying the input, skill named on it. */
+export function encodeActParts(input: ActInput): Array<{ kind: 'data'; data: Record<string, unknown> }> {
+  return [{ kind: 'data', data: { skill: input.skill, input: input as unknown as Record<string, unknown> } }];
 }
 
-/** Pull a PokerActOutput out of an A2A reply. Accepts a data part, or a text part holding JSON. */
-export function decodePokerActReply(parts: unknown): PokerActOutput | { error: string } {
+/**
+ * Pull an action out of an A2A reply. Accepts a data part, or a text part holding JSON.
+ *
+ * The ACTION is not validated here, only found: it is the game's, and this file cannot tell a legal
+ * canasta meld from a legal poker raise. The table validates it against the game that asked, which
+ * is the only thing that can.
+ */
+export function decodeActReply(parts: unknown): ActOutput | { error: string } {
   if (!Array.isArray(parts)) return { error: 'reply has no parts' };
   for (const part of parts) {
     if (!part || typeof part !== 'object') continue;
@@ -379,8 +778,20 @@ export function decodePokerActReply(parts: unknown): PokerActOutput | { error: s
       try { candidate = JSON.parse(p.text); } catch { continue; }
     }
     if (!candidate) continue;
-    const r = PokerActOutputSchema.safeParse(candidate);
+    const r = ActOutputSchema.safeParse(candidate);
     if (r.success) return r.data;
   }
-  return { error: 'no valid poker.act output in reply' };
+  return { error: 'no action in the reply' };
+}
+
+/** The poker binding of the same two helpers, for the poker agent and the poker tests. */
+export function encodePokerActParts(input: PokerActInput): Array<{ kind: 'data'; data: Record<string, unknown> }> {
+  return encodeActParts(input);
+}
+
+export function decodePokerActReply(parts: unknown): PokerActOutput | { error: string } {
+  const r = decodeActReply(parts);
+  if ('error' in r) return r;
+  const a = PokerActOutputSchema.safeParse(r);
+  return a.success ? a.data : { error: 'no valid poker.act output in reply' };
 }

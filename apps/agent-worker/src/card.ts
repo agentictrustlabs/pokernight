@@ -9,9 +9,9 @@
  */
 
 import type { AgentCardV1, AgentSkillV1 } from '@agenticprimitives/a2a/standard';
-import { A2A_JSONRPC_PATH, POKER_ACT_SKILL, agentNameToHost } from '@pokernight/protocol';
+import { A2A_JSONRPC_PATH, CANASTA_ACT_SKILL, POKER_ACT_SKILL, agentNameToHost } from '@pokernight/protocol';
 import type { Env } from './env.js';
-import type { Persona, Resolution } from './personas.js';
+import { gameOf, type Persona, type Resolution } from './personas.js';
 
 export const CARD_VERSION = '1.0.0';
 
@@ -47,7 +47,44 @@ function pokerActSkill(persona: Persona): AgentSkillV1 {
   };
 }
 
-/** Where a table should send `poker.act` for this persona, given how this request arrived. */
+/**
+ * The canasta persona's one skill.
+ *
+ * A SEPARATE SKILL ID, which is the whole point: the table asks for its own game's skill by name and
+ * refuses to seat an agent whose card does not advertise it. An agent that plays poker and an agent
+ * that plays canasta cannot be handed each other's turns, and neither can be seated at the other's
+ * table by mistake.
+ *
+ * Tag order matters the same way it does for poker: the tables app reads the strategy label off the
+ * first tag that is neither the skill id nor the game's own name.
+ */
+function canastaActSkill(persona: Persona): AgentSkillV1 {
+  return {
+    id: CANASTA_ACT_SKILL,
+    name: 'Canasta move',
+    description: [
+      'Choose one legal Classic Canasta move for a seat in a four-handed partnership game.',
+      'Input: a single A2A data part `{ skill: "canasta.act", input }` where input is',
+      '`{ tableId, handNo, seat, view, legal, deadlineMs }` — `view` is the redacted CanastaView for that',
+      'seat (own hand, both sides\' melds, the stock count, the pile\'s top card and size, scores) and',
+      '`legal` is `{ phase, canDraw, canTakePile, takePileReason, pileTop, pileSize, minimumMeld, discardable, canGoOut }`.',
+      'Output: a single data part `{ action, note }` where `action` is one of',
+      '`{type:"draw"} | {type:"take-pile",meld,also?} | {type:"meld",melds} | {type:"discard",card}`',
+      'and `note` is a short rationale.',
+      'A turn has two halves: draw or take the pile first, then meld and discard.',
+      'The reply is a MESSAGE, not a task: it comes back in the same HTTP response as the SendMessage call.',
+    ].join(' '),
+    tags: [CANASTA_ACT_SKILL, 'canasta', persona.strategy, 'partnership', 'pokernight'],
+    examples: [
+      'It is your turn, the pile has nine cards and you hold two natural sevens — act.',
+      'You have drawn, your side has not opened, and you need fifty — act.',
+    ],
+    inputModes: ['application/json'],
+    outputModes: ['application/json'],
+  };
+}
+
+/** Where a table should send this persona's turn calls, given how this request arrived. */
 export function endpointFor(persona: Persona, env: Env, url: URL, onPersonaHost: boolean): string {
   if (onPersonaHost) return `${url.protocol}//${url.host}${A2A_JSONRPC_PATH}`;
   const zone = (env.AGENT_CARD_ZONE ?? '').trim();
@@ -69,7 +106,7 @@ export function buildCard(persona: Persona, env: Env, url: URL, onPersonaHost = 
     capabilities: { streaming: false },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
-    skills: [pokerActSkill(persona)],
+    skills: [gameOf(persona) === 'canasta' ? canastaActSkill(persona) : pokerActSkill(persona)],
     provider: { organization: 'Pokernight', url: (env.PUBLIC_ORIGIN ?? '').trim() || `${url.protocol}//${url.host}` },
   };
 }

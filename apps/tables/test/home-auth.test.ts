@@ -505,3 +505,4 @@ async function readRecord(playerId: string): Promise<Record<string, unknown> | n
   const res = await stub.fetch('https://session/record');
   return res.ok ? ((await res.json()) as Record<string, unknown>) : null;
 }
+

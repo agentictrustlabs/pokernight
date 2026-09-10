@@ -1,17 +1,24 @@
 /**
- * LobbyDO — one per circle ("default" in phase 1). Registry of tables.
+ * LobbyDO — one per CLUB, plus `default` for pickup tables. Registry of tables.
  *
  *   SQL `tables(table_id PK, name, config_json, settlement, created_at)`
+ *
+ * One lobby per club is what makes a club's tables private WITHOUT filtering: they are simply not in
+ * the public lobby's index, so there is no list to accidentally leak and no predicate to get wrong.
+ * `default` is the pickup lobby — public, and what every table lived in before clubs existed.
  *
  * `list` asks every table DO for its live `/summary` (seated, handNo). Simple and always correct;
  * a report/cache path can replace it if a lobby ever holds hundreds of tables.
  */
 
 import { DurableObject } from 'cloudflare:workers';
-import type { TableConfig } from '@pokernight/engine';
 import { TableSummarySchema, type CreateTableRequest, type TableSummary } from '@pokernight/protocol';
 import type { Env } from './env.js';
 import type { InitRequest } from './table-do.js';
+
+/** What the Worker sends to `/create`: the client's request plus the club NAME it resolved, which the
+ *  client never supplies (it would be a label the club itself did not agree to). */
+type CreateTableBody = CreateTableRequest & { clubName?: string };
 
 type TableRow = {
   table_id: string;
@@ -50,7 +57,7 @@ export class LobbyDO extends DurableObject<Env> {
       return this.retire(id);
     }
     if (request.method === 'POST' && url.pathname === '/create') {
-      const body = (await request.json()) as CreateTableRequest;
+      const body = (await request.json()) as CreateTableBody;
       const result = await this.create(body);
       return 'error' in result ? json(result, 400) : json(result, 201);
     }
@@ -58,10 +65,24 @@ export class LobbyDO extends DurableObject<Env> {
   }
 
   /** Creates the table id, initializes the PokerTableDO, then records the table here. */
-  private async create(req: CreateTableRequest): Promise<TableSummary | { error: string }> {
+  private async create(req: CreateTableBody): Promise<TableSummary | { error: string }> {
     const tableId = crypto.randomUUID();
     const createdAt = Date.now();
-    const init: InitRequest = { tableId, name: req.name, config: (req.config ?? {}) as Partial<TableConfig>, settlement: req.settlement, createdAt };
+    const init: InitRequest = {
+      tableId,
+      name: req.name,
+      // Carried through unopened. The GAME validates its own config and refuses the table by name.
+      config: req.config ?? {},
+      settlement: req.settlement,
+      createdAt,
+      // The club is PINNED on the table, not looked up from it later — same rule as the chip rate
+      // and the asset, and for the same reason. A table whose club is renamed still says what it was
+      // called on the night it was played, and one whose club is retired still knows what it was.
+      ...(req.club ? { club: req.club, ...(req.clubName ? { clubName: req.clubName } : {}) } : {}),
+      // Which game, passed straight through. The table resolves it and refuses by name; the lobby
+      // does not keep a list of games, because two lists of games is one list too many.
+      ...(req.game ? { game: req.game } : {}),
+    };
     const stub = this.env.TABLES.get(this.env.TABLES.idFromName(tableId));
     const res = await stub.fetch('https://table/init', { method: 'POST', body: JSON.stringify(init), headers: { 'content-type': 'application/json' } });
     if (!res.ok) {
@@ -113,7 +134,7 @@ export class LobbyDO extends DurableObject<Env> {
         const fallback: TableSummary = {
           tableId: row.table_id,
           name: row.name,
-          config: JSON.parse(row.config_json) as TableConfig,
+          config: JSON.parse(row.config_json) as TableSummary['config'],
           settlement: row.settlement,
           seated: 0,
           handNo: 0,

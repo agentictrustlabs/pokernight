@@ -1,5 +1,10 @@
 /**
- * Deterministic shuffle with commit–reveal.
+ * Deterministic dealing with commit–reveal. Shared by every game, and by the host that draws the seed.
+ *
+ * IT LIVES HERE BECAUSE IT BELONGS TO NO GAME. A shuffle that anyone can check after the fact is the
+ * one fairness claim this product makes, and it must be the same claim at every table whatever is
+ * being dealt. It was inside poker's package, which meant a second game either imported poker to
+ * shuffle or wrote its own — and two shuffles are two things that can drift apart.
  *
  * The host draws a 32-byte seed per hand, publishes sha256(seed) at hand start
  * and reveals the seed at hand end. The deck order is a pure function of the

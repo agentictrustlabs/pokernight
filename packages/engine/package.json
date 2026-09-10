@@ -16,7 +16,9 @@
     "bench": "node --import tsx ./bench/bench.ts"
   },
   "dependencies": {
-    "@noble/hashes": "^1.8.0"
+    "@noble/hashes": "^1.8.0",
+    "@pokernight/table-game": "workspace:*",
+    "@pokernight/deal": "workspace:*"
   },
   "devDependencies": {
     "pokersolver": "2.1.4",

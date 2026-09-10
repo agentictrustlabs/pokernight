@@ -93,6 +93,12 @@ importers:
       '@pokernight/agent-kit':
         specifier: workspace:*
         version: link:../../packages/agent-kit
+      '@pokernight/canasta':
+        specifier: workspace:*
+        version: link:../../packages/canasta
+      '@pokernight/canasta-agent':
+        specifier: workspace:*
+        version: link:../../packages/canasta-agent
       '@pokernight/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -127,6 +133,9 @@ importers:
       '@agenticprimitives/agent-account':
         specifier: link:../../../agenticprimitives/packages/agent-account
         version: link:../../../agenticprimitives/packages/agent-account
+      '@agenticprimitives/agent-naming':
+        specifier: link:../../../agenticprimitives/packages/agent-naming
+        version: link:../../../agenticprimitives/packages/agent-naming
       '@agenticprimitives/connect-auth':
         specifier: link:../../../agenticprimitives/packages/connect-auth
         version: link:../../../agenticprimitives/packages/connect-auth
@@ -145,6 +154,12 @@ importers:
       '@agenticprimitives/types':
         specifier: link:../../../agenticprimitives/packages/types
         version: link:../../../agenticprimitives/packages/types
+      '@pokernight/canasta':
+        specifier: workspace:*
+        version: link:../../packages/canasta
+      '@pokernight/canasta-agent':
+        specifier: workspace:*
+        version: link:../../packages/canasta-agent
       '@pokernight/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -154,6 +169,9 @@ importers:
       '@pokernight/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@pokernight/table-game':
+        specifier: workspace:*
+        version: link:../../packages/table-game
       '@pokernight/treasury':
         specifier: workspace:*
         version: link:../../packages/treasury
@@ -201,6 +219,9 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@pokernight/canasta':
+        specifier: workspace:*
+        version: link:../../packages/canasta
       '@types/react':
         specifier: ^18.3.18
         version: 18.3.31
@@ -239,11 +260,59 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)
 
+  packages/canasta:
+    dependencies:
+      '@pokernight/deal':
+        specifier: workspace:*
+        version: link:../deal
+      '@pokernight/table-game':
+        specifier: workspace:*
+        version: link:../table-game
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/canasta-agent:
+    dependencies:
+      '@pokernight/canasta':
+        specifier: workspace:*
+        version: link:../canasta
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/deal:
+    dependencies:
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)
+
   packages/engine:
     dependencies:
       '@noble/hashes':
         specifier: ^1.8.0
         version: 1.8.0
+      '@pokernight/deal':
+        specifier: workspace:*
+        version: link:../deal
+      '@pokernight/table-game':
+        specifier: workspace:*
+        version: link:../table-game
     devDependencies:
       pokersolver:
         specifier: 2.1.4
@@ -269,12 +338,24 @@ importers:
 
   packages/protocol:
     dependencies:
+      '@pokernight/canasta':
+        specifier: workspace:*
+        version: link:../canasta
       '@pokernight/engine':
         specifier: workspace:*
         version: link:../engine
       zod:
         specifier: ^3.24.0
         version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/table-game:
     devDependencies:
       typescript:
         specifier: ^5.6.3

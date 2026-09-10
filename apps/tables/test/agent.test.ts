@@ -7,7 +7,7 @@
  */
 import { SELF, env, fetchMock, runInDurableObject } from 'cloudflare:test';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { LegalActions, PlayerInfo, ServerMessage } from '@pokernight/protocol';
+import type { LegalActions, PlayerInfo, PokerServerMessage } from '@pokernight/protocol';
 import type { PokerTableDO } from '../src/table-do.js';
 import { TestClient, createTableViaHttp, devSession, engineReady, waitForAny } from './helpers.js';
 import { resolveAgentBase } from '../src/a2a.js';
@@ -99,7 +99,7 @@ async function unseatAgent(tableId: string, token: string, seat: number): Promis
 
 /** Answer every `turn` this client receives with a check or a call, so the hand keeps moving. */
 function autoPlay(c: TestClient): () => void {
-  return c.subscribe((m: ServerMessage) => {
+  return c.subscribe((m: PokerServerMessage) => {
     if (m.type !== 'turn') return;
     c.send({ type: 'act', handNo: m.handNo, action: checkOrCall(m.legal) });
   });
@@ -246,7 +246,12 @@ describe('A2A agent seats', () => {
     expect(timedOut).toBeTruthy();
     const calls = await agentCalls(tableId, 1);
     const dropped = calls.find((c) => c.ok === false);
-    expect(dropped?.error).toMatch(/illegal action/);
+    // The refusal is the GAME'S OWN SENTENCE, not a generic label. The host no longer knows what a
+    // legal poker raise is — it hands the reply to the game that asked for it, and the game says
+    // what was wrong with it. That is what lets a canasta seat be filled by an agent at all, and it
+    // makes the log say "raise 1000000 out of range" instead of "illegal action".
+    expect(dropped?.error).toMatch(/out of range/);
+    expect(dropped?.error).toContain('1000000');
     expect(dropped?.action).toMatchObject({ type: 'raise' });
     await unseatAgent(tableId, token, 1);
     human.close();

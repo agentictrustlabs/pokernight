@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { migrateChipValue, type TableMeta } from '../src/table-do.js';
 import { defaultChipValue, legacyChipValue, pinnedChipValue, unstampedChipValue } from '../src/treasury.js';
 import type { Env } from '../src/env.js';
-import { createTableViaHttp } from './helpers.js';
+import { createTableViaHttp, soloClub } from './helpers.js';
 
 /** The deployment default in the test config (wrangler.toml `[vars]`): 1 chip = 1 Sheqel. */
 const DEPLOYMENT_DEFAULT = '1000000';
@@ -52,13 +52,13 @@ async function evict(tableId: string): Promise<void> {
 
 describe('a table settles at the rate it was created with', () => {
   it('stamps the deployment default onto a new table', async () => {
-    const t = await createTableViaHttp('rate stamped', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('rate stamped', {}, await soloClub());
     expect(t.chipValue).toBe(DEPLOYMENT_DEFAULT);
     expect((await summaryOf(t.tableId)).chipValue).toBe(DEPLOYMENT_DEFAULT);
   });
 
   it('keeps that rate when the deployment default moves under it', async () => {
-    const t = await createTableViaHttp('rate pinned', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('rate pinned', {}, await soloClub());
     expect(t.chipValue).toBe(DEPLOYMENT_DEFAULT);
 
     // The operator changes CHIP_VALUE. This table is already open, with stacks on it.
@@ -80,7 +80,7 @@ describe('a table settles at the rate it was created with', () => {
   });
 
   it('opens a NEW table at the new default while the old one keeps the old', async () => {
-    const old = await createTableViaHttp('opened before', {}, crypto.randomUUID());
+    const old = await createTableViaHttp('opened before', {}, await soloClub());
 
     // A table created after the operator moved CHIP_VALUE. Its DO is touched first so the change is
     // in place before `/init` reads it — which is exactly the moment the rate is captured.
@@ -121,7 +121,7 @@ describe('a table created before the rate was pinned', () => {
    * written is `LEGACY_CHIP_VALUE`, which is what those tables have actually been settling at.
    */
   it('is stamped with the rate it HAS been settling at, not with the new default', async () => {
-    const t = await createTableViaHttp('legacy table', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('legacy table', {}, await soloClub());
     await unpin(t.tableId);
 
     expect((await summaryOf(t.tableId)).chipValue).toBe(LEGACY);
@@ -133,7 +133,7 @@ describe('a table created before the rate was pinned', () => {
   });
 
   it('is immune to the default moving once it has been migrated', async () => {
-    const t = await createTableViaHttp('legacy then frozen', {}, crypto.randomUUID());
+    const t = await createTableViaHttp('legacy then frozen', {}, await soloClub());
     await unpin(t.tableId);
     expect((await summaryOf(t.tableId)).chipValue).toBe(LEGACY);
 

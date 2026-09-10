@@ -108,6 +108,9 @@ export function decodePokerActRequest(parts: readonly PartV1[] | undefined): Dec
     return {
       ok: true,
       input: {
+        // The skill the table named when it asked. Kept on the input so an executor that one day
+        // serves two games can tell which one is asking without re-reading the envelope.
+        skill: typeof candidate.skill === 'string' ? candidate.skill : POKER_ACT_SKILL,
         tableId: typeof candidate.tableId === 'string' ? candidate.tableId : '',
         handNo: typeof candidate.handNo === 'number' ? candidate.handNo : (candidate.view as TableView).handNo,
         seat: candidate.seat as number,

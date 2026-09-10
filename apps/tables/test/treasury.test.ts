@@ -11,7 +11,7 @@
 
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { TestClient, createTableViaHttp, devSession, engineReady, waitForAny } from './helpers.js';
+import { TestClient, createTableViaHttp, devSession, engineReady, soloClub, waitForAny } from './helpers.js';
 
 async function get(path: string, token?: string): Promise<Response> {
   return SELF.fetch(`http://tables.test${path}`, token ? { headers: { authorization: `Bearer ${token}` } } : {});
@@ -116,7 +116,10 @@ describe('POST /treasury/fund', () => {
 
 describe('settled tables', () => {
   it('refuses to CREATE one on a deployment that cannot settle, saying why', async () => {
-    const res = await post('/tables', { name: 'Sheqel night', settlement: 'mandate-transfer', circle: crypto.randomUUID() }, undefined);
+    // A real session, because opening a table needs one now — the refusal under test is about
+    // SETTLEMENT, and it has to be reachable by somebody who got past the door.
+    const { token } = await devSession('settled table opener');
+    const res = await post('/tables', { name: 'Sheqel night', settlement: 'mandate-transfer' }, token);
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toMatch(/cannot settle on chain/);
   });
@@ -128,7 +131,7 @@ describe('GET /tables/:id/settlement', () => {
   });
 
   it.skipIf(!engineReady)('reports this player’s money rows, and nobody else’s', async () => {
-    const table = await createTableViaHttp('settlement view', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('settlement view', {}, await soloClub());
     const s = await devSession('Ledger Reader');
     const res = await get(`/tables/${table.tableId}/settlement`, s.token);
     expect(res.status).toBe(200);

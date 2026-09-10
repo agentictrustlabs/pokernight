@@ -17,7 +17,7 @@ import { SELF, env, fetchMock, runInDurableObject } from 'cloudflare:test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SeatCleared, SeatClearRefusal, SignOutResult } from '@pokernight/protocol';
 import { agentPlayerId, type PokerTableDO } from '../src/table-do.js';
-import { TestClient, createTableViaHttp, devSession, engineReady, sleep } from './helpers.js';
+import { TestClient, createTableViaHttp, createClubViaHttp, devSession, engineReady, sleep, soloClub } from './helpers.js';
 
 const OPERATOR_TOKEN = 'test-operator-token';
 
@@ -88,7 +88,7 @@ async function seatOnePlayer(tableId: string, name: string, seat = 0, buyIn = 10
 
 describe('a dropped connection sits the seat out', () => {
   it.skipIf(!engineReady)('sits the player out, keeps the seat and the chips, and moves NO money', async () => {
-    const table = await createTableViaHttp('disconnect', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('disconnect', {});
     const watcher = await TestClient.connect(table.tableId); // a spectator, so the sit-out is observable
     const { client, playerId } = await seatOnePlayer(table.tableId, 'Dora');
 
@@ -113,7 +113,7 @@ describe('a dropped connection sits the seat out', () => {
   }, 20_000);
 
   it.skipIf(!engineReady)('only the LAST socket counts: a second tab keeps the seat in the deal', async () => {
-    const table = await createTableViaHttp('two tabs', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('two tabs', {});
     const watcher = await TestClient.connect(table.tableId);
     const s = await devSession('Dex');
     const first = await TestClient.connect(table.tableId, s.token);
@@ -136,7 +136,7 @@ describe('a dropped connection sits the seat out', () => {
   }, 20_000);
 
   it.skipIf(!engineReady)('a reconnect does not silently sit them back in — that stays their choice', async () => {
-    const table = await createTableViaHttp('reconnect', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('reconnect', {});
     const s = await devSession('Dana');
     const first = await TestClient.connect(table.tableId, s.token);
     first.send({ type: 'join', seat: 1, buyIn: 100 });
@@ -167,7 +167,7 @@ describe('a dropped connection sits the seat out', () => {
    * seat and watching it decline.
    */
   it.skipIf(!engineReady)('never sits an AGENT seat out — it never had a socket to lose', async () => {
-    const table = await createTableViaHttp('agents keep playing', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('agents keep playing', {});
     const s = await devSession('Agent Seater');
     const res = await SELF.fetch(`http://tables.test/tables/${table.tableId}/seat-agent`, {
       method: 'POST',
@@ -255,7 +255,7 @@ describe('signing out gives up the seat', () => {
 
 describe('DELETE /tables/:id/seat/:seat — the operator clear', () => {
   it('refuses without the operator token, and with the wrong one', async () => {
-    const table = await createTableViaHttp('operator gate', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('operator gate', {});
     const missing = await refusalOf(await clearSeat(table.tableId, 0, null));
     expect(missing.status).toBe(401);
     expect(missing.refused).toBe('operator');
@@ -270,7 +270,7 @@ describe('DELETE /tables/:id/seat/:seat — the operator clear', () => {
 
   /** A player SESSION is not operator authority, however valid it is. There is no admin role. */
   it('is not reachable with an ordinary player session', async () => {
-    const table = await createTableViaHttp('sessions are not operators', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('sessions are not operators', {});
     const s = await devSession('Not An Operator');
     const res = await SELF.fetch(`http://tables.test/tables/${table.tableId}/seat/0`, {
       method: 'DELETE',
@@ -281,14 +281,14 @@ describe('DELETE /tables/:id/seat/:seat — the operator clear', () => {
   });
 
   it.skipIf(!engineReady)('refuses an empty seat', async () => {
-    const table = await createTableViaHttp('empty seat', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('empty seat', {});
     const r = await refusalOf(await clearSeat(table.tableId, 4, OPERATOR_TOKEN));
     expect(r.status).toBe(404);
     expect(r.refused).toBe('empty');
   });
 
   it.skipIf(!engineReady)('refuses a seat whose player is still connected', async () => {
-    const table = await createTableViaHttp('connected seat', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('connected seat', {});
     const { client, playerId } = await seatOnePlayer(table.tableId, 'Connie');
     // Idle enough to pass condition four: the connection is what has to stop this, on its own.
     await ageSeat(table.tableId, playerId, 10 * 60_000);
@@ -303,7 +303,7 @@ describe('DELETE /tables/:id/seat/:seat — the operator clear', () => {
 
   it.skipIf(!engineReady)('refuses a seat that is in a hand that is still running', async () => {
     // A long turn clock so the hand is still running when the assertions run.
-    const table = await createTableViaHttp('mid hand', { actionTimeoutMs: 60_000 }, crypto.randomUUID());
+    const table = await createTableViaHttp('mid hand', { actionTimeoutMs: 60_000 });
     const a = await seatOnePlayer(table.tableId, 'Hana', 0, 100);
     const b = await seatOnePlayer(table.tableId, 'Hugo', 1, 100);
     await a.client.waitFor((m) => m.type === 'event' && m.event.type === 'hand-started', 10_000);
@@ -322,7 +322,7 @@ describe('DELETE /tables/:id/seat/:seat — the operator clear', () => {
   }, 30_000);
 
   it.skipIf(!engineReady)('refuses a seat that has been active recently', async () => {
-    const table = await createTableViaHttp('too fresh', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('too fresh', {});
     const { client } = await seatOnePlayer(table.tableId, 'Fresh');
     client.close(); // no socket, not in a hand — only the idle threshold is left
     await sleep(500);
@@ -335,7 +335,7 @@ describe('DELETE /tables/:id/seat/:seat — the operator clear', () => {
   }, 20_000);
 
   it.skipIf(!engineReady)('clears the seat and cashes it out when all four conditions hold', async () => {
-    const table = await createTableViaHttp('abandoned', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('abandoned', {});
     const { client, playerId } = await seatOnePlayer(table.tableId, 'Gone', 5, 175);
     client.close();
     await sleep(500);
@@ -395,15 +395,18 @@ afterAll(() => {
 
 /* ------------------------------------------------------------ retiring a table */
 
-async function retireTable(tableId: string, token: string | null, circle?: string): Promise<Response> {
-  return SELF.fetch(`http://tables.test/tables/${tableId}${circle ? `?circle=${circle}` : ''}`, {
+async function retireTable(tableId: string, token: string | null, club?: string): Promise<Response> {
+  return SELF.fetch(`http://tables.test/tables/${tableId}${club ? `?club=${club}` : ''}`, {
     method: 'DELETE',
     ...(token ? { headers: { 'x-operator-token': token } } : {}),
   });
 }
 
-async function lobbyIds(circle?: string): Promise<string[]> {
-  const res = await SELF.fetch(`http://tables.test/tables${circle ? `?circle=${circle}` : ''}`);
+/** The tables in a club's own lobby, read as somebody with standing there. */
+async function lobbyIds(club: { club: string; token: string }): Promise<string[]> {
+  const res = await SELF.fetch(`http://tables.test/tables?club=${club.club}`, {
+    headers: { authorization: `Bearer ${club.token}` },
+  });
   return ((await res.json()) as Array<{ tableId: string }>).map((t) => t.tableId);
 }
 
@@ -419,27 +422,31 @@ async function lobbyIds(circle?: string): Promise<string[]> {
  */
 describe('DELETE /tables/:id — the operator retire', () => {
   it('refuses without the operator token, and never echoes it back', async () => {
-    const circle = crypto.randomUUID();
-    const table = await createTableViaHttp('unretired', {}, circle);
+    const club = await soloClub('unretired club');
+    const table = await createTableViaHttp('unretired', {}, club);
 
-    const missing = (await (await retireTable(table.tableId, null, circle)).json()) as { error: string };
+    const missing = (await (await retireTable(table.tableId, null, club.club)).json()) as { error: string };
     expect(missing.error).toContain('x-operator-token');
 
-    const res = await retireTable(table.tableId, 'not-the-token', circle);
+    const res = await retireTable(table.tableId, 'not-the-token', club.club);
     expect(res.status).toBe(403);
     const wrong = (await res.json()) as { error: string };
     expect(wrong.error).not.toContain(OPERATOR_TOKEN);
 
     // Still there: a refused retire changes nothing.
-    expect(await lobbyIds(circle)).toContain(table.tableId);
+    expect(await lobbyIds(club)).toContain(table.tableId);
   });
 
   it.skipIf(!engineReady)('refuses while anyone is seated, and says how many', async () => {
-    const circle = crypto.randomUUID();
-    const table = await createTableViaHttp('occupied', {}, circle);
-    const { client } = await seatOnePlayer(table.tableId, 'Sitting', 0, 100);
+    // A CLUB table, seated by the club's own host — the operator gate is about the seats, not about
+    // the club, and it has to hold on a private table exactly as it does on a public one.
+    const club = await soloClub('occupied club');
+    const table = await createTableViaHttp('occupied', {}, club);
+    const client = await TestClient.connect(table.tableId, club.token);
+    client.send({ type: 'join', seat: 0, buyIn: 100 });
+    await client.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined' && m.event.seat === 0);
 
-    const res = await retireTable(table.tableId, OPERATOR_TOKEN, circle);
+    const res = await retireTable(table.tableId, OPERATOR_TOKEN, club.club);
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string; refused: string; seated: number };
     expect(body.refused).toBe('seated');
@@ -451,21 +458,21 @@ describe('DELETE /tables/:id — the operator retire', () => {
   }, 20_000);
 
   it('retires an empty table: gone from the lobby, and gone from the table itself', async () => {
-    const circle = crypto.randomUUID();
-    const doomed = await createTableViaHttp('retire me', {}, circle);
-    const keep = await createTableViaHttp('keep me', {}, circle);
+    const club = await soloClub('retire club');
+    const doomed = await createTableViaHttp('retire me', {}, club);
+    const keep = await createTableViaHttp('keep me', {}, club);
 
-    const res = await SELF.fetch(`http://tables.test/tables/${doomed.tableId}?circle=${circle}`, {
-      method: 'DELETE',
-      headers: { 'x-operator-token': OPERATOR_TOKEN },
-    });
+    const res = await retireTable(doomed.tableId, OPERATOR_TOKEN, club.club);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ retired: true, tableId: doomed.tableId, name: 'retire me' });
 
-    const listed = ((await (await SELF.fetch(`http://tables.test/tables?circle=${circle}`)).json()) as Array<{ tableId: string }>).map((t) => t.tableId);
-    expect(listed).toEqual([keep.tableId]);
-    // A retired table is gone, not hidden: the spectator view has nothing to show.
-    expect((await SELF.fetch(`http://tables.test/tables/${doomed.tableId}`)).status).toBe(404);
+    expect(await lobbyIds(club)).toEqual([keep.tableId]);
+    // A retired table is gone, not hidden: the spectator view has nothing to show — and a host of
+    // the club it belonged to is exactly the person who must not be shown a husk.
+    const gone = await SELF.fetch(`http://tables.test/tables/${doomed.tableId}`, {
+      headers: { authorization: `Bearer ${club.token}` },
+    });
+    expect(gone.status).toBe(404);
   });
 });
 
@@ -511,7 +518,7 @@ async function seatOf(tableId: string, playerId: string): Promise<{ seat: number
  */
 describe('a player who has run out of chips', () => {
   it.skipIf(!engineReady)('is dealt back in by the rebuy itself, not by a second button', async () => {
-    const table = await createTableViaHttp('busted', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('busted', {});
     const { client, playerId, token } = await seatOnePlayer(table.tableId, 'Busted', 0, 100);
     await bust(table.tableId, playerId);
     expect(await seatOf(table.tableId, playerId)).toMatchObject({ stack: 0, status: 'sitting-out' });
@@ -541,7 +548,7 @@ describe('a player who has run out of chips', () => {
   }, 20_000);
 
   it.skipIf(!engineReady)('is refused by name when the rebuy would break the table’s cap, and stays sat out', async () => {
-    const table = await createTableViaHttp('busted cap', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('busted cap', {});
     const { client, playerId } = await seatOnePlayer(table.tableId, 'Greedy', 0, 200);
 
     // At the table maximum already: there is no room for a rebuy on top.
@@ -557,7 +564,7 @@ describe('a player who has run out of chips', () => {
    * out and then tops up is topping up, not asking to be dealt in.
    */
   it.skipIf(!engineReady)('does not sit a player in who chose to sit out and still had chips', async () => {
-    const table = await createTableViaHttp('deliberate', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('deliberate', {});
     const { client, playerId } = await seatOnePlayer(table.tableId, 'Deliberate', 0, 100);
     client.send({ type: 'sit-out' });
     await client.waitFor((m) => m.type === 'event' && m.event.type === 'seat-status' && m.event.status === 'sitting-out');
@@ -578,7 +585,7 @@ describe('a player who has run out of chips', () => {
  */
 describe('reconnecting', () => {
   it.skipIf(!engineReady)('sits a dropped player back in when they come back with chips', async () => {
-    const table = await createTableViaHttp('dropped', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('dropped', {});
     const s = await devSession('Dropper');
     const first = await TestClient.connect(table.tableId, s.token);
     first.send({ type: 'join', seat: 3, buyIn: 120 });
@@ -595,7 +602,7 @@ describe('reconnecting', () => {
   }, 20_000);
 
   it.skipIf(!engineReady)('leaves a player who ASKED to sit out exactly where they put themselves', async () => {
-    const table = await createTableViaHttp('asked', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('asked', {});
     const s = await devSession('Asker');
     const first = await TestClient.connect(table.tableId, s.token);
     first.send({ type: 'join', seat: 4, buyIn: 120 });
@@ -613,7 +620,7 @@ describe('reconnecting', () => {
 
   /** No chips means the sit-out that matters is being broke. Sitting them in would hide the rebuy. */
   it.skipIf(!engineReady)('does not sit a busted player in on reconnect, because that would change nothing', async () => {
-    const table = await createTableViaHttp('dropped broke', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('dropped broke', {});
     const s = await devSession('Dropped Broke');
     const first = await TestClient.connect(table.tableId, s.token);
     first.send({ type: 'join', seat: 2, buyIn: 100 });
@@ -643,7 +650,7 @@ describe('reconnecting', () => {
  */
 describe('an agent seat with no chips', () => {
   it.skipIf(!engineReady)('is topped back up to the table minimum between hands, on play money', async () => {
-    const table = await createTableViaHttp('busted bot', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('busted bot', {});
     const s = await devSession('Bot Seater');
     const res = await SELF.fetch(`http://tables.test/tables/${table.tableId}/seat-agent`, {
       method: 'POST',
@@ -672,7 +679,7 @@ describe('an agent seat with no chips', () => {
 
   /** A human at zero is NOT topped up: their money is theirs, and they are asked. */
   it.skipIf(!engineReady)('leaves a busted HUMAN seat alone — that one is offered a rebuy instead', async () => {
-    const table = await createTableViaHttp('busted human untouched', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('busted human untouched', {});
     const { client, playerId } = await seatOnePlayer(table.tableId, 'Broke Human', 0, 100);
     await bust(table.tableId, playerId);
 
@@ -696,7 +703,7 @@ describe('an agent seat with no chips', () => {
  */
 describe('a table that stalled between hands', () => {
   it.skipIf(!engineReady)('wakes itself up when it loads, rather than sleeping forever', async () => {
-    const table = await createTableViaHttp('stalled', {}, crypto.randomUUID());
+    const table = await createTableViaHttp('stalled', {});
     const { client, playerId } = await seatOnePlayer(table.tableId, 'Stalled', 0, 100);
     client.close();
     await sleep(400);

@@ -1,6 +1,6 @@
 import { SELF } from 'cloudflare:test';
 import { createTable } from '@pokernight/engine';
-import type { ServerMessage, TableSummary } from '@pokernight/protocol';
+import type { ClubSummary, PokerServerMessage, TableSummary } from '@pokernight/protocol';
 
 /**
  * The engine bodies are being implemented separately and currently throw "not implemented".
@@ -15,14 +15,59 @@ export const engineReady: boolean = (() => {
   }
 })();
 
-export async function createTableViaHttp(name = 'test table', config: Record<string, number> = {}, circle?: string): Promise<TableSummary> {
+export interface CreateTableOpts {
+  /** Whose session opens it. Minted here if absent — opening a table now requires one. */
+  token?: string;
+  /** Open it FOR a club. The token must belong to one of that club's hosts. */
+  club?: string;
+  settlement?: string;
+}
+
+/**
+ * Open a table over HTTP.
+ *
+ * A session is now required (see `POST /tables`), so one is minted when the caller does not care
+ * whose it is. Tests that want a lobby of their own pass `club`, which is both the isolation they
+ * were using a random `circle` for before AND the real gated path.
+ */
+export async function createTableViaHttp(
+  name = 'test table',
+  config: Record<string, number> = {},
+  opts: CreateTableOpts = {},
+): Promise<TableSummary> {
+  const token = opts.token ?? (await devSession(`opener-${crypto.randomUUID().slice(0, 8)}`)).token;
   const res = await SELF.fetch('http://tables.test/tables', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name, config, circle }),
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name, config, ...(opts.club ? { club: opts.club } : {}), ...(opts.settlement ? { settlement: opts.settlement } : {}) }),
   });
   if (res.status !== 201) throw new Error(`create table failed: ${res.status} ${await res.text()}`);
   return (await res.json()) as TableSummary;
+}
+
+/** Start a club. The signed-in player becomes its first host, and is on its roster from the start. */
+export async function createClubViaHttp(token: string, name = 'test club'): Promise<ClubSummary> {
+  const res = await SELF.fetch('http://tables.test/clubs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name }),
+  });
+  if (res.status !== 201) throw new Error(`create club failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as ClubSummary;
+}
+
+/**
+ * A club of one, and the host who can open tables in it.
+ *
+ * This is the isolation a test wants when all it needs is a lobby nobody else is writing to — the
+ * job a random `circle` string used to do, now done by the real gated path so the isolation and the
+ * feature are tested by the same call. Returns the shape `createTableViaHttp` takes, so it reads as
+ * `createTableViaHttp('name', {}, await soloClub())`.
+ */
+export async function soloClub(name = 'solo'): Promise<{ club: string; token: string }> {
+  const host = await devSession(`host-${crypto.randomUUID().slice(0, 8)}`);
+  const club = await createClubViaHttp(host.token, name);
+  return { club: club.clubId, token: host.token };
 }
 
 export async function devSession(name: string): Promise<{ token: string; playerId: string; name: string }> {
@@ -40,13 +85,18 @@ export async function devSession(name: string): Promise<{ token: string; playerI
  * without consuming, so concurrent waiters (e.g. `waitForAny` over two clients) never steal messages.
  */
 export class TestClient {
-  readonly log: ServerMessage[] = [];
+  /**
+   * THESE TESTS ARE POKER'S. The protocol carries a game's view, legal actions and events opaquely,
+   * so a poker client narrows them at its own socket boundary — here, once, where the JSON arrives —
+   * rather than casting at every assertion. `PokerTableDO` widens at the matching seam.
+   */
+  readonly log: PokerServerMessage[] = [];
   private cursor = 0;
-  private listeners = new Set<(m: ServerMessage) => void>();
+  private listeners = new Set<(m: PokerServerMessage) => void>();
 
   private constructor(readonly ws: WebSocket) {
     ws.addEventListener('message', (ev) => {
-      const msg = JSON.parse(String(ev.data)) as ServerMessage;
+      const msg = JSON.parse(String(ev.data)) as PokerServerMessage;
       this.log.push(msg);
       for (const l of this.listeners) l(msg);
     });
@@ -66,19 +116,19 @@ export class TestClient {
   }
 
   /** The next unread message. */
-  next(timeoutMs = 5000): Promise<ServerMessage> {
+  next(timeoutMs = 5000): Promise<PokerServerMessage> {
     return this.waitFor(() => true, timeoutMs);
   }
 
   /** First unread message matching `pred`; advances the cursor past it. */
-  async waitFor(pred: (m: ServerMessage) => boolean, timeoutMs = 5000): Promise<ServerMessage> {
+  async waitFor(pred: (m: PokerServerMessage) => boolean, timeoutMs = 5000): Promise<PokerServerMessage> {
     const found = await waitForAny([this], pred, timeoutMs);
     return found.message;
   }
 
   /** @internal */
-  scanUnread(pred: (m: ServerMessage) => boolean): number {
-    for (let i = this.cursor; i < this.log.length; i++) if (pred(this.log[i] as ServerMessage)) return i;
+  scanUnread(pred: (m: PokerServerMessage) => boolean): number {
+    for (let i = this.cursor; i < this.log.length; i++) if (pred(this.log[i] as PokerServerMessage)) return i;
     return -1;
   }
 
@@ -88,7 +138,7 @@ export class TestClient {
   }
 
   /** @internal */
-  subscribe(l: (m: ServerMessage) => void): () => void {
+  subscribe(l: (m: PokerServerMessage) => void): () => void {
     this.listeners.add(l);
     return () => this.listeners.delete(l);
   }
@@ -99,12 +149,12 @@ export class TestClient {
 }
 
 /** Resolves with the first matching unread message across `clients`; all listeners are removed on settle. */
-export function waitForAny(clients: TestClient[], pred: (m: ServerMessage) => boolean, timeoutMs = 5000): Promise<{ client: TestClient; message: ServerMessage }> {
+export function waitForAny(clients: TestClient[], pred: (m: PokerServerMessage) => boolean, timeoutMs = 5000): Promise<{ client: TestClient; message: PokerServerMessage }> {
   for (const client of clients) {
     const i = client.scanUnread(pred);
     if (i >= 0) {
       client.consumeThrough(i);
-      return Promise.resolve({ client, message: client.log[i] as ServerMessage });
+      return Promise.resolve({ client, message: client.log[i] as PokerServerMessage });
     }
   }
   return new Promise((resolve, reject) => {

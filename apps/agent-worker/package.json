@@ -17,7 +17,9 @@
     "@pokernight/agent-kit": "workspace:*",
     "@pokernight/engine": "workspace:*",
     "@pokernight/protocol": "workspace:*",
-    "viem": "^2.52.2"
+    "viem": "^2.52.2",
+    "@pokernight/canasta-agent": "workspace:*",
+    "@pokernight/canasta": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.8.0",

@@ -26,7 +26,11 @@
     "@pokernight/treasury": "workspace:*",
     "hono": "^4.6.14",
     "viem": "^2.52.2",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "@pokernight/table-game": "workspace:*",
+    "@pokernight/canasta": "workspace:*",
+    "@agenticprimitives/agent-naming": "link:../../../agenticprimitives/packages/agent-naming",
+    "@pokernight/canasta-agent": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.8.0",

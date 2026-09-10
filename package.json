@@ -19,7 +19,10 @@
     "deploy:sheqel": "tsx scripts/deploy-sheqel.mts",
     "test:contracts": "forge test --root contracts",
     "settle:demo": "tsx scripts/settle-demo.mts",
-    "settle:persona": "tsx scripts/settle-persona.mts"
+    "settle:persona": "tsx scripts/settle-persona.mts",
+    "play:canasta": "node scripts/play-canasta.cjs",
+    "walk:nav": "node scripts/walk-nav.cjs",
+    "play:canasta:practice": "node scripts/play-canasta.cjs --practice"
   },
   "devDependencies": {
     "@agenticprimitives/agent-account": "link:../agenticprimitives/packages/agent-account",

@@ -5,7 +5,7 @@
  */
 
 import type { ActionRecord, Card, LegalActions, Street, TableView } from '@pokernight/engine';
-import type { PokerActInput } from '@pokernight/protocol';
+import { POKER_ACT_SKILL, type PokerActInput } from '@pokernight/protocol';
 import type { ExecutionContext, MessageV1, PartV1, TaskV1 } from '@agenticprimitives/a2a/standard';
 import { createPokerActExecutor } from '../src/executor.js';
 import type { Env } from '../src/env.js';
@@ -124,7 +124,7 @@ export function legalFor(view: TableView, overrides: Partial<LegalActions> = {})
 }
 
 export function makeInput(view: TableView, legal: LegalActions = legalFor(view), deadlineMs = 5000): PokerActInput {
-  return { tableId: 't1', handNo: view.handNo, seat: view.viewerSeat ?? 0, view, legal, deadlineMs };
+  return { skill: POKER_ACT_SKILL, tableId: 't1', handNo: view.handNo, seat: view.viewerSeat ?? 0, view, legal, deadlineMs };
 }
 
 /* --------------------------------------------------------------- randomization */
