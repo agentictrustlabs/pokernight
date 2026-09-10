@@ -12,7 +12,7 @@
 import { connectAsQuickConnect, listQuickConnect, type QuickConnectConfig } from '@agenticprimitives/connect-client';
 import { api } from './api';
 import { mapDemoPersonas, type DemoPersona } from './demo';
-import type { AuthConfig } from './home';
+import { rememberHomeSession, type AuthConfig } from './home';
 import type { AppSession } from './types';
 
 /** The Home and client id come from `GET /auth/config`; this app hardcodes no origin (ADR-0021). */
@@ -29,6 +29,10 @@ export async function fetchDemoPersonas(config: AuthConfig): Promise<DemoPersona
 /** Connect as one of them. Throws — a person clicked something, so a failure has to say so. */
 export async function connectAsDemoUser(config: AuthConfig, handle: string): Promise<AppSession> {
   const result = await connectAsQuickConnect(quickConnectConfig(config), handle);
+  // The Home hands back the same person's OWN Home session so an app can send them onward already
+  // signed in. Kept for the ceremonies (chartering a club is a trip to the Home) and kept in
+  // `sessionStorage` rather than on the session object, which is written to `localStorage`.
+  rememberHomeSession(result.homeSession);
   const session = await api.demoLogin({
     idToken: result.idToken,
     delegation: result.delegation,

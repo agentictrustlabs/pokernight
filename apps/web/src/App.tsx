@@ -2,18 +2,29 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession } from './lib/types';
 import { ApiError, api, loadSession, saveSession, setUnauthorizedHandler } from './lib/api';
 import { SESSION_KEY } from './lib/ssoLogout';
-import { startHomeSignIn, takeHomeCallback, takeMandateCallback, takeProfileName, type AuthConfig } from './lib/home';
+import {
+  forgetHomeSession,
+  startHomeSignIn,
+  takeCharterCallback,
+  takeCharterClub,
+  takeHomeCallback,
+  takeMandateCallback,
+  takeProfileName,
+  type AuthConfig,
+} from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
 import { HOME_HASH, goTo, route, takeReturn } from './lib/routes';
 import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
+import { PRODUCT_NAME } from './lib/brand';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
 import { Identity } from './components/Identity';
+import { JoinPage } from './pages/JoinPage';
+import { TableRoute } from './pages/TableRoute';
 import { Landing } from './pages/Landing';
-import { Lobby } from './pages/Lobby';
+import { Room } from './pages/Room';
 import { SignInPage } from './pages/SignInPage';
-import { TablePage } from './pages/TablePage';
 
 /** Everything sign-in related, in one bag, so every surface can render every state of it. */
 export interface AuthState {
@@ -90,6 +101,10 @@ export function App() {
       });
     }
     saveSession(outcome.session);
+    // Their HOME session goes with their card-room session. It is a bearer token for somebody's own
+    // Home, held only to hand ceremonies off, and keeping it past a sign-out would be keeping the
+    // more powerful of the two credentials after being told to let go of the lesser one.
+    forgetHomeSession();
     setSession(outcome.session);
     setNotice(outcome.notice);
     setError(null);
@@ -190,6 +205,49 @@ export function App() {
       .finally(() => setBusy(false));
   }, []);
 
+  /**
+   * The return leg of a CLUB CHARTER. Third ceremony on the same redirect URI, told apart the same
+   * way — by the `state` it stashed — and consumed before the sign-in path for the same reason: a
+   * code from a charter is not a code to mint a session out of.
+   *
+   * Which club it was for came back from this origin's own storage, never from the Home. If that is
+   * missing the charter cannot be recorded against anything, and saying so beats writing it onto
+   * whichever club happens to be on screen.
+   */
+  useEffect(() => {
+    const outcome = takeCharterCallback();
+    if (outcome.status !== 'signed-in') {
+      if (outcome.status === 'error') setError(outcome.message);
+      return;
+    }
+    const clubId = takeCharterClub();
+    const current = sessionRef.current;
+    if (!current) {
+      setError('Your Home chartered the club, but this browser is no longer signed in — sign in and it will be there.');
+      return;
+    }
+    if (!clubId) {
+      setError('Your Home finished, but this browser no longer knows which club it was for. Open the club and try again.');
+      return;
+    }
+    setBusy(true);
+    api
+      .charterClub(
+        clubId,
+        {
+          code: outcome.code,
+          codeVerifier: outcome.codeVerifier,
+          authOrigin: outcome.authOrigin,
+          nonce: outcome.nonce,
+          state: outcome.state,
+        },
+        current.token,
+      )
+      .then((club) => setNotice(`${club.name} has an agent of its own now.`))
+      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'Could not record the club charter.'))
+      .finally(() => setBusy(false));
+  }, []);
+
   // The return leg of a Home sign-in. `takeHomeCallback` scrubs the URL and clears the stash the
   // first time it sees a `?code`, so a refresh (or React's double-invoked effects) cannot resubmit a
   // single-use code. The Worker does the exchange and the verification; we only carry the code over.
@@ -274,23 +332,43 @@ export function App() {
     if (session && r.page === 'signin') goTo(HOME_HASH);
   }, [session, r.page]);
 
-  if (r.page === 'table') {
+  if (r.page === 'join') {
     return (
       <div className="app">
         <CardDefs />
-        <TablePage tableId={r.tableId} session={session} config={config} onSignOut={signOut} />
+        <div className="topbar">
+          <a className="brand" href="#/">
+            {PRODUCT_NAME}
+          </a>
+          <span className="spacer" />
+          <span className="meta">{session ? <Identity session={session} onSignOut={signOut} /> : null}</span>
+        </div>
+        <div className="page">
+          <JoinPage clubId={r.clubId} token={r.token} session={session} auth={auth} onLogin={login} />
+        </div>
       </div>
     );
   }
 
-  const showLanding = r.page === 'home' && !session;
+  if (r.page === 'table') {
+    return (
+      <div className="app">
+        <CardDefs />
+        <TableRoute tableId={r.tableId} practice={r.practice === true} session={session} config={config} onSignOut={signOut} />
+      </div>
+    );
+  }
+
+  // The front page, on two roads: the front door for a visitor with no session, and `#/about` for
+  // anybody — which is the only way a signed-in reader can get at the product explanation at all.
+  const showLanding = (r.page === 'home' && !session) || r.page === 'about';
 
   return (
     <div className="app">
       <CardDefs />
       <div className="topbar">
         <a className="brand" href="#/">
-          Pokernight
+          {PRODUCT_NAME}
         </a>
         <span className="spacer" />
         <span className="meta">
@@ -305,10 +383,10 @@ export function App() {
         </span>
       </div>
       {showLanding ? (
-        <Landing auth={auth} onLogin={login} />
+        <Landing auth={auth} onLogin={login} session={session} />
       ) : (
         <div className="page">
-          {r.page === 'signin' || !session ? <SignInPage auth={auth} onLogin={login} /> : <Lobby session={session} auth={auth} onLogin={login} />}
+          {r.page === 'signin' || !session ? <SignInPage auth={auth} onLogin={login} /> : <Room r={r} session={session} auth={auth} onLogin={login} />}
         </div>
       )}
     </div>

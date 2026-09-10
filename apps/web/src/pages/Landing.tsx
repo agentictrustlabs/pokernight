@@ -5,8 +5,11 @@ import { api } from '../lib/api';
 import { fmtChips, seatLabel } from '../lib/format';
 import { dualAmount, tableRate } from '../lib/money';
 import { SettlementTag } from '../components/SettlementTag';
-import { describeMoment, fmtSeats, pickFeaturedTable, summarizeLobby, summarizeRoster, type TableDetail } from '../lib/lobby';
+import { describeMoment, fmtSeats, pickFeaturedTable, stakeLabel, summarizeLobby, summarizeRoster, type TableDetail } from '../lib/lobby';
 import { SignInPanel } from '../components/SignInPanel';
+import { brandLine } from '../lib/brand';
+import { hasBoard } from '../lib/games';
+import { HOME_HASH } from '../lib/routes';
 
 const POLL_MS = 15000;
 
@@ -14,12 +17,23 @@ const POLL_MS = 15000;
  * The front door.
  *
  * Four things, in the order a stranger needs them: what this is, how it works, PROOF that it is
- * running, and the way in. The proof is the part that matters — the lobby strip is the live
- * `GET /tables`, and the featured table's roster comes from the spectator view, so if the page says
- * four agents are playing hand #754 it is because four agents are playing hand #754. When the room is
- * empty it says so.
+ * running, and the way in.
+ *
+ * WHAT IT SELLS. An evening together, with a mission organisation as the guest at the table. The
+ * poker is the shared activity; the fellowship and the relationship with the mission are the point.
+ * It does NOT sell the machinery: not agents, not the chain, not delegations, not treasuries. Those
+ * are all real and all still here, one screen deeper, where somebody who wants them can find them.
+ *
+ * THE GIVING BOUNDARY IS PART OF THE BRAND, not a disclaimer under it. Nobody has to give to play,
+ * to compete, or to belong, and this page says so where a person reads it rather than in a footer.
+ * A mission that is a guest reads differently from a logo beside a donation button, and the whole
+ * product rests on the difference.
+ *
+ * The proof is the part that matters — the lobby strip is the live `GET /tables`, and the featured
+ * table's roster comes from the spectator view, so if the page says a hand is running it is because a
+ * hand is running. When the room is empty it says so.
  */
-export function Landing({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSession) => void }) {
+export function Landing({ auth, onLogin, session = null }: { auth: AuthState; onLogin: (s: AppSession) => void; session?: AppSession | null }) {
   const live = useLiveLobby();
   // The card room's currency, as the card room states it (`GET /auth/config`). `SHQ` is the
   // fallback for a deployment that names none.
@@ -30,31 +44,57 @@ export function Landing({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSe
       <div className="landing-body">
         <HowItWorks />
         <LiveRoom live={live} />
+        {/* THE SIGN-IN HALF IS FOR PEOPLE WHO ARE NOT SIGNED IN. Everything above it is the product
+            explanation and is worth reading at any time, which is why this page has a URL now; the
+            pitch below is the one part that would be talking past a reader who already has an account. */}
         <section className="landing-section" id="signin">
-          <h2 className="section-title">Take a seat</h2>
+          <h2 className="section-title">{session ? 'What you are playing with' : 'Take a seat'}</h2>
           <div className="signin-split">
             <div className="signin-pitch">
-              <h2>There is no account to create.</h2>
+              <h2>{session ? 'What the money here is.' : 'There is no account to create.'}</h2>
+              {session ? (
+                <p>
+                  You have <strong>{money}</strong> of your own to play with, and a seat is one press away.
+                </p>
+              ) : (
+                <p>
+                  Sign in with a phone number, an email address or a social account. We set you up with{' '}
+                  <strong>10,000 {money} to play with</strong>, and you are at a table.
+                </p>
+              )}
               <p>
-                Sign in with a phone number, an email address or a social account. We set you up with{' '}
-                <strong>10,000 {money} to play with</strong>, and you are at a table.
+                It is <strong>test money</strong> — {money}, this card room&rsquo;s own chips, worth nothing anywhere else — and nothing here
+                is a wager. What is real is that the money is <strong>yours</strong>: a buy-in comes out of your own account and a cash-out
+                goes straight back into it, the moment it happens. Nobody keeps a tab, and there is nothing to settle up at the end of the
+                night.
               </p>
               <p>
-                It is <strong>test money</strong> — {money}, this card room&rsquo;s own coin on faithchain, worth nothing anywhere else — and
-                nothing on this site is a wager. The
-                settlement is real: buy-ins and cash-outs move between your money and the house's, and every one of them has a receipt you
-                can look at.
+                Chips and giving are <strong>separate</strong>. Losing a hand does not owe anyone anything, giving buys no advantage at the
+                table and no place in the standings, and a club never holds a penny of anyone&rsquo;s donation. When a mission is hosting,
+                giving goes to them, and it is a decision you make on your own.
               </p>
             </div>
-            <div className="signin-card panel">
-              <SignInPanel auth={auth} onLogin={onLogin} />
-            </div>
+            {session ? (
+              <div className="signin-card panel">
+                <h2>You are in.</h2>
+                <p className="hint">Everything above is what the card room is for. The tables are where you left them.</p>
+                <a className="cta" href={HOME_HASH}>
+                  Play a hand
+                </a>
+              </div>
+            ) : (
+              <div className="signin-card panel">
+                <SignInPanel auth={auth} onLogin={onLogin} />
+              </div>
+            )}
           </div>
         </section>
       </div>
       <footer className="landing-foot">
-        <span>Pokernight · test money on faithchain · a card room on faithnet</span>
-        <span className="hint">Hands are seeded, committed before the deal and revealed after it. Every hand replays byte-identically.</span>
+        <span>{brandLine()} · test money, and giving that is always your own choice</span>
+        <span className="hint">
+          Every deal is committed before the cards come out and revealed after, so any hand can be checked once it is over.
+        </span>
       </footer>
     </main>
   );
@@ -114,19 +154,30 @@ function Hero({ live }: { live: LiveLobby }) {
   return (
     <header className="hero">
       <div className="hero-inner">
-        <p className="hero-eyebrow">A private card room on faithnet</p>
+        <p className="hero-eyebrow">Fellowship with a mission</p>
         <h1 className="hero-title">
-          People and agents,
+          Play together.
           <br />
-          at the same table.
+          Grow closer.
+          <br />
+          Meet the mission.
         </h1>
         <p className="hero-lede">
-          No-limit Texas Hold'em where an AI can take the seat beside you and play its own hand. Sign in, we set you up with 10,000 in test
-          money, and you are at a table — your money stays yours, and the house never holds your keys.
+          An evening of Texas Hold&rsquo;em with the group you already meet with, and a mission organisation as your guest at the table.
+          Their people join the conversation, share their work and answer questions. Getting to know them is the point. Giving is a separate
+          choice, and never a condition of playing.
         </p>
+        {/* TWO DOORS, because two different people arrive here. A host comes to set a night up; far
+            more often somebody comes to play cards and has never heard of a club. The second door used
+            to be missing entirely, and the only call to action was the one that asks you to organise
+            something. Both lead to sign-in — and sign-in lands on Play, so the second one is a promise
+            that is actually kept. */}
         <div className="hero-actions">
           <a className="cta" href="#signin">
-            Play a hand
+            Start a club
+          </a>
+          <a className="cta-quiet" href="#signin">
+            Or just play a hand
           </a>
           <a className="cta-quiet" href="#how">
             How it works
@@ -137,9 +188,9 @@ function Hero({ live }: { live: LiveLobby }) {
             <span className="hint">Reading the lobby…</span>
           ) : (
             <>
-              <span className={`live-dot ${moment.agentsPlaying ? 'on' : 'idle'}`} aria-hidden="true" />
+              <span className={`live-dot ${moment.handRunning ? 'on' : 'idle'}`} aria-hidden="true" />
               <span className="hero-live-head">{summary?.headline}</span>
-              {moment.agentsPlaying ? <span className="hero-live-sub">Agents are playing right now — {moment.line}</span> : null}
+              {moment.handRunning ? <span className="hero-live-sub">A hand is running right now — {moment.line}</span> : null}
             </>
           )}
         </div>
@@ -150,23 +201,37 @@ function Hero({ live }: { live: LiveLobby }) {
 
 /* --------------------------------------------------------- how it works */
 
+/**
+ * The four steps are the PRODUCT, in the order a host meets it: the club, the night, the guest, the
+ * evening. Deliberately not the four steps of the money, which is what this list used to be — that is
+ * a thing a player does once, in one press, and it belongs on the panel that does it.
+ */
 const STEPS: { title: string; body: string }[] = [
   {
-    title: 'Sign in',
-    body: 'A phone number, an email address or a social account, through your own Home. No password is set here, and the card room never holds your keys.',
+    title: 'Start a club',
+    body: 'For the group you already meet with. Name it and add them. It is yours, it is private, and nobody outside it can see it or sit at its tables.',
   },
   {
-    title: 'Get your stake',
-    body: 'One button sets up a money account that is yours, and puts 10,000 in test money in it. You say how much a table may take from it, and you can undo that at your Home at any time.',
+    title: 'Set the night',
+    body: 'Once or twice a week at a time that suits you, or a one-off tournament across several tables. Blinds, buy-in and seats once, and then not again.',
   },
   {
-    title: 'Play the hand',
-    body: 'Sit down for what a seat costs, in dollars. The deck is committed before the deal and revealed after it, so the shuffle can be checked afterwards. Agents get the same view you do and answer on the same clock.',
+    title: 'Invite a mission to host',
+    body: 'A mission organisation is the guest dealer for the evening. Their people introduce their work, join the conversation and answer questions — and can take a seat and play if they would like to.',
   },
   {
-    title: 'Cash out',
-    body: 'Stand up whenever you like. Your stack goes back to your own money, receipted — and the part of the authority you did not use simply expires.',
+    title: 'Play, talk, and choose what is next',
+    body: 'Everybody gets asked, the table opens itself on time, and the season keeps its own score. Afterwards you can learn more about the mission, ask a question, stay in touch, or give. Each of those is your own choice.',
   },
+];
+
+/** The four things a guest mission offers a participant, and the order they come in. Named here
+ *  because "meet the mission" has to mean something specific before anyone will believe it. */
+const MISSION_ACTIONS: { title: string; body: string }[] = [
+  { title: 'Learn', body: 'What the organisation does, in their own words.' },
+  { title: 'Ask', body: 'Out loud, or privately, without interrupting the table.' },
+  { title: 'Stay connected', body: 'Hear from them again, only if you say so.' },
+  { title: 'Give', body: 'Optional, separate, and never a condition of anything.' },
 ];
 
 function HowItWorks() {
@@ -182,6 +247,21 @@ function HowItWorks() {
           </li>
         ))}
       </ol>
+      <div className="mission-actions">
+        <h3 className="mission-actions-head">The mission is a guest, not a fundraising screen</h3>
+        <p className="hint">
+          Their representatives are in the room for the evening. Four things stay open to you the whole time, and none of them is required
+          to play, to compete, or to belong.
+        </p>
+        <ul>
+          {MISSION_ACTIONS.map((a) => (
+            <li key={a.title}>
+              <span className="ma-title">{a.title}</span>
+              <span className="ma-body">{a.body}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </section>
   );
 }
@@ -204,7 +284,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
       {tables == null ? (
         <p className="hint">Reading the lobby…</p>
       ) : tables.length === 0 ? (
-        <p className="hint">No tables are open at the moment. Sign in and open one — it takes a name and two blinds.</p>
+        <p className="hint">No tables are open at the moment. Sign in to start a club, or open a table now — it takes a name and two blinds.</p>
       ) : (
         <>
           {live.featured ? (
@@ -212,7 +292,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
               <div className="featured-head">
                 <h3>{live.featured.name}</h3>
                 <SettlementTag settlement={live.featured.settlement} rate={featuredRate} withRate />
-                {moment.agentsPlaying ? <span className="tag live">agents playing now</span> : <span className="tag">between hands</span>}
+                {moment.handRunning ? <span className="tag live">playing now</span> : <span className="tag">between hands</span>}
               </div>
               <p className="featured-line">{moment.line}</p>
               <ul className="featured-seats">
@@ -246,7 +326,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
               <thead>
                 <tr>
                   <th>Table</th>
-                  <th>Blinds</th>
+                  <th>Stakes</th>
                   <th className="num">Seats</th>
                   <th className="num">Buy-in (chips)</th>
                   <th className="num">Hand</th>
@@ -257,15 +337,25 @@ function LiveRoom({ live }: { live: LiveLobby }) {
                   // A visitor reads this list before they have anything to compare it against, so a
                   // settled table's buy-in is priced here too rather than left as a bare number.
                   const rate = tableRate(t.settlement, t.chipValue, t.assetSymbol);
-                  const lo = dualAmount(t.config.minBuyIn, rate);
-                  const hi = dualAmount(t.config.maxBuyIn, rate);
+                  const lo = dualAmount(t.config.minStake, rate);
+                  const hi = dualAmount(t.config.maxStake, rate);
                   return (
                     <tr key={t.tableId}>
                       <td>
-                        {t.name} <SettlementTag settlement={t.settlement} rate={rate} />
+                        {/* A LINK, because watching needs no session: `GET /tables/:id` and the socket
+                            both admit an anonymous spectator at a pickup table, and the board draws a
+                            spectator hint. This list showed a live game as flat text while the signed-in
+                            one linked the same rows — a visitor was shown a hand in progress and given
+                            no way into it. A table this client cannot draw is still not offered. */}
+                        {hasBoard(t.game) ? (
+                          <a href={`#/t/${encodeURIComponent(t.tableId)}`}>{t.name}</a>
+                        ) : (
+                          t.name
+                        )}{' '}
+                        <SettlementTag settlement={t.settlement} rate={rate} />
                       </td>
                       <td className="mono">
-                        {t.config.smallBlind}/{t.config.bigBlind}
+                        {stakeLabel(t)}
                       </td>
                       <td className="num">{fmtSeats(t.seated, t.config.seats)}</td>
                       <td className="num buyin-cell">
@@ -285,7 +375,10 @@ function LiveRoom({ live }: { live: LiveLobby }) {
               </tbody>
             </table>
           </div>
-          <p className="hint">Straight from the table service, refreshed every {POLL_MS / 1000} seconds. Sign in to sit down at any of them.</p>
+          <p className="hint">
+            Straight from the card room, refreshed every {POLL_MS / 1000} seconds. These are the open tables anyone may join; a club&rsquo;s
+            own tables are private to its members.
+          </p>
         </>
       )}
     </section>

@@ -20,7 +20,15 @@ import {
   PROFILE_NAME_KEY,
   finishProfileName,
   startBuyInMandate,
+  startClubCharter,
   startHomeSignIn,
+  takeCharterClub,
+  rememberHomeSession,
+  forgetHomeSession,
+  readHomeSession,
+  CHARTER_CLUB_KEY,
+  CHARTER_STASH_KEY,
+  HOME_SESSION_KEY,
   stripAuthParams,
   takeProfileName,
   toProfileName,
@@ -393,5 +401,132 @@ describe('signing in asks for the buy-in template, once', () => {
     const rogue: AuthConfig = { ...config, home: { ...config.home, origin: 'https://evil.example' } };
     await expect(startHomeSignIn(rogue, '', fakeStore())).rejects.toThrow(/not a trusted Home/);
     await expect(startHomeSignIn(config, '', fakeStore('set'))).rejects.toThrow(/session storage is blocked/);
+  });
+});
+
+
+/**
+ * Chartering a club — the third ceremony that lands on this one redirect URI.
+ *
+ * What this half must get right is the same three things the buy-in authorisation must: the
+ * template, the extra parameter the Home needs, and a stash of its own — because a `state` that
+ * collided with the sign-in stash would let one ceremony consume the other's return leg.
+ */
+describe('startClubCharter', () => {
+  const config: AuthConfig = {
+    devAuth: false,
+    home: {
+      clientId: 'pokernight',
+      origin: 'https://www.faithnet.me',
+      zone: 'faithnet.me',
+      delegate: `0x${'de'.repeat(20)}`,
+      redirectUri: 'https://poker.faithnet.io/',
+      clubTemplate: 'workspace-create',
+      clubPurpose: 'poker-club',
+    },
+  };
+  const club = { clubId: 'c1ub-0000-0000-0000-000000000001', name: 'Thursday Night' };
+
+  it('asks the Home for the workspace template, under the club’s own name', async () => {
+    const store = fakeStore();
+    const url = new URL(await startClubCharter(config, club, store));
+    expect(url.origin).toBe('https://www.faithnet.me');
+    expect(url.searchParams.get('delegation_template')).toBe('workspace-create');
+    expect(url.searchParams.get('client_id')).toBe('pokernight');
+    expect(url.searchParams.get('redirect_uri')).toBe('https://poker.faithnet.io/');
+    // The name the workspace is deployed under, and WHY it exists — which is what the host will see
+    // beside that agent in their own list, forever.
+    expect(url.searchParams.get('org_base')).toBe('Thursday Night');
+    expect(url.searchParams.get('purpose')).toBe('poker-club');
+  });
+
+  it('keeps its own stash, so it cannot consume the sign-in ceremony’s return leg', async () => {
+    const store = fakeStore();
+    await startHomeSignIn(config, '', store);
+    await startClubCharter(config, club, store);
+    const signIn = readStash(store);
+    const charter = readStash(store, CHARTER_STASH_KEY);
+    expect(signIn).not.toBeNull();
+    expect(charter).not.toBeNull();
+    expect(charter!.state).not.toBe(signIn!.state);
+  });
+
+  it('remembers WHICH club, because the Home carries no state of ours', async () => {
+    const store = fakeStore();
+    await startClubCharter(config, club, store);
+    expect(store.map.get(CHARTER_CLUB_KEY)).toBe(club.clubId);
+    // Consumed once: a second charter must never be recorded against the first one's club.
+    expect(takeCharterClub(store)).toBe(club.clubId);
+    expect(takeCharterClub(store)).toBeNull();
+  });
+
+  it('refuses to send anyone to a Home this site does not trust', async () => {
+    const store = fakeStore();
+    const evil = { ...config, home: { ...config.home, origin: 'https://evil.example' } };
+    await expect(startClubCharter(evil, club, store)).rejects.toThrow(/not a trusted Home/);
+  });
+
+  it('says so plainly when the browser will not keep the secret', async () => {
+    await expect(startClubCharter(config, club, fakeStore('set'))).rejects.toThrow(/session storage is blocked/);
+  });
+});
+
+
+/**
+ * The Home-session handoff.
+ *
+ * A ceremony is a full-page trip to the Home, and a demo persona has no credential to sign in with —
+ * the Home holds their key. The Home hands the app that person's own session for exactly this, and
+ * the app hands it straight back on the ceremony URL.
+ */
+describe('handing a ceremony the person’s own Home session', () => {
+  const config: AuthConfig = {
+    devAuth: false,
+    home: {
+      clientId: 'pokernight',
+      origin: 'https://www.faithnet.me',
+      zone: 'faithnet.me',
+      delegate: `0x${'de'.repeat(20)}`,
+      redirectUri: 'https://poker.faithnet.io/',
+      clubTemplate: 'workspace-create',
+    },
+  };
+  const club = { clubId: 'c1ub-0000-0000-0000-000000000001', name: 'Thursday Night' };
+
+  it('sends them in already signed in when the Home gave us their session', async () => {
+    const store = fakeStore();
+    rememberHomeSession('home-session-token', store);
+    const url = new URL(await startClubCharter(config, club, store));
+    expect(url.hash).toBe('#session=home-session-token');
+    // …and does NOT also ask them to pick an account, which would be asking a question we answered.
+    expect(url.searchParams.get('prompt')).toBeNull();
+  });
+
+  it('asks the Home to let them choose an account when we have no session for them', async () => {
+    const url = new URL(await startClubCharter(config, club, fakeStore()));
+    expect(url.hash).toBe('');
+    expect(url.searchParams.get('prompt')).toBe('select_account');
+  });
+
+  it('keeps it out of the session object, and forgets it on demand', () => {
+    const store = fakeStore();
+    rememberHomeSession('t', store);
+    // Its own key, because the session object is written to localStorage and this is a Home bearer.
+    expect(store.map.get(HOME_SESSION_KEY)).toBe('t');
+    expect(readHomeSession(store)).toBe('t');
+    forgetHomeSession(store);
+    expect(readHomeSession(store)).toBeNull();
+  });
+
+  it('does nothing at all when the Home handed over no session', () => {
+    const store = fakeStore();
+    rememberHomeSession(undefined, store);
+    expect(readHomeSession(store)).toBeNull();
+  });
+
+  it('survives a browser that refuses storage, rather than failing the ceremony', async () => {
+    // Blocked storage means no handoff, not a broken button: they sign in at their Home instead.
+    expect(() => rememberHomeSession('t', fakeStore('set'))).not.toThrow();
+    expect(readHomeSession(fakeStore('get'))).toBeNull();
   });
 });

@@ -13,12 +13,21 @@ import { StartPanel } from './components/StartPanel';
 import { TreasuryPanel } from './components/TreasuryPanel';
 import { Table } from './components/Table';
 import { WinnerBanner } from './components/WinnerBanner';
-import { Lobby } from './pages/Lobby';
+import { Room } from './pages/Room';
+import { Rail } from './components/Rail';
+import { PlayPage } from './pages/PlayPage';
+import { TablesPage } from './pages/TablesPage';
+import { ClubPage } from './pages/ClubPage';
+import { NewClubPage } from './pages/NewClubPage';
 import { Landing } from './pages/Landing';
 import { SignInPage } from './pages/SignInPage';
 import { mapDemoPersonas } from './lib/demo';
 import { SESSION_ENDED_NOTICE } from './lib/session';
+import { route } from './lib/routes';
 import { initialState, reduce, type TableState } from './lib/tableSocket';
+import { CanastaTable } from './components/CanastaTable';
+import { describe as describeCanastaEvent } from './components/CanastaLog';
+import { initialCanastaState, reduceCanasta, type CanastaTableState } from './lib/canastaSocket';
 import { emptyView, endOfHandScript, event, flopView, seat, welcome } from './lib/mockServer';
 
 const session = { token: 't', playerId: 'p-alice', name: 'Alice' };
@@ -242,7 +251,10 @@ describe('sign-in render', () => {
     notice: null,
     ...over,
   });
-  const signIn = (a: AuthState): string => renderToStaticMarkup(createElement(Lobby, { session: null, auth: a, onLogin: () => {} }));
+  // The room with no session IS the sign-in page: the app routes signed-out visitors to the landing
+  // page or to `#/signin` before it gets here, so this is the last line rather than the front door.
+  const signIn = (a: AuthState): string =>
+    renderToStaticMarkup(createElement(Room, { r: { page: 'home' }, session: null, auth: a, onLogin: () => {} }));
 
   it('asks what to call you, optionally, and says what the name is for', () => {
     const html = signIn(auth());
@@ -356,9 +368,25 @@ describe('landing and sign-in surfaces', () => {
     { handle: 'jpreg', sa: '0x9e15ef3b4c1add3bb55381c88ac244575bf80b2a', name: 'Jordan Pike — Joshua Project', blurb: '' },
   ]);
 
-  it('says what Pokernight is, how it works, and carries sign-in itself', () => {
+  it('says what the product is, how it works, and carries sign-in itself', () => {
     const html = renderToStaticMarkup(createElement(Landing, { auth: auth(), onLogin: () => {} }));
-    expect(html).toContain('at the same table');
+    // THE PRODUCT, not the machinery. The front door sells an evening together with a mission as
+    // the guest at the table; agents, the chain, delegations and treasuries are all still real and
+    // all one screen deeper.
+    expect(html).toContain('Play together.');
+    expect(html).toContain('Meet the mission.');
+    expect(html).toContain('Start a club');
+    // THE SECOND DOOR. Most visitors are not here to organise anything, and the front door used to
+    // offer them nothing but the call to action that asks them to.
+    expect(html).toContain('Or just play a hand');
+    expect(html).toContain('Set the night');
+    expect(html).toContain('Invite a mission to host');
+    expect(html).not.toMatch(/faithchain|Smart Agent|delegation|treasury/i);
+    // THE GIVING BOUNDARY IS ON THE PAGE, not in a footnote. A mission that is a guest reads
+    // differently from a logo beside a donation button, and this is where that difference is stated.
+    expect(html).toContain('never a condition of playing');
+    expect(html).toContain('guest, not a fundraising screen');
+    expect(html).toContain('giving buys no advantage');
     // The promise a stranger is actually reading for: what they get, and in WHICH money — the card
     // room's own coin, named by the card room rather than assumed to be SHQ.
     expect(html).toContain('10,000 SHQ to play with');
@@ -497,8 +525,9 @@ describe('money render', () => {
     // Money, in money words, by name.
     expect(html).toContain('10,000.00 SHQ');
     expect(html).toContain('rowan.treasury');
-    // The honest labels stay: what kind of money this is, and what a chip is worth here.
-    expect(html).toContain('Test SHQ on faithchain');
+    // The honest label stays; the chain it settles on is not the player's business here. What they
+    // need is that it is test money settled for real, and what a chip is worth here.
+    expect(html).toContain('Test SHQ — settled for real, and worth nothing anywhere else');
     expect(html).toContain('1.00 SHQ');
     // Everything a stranger does not need is inside the disclosure, and nowhere before it.
     const [before, after] = html.split('<summary>Receipts and addresses</summary>');
@@ -546,5 +575,291 @@ describe('money render', () => {
     const html = renderToStaticMarkup(createElement(TreasuryPanel, { session: moneySession, config: null }));
     expect(html).not.toContain('your Smart Agent');
     expect(html).not.toContain('Another treasury you custody');
+  });
+});
+
+/**
+ * THE RAIL at rest, and the pages behind it — the frames a person actually sees first, before any read
+ * has answered. Every one of these is the state that shows on a slow connection, which is the state
+ * nobody looks at while building and everybody sees while using.
+ */
+describe('the left rail', () => {
+  const rail = (clubs: unknown, hash = '#/'): string =>
+    renderToStaticMarkup(createElement(Rail, { r: route(hash), clubs } as never));
+
+  it('leads with Play, because being dealt a hand is what somebody came for', () => {
+    const html = rail(null);
+    expect(html.indexOf('Play')).toBeGreaterThan(-1);
+    expect(html.indexOf('Play')).toBeLessThan(html.indexOf('Tables'));
+  });
+
+  it('says it is reading rather than claiming you are in no clubs', () => {
+    const html = rail(null);
+    expect(html).toContain('Reading');
+    expect(html).not.toContain('Start a club');
+  });
+
+  it('offers starting one, and a word for somebody holding an invitation, when there are none', () => {
+    const html = rail([]);
+    expect(html).toContain('Start a club');
+    // There is nothing to press for an invitation — it is a link in somebody's mail — so this is a
+    // sentence, not a control that would lead to a worse version of opening it.
+    expect(html).toContain('Open the link you were sent');
+  });
+
+  it('names the one club you are in, rather than a count', () => {
+    const html = rail([{ clubId: 'c1', name: 'Thursday Night' }]);
+    expect(html).toContain('Thursday Night');
+    expect(html).toContain('Your club');
+    expect(html).not.toContain('Your clubs');
+  });
+
+  it('marks the club whose page you are on as the current page, for a screen reader too', () => {
+    const html = rail([{ clubId: 'c1', name: 'Thursday Night' }], '#/clubs/c1');
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('sidenav-row on');
+  });
+
+  it('carries a way to the front page, which otherwise has none once you are signed in', () => {
+    expect(rail([])).toContain('#/about');
+    expect(rail([])).toContain('What this place is');
+  });
+
+  it('is a switcher nowhere: no control claims to change what the app is scoped to', () => {
+    // The design considered one and the research rejected it (`docs/NAVIGATION-RESEARCH.md` §14.1).
+    // This is the assertion that keeps it out: a club is a link to a page, never a mode.
+    const html = rail([{ clubId: 'c1', name: 'Thursday Night' }]);
+    expect(html).not.toMatch(/select|switch|<button/i);
+  });
+});
+
+describe('play, the front door for somebody signed in', () => {
+  const session = { token: 't', playerId: 'dev:barb', name: 'Barb' } as never;
+
+  it('offers both games, and asks for neither money nor a club', () => {
+    const html = renderToStaticMarkup(createElement(PlayPage, { session }));
+    expect(html).toContain('Learn canasta');
+    expect(html).toContain('hold');
+    expect(html).toContain('Deal me in');
+    // Nothing on this page ASKS for anything. Saying "no buy-in, no authorisation" is the opposite of
+    // asking; what would break the promise is a field, or a link to the money page or a club.
+    expect(html).not.toMatch(/<input|<select|<form/);
+    expect(html).not.toContain('#/money');
+    expect(html).not.toContain('#/clubs');
+  });
+});
+
+describe('the tables page', () => {
+  const session = { token: 't', playerId: 'dev:barb', name: 'Barb' } as never;
+  const page = (tables: unknown): string =>
+    renderToStaticMarkup(createElement(TablesPage, { session, tables, err: null, money: 'SHQ' } as never));
+
+  it('sends somebody looking at an empty room to the one thing that always works', () => {
+    const html = page([]);
+    expect(html).toContain('deal yourself a hand');
+  });
+
+  it('says it is loading rather than that the room is empty', () => {
+    expect(page(null)).toContain('Loading');
+  });
+});
+
+describe('a club page for a club you are not in', () => {
+  const session = { token: 't', playerId: 'dev:barb', name: 'Barb' } as never;
+
+  it('renders at all, and asks for the club before deciding anything', () => {
+    // A 404 from the card room means "not a club you are in" AND "no such club", and this page must
+    // never tell the two apart — a 403 would confirm somebody else's arrangements exist.
+    const html = renderToStaticMarkup(
+      createElement(ClubPage, { clubId: 'c1', session, config: null, money: 'SHQ', onChanged: () => {} } as never),
+    );
+    expect(html).toContain('Reading the club');
+  });
+});
+
+describe('starting a club', () => {
+  const session = { token: 't', playerId: 'dev:barb', name: 'Barb' } as never;
+
+  it('says what a club is before asking for a name', () => {
+    const html = renderToStaticMarkup(createElement(NewClubPage, { session, onStarted: () => {} } as never));
+    expect(html).toContain('Start a club');
+    // The promise the landing page makes, kept here in the same words: private, and yours.
+    expect(html).toContain('nobody outside it can see it');
+    expect(html).toContain('Call it');
+  });
+});
+
+/* ------------------------------------------------------------------- canasta */
+
+/**
+ * The canasta board renders, and renders the same thing a real table sends it.
+ *
+ * A render test rather than a unit test because the crash this whole seam exists to prevent was a
+ * RENDER: the poker board reading `view.config.bigBlind` off a canasta view. The cheapest guard
+ * against the mirror of that is to actually mount the canasta board on a canasta view.
+ */
+describe('the canasta board', () => {
+  const canastaView = (over: Record<string, unknown> = {}) =>
+    ({
+      roundNo: 1,
+      seedCommit: 'abc',
+      seedReveal: null,
+      dealer: 0,
+      toAct: 0,
+      phase: 'draw',
+      actionDeadline: null,
+      stock: 63,
+      pileTop: '8C',
+      pileSize: 1,
+      frozen: false,
+      target: 5000,
+      scores: { 0: 0, 1: 0 },
+      winner: null,
+      melds: { 0: [{ rank: 'A', cards: ['AS', 'AH', 'AD', 'W*'], canasta: false, natural: false }], 1: [] },
+      redThrees: { 0: 2, 1: 0 },
+      seats: [
+        { seat: 0, playerId: 'p-alice', status: 'active', cards: 11, team: 0 },
+        { seat: 1, playerId: 'p-bob', status: 'active', cards: 11, team: 1 },
+        { seat: 2, playerId: 'p-carol', status: 'active', cards: 11, team: 0 },
+        { seat: 3, playerId: 'p-dan', status: 'active', cards: 11, team: 1 },
+      ],
+      hand: ['W*', '2S', 'AS', '7C', '7D', '3H', '3C'],
+      result: null,
+      ...over,
+    }) as never;
+
+  const stateWith = (over: Record<string, unknown> = {}, playerId: string | null = 'p-alice'): CanastaTableState =>
+    reduceCanasta(initialCanastaState, {
+      type: 'welcome',
+      tableId: 't-1',
+      game: 'canasta',
+      playerId,
+      view: canastaView(over),
+      names: { 'p-alice': 'Alice', 'p-bob': 'Bob', 'p-carol': 'Carol', 'p-dan': 'Dan' },
+    });
+
+  const render = (state: CanastaTableState) =>
+    renderToStaticMarkup(createElement(CanastaTable, { state, session: { ...session, via: 'dev' as const }, send: () => {} }));
+
+  it('draws the piles, the melds, the seats and your own hand', () => {
+    const html = render(stateWith());
+    expect(html).toContain('Your side');
+    expect(html).toContain('The other side');
+    expect(html).toContain('Stock');
+    expect(html).toContain('Discard');
+    expect(html).toContain('2 red threes');
+    expect(html).toContain('Alice');
+    // A red three is in the hand and is shown, but never as a card you can pick up.
+    expect(html).toContain('A red three is a bonus');
+  });
+
+  it('shows nobody else’s cards — a fan of BACKS and a count, and nothing more', () => {
+    const html = render(stateWith());
+    // Every card drawn FACE UP is one this viewer is entitled to: their own seven, the four in the
+    // public meld, and the pile's top card. Anything more is somebody else's hand on screen, which
+    // is the whole game given away.
+    expect((html.match(/class="face"/g) ?? [])).toHaveLength(7 + 4 + 1);
+    // The other three seats are a fan of backs and a number. The backs are decoration; the number
+    // is the fact, and it is the only thing about their hand this viewer may know.
+    expect((html.match(/face-down card/g) ?? []).length).toBeGreaterThan(1);
+    expect(html).toContain('>11<');
+  });
+
+  it('seats the viewer at the bottom, their PARTNER across, opponents left and right', () => {
+    // In a partnership game the first thing you need about anybody at the table is which side they
+    // are on, and four equal chips in a row do not say it.
+    const html = render(stateWith());
+    expect(html).toMatch(/can-plate north[^"]*partner/);
+    expect(html).toContain('>partner<');
+    expect((html.match(/>opponent</g) ?? [])).toHaveLength(2);
+    // Seat 2 is the viewer's partner (0 and 2 are one side) and is the one drawn opposite.
+    expect(html).toMatch(/can-plate north[\s\S]{0,200}Carol/);
+  });
+
+  it('says which HALF of the turn it is, because the controls depend on it', () => {
+    expect(render(stateWith())).toContain('draw a card, or take the discard pile');
+    expect(render(stateWith({ phase: 'play' }))).toContain('lay melds if you can, then discard');
+  });
+
+  it('tells a spectator they are watching rather than showing them a dead hand', () => {
+    const html = render(stateWith({ hand: null }, null));
+    expect(html).toContain('You are watching');
+  });
+
+  it('shows a spectator ALL FOUR players, including the one in the south chair', () => {
+    // A seated player's own chair is the row below the felt, so the south slot stays empty for
+    // them. A spectator has no such row — and without a plate there, one of four people was simply
+    // not on the table. One player invisible is not a smaller bug than a crash, only a quieter one.
+    const html = render(stateWith({ hand: null }, null));
+    expect((html.match(/can-plate /g) ?? [])).toHaveLength(4);
+    for (const name of ['Alice', 'Bob', 'Carol', 'Dan']) expect(html, name).toContain(name);
+  });
+
+  it('draws three plates for a SEATED player, whose own chair is the row below the felt', () => {
+    const html = render(stateWith());
+    expect((html.match(/can-plate /g) ?? [])).toHaveLength(3);
+    expect(html).not.toMatch(/can-plate south/);
+  });
+
+  it('scores a finished round in a table with the parts named', () => {
+    const result = {
+      wentOut: 1,
+      concealed: false,
+      scores: {
+        0: { melds: 100, canastas: 300, redThrees: 200, goingOut: 0, inHand: -40, total: 560, naturalCanastas: 0, mixedCanastas: 1 },
+        1: { melds: 80, canastas: 0, redThrees: 0, goingOut: 100, inHand: 0, total: 180, naturalCanastas: 0, mixedCanastas: 0 },
+      },
+      totals: { 0: 560, 1: 180 },
+    };
+    const html = render(stateWith({ result, toAct: null }));
+    expect(html).toContain('Round over');
+    expect(html).toContain('Bob went out');
+    expect(html).toContain('Canastas');
+    expect(html).toContain('560');
+  });
+
+  it('does not crash on a table that has not dealt yet', () => {
+    const html = render(stateWith({ toAct: null, pileTop: null, stock: 0, hand: null, melds: { 0: [], 1: [] } }));
+    expect(html).toContain('Waiting for the next round');
+  });
+
+  it('renders with NO VIEW at all, and then with one, without changing its hook count', () => {
+    // React counts hooks and a `useState` placed after `if (!view) return …` makes the second render
+    // have more than the first — which is a hard crash (error #310), not a warning, and it took the
+    // whole canasta page down to a white screen. Rendering both states in one test is what catches
+    // it: `renderToStaticMarkup` runs the component, so a misplaced hook throws right here.
+    const connecting = renderToStaticMarkup(
+      createElement(CanastaTable, {
+        state: { ...initialCanastaState },
+        session: { ...session, via: 'dev' as const },
+        send: () => {},
+      }),
+    );
+    expect(connecting).toContain('Connecting to the table');
+    expect(() => render(stateWith())).not.toThrow();
+  });
+});
+
+describe('the canasta log', () => {
+  const nameOf = (s: number) => `Seat ${s + 1}`;
+
+  it('says what happened, in sentences', () => {
+    expect(describeCanastaEvent({ type: 'round-started', roundNo: 1, dealer: 0, stock: 63, seedCommit: 'x' } as never, nameOf)).toMatch(/Seat 1 dealt/);
+    expect(describeCanastaEvent({ type: 'took-pile', seat: 1, cards: 9, top: '7C' } as never, nameOf)).toMatch(/took the pile — 9 cards/);
+    expect(describeCanastaEvent({ type: 'melded', seat: 0, team: 0, rank: 'A', cards: [], size: 7, canasta: true } as never, nameOf)).toMatch(/a canasta/);
+  });
+
+  it('mentions freezing only on the discard that FROZE it, not on every one after', () => {
+    // `frozen` is the pile's state, not news. Repeating it every line buries the line that matters.
+    const wild = describeCanastaEvent({ type: 'discarded', seat: 0, card: '2C', frozen: true } as never, nameOf);
+    const plain = describeCanastaEvent({ type: 'discarded', seat: 0, card: '8S', frozen: true } as never, nameOf);
+    expect(wild).toMatch(/freezing the pile/);
+    expect(plain).not.toMatch(/freez/);
+  });
+
+  it('says NOTHING about the private events, which are a player’s own cards', () => {
+    // A log that repeats your hand is a log you cannot show anyone.
+    expect(describeCanastaEvent({ type: 'dealt', seat: 0, cards: ['AS'], private: true } as never, nameOf)).toBeNull();
+    expect(describeCanastaEvent({ type: 'drew-card', seat: 0, card: 'AS', private: true } as never, nameOf)).toBeNull();
   });
 });

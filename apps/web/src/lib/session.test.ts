@@ -77,7 +77,7 @@ describe('describeSignOut', () => {
 });
 
 describe('route', () => {
-  it('reads the three pages, and treats anything else as the front door', () => {
+  it('reads the four pages, and treats anything else as the front door', () => {
     expect(route('/')).toEqual({ page: 'home' });
     expect(route('')).toEqual({ page: 'home' });
     expect(route('#/')).toEqual({ page: 'home' });
@@ -87,6 +87,37 @@ describe('route', () => {
     expect(route('/t/abc-123')).toEqual({ page: 'table', tableId: 'abc-123' });
     expect(route('#/t/a%20b')).toEqual({ page: 'table', tableId: 'a b' });
     expect(route('/nonsense')).toEqual({ page: 'home' });
+  });
+
+  it('reads the practice flag off a table link, and only when it says so', () => {
+    // `?practice=1` asks the table page to set the table up rather than wait to be told. Doing that
+    // to an ordinary table would sit somebody down at other people's game without asking, so it is
+    // never inferred — the link has to say it.
+    expect(route('#/t/abc-123?practice=1')).toEqual({ page: 'table', tableId: 'abc-123', practice: true });
+    expect(route('#/t/abc-123')).toEqual({ page: 'table', tableId: 'abc-123' });
+    expect(route('#/t/abc-123?practice=0')).toEqual({ page: 'table', tableId: 'abc-123' });
+    expect(route('#/t/abc-123?other=1')).toEqual({ page: 'table', tableId: 'abc-123' });
+  });
+
+  it('reads an invitation link, which carries the club as well as the token', () => {
+    // The token alone does not say which club to ask, and a global index of every invitation in the
+    // card room would be a thing to leak rather than a thing to have.
+    expect(route('#/join/9cf3b05b-1c27-47ac-b9a5-f042f6b97aca/abc123')).toEqual({
+      page: 'join',
+      clubId: '9cf3b05b-1c27-47ac-b9a5-f042f6b97aca',
+      token: 'abc123',
+    });
+    // Half a link is not one. It goes to the front door rather than to a page that would ask the
+    // card room about an empty token.
+    expect(route('#/join/only-a-club')).toEqual({ page: 'home' });
+    expect(route('#/join')).toEqual({ page: 'home' });
+  });
+
+  it('treats a bare anchor as the front door — which is why nothing at a TABLE may use one', () => {
+    // `#stake` was a link on the table screen. It matches no route, falls through to home, and the
+    // table unmounts with its socket — at a money table that is a DISCONNECT, not a stand-up, and
+    // the seat is left sitting out holding chips. `StakeLink` scrolls instead of navigating.
+    expect(route('#stake')).toEqual({ page: 'home' });
   });
 
   it('ignores the in-page anchors the landing page uses, so they do not change the page', () => {

@@ -40,6 +40,10 @@ export interface AuthConfig {
     redirectUri: string | null;
     /** The delegation template a buy-in authorisation asks the Home to run. */
     buyInTemplate?: string;
+    /** The template that charters a club, and the `purpose` its link carries at the Home. Absent on
+     *  a deployment whose Home is not registered for it — the client then offers no charter. */
+    clubTemplate?: string;
+    clubPurpose?: string;
     /**
      * The spending ceiling SIGNING IN also asks the player to approve, or null/absent where this
      * deployment cannot ask for one (local dev, a half-configured deployment).
@@ -101,6 +105,49 @@ export const STASH_KEY = 'pokernight.home.stash';
 /** A separate stash, because a buy-in authorisation and a sign-in return to the SAME redirect URI and
  *  must not be mistaken for one another: a mandate ceremony must never mint a new session. */
 export const MANDATE_STASH_KEY = 'pokernight.home.mandate';
+/** The charter ceremony's own stash — a THIRD ceremony, and a third `state` to tell them apart. */
+export const CHARTER_STASH_KEY = 'pokernight.home.charter';
+/**
+ * The person's own HOME session, when the Home handed one over at quick-connect.
+ *
+ * DELIBERATELY NOT ON `AppSession`, which is written to `localStorage`. This is a bearer token for
+ * somebody's Home, and the difference between `localStorage` and `sessionStorage` here is the
+ * difference between a Home credential that outlives the browser and one that dies with the tab.
+ * It survives a navigation to the Home and back, which is all a ceremony needs, and nothing else.
+ *
+ * It exists because a ceremony is a full-page trip to the Home, and a demo persona has no credential
+ * to sign in WITH — the Home holds their key. Without the handoff they arrive at a "Continue with
+ * Social / email / phone / passkey" screen and none of those four is a thing they have.
+ */
+export const HOME_SESSION_KEY = 'pokernight.home.session';
+
+export function rememberHomeSession(token: string | undefined, store: StorageLike | null = sessionStore()): void {
+  if (!token) return;
+  try {
+    store?.setItem(HOME_SESSION_KEY, token);
+  } catch {
+    /* a browser that will not keep it simply sends the person to sign in at their Home */
+  }
+}
+
+export function readHomeSession(store: StorageLike | null = sessionStore()): string | null {
+  try {
+    return store?.getItem(HOME_SESSION_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function forgetHomeSession(store: StorageLike | null = sessionStore()): void {
+  try {
+    store?.removeItem(HOME_SESSION_KEY);
+  } catch {
+    /* nothing to do about a store that will not forget */
+  }
+}
+/** Which club the charter now returning is for. The Home carries no app state of ours, so the club
+ *  id has to survive the round trip on this origin, next to the stash it belongs with. */
+export const CHARTER_CLUB_KEY = 'pokernight.home.charter.club';
 
 /** The slice of `Storage` we use, so the stash round trip is testable without a DOM. */
 export interface StorageLike {
@@ -495,6 +542,103 @@ export async function startBuyInMandate(
 
 /** The delegation template this card room asks for. Curated at the Home for this client. */
 export const BUY_IN_TEMPLATE = 'poker-buyin';
+
+/* ------------------------------------------------------------ chartering a club */
+
+/** The template that deploys a club as its own `<label>.workspace` Smart Agent, at the host's Home. */
+export const CLUB_TEMPLATE = 'workspace-create';
+
+/**
+ * Send the host to their Home to charter a club.
+ *
+ * The same ceremony shape as sign-in and the buy-in authorisation, with the template changed and one
+ * extra parameter: `org_base`, the name to deploy the workspace under. The Home does the deploying
+ * and the custody — the card room never holds the club's key, exactly as it never holds a player's
+ * — and hands back the address on the token exchange, which the Worker runs.
+ *
+ * The club id is stashed beside the PKCE stash because the Home carries no state of ours. Without it
+ * the return leg would know a club had been chartered and not which one, and guessing is how a club
+ * ends up pointed at another club's agent.
+ */
+export async function startClubCharter(
+  config: AuthConfig,
+  club: { clubId: string; name: string },
+  store: StorageLike | null = sessionStore(),
+): Promise<string> {
+  if (!config.home.clientId || !config.home.origin) throw new Error('This deployment has no Home configured.');
+  if (!isAllowedHomeOrigin(config.home.zone, config.home.origin)) {
+    throw new Error(`Refusing to send you to ${config.home.origin}: it is not a trusted Home for this site.`);
+  }
+  const client = homeClient(config);
+  const pkce = await generatePkce();
+  const stash: ConnectStash = {
+    name: '',
+    state: randomB64url(16),
+    authOrigin: config.home.origin,
+    codeVerifier: pkce.verifier,
+    nonce: randomB64url(16),
+  };
+  if (!writeStash(store, stash, CHARTER_STASH_KEY)) {
+    throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the club cannot be chartered.');
+  }
+  try {
+    store?.setItem(CHARTER_CLUB_KEY, club.clubId);
+  } catch {
+    throw new Error('This browser will not let the site remember which club you are chartering, so the return trip could not be matched.');
+  }
+  const url = new URL(
+    client.buildAuthorizeUrl({
+      authOrigin: stash.authOrigin,
+      state: stash.state,
+      nonce: stash.nonce,
+      codeChallenge: pkce.challenge,
+      agentName: '',
+      template: config.home.clubTemplate ?? CLUB_TEMPLATE,
+    }),
+  );
+  // The Home's own parameters, not `buildAuthorizeUrl`'s: the name to deploy under, and WHY this
+  // agent exists — which is what the person will see beside it in their own list of agents forever.
+  url.searchParams.set('org_base', club.name);
+  if (config.home.clubPurpose) url.searchParams.set('purpose', config.home.clubPurpose);
+  // ARRIVE ALREADY SIGNED IN, when the Home gave us their session to hand back. The Home consumes
+  // `#session=` the same way it consumes its own cookie. Without it a demo persona lands on a
+  // sign-in screen offering four credentials they do not have, because the Home holds their key.
+  // With no session we ask the Home to let them choose an account rather than guessing at one.
+  const home = readHomeSession(store);
+  if (home) url.hash = `session=${encodeURIComponent(home)}`;
+  else url.searchParams.set('prompt', 'select_account');
+  return url.toString();
+}
+
+/** Which club the charter callback belongs to, consumed once. */
+export function takeCharterClub(store: StorageLike | null = sessionStore()): string | null {
+  try {
+    const v = store?.getItem(CHARTER_CLUB_KEY) ?? null;
+    store?.removeItem(CHARTER_CLUB_KEY);
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+/** Consume a return leg belonging to the CHARTER ceremony, told apart by its own `state`. */
+export function takeCharterCallback(store: StorageLike | null = sessionStore()): CallbackOutcome {
+  if (callbackConsumed) return { status: 'none' };
+  const cb = parseCallback(location.href);
+  if (!cb || cb.kind === 'error') return { status: 'none' };
+  const stash = readStash(store, CHARTER_STASH_KEY);
+  if (!stash || stash.state !== cb.state) return { status: 'none' };
+  const outcome = consumeCallback(location.href, store, CHARTER_STASH_KEY);
+  if (outcome.status === 'none') return outcome;
+  callbackConsumed = true;
+  clearStash(store, CHARTER_STASH_KEY);
+  try {
+    history.replaceState(null, '', stripAuthParams(location.href));
+  } catch {
+    /* an unwritable history is not a reason to fail the charter */
+  }
+  return outcome;
+}
 
 /**
  * Consume a return leg that belongs to the MANDATE ceremony, or report `none` and leave the URL

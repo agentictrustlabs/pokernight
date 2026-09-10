@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { StakeLink } from './StakeLink';
 import type { AppSession } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { shortAddress } from '../lib/format';
@@ -109,7 +110,7 @@ export function MoneyPanel({
           {block.action === 'wait' || block.action === 'configure' ? null : (
             <>
               {' '}
-              <a href="#stake">Set your stake up →</a>
+              <StakeLink>Set your stake up →</StakeLink>
             </>
           )}
         </p>
@@ -143,7 +144,7 @@ export function MoneyPanel({
       {/* Kept, and kept honest: what kind of money this is, said plainly rather than removed — and
           named after THIS table's currency, which is not necessarily the one the lobby opens now. */}
       <p className="hint money-disclosure">
-        Test {rate?.asset ?? 'money'} on faithchain — real settlement, money that is worth nothing anywhere else. One chip is{' '}
+        Test {rate?.asset ?? 'money'} — settled for real, and worth nothing anywhere else. One chip is{' '}
         {describeRate(rate)?.replace('1 chip = ', '') ?? 'a value this table has not stated'}.
       </p>
 

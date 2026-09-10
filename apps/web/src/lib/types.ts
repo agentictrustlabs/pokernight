@@ -2,21 +2,40 @@
  * Type-only re-exports of the wire contract. The web client never imports
  * protocol *values* (zod schemas), so nothing from `zod` ends up in the bundle.
  */
+/**
+ * THIS CLIENT SPEAKS POKER, and this is where it says so.
+ *
+ * The protocol carries a game's view, legal actions and events opaquely, because it has to serve
+ * every game the deployment ships. A client serves one. So `ServerMessage` and `TableEvent` here are
+ * the protocol's POKER BINDING of those messages, aliased to the generic names the rest of this app
+ * already uses — one narrowing, at the app's type boundary, instead of a cast at every field.
+ *
+ * `PokerTableDO` widens at the matching seam on its side. A canasta client would alias a canasta
+ * binding here and change nothing else about how it reads a socket.
+ */
 export type {
+  PokerServerMessage as ServerMessage,
+  PokerTableEvent as TableEvent,
+  PokerGameConfig,
   Action,
   ClientCommand,
+  ClubInvite,
+  ClubMember,
+  ClubStanding,
+  ClubSummary,
+  ClubView,
+  InviteGreeting,
+  KnownPerson,
   CreateTableRequest,
   EngineEvent,
   LegalActions,
   PlayerInfo,
   SeatStandUpFailure,
   SeatStoodUp,
-  ServerMessage,
   Session,
   SignOutResult,
   SitOutReason,
   TableConfig,
-  TableEvent,
   TableSummary,
   TableView,
   WsErrorCode,

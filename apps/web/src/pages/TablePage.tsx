@@ -13,7 +13,14 @@ import { LogPanel } from '../components/LogPanel';
 import { MoneyPanel } from '../components/MoneyPanel';
 import { StartPanel } from '../components/StartPanel';
 import { SettlementTag } from '../components/SettlementTag';
+import { PRODUCT_NAME } from '../lib/brand';
+import { clubHash } from '../lib/routes';
+import { SoundToggle } from '../components/SoundToggle';
+import { pokerCue } from '../lib/cues';
+import { useCues } from '../lib/useCues';
+import { OtherGame } from '../components/OtherGame';
 import { Table } from '../components/Table';
+import { drawsGame } from '../lib/games';
 import { Toast } from '../components/Toast';
 
 /**
@@ -38,6 +45,8 @@ export function TablePage({
 }) {
   const [state, setState] = useState<TableState>(initialState);
   const [tableName, setTableName] = useState<string | null>(null);
+  /** The club this table belongs to, if any — so the screen can say who can see it. */
+  const [club, setClub] = useState<{ id: string; name: string } | null>(null);
   const [settlement, setSettlement] = useState<string>('play-money');
   /**
    * The rate THIS table pinned when it was created. Read off the table's own summary, never from
@@ -69,15 +78,18 @@ export function TablePage({
 
   useEffect(() => {
     let alive = true;
+    // THIS table, not the lobby. A club's tables are not in the public list, so reading the list
+    // left a club table with no name, no settlement mode and no rate — the whole money identity of
+    // the table missing, on the screen where money moves.
     api
-      .listTables(token ?? undefined)
-      .then((ts) => {
+      .getTable(tableId, token ?? undefined)
+      .then((detail) => {
         if (!alive) return;
-        const summary = ts.find((t) => t.tableId === tableId);
-        setTableName(summary?.name ?? null);
-        setSettlement(summary?.settlement ?? 'play-money');
-        setChipValue(summary?.chipValue ?? null);
-        setAssetSymbol(summary?.assetSymbol ?? null);
+        setTableName(detail.name ?? null);
+        setClub(detail.club && detail.clubName ? { id: detail.club, name: detail.clubName } : null);
+        setSettlement(detail.settlement ?? 'play-money');
+        setChipValue(detail.chipValue ?? null);
+        setAssetSymbol(detail.assetSymbol ?? null);
       })
       .catch(() => {});
     return () => {
@@ -128,14 +140,33 @@ export function TablePage({
     };
   }, [state.view, state.names]);
 
+  /**
+   * Whether this client can draw this table. The socket's own `welcome` says which game the table
+   * deals, so this is known before any view is read and without racing the table list — and while
+   * it is still unknown the page draws nothing rather than guessing at poker.
+   */
+  const drawable = drawsGame(state.game);
+
+  // The table's own sounds. A card landing and chips going in are how a player knows what happened
+  // without reading the log, which is what they are doing at a real table.
+  useCues(state.log, (ev) => pokerCue(ev, state.view?.viewerSeat ?? null));
+
   return (
     <>
       <div className="topbar">
         <a className="brand" href="#/">
-          Pokernight
+          {PRODUCT_NAME}
         </a>
         <span className="meta">
           <strong>{tableName ?? tableId}</strong>
+          {club ? (
+            // WHICH GROUP CAN SEE THIS. A club's table is private to its members and an ordinary one
+            // is not, and from the seat those looked identical. It links back to the club, because
+            // the club is where the rest of its tables are.
+            <a className="tag club" href={clubHash(club.id)} title={`Private to ${club.name}`}>
+              {club.name}
+            </a>
+          ) : null}
           {/* The settlement mode travels with the table's NAME, so it is on screen from the moment
               the page opens and before anyone can reach a seat. */}
           <SettlementTag settlement={settlement} rate={tableRate(settlement, chipValue, assetSymbol)} withRate />
@@ -143,12 +174,20 @@ export function TablePage({
         </span>
         <span className="spacer" />
         <span className="meta">
+          <SoundToggle />
           <span className={`conn ${state.connection}`}>{state.connection}</span>
           {session ? <Identity session={session} onSignOut={onSignOut} /> : <a href="#/">sign in</a>}
         </span>
       </div>
       <div className="page table-page">
-        <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} assetSymbol={assetSymbol} treasury={treasury} />
+        {drawable ? (
+          <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} assetSymbol={assetSymbol} treasury={treasury} />
+        ) : (
+          <OtherGame game={state.game ?? ''} tableName={tableName} />
+        )}
+        {/* The side is poker's too — a buy-in, a hand log, a stake to top up — so a table dealing
+            something else shows the one panel that is true and none of the ones that are not. */}
+        {drawable ? (
         <aside className="side">
           {/* A player who is not ready to sit sees the ONE action that fixes that, above the money
               summary — not a refusal pointing at a panel somewhere else. */}
@@ -164,6 +203,7 @@ export function TablePage({
           />
           <LogPanel log={state.log} ctx={ctx} canChat={session != null} onChat={(text) => send({ type: 'chat', text })} />
         </aside>
+        ) : null}
       </div>
       <Toast error={state.error} onDismiss={onDismiss} />
     </>

@@ -1,4 +1,4 @@
-/* Pokernight — a private card room kept by people who care.
+/* Pokernight — an evening together, with a mission as the guest at the table.
    Tokens first, then shell, then the table. Every colour is declared on bare
    :root and only re-pointed inside the dark block. */
 
@@ -399,17 +399,233 @@ label > select {
   flex-wrap: wrap;
 }
 
-/* --------------------------------------------------------------- lobby */
+/* ------------------------------------------------- the room: side nav + one page
 
-.lobby {
+   The rail is a NAV, not a switcher: three things that are yours wherever you are, then the clubs you
+   are in, by name. `lib/nav.ts` carries the reasoning. On a narrow screen it goes above the page as a
+   horizontal strip rather than collapsing behind a button — four rows do not need a menu, and a menu
+   is one press between somebody and the game.
+
+   There is deliberately NO rail at a table. */
+
+.room {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: 220px 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+.room-main {
+  min-width: 0; /* so a wide table scrolls inside its own panel instead of stretching the grid */
+}
+@media (max-width: 860px) {
+  .room {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
+
+.sidenav {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  position: sticky;
+  top: 1rem;
+  /* A grid item defaults to `min-width: auto`, which is "as wide as my content" — so the scrolling
+     club strip inside made the whole grid wider than the phone instead of scrolling within it, and the
+     PAGE scrolled sideways. This is the line that keeps the overflow where it was put. */
+  min-width: 0;
+}
+@media (max-width: 860px) {
+  .sidenav {
+    position: static;
+    gap: 0.6rem;
+  }
+}
+
+.sidenav-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+/* ONE ROW, SCROLLING, not four wrapped lines. Somebody in eight clubs was pushing the game itself off
+   the bottom of a phone screen — the rail is how you get somewhere, and it must never be most of the
+   page. Wrapping grows without limit; a scrolling strip is the same height whether you are in one club
+   or twenty. */
+@media (max-width: 860px) {
+  .sidenav-group {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+    overflow-x: auto;
+    /* So a row's focus ring and its "you are here" edge are not clipped by the scroll container. */
+    padding: 2px;
+    margin: -2px;
+  }
+  .sidenav-group > li {
+    flex: 0 0 auto;
+  }
+  .sidenav-row {
+    white-space: nowrap;
+  }
+}
+
+/* A row is the same height and weight whether it says "Play" or names a club: a club is not a lesser
+   thing than a table list, and the person is not a lesser thing than a club they are in. */
+.sidenav-row {
+  display: block;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius);
+  border-left: 3px solid transparent;
+  color: var(--ink);
+  text-decoration: none;
+  line-height: 1.25;
+}
+.sidenav-row:hover {
+  background: var(--felt-soft);
+}
+.sidenav-row.on {
+  background: var(--felt-soft);
+  border-left-color: var(--felt);
+}
+.sidenav-label {
+  display: block;
+  font-weight: 600;
+}
+.sidenav-row.on .sidenav-label {
+  color: var(--felt-deep);
+}
+.sidenav-sub {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+/* The sub-line is a hint for somebody deciding, not something to read on every page — and in the
+   horizontal strip there is no room for it. */
+@media (max-width: 860px) {
+  .sidenav-sub {
+    display: none;
+  }
+}
+
+.sidenav-clubs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+/* On a phone the heading sits BESIDE the strip rather than above it, so the clubs cost one line in
+   total instead of two. */
+@media (max-width: 860px) {
+  .sidenav-clubs {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .sidenav-heading {
+    margin: 0;
+    flex: 0 0 auto;
+  }
+  .sidenav-add {
+    flex: 0 0 auto;
+    margin: 0;
+  }
+}
+.sidenav-heading {
+  margin: 0 0 0.1rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.sidenav-quiet {
+  margin: 0 0.6rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+.sidenav-add {
+  margin: 0.1rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+/* A hint that is a WARNING rather than an aside: something is about to not work the way it looks. It
+   is not an error — nothing has failed yet — so it takes the warn colour, not the danger one. */
+.form-warn {
+  color: var(--warn);
+}
+
+/* WHICH GROUP CAN SEE THIS TABLE, in the topbar beside its name. A club's table is private and an
+   ordinary one is not, and from the seat those used to look identical. */
+.tag.club {
+  background: var(--felt-soft);
+  color: var(--felt-deep);
+  border-color: var(--felt);
+  text-decoration: none;
+}
+.tag.club:hover {
+  background: var(--felt);
+  color: var(--card-face);
+}
+
+/* Last in the rail, and quieter than everything above it: a way to the product explanation, which had
+   no route at all and became unreadable the moment somebody signed in. */
+.sidenav-about {
+  margin: 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+.sidenav-about.on {
+  color: var(--felt-deep);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- pages */
+
+/* A column of panels. What the lobby's side stack was, without the stack. */
+.stack {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
-@media (max-width: 800px) {
-  .lobby {
-    grid-template-columns: 1fr;
-  }
+
+/* PLAY: the two ways to be dealt in, side by side, then a quiet line about other people. */
+.play {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  /* Stretch, so two cards with blurbs of different lengths still put their buttons on one line. The
+     `flex: 1` on the blurb inside each card is what turns the extra height into space above the
+     button rather than below it. */
+  align-items: stretch;
+}
+.play-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.play-card h2 {
+  margin: 0;
+}
+.play-card .hint {
+  margin: 0;
+  flex: 1; /* so two cards of unequal blurb still line their buttons up */
+}
+.play-card .primary {
+  align-self: flex-start;
+}
+/* The "other people" line is not a third way to play, so it spans the row and reads quieter. */
+.play-running {
+  grid-column: 1 / -1;
+}
+.play-running h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+.play-running .hint {
+  margin: 0 0 0.4rem;
 }
 
 .login {
@@ -507,6 +723,16 @@ label > select {
 }
 .table-main {
   min-width: 0;
+}
+
+/* A table this client cannot draw. It is the only thing on the page, so it takes the whole width
+   rather than sitting in the board's column beside an empty one where the log would be. */
+.other-game {
+  grid-column: 1 / -1;
+  max-width: 44rem;
+}
+.other-game p {
+  max-width: 60ch;
 }
 
 /* Wide enough for the log to stand beside the table: the page then takes the
@@ -2296,13 +2522,6 @@ details.dev-login .form .hint {
    they lean on the brass/gold tokens the card room already uses for anything consequential, and on
    `.tag` for state. No new colours: money is not a new visual language, it is the same room. */
 
-.lobby-side {
-  display: grid;
-  gap: 1rem;
-  align-content: start;
-  min-width: 0;
-}
-
 .treasury .hint,
 .money .hint {
   margin-bottom: 0.6rem;
@@ -2739,8 +2958,8 @@ details.dev-login .form .hint {
   margin-top: 0;
 }
 
-/* A lobby column must be allowed to shrink, or a wide table pushes the side panel off the page. */
-.lobby > * {
+/* A stacked panel must be allowed to shrink, or a wide table pushes the column off the page. */
+.stack > * {
   min-width: 0;
 }
 .lobby-create {
@@ -2813,4 +3032,1104 @@ a.button.primary:hover {
   color: var(--ink);
   font-size: 0.92rem;
   border-radius: 0 3px 3px 0;
+}
+
+/* ------------------------------------------------------------------- clubs */
+/* One club's page: its tables, its roster, and — for a host — how to add somebody.
+   The club PICKER that used to live here is gone: picking a club is navigating to it
+   now, and the rail (`.sidenav-*`) draws that list. */
+
+/* CLOSING A CLUB. Folded, quiet, and last — a destructive act should never be the thing a hand lands
+   on, and it should not be shouting from the page either. It reads as danger only once it is open. */
+.club-retire {
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.6rem;
+}
+.club-retire > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  list-style: none;
+}
+.club-retire > summary::-webkit-details-marker {
+  display: none;
+}
+.club-retire > summary::before {
+  content: '▸ ';
+}
+.club-retire[open] > summary {
+  color: var(--danger);
+}
+.club-retire[open] > summary::before {
+  content: '▾ ';
+}
+.club-retire-what {
+  margin: 0.6rem 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+.club-retire form {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 26rem;
+}
+/* The receipt that replaces the form. It is the last true thing this page can say about the club. */
+.club-retire.done {
+  display: grid;
+  gap: 0.4rem;
+}
+.club-retire.done p {
+  margin: 0;
+}
+
+/* A panel on the club's page, not a block hanging under a picker inside another panel. */
+.club-detail {
+  display: grid;
+  gap: 0.6rem;
+}
+.club-detail > h2 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.club-role {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.club-roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+.club-roster li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+}
+.cr-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.link-button:hover {
+  color: var(--danger);
+}
+.link-button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* --------------------------------------------------- adding somebody to a club */
+
+.club-add {
+  display: grid;
+  gap: 0.6rem;
+}
+
+/* The people you already play with, offered as one press each — above the field, because it is the
+   shortest road in and the one that needs no identifier at all. */
+.known-list,
+.pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.pending-list {
+  display: grid;
+  gap: 0.3rem;
+}
+.pending-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+}
+.known-add {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+.club-known p,
+.club-pending p {
+  margin: 0 0 0.35rem;
+}
+
+/* The hint under the invite field is always there and always says what the button will do, so it
+   must not read as an error until it is one. */
+.invite-bad {
+  color: var(--bad, #b4342b);
+}
+
+.club-sent {
+  display: grid;
+  gap: 0.3rem;
+}
+.club-sent input {
+  width: 100%;
+  font-size: 0.8rem;
+}
+
+/* The invitation someone opened. It is the whole page for a person who has never been here. */
+.panel.join {
+  max-width: 34rem;
+}
+.panel.join h2 {
+  margin-top: 0;
+}
+
+.club-invite,
+.club-start form {
+  display: grid;
+  gap: 0.45rem;
+}
+.club-invite label,
+.club-start label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.club-start {
+  border-top: 1px solid var(--rule);
+  padding-top: 0.7rem;
+}
+.club-start > summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+  font-size: 0.9rem;
+}
+.club-start > summary::before {
+  content: '▸ ';
+  color: var(--ink-soft);
+}
+.club-start[open] > summary::before {
+  content: '▾ ';
+}
+.club-start > summary::-webkit-details-marker {
+  display: none;
+}
+.club-start form {
+  margin-top: 0.6rem;
+}
+
+.club-charter {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: start;
+}
+.club-agent {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------- the mission's four actions */
+/* Sits under "How a night works" because it answers the question that section
+   raises: a mission is a guest, so what does being its guest actually offer me?
+   Four things, equally weighted, with the giving one no louder than the rest. */
+
+.mission-actions {
+  margin-top: 2rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+}
+.mission-actions-head {
+  margin: 0 0 0.4rem;
+  font-size: 1.02rem;
+}
+.mission-actions > .hint {
+  max-width: 62ch;
+  margin: 0 0 1rem;
+}
+.mission-actions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.9rem 1.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.mission-actions li {
+  display: grid;
+  gap: 0.2rem;
+  align-content: start;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--felt-soft);
+}
+.ma-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.ma-body {
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+/* ==========================================================================
+   CANASTA
+
+   Laid out like the real table: you at the bottom, your partner across, the
+   two opponents left and right, the piles in the middle, and each side's melds
+   on their own half. In a partnership game the first thing you need about
+   anybody is which side they are on, and a row of four equal chips does not
+   say it.
+   ========================================================================== */
+
+.table-main.canasta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------ the head */
+
+.can-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1.1rem;
+  padding: 0.55rem 0.8rem;
+}
+.can-turn {
+  flex: 1 1 20rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.can-turn strong {
+  font-size: 0.95rem;
+}
+.can-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+.can-score {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.can-score .lbl {
+  font-size: 0.62rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.can-score .num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.can-score.mine .num {
+  color: var(--focus);
+}
+
+/* ----------------------------------------------------------- the felt */
+
+.can-arena {
+  container-type: inline-size;
+}
+
+/* One grid, five areas. The melds row is last so a long tableau grows downward
+   into the page rather than squeezing the piles. */
+.can-felt {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(7rem, 1fr) minmax(0, 1.6fr) minmax(7rem, 1fr);
+  grid-template-areas:
+    '.     north  .'
+    'west  piles  east'
+    '.     south  .'
+    'melds melds  melds';
+  padding: 0.8rem;
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 50% 30%, var(--table-felt-hi) 0%, var(--table-felt) 52%, var(--table-felt-deep) 100%);
+  border: 7px solid var(--rail);
+  outline: 1px solid var(--rail-edge);
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.12), inset 0 12px 34px rgba(0, 0, 0, 0.18);
+  color: #fff;
+}
+/* Narrow: the ring collapses to a column. Still in turn order — partner, then
+   the two opponents — so the shape degrades rather than scrambling. */
+@container (max-width: 44rem) {
+  .can-felt {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'north north'
+      'west  east'
+      'piles piles'
+      'south south'
+      'melds melds';
+  }
+}
+
+.can-plate.north { grid-area: north; justify-self: center; }
+.can-plate.west { grid-area: west; }
+.can-plate.east { grid-area: east; justify-self: end; }
+/* Only ever rendered for a spectator: a seated player's own chair is the row below the felt. */
+.can-plate.south { grid-area: south; justify-self: center; }
+.can-piles { grid-area: piles; }
+.can-tableaux {
+  grid-area: melds;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: start;
+}
+.can-frozen { grid-area: piles; align-self: end; }
+
+/* ---------------------------------------------------------- a seat plate */
+
+.can-plate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  min-width: 0;
+  max-width: 12rem;
+}
+/* Your partner is marked on the felt itself, not only in a label — it is the
+   one fact the whole game hangs on. */
+.can-plate.partner {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.can-plate.to-act {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: #fff;
+}
+.can-plate.sitting-out {
+  opacity: 0.55;
+}
+.can-plate .cs-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.can-plate .cs-team {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.can-plate .cs-cards {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.can-plate .num {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+}
+.can-plate .clock {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* A little fan of backs, so a hand LOOKS like a hand rather than reading as a number. */
+.can-fan {
+  display: flex;
+  padding-right: 22px;
+}
+.can-fan .card {
+  margin-right: -22px;
+  width: 22px;
+  height: 31px;
+}
+
+/* --------------------------------------------------------- the two piles */
+
+.can-piles {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0.2rem;
+}
+/* The piles are BUTTONS: the stock draws, the discard takes. The row of
+   controls underneath is the same two moves said in words. */
+.can-pile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 4.4rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: rgba(0, 0, 0, 0.14);
+  color: inherit;
+  cursor: pointer;
+}
+.can-pile:enabled:hover {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+}
+.can-pile:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.can-pile .lbl {
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.can-pile .num {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+}
+.can-pile.frozen {
+  box-shadow: 0 0 0 2px var(--brass);
+}
+.can-frozen {
+  margin: 0;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--brass-soft);
+  align-self: end;
+}
+
+/* ------------------------------------------------------------ a tableau */
+
+.can-tableau {
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  min-width: 0;
+}
+.can-tableau.ours {
+  border-color: rgba(255, 255, 255, 0.45);
+}
+.can-tableau header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+.can-tableau header strong {
+  font-size: 0.82rem;
+}
+.can-tableau .hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.78rem;
+}
+.can-tableau .tag {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+.can-melds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.can-meld {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  padding: 0.25rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+/* A canasta is what the whole game is for, so it is the one thing on a tableau
+   that is coloured rather than outlined. */
+.can-meld.mixed {
+  background: var(--brass-soft);
+}
+.can-meld.natural {
+  background: var(--gold-soft);
+}
+.can-meld-cards {
+  display: flex;
+  padding-right: 20px;
+}
+.can-meld-cards .card {
+  margin-right: -20px;
+}
+.can-meld-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: center;
+  opacity: 0.85;
+}
+.can-meld.natural .can-meld-label,
+.can-meld.mixed .can-meld-label {
+  color: var(--gold);
+  opacity: 1;
+  font-weight: 600;
+}
+/* Your own melds are buttons: pressing one adds what you have picked up to it. */
+.can-meld-btn {
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+}
+.can-meld-btn:enabled:hover {
+  border-color: #fff;
+}
+.can-meld-btn:disabled {
+  cursor: default;
+}
+
+/* ------------------------------------------------------------ your seat */
+
+.can-you {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0 0.15rem;
+}
+.can-you .cs-name {
+  font-weight: 600;
+}
+.can-you .cs-team {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.turn-tag {
+  background: var(--felt-soft);
+  border-color: var(--felt);
+  color: var(--felt-deep);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------- the hand */
+
+.can-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  padding: 0.5rem 0.6rem 0.7rem;
+  background: var(--felt-soft);
+  border-radius: 10px;
+  min-height: 5.4rem;
+  align-items: flex-end;
+}
+.can-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+/* The header takes the whole rank in one press: a meld is a rank, and picking
+   four sevens one at a time is four clicks of work the game should not ask for. */
+.can-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  cursor: pointer;
+}
+.can-group-head .n {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+}
+.can-group-head.on {
+  background: var(--focus);
+  border-color: var(--focus);
+  color: #fff;
+}
+.can-group-head:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.can-group.wild .can-group-head {
+  border-color: var(--brass);
+  color: var(--gold);
+}
+.can-group.wild .can-group-head.on {
+  color: #fff;
+}
+.can-group-cards {
+  display: flex;
+  gap: 0.15rem;
+}
+.can-card {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 5px;
+  line-height: 0;
+  /* Picked cards lift, the way a hand of cards does when you pull one forward.
+     Transform only, so nothing reflows as a selection changes. */
+  transform: translateY(0);
+  transition: transform 90ms ease, box-shadow 90ms ease;
+}
+.can-card:hover:not(:disabled) {
+  transform: translateY(-4px);
+}
+.can-card.picked {
+  transform: translateY(-11px);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+.can-card:disabled {
+  cursor: default;
+}
+.can-card.bonus {
+  opacity: 0.72;
+  cursor: default;
+}
+.can-card:focus-visible,
+.can-group-head:focus-visible,
+.can-pile:focus-visible,
+.can-meld-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------- the controls */
+
+.can-actions {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem 0.8rem;
+}
+.can-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+.can-step {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.can-picked {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.can-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.can-buttons button {
+  flex: 1 1 8rem;
+}
+.can-why {
+  margin: 0 !important;
+  min-height: 1.2em;
+}
+.can-spectating {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------- the score */
+
+.can-result {
+  display: block;
+}
+.can-scoresheet {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+.can-scoresheet th,
+.can-scoresheet td {
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  white-space: nowrap;
+}
+.can-scoresheet th.num,
+.can-scoresheet td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.can-scoresheet th {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.can-scoresheet tr.mine td {
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------- taking a seat */
+
+.can-seat-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+.can-seat-picker button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  text-align: left;
+}
+.can-seat-picker .hint {
+  margin: 0;
+  font-size: 0.7rem;
+}
+
+/* The one line telling a club host what happens next, at the bottom of their own roster. */
+.club-next {
+  margin: 0 !important;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* The mute switch, in the table's own topbar: findable without reading anything. */
+.sound-toggle {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.95rem;
+  line-height: 1;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+}
+.sound-toggle:hover {
+  border-color: var(--rule);
+}
+.sound-toggle[aria-pressed='false'] {
+  opacity: 0.55;
+}
+
+/* ------------------------------------------------------------- the coach */
+
+.panel.coach {
+  display: grid;
+  gap: 0.5rem;
+  /* Rows take their own height and the spare goes at the bottom. Without this the grid shared
+     any extra height out across every row, and the three mode buttons stood eighty pixels tall
+     with a gap under the heading — the panel looked designed by someone who had never seen it. */
+  align-content: start;
+}
+/* On is a state, not a pressed button. It has to be visible from across the room. */
+.panel.coach.on {
+  border-color: var(--focus);
+}
+.panel.coach h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+.coach-live {
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #fff;
+  background: var(--focus);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+}
+.coach-modes {
+  display: flex;
+  gap: 0.3rem;
+}
+.coach-mode {
+  flex: 1 1 0;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.4rem;
+  /* A button is one line tall whatever the panel around it is doing. */
+  height: 2rem;
+  align-self: start;
+}
+.coach-mode.on {
+  background: var(--focus);
+  border-color: var(--focus);
+  color: #fff;
+}
+
+/* What is happening RIGHT NOW — the answer to "it sits for a while and does nothing". */
+.coach-now {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.coach-said {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  background: var(--felt-soft);
+  /* Room for two lines of reason, so a short one and a long one leave the panel the same height. */
+  min-height: 5.2rem;
+}
+.coach-say {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+/* The RULE is the part that teaches, so it is set as reading text and not as small print. */
+.coach-why {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+/* The running commentary: what everybody else just did, newest last. */
+/* A FIXED height, not a maximum. The feed fills as the table plays, and a panel that grew with it
+   pushed everything beneath it up and down on every event — which is the "expands and contracts"
+   a person sees in the corner of their eye while trying to watch the cards. */
+.coach-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  align-content: end;
+  gap: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  height: 9rem;
+  overflow-y: auto;
+}
+.coach-feed li:last-child {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.coach-voice {
+  border-top: 1px solid var(--rule);
+  padding-top: 0.4rem;
+}
+.coach-voice summary {
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.coach-voice label {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+  margin-top: 0.4rem;
+}
+.coach-voice .hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.72rem;
+}
+
+/* The shortest road to actually playing: one press to your own table with a coach at your shoulder. */
+.panel.practice button {
+  width: 100%;
+}
+.panel.can-practice {
+  display: grid;
+  gap: 0.4rem;
+}
+
+/* The canasta log's own scroll box.
+   It had no height and no overflow, so it was not a scroll container at all — which is why
+   `scrollIntoView` on the newest line satisfied itself by scrolling the WINDOW, dragging the board
+   off screen on every event at the table. Bounded and scrollable, it now scrolls itself. */
+.log-scroll {
+  max-height: 22rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* What this player just did. Three agents take a whole round of turns quickly, and a card count
+   going from eleven to twelve says nothing about what happened — this says it, where you are
+   already looking. */
+.cs-did {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.can-plate.to-act .cs-did {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* A meld that just arrived. Poker shows you the action — cards fly out, the board flips — and
+   canasta showed you only the result: a meld was simply present on the next frame. This is the
+   arriving, so another player's turn is something you watch rather than something you find. */
+@keyframes meld-arrive {
+  from {
+    transform: translateY(-8px) scale(0.96);
+    box-shadow: 0 0 0 3px var(--gold);
+  }
+  60% {
+    box-shadow: 0 0 0 3px var(--gold);
+  }
+  to {
+    transform: none;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.can-meld.fresh {
+  animation: meld-arrive 1.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .can-meld.fresh {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--gold);
+  }
+}
+
+/* The round's score as a sentence, above the table of figures. */
+.can-score-said {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.panel.can-practice .pace {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+  margin-top: 0.3rem;
+}
+.panel.can-practice .pace .hint {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The log, folded shut. The coach's feed is what you read as you play; this is the whole round in
+   order, which is a thing you go and check. */
+.log-panel > details > summary {
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.log-count {
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+.log-panel > details[open] > summary {
+  margin-bottom: 0.4rem;
+}
+
+/* ------------------------------------------------- dragging cards to the table */
+
+/* A card you can pick up says so. */
+.can-card:not(:disabled) {
+  cursor: grab;
+  touch-action: none;
+}
+.can-card:not(:disabled):active {
+  cursor: grabbing;
+}
+
+/* The cards in the air, following the pointer. A picture only: what is really being dragged lives
+   in a ref, and where it lands is decided by whatever is under the pointer when it is released. */
+.can-ghost {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  gap: 0.15rem;
+  pointer-events: none;
+  transform: translate(-50%, -60%) rotate(-3deg);
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.35));
+  opacity: 0.95;
+}
+
+/* Where a dragged card CAN go, and where it is about to. Outlined while a drag is in progress so
+   the target is findable, filled when the card is over it so the drop is certain. */
+.can-tableau.accepts {
+  outline: 2px dashed rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
+}
+.can-tableau.over {
+  outline: 2px solid #fff;
+  background: rgba(255, 255, 255, 0.22);
+}
+.can-meld-btn:hover,
+.can-tableau.accepts .can-meld-btn {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.can-meld-btn[data-over='yes'] {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+}
+.can-pile.accepts {
+  outline: 2px dashed rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
+}
+.can-pile.over {
+  outline: 2px solid #fff;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* The Voice controls: a quiet disclosure, because most of the time nobody wants to see them. */
+.coach-voice > summary {
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.coach-voice[open] > summary {
+  margin-bottom: 0.3rem;
+}
+
+/* "Get set up to play" — a button that scrolls to the panel beside you, styled as the link it reads
+   as. It was an anchor, and an anchor to a route that does not exist threw the player off the table. */
+.stake-link {
+  padding: 0;
+  font: inherit;
 }

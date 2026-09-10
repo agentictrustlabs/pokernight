@@ -34,6 +34,7 @@ export function StartPanel({
   config,
   treasury,
   onChanged,
+  readError = null,
   playHref,
   playLabel,
 }: {
@@ -42,6 +43,8 @@ export function StartPanel({
   config: AuthConfig | null;
   /** This player's money, read by the page so the seat gate and this panel agree. */
   treasury: TreasuryView | null;
+  /** Why the treasury could not be read at all, when that is what happened rather than a slow answer. */
+  readError?: string | null;
   /** Re-read it once this panel has moved something. */
   onChanged: () => void | Promise<void>;
   /** Where a set-up player goes to play. Passed only when there is actually a seat for them. */
@@ -176,7 +179,19 @@ export function StartPanel({
               </button>
             </>
           ) : stage === 'loading' ? (
-            <p className="hint">Reading your money…</p>
+            // A FAILED READ IS NOT A SLOW ONE. `stakeStage(null)` is 'loading', and the lobby's read
+            // swallowed its own error — so a treasury that could not be reached left "Reading your
+            // money…" on screen for good, with nothing to press and nothing to say why.
+            readError ? (
+              <>
+                <p className="hint">{readError}</p>
+                <button type="button" onClick={onChanged}>
+                  Try again
+                </button>
+              </>
+            ) : (
+              <p className="hint">Reading your money…</p>
+            )
           ) : (
             <>
               <p className="hint">

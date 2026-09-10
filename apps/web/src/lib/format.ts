@@ -8,16 +8,28 @@ export function fmtChips(n: number): string {
   return n.toLocaleString('en-US');
 }
 
-export const SUIT_GLYPH: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '♣' };
+/**
+ * `*` is the joker's non-suit, and it belongs here rather than in a canasta-only helper: two games
+ * now hand cards to the same `Card` component, and a card code is a card code.
+ */
+export const SUIT_GLYPH: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '♣', '*': '★' };
 
-export function cardRank(card: Card): string {
-  return card[0] === 'T' ? '10' : card[0] ?? '';
+/**
+ * Card codes come in two casings.
+ *
+ * Poker deals `Ah`; canasta deals `AS` and `W*`. Both are `${Rank}${Suit}` and the suit letter means
+ * the same thing in each, so the ONE place that reads a suit folds the case rather than every caller
+ * remembering which game a card came from. `W` is the joker, and shows as `JK`.
+ */
+export function cardRank(card: Card | string): string {
+  const r = card[0] ?? '';
+  return r === 'T' ? '10' : r === 'W' ? 'JK' : r;
 }
-export function cardSuit(card: Card): string {
-  return card[1] ?? '';
+export function cardSuit(card: Card | string): string {
+  return (card[1] ?? '').toLowerCase();
 }
-export function isRedSuit(card: Card): boolean {
-  const s = card[1];
+export function isRedSuit(card: Card | string): boolean {
+  const s = cardSuit(card);
   return s === 'h' || s === 'd';
 }
 /** "Ah 7d 2c" style, matching the wire codes so logs are copy-pasteable. */

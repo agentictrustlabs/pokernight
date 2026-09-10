@@ -1,4 +1,39 @@
-import type { CreateTableRequest, Session, SignOutResult, TableSummary } from '@pokernight/protocol';
+import type {
+  ClubInvite,
+  ClubMember,
+  ClubSummary,
+  ClubView,
+  CreateTableRequest,
+  InviteGreeting,
+  KnownPerson,
+  Session,
+  SignOutResult,
+  TableSummary,
+} from '@pokernight/protocol';
+
+/** What the coach says about one move: the move, one clause to speak, the rule behind it. */
+export interface CoachAdvice {
+  action: unknown;
+  say: string;
+  because: string;
+}
+
+/** One agent this card room can seat, as `GET /agents` reports it. */
+export interface AgentListing {
+  id: string;
+  agentName: string;
+  displayName: string;
+  description: string;
+  game?: string;
+  strategy: string;
+}
+
+/** One row of "the clubs you are in" — the index the club writes to, not the club itself. */
+export interface ClubListing {
+  clubId: string;
+  name: string;
+  joinedAt: number;
+}
 import { SESSION_KEY } from './ssoLogout';
 import type { AppSession } from './types';
 import type { AuthConfig } from './home';
@@ -147,9 +182,140 @@ export const api = {
   homeMandate: (body: HomeAuthBody, token: string) =>
     request<MandateResult>('/auth/home/mandate', { method: 'POST', body: JSON.stringify(body) }, token),
   devLogin: (name: string) => request<Session>('/dev/session', { method: 'POST', body: JSON.stringify({ name }) }),
-  listTables: (token?: string) => request<TableSummary[]>('/tables', {}, token),
+  /** The open tables. With no club that is the PUBLIC pickup lobby, which needs no session at all;
+   *  with one it is that club's own tables, and the card room checks standing before it answers. */
+  listTables: (token?: string, club?: string) =>
+    request<TableSummary[]>(club ? `/tables?club=${encodeURIComponent(club)}` : '/tables', {}, token),
   createTable: (req: CreateTableRequest, token?: string) =>
     request<TableSummary>('/tables', { method: 'POST', body: JSON.stringify(req) }, token),
+
+  /* ---------------------------------------------------------------------- clubs */
+
+  /** Start a club. Whoever signs the request is its first host and is on its roster immediately. */
+  createClub: (name: string, token: string) =>
+    request<ClubSummary>('/clubs', { method: 'POST', body: JSON.stringify({ name }) }, token),
+  /** The clubs this person is in. Never a list of clubs — there is no such thing to ask for. */
+  listClubs: (token: string) => request<{ clubs: ClubListing[] }>('/clubs', {}, token),
+  /**
+   * One club, with its roster and what you are to it.
+   *
+   * A club you are not in answers 404, exactly as a club that does not exist does. The client must
+   * not turn that into "you do not have access" — the card room is declining to say either way, and
+   * saying more on its behalf would leak the thing the 404 exists to hide.
+   */
+  getClub: (clubId: string, token: string) => request<ClubView>(`/clubs/${encodeURIComponent(clubId)}`, {}, token),
+  /**
+   * Put somebody on the roster, by whichever identifier the host has of them.
+   *
+   * A Smart Agent address, a playerId, or an AGENT NAME (`carol.me`) — the card room resolves the
+   * last on chain. An email is NOT one of these and is refused by name: it identifies nobody, and
+   * goes through `inviteByEmail` instead, which opens an invitation rather than a membership.
+   */
+  inviteMember: (clubId: string, member: string, name: string | undefined, token: string) =>
+    request<{ added: ClubMember }>(
+      `/clubs/${encodeURIComponent(clubId)}/members`,
+      { method: 'POST', body: JSON.stringify({ member, ...(name ? { name } : {}) }) },
+      token,
+    ),
+  /**
+   * Invite somebody whose Smart Agent nobody knows — which is nearly everybody, before they arrive.
+   *
+   * Answers with the link as well as the delivery outcome, ALWAYS. A Home with no mailer configured
+   * says `logged`, and a Home that refused says `not-sent` with a reason; in both cases the
+   * invitation exists and the host can send the link themselves.
+   */
+  inviteByEmail: (clubId: string, email: string, name: string | undefined, token: string) =>
+    request<{ invite: ClubInvite; joinUrl: string; delivery: 'sent' | 'logged' | 'not-sent'; deliveryError?: string }>(
+      `/clubs/${encodeURIComponent(clubId)}/invites`,
+      { method: 'POST', body: JSON.stringify({ email, ...(name ? { name } : {}) }) },
+      token,
+    ),
+  /** The club's invitations, outstanding and spent. Hosts only. */
+  listInvites: (clubId: string, token: string) =>
+    request<{ invites: ClubInvite[] }>(`/clubs/${encodeURIComponent(clubId)}/invites`, {}, token),
+  /** Take back an invitation nobody has used. */
+  revokeInvite: (clubId: string, inviteToken: string, token: string) =>
+    request<{ revoked: string }>(
+      `/clubs/${encodeURIComponent(clubId)}/invites/${encodeURIComponent(inviteToken)}`,
+      { method: 'DELETE' },
+      token,
+    ),
+  /**
+   * What an invitation says to whoever opened it. NO SESSION: they do not have one yet, and the
+   * whole point of the page this feeds is that it tells them what they are being asked to sign in for.
+   */
+  inviteGreeting: (clubId: string, inviteToken: string) =>
+    request<InviteGreeting>(`/clubs/${encodeURIComponent(clubId)}/invite/${encodeURIComponent(inviteToken)}`, {}),
+  /** Spend it. The membership is keyed to the session that claims it, not to the email it was sent to. */
+  claimInvite: (clubId: string, inviteToken: string, token: string) =>
+    request<{ claimed: ClubInvite; already?: boolean }>(
+      `/clubs/${encodeURIComponent(clubId)}/invite/${encodeURIComponent(inviteToken)}/claim`,
+      { method: 'POST', body: '{}' },
+      token,
+    ),
+  /**
+   * Your practice table for a game — the same one every time.
+   *
+   * Idempotent: the card room derives its id from you and the game rather than storing one, so
+   * asking twice is asking about the same table. It is in no lobby and settles nothing.
+   */
+  practiceTable: (game: string, token: string) =>
+    request<{ tableId: string; game: string }>('/practice', { method: 'POST', body: JSON.stringify({ game }) }, token),
+  /** Stop the table, or start it again — the clock, the agents and the next round all together. */
+  setPaused: (tableId: string, paused: boolean, token: string) =>
+    request<{ paused: boolean }>(`/tables/${encodeURIComponent(tableId)}/pause`, { method: 'POST', body: JSON.stringify({ paused }) }, token),
+  /** How fast this table plays: how long an agent's answer waits before it lands. Your own only. */
+  setPace: (tableId: string, ms: number, token: string) =>
+    request<{ paceMs: number }>(`/tables/${encodeURIComponent(tableId)}/pace`, { method: 'POST', body: JSON.stringify({ ms }) }, token),
+  /** Deal again from the start, keeping the seats. Your own practice table only. */
+  resetPractice: (tableId: string, token: string) =>
+    request<{ reset: true }>(`/tables/${encodeURIComponent(tableId)}/reset`, { method: 'POST' }, token),
+  /**
+   * What a good player would do in YOUR seat, and why.
+   *
+   * Your own seat only, and the coach sees only what that seat sees — enforced in the card room, not
+   * here. A coach reasoning from the full table would explain moves with cards you cannot see, which
+   * teaches a way of playing you could never reproduce alone.
+   *
+   * 404 when it is not your turn, when you are not seated, or when the game has no coach.
+   */
+  advice: (tableId: string, token: string) =>
+    request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice`, {}, token),
+  /**
+   * The agents this card room can seat for a game.
+   *
+   * Narrowed by game on purpose: an agent that plays poker cannot play canasta, and offering one at
+   * the other's table is offering a seat the card room will refuse a moment later.
+   */
+  listAgents: (game: string) => request<{ agents: AgentListing[] }>(`/agents?game=${encodeURIComponent(game)}`, {}),
+  /** Sit an agent down. The card room resolves it, fetches its card, and refuses one that cannot play. */
+  seatAgent: (tableId: string, body: { seat: number; buyIn: number; agentName: string; displayName?: string }, token: string) =>
+    request<{ seated: true }>(`/tables/${encodeURIComponent(tableId)}/seat-agent`, { method: 'POST', body: JSON.stringify(body) }, token),
+  /** The people you already play with — everyone on the roster of a club of yours, but you. */
+  knownPeople: (token: string) => request<{ people: KnownPerson[] }>('/people', {}, token),
+  /**
+   * Finish the charter ceremony the host ran at their Home, and record what it deployed.
+   *
+   * The card room does the code exchange, not the browser — the same split as sign-in and the buy-in
+   * authorisation. It checks the ceremony was completed by the person holding this session and that
+   * they are a host of this club before it writes anything down.
+   */
+  charterClub: (clubId: string, body: HomeAuthBody, token: string) =>
+    request<ClubSummary>(`/clubs/${encodeURIComponent(clubId)}/charter`, { method: 'POST', body: JSON.stringify(body) }, token),
+  removeMember: (clubId: string, member: string, token: string) =>
+    request<{ removed: string }>(`/clubs/${encodeURIComponent(clubId)}/members/${encodeURIComponent(member)}`, { method: 'DELETE' }, token),
+  /**
+   * Close a club for good. Its host only, and only when nobody is sitting at one of its tables.
+   *
+   * `agent` comes back when the club was chartered — the card room cannot touch that Smart Agent and
+   * must not let a host believe it did.
+   */
+  retireClub: (clubId: string, token: string) =>
+    request<{ retired: true; name: string; members: number; tablesClosed: string[]; agent?: string }>(
+      `/clubs/${encodeURIComponent(clubId)}`,
+      { method: 'DELETE' },
+      token,
+    ),
   getTable: (id: string, token?: string) => request<TableDetail>(`/tables/${encodeURIComponent(id)}`, {}, token),
 
   /** The treasury that funds this session's play, its live balance, and what else it could be. */

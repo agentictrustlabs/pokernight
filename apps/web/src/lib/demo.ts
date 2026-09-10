@@ -17,6 +17,7 @@
  */
 
 import type { QuickConnectIdentity } from '@agenticprimitives/connect-client';
+import { PRODUCT_NAME } from './brand';
 import { shortAddress } from './format';
 
 /** One demo user, ready to render. */
@@ -60,7 +61,7 @@ export function mapDemoPersonas(list: readonly QuickConnectIdentity[] | null | u
 
 /** The Home refused this client for its demo users. An operator change there, not a bug here. */
 export const DEMO_NOT_ENABLED =
-  'Demo sign-in is not enabled for this app yet — the Home has not registered Pokernight for its demo users. Sign in with your own Home instead.';
+  `Demo sign-in is not enabled for this app yet — the Home has not registered ${PRODUCT_NAME} for its demo users. Sign in with your own Home instead.`;
 
 /**
  * Turn a failure from either half of the demo path — the Home refusing to mint, or the card room

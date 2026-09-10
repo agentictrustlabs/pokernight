@@ -5,12 +5,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { TableSummary } from './types';
-import { describeMoment, fmtSeats, isRunning, pickFeaturedTable, plural, summarizeLobby, summarizeRoster, type TableDetail } from './lobby';
+import { describeMoment, fmtSeats, isRunning, pickFeaturedTable, pickSeat, plural, stakeLabel, summarizeLobby, summarizeRoster, type TableDetail } from './lobby';
 
 const table = (over: Partial<TableSummary> = {}): TableSummary => ({
   tableId: 't1',
   name: 'Friday Night',
-  config: { seats: 6, smallBlind: 1, bigBlind: 2, ante: 0, minBuyIn: 40, maxBuyIn: 200, actionTimeoutMs: 25000 },
+  // The generic setup any table has, and poker's own beside it.
+  config: { seats: 6, minStake: 40, maxStake: 200, turnMs: 25000 },
+  game: 'poker',
+  gameConfig: { seats: 6, smallBlind: 1, bigBlind: 2, ante: 0, minBuyIn: 40, maxBuyIn: 200, actionTimeoutMs: 25000 },
   settlement: 'play-money',
   seated: 5,
   handNo: 754,
@@ -55,6 +58,10 @@ describe('pickFeaturedTable', () => {
   it('shows the busiest table, and never an empty one', () => {
     expect(pickFeaturedTable([table({ tableId: 'a', seated: 3 }), table({ tableId: 'b', seated: 5 })])?.tableId).toBe('b');
     expect(pickFeaturedTable([table({ seated: 0 }), table({ tableId: 'x', seated: 0 })])).toBeNull();
+    // A busy canasta table is not the one to narrate: the featured card reads a poker view, and
+    // another game's view has no street, no pot and no hand number in it to read.
+    expect(pickFeaturedTable([table({ tableId: 'c', seated: 4, game: 'canasta' }), table({ tableId: 'p', seated: 2 })])?.tableId).toBe('p');
+    expect(pickFeaturedTable([table({ tableId: 'c', seated: 4, game: 'canasta' })])).toBeNull();
     expect(pickFeaturedTable([])).toBeNull();
   });
 
@@ -80,7 +87,10 @@ const detail = (over: Partial<TableDetail> = {}): TableDetail =>
       'home:0xabc': { playerId: 'home:0xabc', name: 'rich.me', kind: 'human' },
     },
     view: {
-      config: { seats: 6, smallBlind: 1, bigBlind: 2, ante: 0, minBuyIn: 40, maxBuyIn: 200, actionTimeoutMs: 25000 },
+      // The generic setup any table has, and poker's own beside it.
+  config: { seats: 6, minStake: 40, maxStake: 200, turnMs: 25000 },
+  game: 'poker',
+  gameConfig: { seats: 6, smallBlind: 1, bigBlind: 2, ante: 0, minBuyIn: 40, maxBuyIn: 200, actionTimeoutMs: 25000 },
       seats: [
         { seat: 2, playerId: 'agent:bluffer.svc', stack: 100, status: 'active', waitingForBigBlind: false },
         { seat: 0, playerId: 'home:0xabc', stack: 238, status: 'active', waitingForBigBlind: false },
@@ -133,6 +143,7 @@ describe('describeMoment', () => {
     const d = detail();
     const m = describeMoment(d, summarizeRoster(d));
     expect(m.agentsPlaying).toBe(true);
+    expect(m.handRunning).toBe(true);
     expect(m.state).toBe('Flop · pot 4');
     expect(m.line).toBe('Sharkbot and The Bluffer and 1 person — hand #754, Flop · pot 4');
   });
@@ -149,6 +160,7 @@ describe('describeMoment', () => {
     const d = detail({ view: { ...detail().view, hand: null } });
     const m = describeMoment(d, summarizeRoster(d));
     expect(m.agentsPlaying).toBe(false);
+    expect(m.handRunning).toBe(false);
     expect(m.state).toBe('between hands');
     expect(m.line).toMatch(/754 hands dealt, waiting for the next one/);
   });
@@ -159,9 +171,62 @@ describe('describeMoment', () => {
     expect(m.line).toBe('');
   });
 
-  it('does not call a table of people an agent table', () => {
+  it('does not call a table of people an agent table — but a hand there is still a hand', () => {
     const d = detail({ players: { 'home:0xabc': { playerId: 'home:0xabc', name: 'rich.me', kind: 'human' } } });
     const m = describeMoment(d, summarizeRoster(d));
     expect(m.agentsPlaying).toBe(false);
+    // The front door says "a hand is running right now" and reads THIS. Answering false here for a
+    // table of people would have made the live strip go dark on the busiest kind of table there is.
+    expect(m.handRunning).toBe(true);
+  });
+});
+
+/**
+ * The stakes column has to work for a table this client cannot describe, because one day there will
+ * be one. Poker shows its blinds; anything else shows what it is rather than an invented number.
+ */
+describe('pickSeat', () => {
+  it('prefers a settled table with room, and takes any free seat otherwise', () => {
+    const play = table({ tableId: 'play', seated: 1 });
+    const money = table({ tableId: 'money', seated: 1, settlement: 'mandate-transfer' });
+    expect(pickSeat([play, money])?.tableId).toBe('money');
+    expect(pickSeat([play])?.tableId).toBe('play');
+    expect(pickSeat([table({ seated: 6 })])).toBeNull();
+    expect(pickSeat(null)).toBeNull();
+  });
+
+  it('offers a canasta seat, because this client has a canasta board', () => {
+    expect(pickSeat([table({ tableId: 'canasta', seated: 0, game: 'canasta' })])?.tableId).toBe('canasta');
+  });
+
+  it('never sends a player to a game this client has no board for', () => {
+    // The empty table is the one with the most room in the room, and it is exactly the one that
+    // must not be offered: there is no seat on the screen it would open.
+    const gin = table({ tableId: 'gin', seated: 0, game: 'gin-rummy', settlement: 'mandate-transfer' });
+    expect(pickSeat([gin])).toBeNull();
+    expect(pickSeat([gin, table({ tableId: 'holdem', seated: 3 })])?.tableId).toBe('holdem');
+  });
+});
+
+describe('stakeLabel', () => {
+  it('shows poker’s blinds, which live on the game’s own config', () => {
+    expect(stakeLabel(table())).toBe('1/2');
+  });
+
+  it('names the game when it is not poker, instead of inventing blinds for it', () => {
+    // The NAME, as a person says it — not the id the host routes on.
+    expect(stakeLabel({ game: 'canasta', gameConfig: { target: 5000 } })).toBe('Canasta');
+  });
+
+  it('falls back to the id for a game it has never heard of', () => {
+    expect(stakeLabel({ game: 'gin-rummy', gameConfig: {} })).toBe('gin-rummy');
+  });
+
+  it('says something rather than nothing for a table with no game config at all', () => {
+    // An older table, or one whose summary came from the lobby's fallback row. Blinds cannot be
+    // shown without the config that holds them, so it says what the table IS instead.
+    expect(stakeLabel({ game: 'poker' })).toBe("Texas Hold'em");
+    // No game named at all is poker, because that is what every table opened before games were.
+    expect(stakeLabel({})).toBe("Texas Hold'em");
   });
 });

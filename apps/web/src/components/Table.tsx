@@ -6,9 +6,11 @@ import { describeMode, describeRange, dualAmount, tableRate } from '../lib/money
 import { seatLabel, summarizeResult, type FormatContext } from '../lib/format';
 
 import { awardedTo, blindSeats, lastActions, netBySeat, potTotal, shownCards, winningCards, winningSeats } from '../lib/hand';
-import { dealState, satOutAction, satOutHeadline, sitOutNotice } from '../lib/seating';
+import { dealState, satOutAction, satOutHeadline, sitOutNotice, waitingToBeDealtIn } from '../lib/seating';
+import { useLeaveTable } from '../lib/useLeaveTable';
 import { useNow, usePrefersReducedMotion } from '../lib/hooks';
 import { ActionBar } from './ActionBar';
+import { StakeLink } from './StakeLink';
 import { Announcer } from './Announcer';
 import { Card, CardSlot } from './Card';
 import { ChipStack } from './ChipStack';
@@ -123,6 +125,9 @@ export function Table({
   treasury?: TreasuryView | null;
 }) {
   const view = state.view;
+  // Leaving takes you back to the room, once the seat has actually gone. Declared with the other
+  // hooks, above the early return further down — React counts them.
+  const { leaving, leave } = useLeaveTable(state.view?.viewerSeat != null, () => send({ type: 'leave' }));
   const [picking, setPicking] = useState<number | null>(null);
   const [buyIn, setBuyIn] = useState<string>('');
   const [addAmt, setAddAmt] = useState<string>('');
@@ -175,6 +180,9 @@ export function Table({
   // view rather than asked for: everything the answer needs is already on screen.
   const deal = dealState(view);
   const sittingOut = me != null && me.status === 'sitting-out';
+  // Seated, sitting in, with chips — and still not in the hand. An ordinary rule with a name nobody
+  // outside a card room knows, so it gets a sentence rather than a two-letter badge.
+  const dealtInSoon = waitingToBeDealtIn(view);
   const myReason = me != null ? state.players[me.playerId]?.sitOutReason : undefined;
   // What a sat-out player is offered, decided by the one fact that matters: whether they have chips.
   // Offering "Sit in" to somebody on zero is offering a control that cannot help them, which is how
@@ -243,6 +251,13 @@ export function Table({
         </div>
       ) : null}
 
+      {dealtInSoon && !sittingOut ? (
+        <div className="table-notice waiting" role="status">
+          <strong>You are next in</strong>
+          <span className="hint">{dealtInSoon}</span>
+        </div>
+      ) : null}
+
       {sittingOut ? (
         <div className={`table-notice sat-out${satOut === 'rebuy' ? ' broke' : ''}`} role="status">
           <div className="notice-text">
@@ -257,7 +272,7 @@ export function Table({
                 {rebuyBlock.action === 'wait' || rebuyBlock.action === 'configure' ? null : (
                   <>
                     {' '}
-                    <a href="#stake">Get set up to play →</a>
+                    <StakeLink>Get set up to play →</StakeLink>
                   </>
                 )}
               </span>
@@ -459,7 +474,7 @@ export function Table({
                   {' '}
                   {/* One destination for all four of them: the set-up card is the one control that
                       fixes whichever of them is missing, so a player never has to work out which. */}
-                  <a href="#stake">Get set up to play →</a>
+                  <StakeLink>Get set up to play →</StakeLink>
                 </>
               )}
             </p>
@@ -504,8 +519,8 @@ export function Table({
             {rate && Number(addAmt) > 0 ? <span className="num cost-asset">{dualAmount(Number(addAmt), rate).assetLabel}</span> : null}
           </form>
           <span className="spacer" style={{ flex: 1 }} />
-          <button className="danger" onClick={() => send({ type: 'leave' })}>
-            Leave table
+          <button className="danger" disabled={leaving} onClick={leave}>
+            {leaving ? 'Leaving…' : 'Leave table'}
           </button>
         </div>
       ) : session == null ? (

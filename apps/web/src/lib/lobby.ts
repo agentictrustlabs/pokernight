@@ -8,7 +8,8 @@
  * quiet rather than to dress it up.
  */
 
-import type { PlayerInfo, TableSummary, TableView } from './types';
+import type { PlayerInfo, PokerGameConfig, TableSummary, TableView } from './types';
+import { drawsGame, gameLabel, hasBoard } from './games';
 import { fmtChips, joinNames, streetLabel } from './format';
 import { dualAmount, tableRate } from './money';
 
@@ -16,6 +17,23 @@ import { dualAmount, tableRate } from './money';
 export interface TableDetail {
   tableId: string;
   name: string;
+  /** Which game it deals. Present on every table, including the club ones no public list carries. */
+  game?: string;
+  /**
+   * The club this table belongs to, and its name. Absent on a PICKUP table, which is public and is
+   * what every table was before clubs existed.
+   *
+   * The DO has always sent both; nothing read them, so a private table looked exactly like a public
+   * one once you were sitting at it — and "who can see this?" is the whole difference between them.
+   */
+  club?: string;
+  clubName?: string;
+  /** Whose practice table it is, if it is one. Absent on every ordinary table. */
+  practiceFor?: string;
+  /** How long an agent's answer waits before it lands, in ms. A practice table's own setting. */
+  paceMs?: number;
+  /** True while the table is holding: no clock, no agents, no next round. */
+  paused?: boolean;
   settlement: string;
   /** Asset base units per chip, pinned when the table was created. Absent on a table with no rate. */
   chipValue?: string;
@@ -72,6 +90,9 @@ export function pickFeaturedTable(tables: readonly TableSummary[]): TableSummary
   let best: TableSummary | null = null;
   for (const t of tables) {
     if (t.seated === 0) continue;
+    // Only a table this client can READ. The featured card narrates a hand — its street, its pot,
+    // its hands dealt — off a poker view, and another game's view has none of those to narrate.
+    if (!drawsGame(t.game)) continue;
     if (
       !best ||
       t.seated > best.seated ||
@@ -82,6 +103,32 @@ export function pickFeaturedTable(tables: readonly TableSummary[]): TableSummary
     }
   }
   return best;
+}
+
+/** How many chairs are free. Never negative, whatever a stale summary says. */
+export function seatsFree(t: TableSummary): number {
+  return Math.max(0, t.config.seats - t.seated);
+}
+
+/**
+ * The tables somebody could actually sit at.
+ *
+ * TWO CONDITIONS, and the second is the one that keeps being forgotten: a free chair, AND a game this
+ * client has a board for. Offering a seat at a table this browser cannot draw sends somebody to a
+ * screen with no seat on it, which is worse than not mentioning the table.
+ */
+export function withRoom(tables: readonly TableSummary[] | null): TableSummary[] {
+  return (tables ?? []).filter((t) => seatsFree(t) > 0 && hasBoard(t.game));
+}
+
+/**
+ * The table to send a set-up player to: one that settles and has a free seat, else any free seat.
+ * Null when the room is full or has not been read yet — never a table they could not sit at.
+ */
+export function pickSeat(tables: readonly TableSummary[] | null): TableSummary | null {
+  if (!tables) return null;
+  const open = withRoom(tables);
+  return open.find((t) => t.settlement !== 'play-money') ?? open[0] ?? null;
 }
 
 export interface Roster {
@@ -121,7 +168,12 @@ export function summarizeRoster(detail: Pick<TableDetail, 'view' | 'players' | '
 }
 
 export interface LiveMoment {
-  /** True when there are agents at the table and a hand is in progress. */
+  /** True when a hand is in progress, whoever is playing it. This is what the front door reads: the
+   *  claim it makes is "a hand is running", and an all-human table is running a hand too. */
+  handRunning: boolean;
+  /** True when there are agents at the table AND a hand is in progress. Narrower than
+   *  {@link handRunning} on purpose — it answers "are agents playing", which is a different question
+   *  and still the right one anywhere that says so. */
   agentsPlaying: boolean;
   /** "Preflop · pot 4" mid-hand, "between hands" otherwise. */
   state: string;
@@ -137,9 +189,35 @@ export function describeMoment(detail: TableDetail | null | undefined, roster: R
   const d = dualAmount(pot, tableRate(detail?.settlement, detail?.chipValue, detail?.assetSymbol));
   const potText = d.assetLabel ? `${d.chipsText} (${d.assetLabel})` : d.chipsText;
   const state = hand ? `${streetLabel(hand.street)} · pot ${potText}` : 'between hands';
-  const agentsPlaying = roster.agents.length > 0 && hand != null;
-  if (!detail) return { agentsPlaying: false, state, line: '' };
+  const handRunning = hand != null;
+  const agentsPlaying = roster.agents.length > 0 && handRunning;
+  if (!detail) return { handRunning: false, agentsPlaying: false, state, line: '' };
   const who = roster.agents.length === 0 ? roster.line : `${roster.agentNames}${roster.humans.length ? ` and ${plural(roster.humans.length, 'person', 'people')}` : ''}`;
   const line = hand ? `${who} — hand #${hand.handNo}, ${state}` : `${who} — ${plural(detail.view.handNo, 'hand')} dealt, waiting for the next one`;
-  return { agentsPlaying, state, line };
+  return { handRunning, agentsPlaying, state, line };
+}
+
+/**
+ * Poker's own configuration off a table summary, or null when the table is not dealing poker.
+ *
+ * The protocol exports this too, and the web deliberately keeps its own three lines instead of
+ * importing it: a VALUE import from `@pokernight/protocol` pulls zod and the engine into this
+ * bundle, which is the rule `types.ts` states and which cost 58 KB the one time it was broken.
+ * Types cross that boundary freely; functions do not.
+ */
+function pokerConfigOf(t: { game?: string; gameConfig?: unknown }): PokerGameConfig | null {
+  if (t.game && t.game !== 'poker') return null;
+  return t.gameConfig && typeof t.gameConfig === 'object' ? (t.gameConfig as PokerGameConfig) : null;
+}
+
+/**
+ * The stakes column on a lobby row.
+ *
+ * Poker shows its blinds, which live on `gameConfig` because they are poker's and the lobby's own
+ * config knows only seats and what a seat costs. A table dealing something else shows what it is:
+ * this client cannot describe another game's setup and must not pretend it can.
+ */
+export function stakeLabel(t: { game?: string; gameConfig?: unknown }): string {
+  const poker = pokerConfigOf(t);
+  return poker ? `${poker.smallBlind}/${poker.bigBlind}` : gameLabel(t.game);
 }

@@ -24,6 +24,8 @@
  */
 
 /** Where the browser keeps the session. Defined here so the logout page and the app cannot drift. */
+import { pageTitle } from './brand';
+
 export const SESSION_KEY = 'pokernight.session';
 
 /** The origins a `return` may name, resolved by the Worker before the page is written. */
@@ -112,7 +114,7 @@ export function logoutPageHtml({ apiBase, returnTo }: LogoutPageOptions): string
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Signing you out — Pokernight</title>
+<title>${pageTitle('Signing you out')}</title>
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0; display: grid; place-items: center; min-height: 100vh;

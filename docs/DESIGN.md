@@ -61,7 +61,17 @@ Everything is a Smart Agent (ERC-4337 `AgentAccount`) with a typed on-chain name
 | Human player | person | `alice.me` | logs in at faithnet.me; consents to a `poker-buyin` delegation |
 | AI player | service | `sharkbot.svc` | exposes A2A skill `poker.act`; owner is a person or org |
 | House | service, profile `treasury` | `pokernight.treasury` | receives buy-ins, pays cash-outs, signs settlement digests |
-| Poker night / club | context `circle` | `friday-night.circle` | membership decides who may sit; owns the lobby |
+| Poker night / club | context `workspace` | `thursday-night.workspace` | membership decides who may sit; owns the lobby |
+
+What the club is FOR is `docs/MISSION.md`: an evening where a mission organisation is the group's
+guest at the table, with giving kept separate from the game and the club holding no money — which is
+§5 of this document, unchanged and now load-bearing for a second reason.
+
+The club row is specified in full in `docs/WORKSPACES.md`, which supersedes an earlier draft of this
+table that named it `friday-night.circle`. Both suffixes are real, but `.circle` is org-class and
+`.workspace` is the service-class shape the estate uses for "a relying app holds a roster in an
+agent's vault and gates its own calls on it" — which is what a card room is. That document also
+covers the schedule, invitations, RSVPs and seasons that hang off the club.
 
 The house Smart Agent is the `delegate` in every player delegation and the `payee` of every buy-in.
 Its UserOps are signed by a dedicated KMS key (like the platform's interactions key), submitted through
