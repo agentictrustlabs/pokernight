@@ -115,6 +115,9 @@ export type SettlementMode = z.infer<typeof SettlementModeSchema>;
  */
 export const ClubIdSchema = z.string().regex(/^[0-9a-f-]{36}$/);
 
+export * from './when.js';
+export * from './recurrence.js';
+
 /** What someone IS to a club, derived from the club's own records and never asserted by a caller. */
 export const ClubStandingSchema = z.enum(['host', 'member', 'none']);
 export type ClubStanding = z.infer<typeof ClubStandingSchema>;
@@ -165,6 +168,101 @@ export const CreateClubRequestSchema = z.object({
   name: z.string().min(1).max(64),
 });
 export type CreateClubRequest = z.infer<typeof CreateClubRequestSchema>;
+
+/* --------------------------------------------------------- the schedule and its nights */
+
+/**
+ * WHEN A CLUB MEETS, and each occasion it comes to.
+ *
+ * A schedule is a RULE and stores a wall clock; a night is one OCCURRENCE and stores an instant that
+ * was resolved once, at materialisation, and is never resolved again. The reasoning for that split is
+ * in `when.ts` and `recurrence.ts` — the short version is that a game at eight is at eight in November
+ * too, and storing the instant is what makes it seven.
+ *
+ * Nights are materialised AHEAD of being needed, because an invitation cannot be sent to an occurrence
+ * that does not exist and "who is coming on the 12th" cannot be asked of a formula.
+ */
+export const WeekdaySchema = z.enum(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']);
+
+export const RecurrenceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('once') }),
+  // A SET of weekdays: `docs/MISSION.md` §4 supersedes the single `weekday`, because Tuesday and
+  // Thursday at seven is the common case and one weekday cannot say it.
+  z.object({ kind: z.literal('weekly'), weekdays: z.array(WeekdaySchema).min(1).max(7), interval: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional() }),
+  z.object({ kind: z.literal('monthly-nth'), weekday: WeekdaySchema, nth: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(-1)]) }),
+]);
+
+/** What every night of this schedule inherits, and any one of them may override. */
+export const NightDefaultsSchema = z.object({
+  /** What the night is called, when it is not just the club's name and a date. */
+  title: z.string().max(64).optional(),
+  /** How many people the night has room for. */
+  seatCap: z.number().int().min(2).max(90).optional(),
+  /** Which game it deals. A club is not a poker club — it can run either. */
+  game: z.string().max(32).optional(),
+});
+export type NightDefaults = z.infer<typeof NightDefaultsSchema>;
+
+export const ClubScheduleSchema = z.object({
+  scheduleId: z.string(),
+  club: ClubIdSchema,
+  /** LOCAL wall clock, `HH:MM`. Not an instant, and deliberately not one. */
+  startLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  /** The IANA zone that wall clock is read in. */
+  timezone: z.string().min(1).max(64),
+  recurrence: RecurrenceSchema,
+  defaults: NightDefaultsSchema,
+  /** No night before this instant. Its local date is also the anchor an interval counts from. */
+  activeFrom: z.number().int(),
+  /** …and none after this one. Absent is open-ended. */
+  activeUntil: z.number().int().optional(),
+  createdBy: z.string(),
+  createdAt: z.number().int(),
+  status: z.enum(['active', 'paused', 'retired']),
+});
+export type ClubSchedule = z.infer<typeof ClubScheduleSchema>;
+
+export const SetScheduleRequestSchema = z.object({
+  startLocal: z.string(),
+  timezone: z.string(),
+  recurrence: RecurrenceSchema,
+  defaults: NightDefaultsSchema.optional(),
+  activeFrom: z.number().int().optional(),
+  activeUntil: z.number().int().optional(),
+});
+export type SetScheduleRequest = z.infer<typeof SetScheduleRequestSchema>;
+
+/**
+ * Where a night is in its life.
+ *
+ * `skipped` and `cancelled` are different on purpose: the schedule generated this one and the host
+ * removed just it, versus the host called it off. Both stop it happening; only one of them is a thing
+ * that happened TO the people who were coming.
+ */
+export const NightStatusSchema = z.enum(['scheduled', 'open', 'playing', 'finished', 'cancelled', 'skipped']);
+export type NightStatus = z.infer<typeof NightStatusSchema>;
+
+export const NightSchema = z.object({
+  nightId: z.string(),
+  club: ClubIdSchema,
+  /** The schedule that generated it. Absent for a one-off somebody added by hand. */
+  scheduleId: z.string().optional(),
+  /** Resolved ONCE at materialisation, from (startLocal, timezone, date), and never re-derived. */
+  startsAt: z.number().int(),
+  /** Carried so a later timezone-database change cannot silently move a night people attended. */
+  startLocal: z.string(),
+  timezone: z.string(),
+  /** The local date in the club's own zone. With the schedule id, this is the idempotency key. */
+  localDate: z.string(),
+  status: NightStatusSchema,
+  title: z.string().optional(),
+  seatCap: z.number().int().optional(),
+  game: z.string().optional(),
+  createdAt: z.number().int(),
+  cancelledAt: z.number().int().optional(),
+  reason: z.string().optional(),
+});
+export type Night = z.infer<typeof NightSchema>;
 
 export const InviteMemberRequestSchema = z.object({
   /**
