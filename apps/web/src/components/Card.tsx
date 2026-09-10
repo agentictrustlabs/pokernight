@@ -3,7 +3,15 @@ import type { Card as CardCode } from '../lib/types';
 import { SUIT_GLYPH, cardRank, cardSuit, isRedSuit } from '../lib/format';
 
 export interface CardProps {
-  card?: CardCode;
+  /**
+   * The card's CODE — `${Rank}${Suit}`, or undefined for a face-down back.
+   *
+   * A plain string rather than poker's `Card` union, because two games now hand cards to this
+   * component: poker deals `Ah`, canasta deals `AS` and `W*`. The union is still the type poker's
+   * own code passes around; this reads only the two characters, folds the suit's case, and draws
+   * what it is given. Widening it here is what stops a second card component existing.
+   */
+  card?: CardCode | string;
   size?: 'sm' | 'md' | 'lg';
   /** Part of a winning five-card hand: gets the gold emphasis. */
   win?: boolean;
@@ -47,7 +55,7 @@ export function Card({ card, size = 'md', win, muted, enter, delayMs, title, sty
   const rank = cardRank(card);
   const suit = SUIT_GLYPH[cardSuit(card)] ?? '?';
   const label = `${rank}${suit}`;
-  const narrow = rank === '10';
+  const narrow = rank === "10" || rank === "JK";
 
   return (
     <svg className={cls} style={s} viewBox="0 0 44 62" role="img" aria-label={title ?? label}>

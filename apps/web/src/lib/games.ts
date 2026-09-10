@@ -1,0 +1,54 @@
+/**
+ * Which game this client can draw — and what to say about the ones it cannot.
+ *
+ * The card room deals more than one game. This client draws exactly one of them: every board,
+ * every action control and every log line in `components/` reads a poker view and nothing else.
+ * That is a fine thing for a client to be, and the only dangerous version of it is the one that
+ * does not know it — a poker board mounted against another game's view reads `config.bigBlind` off
+ * a shape that has no config and takes the whole page down with it.
+ *
+ * So the rule is stated once, here, and every place that meets a table asks: the lobby before it
+ * offers a seat, the socket before it keeps a view, the table page before it draws a board.
+ *
+ * When a second board is written, this file is where it announces itself.
+ */
+
+/** The game the POKER board draws. Its reducer and its components read a poker view and no other. */
+export const DRAWN_GAME = 'poker';
+
+/**
+ * Every game this client has a board for.
+ *
+ * Distinct from {@link drawsGame}, and the distinction is the point: `drawsGame` asks "will the
+ * POKER board understand this?", which is what the poker reducer and the poker page need to know.
+ * This asks "does this card room have a screen for it at all?", which is what the lobby needs
+ * before it offers a seat. One board per game, and each knows only its own.
+ */
+export const BOARDS: readonly string[] = ['poker', 'canasta'];
+
+/** Whether this client can draw a table dealing `game` at all. Absent is poker. */
+export function hasBoard(game: string | null | undefined): boolean {
+  return !game || BOARDS.includes(game);
+}
+
+/**
+ * Whether this client can draw a table dealing `game`.
+ *
+ * Absent is poker: every table opened before games were named is a poker table, and the host
+ * stamps the name on new ones.
+ */
+export function drawsGame(game: string | null | undefined): boolean {
+  return !game || game === DRAWN_GAME;
+}
+
+/** What each game is CALLED. A client that cannot deal a game can still name it properly. */
+const NAMES: Record<string, string> = {
+  poker: "Texas Hold'em",
+  canasta: 'Canasta',
+};
+
+/** The game's name for a person to read, falling back to the id the host gave it. */
+export function gameLabel(game: string | null | undefined): string {
+  if (!game) return NAMES[DRAWN_GAME] as string;
+  return NAMES[game] ?? game;
+}

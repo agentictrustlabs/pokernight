@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { ActionRecord, Card as CardCode, PlayerInfo, SeatView } from '../lib/types';
 import { actionBadge, fmtDelta } from '../lib/format';
+import { DEALT_IN_SOON } from '../lib/seating';
 import type { TableRate } from '../lib/money';
 import { Card } from './Card';
 import { ChipStack } from './ChipStack';
@@ -99,9 +100,8 @@ export function Seat(p: SeatProps) {
     : revealed;
   const isAgent = p.player?.kind === 'agent';
   const thinking = p.toAct && isAgent;
-  // `waitingForBigBlind` is on the engine's seat but not (yet) on the redacted
-  // SeatView; read it defensively so the badge lights up when it arrives.
-  const waiting = (s as SeatView & { waitingForBigBlind?: boolean }).waitingForBigBlind === true;
+  // Seated but not in this hand: they arrived after it began and join at the big blind.
+  const waiting = s.waitingForBigBlind === true;
 
   const cls = [
     'seat',
@@ -119,7 +119,10 @@ export function Seat(p: SeatProps) {
   if (s.status === 'sitting-out') tags.push({ key: 'out', text: 'Sitting out', cls: 'muted' });
   else if (folded) tags.push({ key: 'fold', text: 'Folded', cls: 'muted' });
   else if (ih?.allIn) tags.push({ key: 'allin', text: 'All-in', cls: 'allin' });
-  if (waiting) tags.push({ key: 'wait', text: 'Waiting for BB', cls: 'muted' });
+  // NOT "Waiting for BB". That is a phrase for people who already know it, and to everybody else it
+  // says that something is wrong with them while withholding the one useful fact — that they are
+  // about to be dealt in and need do nothing.
+  if (waiting) tags.push({ key: 'wait', text: DEALT_IN_SOON, cls: 'muted' });
   if (p.last && !folded) tags.push({ key: 'last', text: actionBadge(p.last), cls: 'last' });
 
   const puck = p.isButton ? { t: 'D', title: 'Dealer button' } : p.isSmallBlind ? { t: 'SB', title: 'Small blind' } : p.isBigBlind ? { t: 'BB', title: 'Big blind' } : null;

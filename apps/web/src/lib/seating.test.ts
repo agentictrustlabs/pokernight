@@ -6,7 +6,7 @@
  * truth was that no hand existed and none could start.
  */
 import { describe, expect, it } from 'vitest';
-import { MIN_PLAYERS_TO_DEAL, dealState, satOutAction, satOutHeadline, sitOutNotice } from './seating';
+import { DEALT_IN_SOON, MIN_PLAYERS_TO_DEAL, dealState, satOutAction, satOutHeadline, sitOutNotice, waitingToBeDealtIn } from './seating';
 import { emptyView, flopView, seat } from './mockServer';
 
 describe('dealState', () => {
@@ -98,6 +98,51 @@ describe('dealState', () => {
  * Which control a sat-out player is offered. The rule is the whole fix for "the game is stuck": an
  * action that cannot help is worse than no action, because it looks like the fix.
  */
+/**
+ * The third silence: seated, sitting in, with chips, and still not in the hand.
+ *
+ * A newcomer joins at the big blind, which is an ordinary card-room rule. It was on screen as
+ * "Waiting for BB" — a phrase for people who already know it, which told everybody else that
+ * something was wrong with them and withheld the one thing that mattered: that they are about to be
+ * dealt in and need do nothing.
+ */
+describe('waiting to be dealt in', () => {
+  const waiting = (n: number) => seat(n, `p-${n}`, 200, { waitingForBigBlind: true });
+
+  it('says so in a sentence, not in two letters', () => {
+    const view = emptyView([seat(0, 'p-alice', 200), seat(1, 'p-bob', 200), waiting(3)], 3);
+    const line = waitingToBeDealtIn(view);
+    expect(line).toBeTruthy();
+    expect(line).toMatch(/big blind/i);
+    // The two things a person needs: roughly how long, and that there is nothing for them to do.
+    expect(line).toMatch(/hand or two/i);
+    expect(line).toMatch(/nothing to do/i);
+    expect(line).not.toContain('BB');
+  });
+
+  it('is about the VIEWER, never about somebody else at the table', () => {
+    const view = emptyView([seat(0, 'p-alice', 200), seat(1, 'p-bob', 200), waiting(3)], 0);
+    expect(waitingToBeDealtIn(view)).toBeNull();
+    expect(waitingToBeDealtIn(emptyView([seat(0, 'p-alice', 200)], null))).toBeNull();
+  });
+
+  it('promises no wait at a table too small to have one', () => {
+    // Two players are dealt in together whatever the blinds have done, so the flag can be set and
+    // the wait still not be coming. Saying "a hand or two" there would be a promise of a delay that
+    // is not going to happen.
+    expect(waitingToBeDealtIn(emptyView([seat(0, 'p-alice', 200), waiting(1)], 1))).toBeNull();
+  });
+
+  it('says nothing to somebody who is sitting out, who has a different problem', () => {
+    const out = seat(3, 'p-3', 200, { waitingForBigBlind: true, status: 'sitting-out' });
+    expect(waitingToBeDealtIn(emptyView([seat(0, 'p-alice', 200), seat(1, 'p-bob', 200), out], 3))).toBeNull();
+  });
+
+  it('has a badge that is words rather than an abbreviation', () => {
+    expect(DEALT_IN_SOON).toBe('Dealt in soon');
+  });
+});
+
 describe('satOutAction', () => {
   it('offers a rebuy — never a sit-in — to a player with no chips', () => {
     expect(satOutAction(0)).toBe('rebuy');

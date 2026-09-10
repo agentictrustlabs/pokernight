@@ -42,6 +42,50 @@ describe('reduce: welcome', () => {
   });
 });
 
+/**
+ * A socket that deals a game this client cannot draw.
+ *
+ * This is the guard behind a real crash: a canasta table was listed in the lobby, somebody clicked
+ * Join, and the poker board mounted against a canasta view and died reading `config.bigBlind` off
+ * an object with no config. The page now refuses to draw such a table — and so, before it, does
+ * this reducer, so that no component can be handed the payload whatever a page forgets to check.
+ */
+describe('reduce: a game this client does not draw', () => {
+  const otherGame = (msg: ServerMessage): ServerMessage => ({ ...msg, game: 'canasta' }) as ServerMessage;
+
+  it('keeps the table and the game, and drops the view', () => {
+    const s = reduce(initialState, otherGame(welcome(flopView(0))));
+    expect(s.tableId).toBe('t-1');
+    expect(s.game).toBe('canasta');
+    expect(s.playerId).toBe('p-alice');
+    expect(s.view).toBeNull();
+    expect(s.turn).toBeNull();
+    expect(s.connection).toBe('open');
+  });
+
+  it('ignores every later frame that carries a view', () => {
+    let s = reduce(initialState, otherGame(welcome(emptyView())));
+    s = reduce(s, { type: 'snapshot', view: flopView(0), names: {} } as ServerMessage);
+    s = reduce(s, event({ type: 'hand-started', handNo: 7, seedCommit: 'x', button: 0, seats: [0] }, flopView(0)));
+    s = reduce(s, turn(flopView(0)));
+    expect(s.view).toBeNull();
+    expect(s.turn).toBeNull();
+    expect(s.log).toHaveLength(0);
+  });
+
+  it('still shows an error, because a refusal is the one thing the player can act on', () => {
+    let s = reduce(initialState, otherGame(welcome(emptyView())));
+    s = reduce(s, { type: 'error', code: 'seat-taken', message: 'that seat is taken' });
+    expect(s.error?.code).toBe('seat-taken');
+  });
+
+  it('names poker when the host is older than named games', () => {
+    const s = reduce(initialState, welcome(emptyView()));
+    expect(s.game).toBe('poker');
+    expect(s.view).not.toBeNull();
+  });
+});
+
 describe('reduce: turn', () => {
   it('records the turn with its deadline', () => {
     const v = flopView(0);

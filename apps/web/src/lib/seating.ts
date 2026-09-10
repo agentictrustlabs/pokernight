@@ -85,6 +85,35 @@ export function dealState(view: Pick<TableView, 'seats' | 'hand'>): DealState {
   return { handRunning, activeCount, seatedCount, brokeCount, waiting };
 }
 
+/* ------------------------------------------------- why am I not being dealt in? */
+
+/**
+ * The sentence for a player who is seated, sitting in, has chips — and is still not in the hand.
+ *
+ * A newcomer is not dealt into a hand that is already under way, and joins when the big blind
+ * reaches their seat. That is an ordinary card-room rule and the reason for it is fair: dealing
+ * somebody in just after the blinds have passed them lets them play a lap for nothing.
+ *
+ * IT WAS ON SCREEN AS "Waiting for BB", which is a phrase for people who already know it. Somebody
+ * who does not is told, in two words they cannot look up, that something is wrong with them — and
+ * the thing they actually need to know, that they are about to be dealt in and need do nothing, is
+ * not said at all. This is that thing, said.
+ *
+ * Null when it does not apply, which is the ordinary case.
+ */
+export function waitingToBeDealtIn(view: Pick<TableView, 'seats' | 'viewerSeat' | 'hand'>): string | null {
+  const me = view.viewerSeat == null ? null : view.seats.find((s) => s.seat === view.viewerSeat);
+  if (!me || !me.waitingForBigBlind || me.status !== 'active') return null;
+  // Two people at a table are dealt in together whatever the blinds have done, so a table this small
+  // never leaves anybody out and saying otherwise would be a promise of a wait that is not coming.
+  const others = view.seats.filter((s) => s.seat !== me.seat && s.status === 'active' && s.stack > 0);
+  if (others.length < MIN_PLAYERS_TO_DEAL) return null;
+  return 'You sat down after this hand began. You are dealt in when the big blind reaches your seat — a hand or two. Nothing to do.';
+}
+
+/** The same fact in two words, for the badge on a seat. */
+export const DEALT_IN_SOON = 'Dealt in soon';
+
 /* ------------------------------------------------------- why am I sitting out? */
 
 /**

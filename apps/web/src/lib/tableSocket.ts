@@ -6,6 +6,7 @@
  * WebSocket with reconnect/backoff and is injectable for tests.
  */
 import type { Card, ClientCommand, HandResult, LegalActions, PlayerInfo, ServerMessage, TableEvent, TableView } from './types';
+import { DRAWN_GAME, drawsGame } from './games';
 
 /* ------------------------------------------------------------------ state */
 
@@ -30,6 +31,13 @@ export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'closed'
 
 export interface TableState {
   tableId: string | null;
+  /**
+   * The game this table deals, from the socket's own first frame. Null until it arrives.
+   *
+   * Read it before reading `view`: this reducer keeps a view only for the game it draws, so on a
+   * table dealing anything else `view` stays null forever and the page has this to say why.
+   */
+  game: string | null;
   /** The viewer's player id as the server sees it (null for anonymous spectators). */
   playerId: string | null;
   view: TableView | null;
@@ -50,6 +58,7 @@ export const LOG_LIMIT = 50;
 
 export const initialState: TableState = {
   tableId: null,
+  game: null,
   playerId: null,
   view: null,
   names: {},
@@ -109,11 +118,23 @@ export function seedLog(view: TableView): TableEvent[] {
 
 /** Pure: `state` is never mutated. */
 export function reduce(state: TableState, msg: ServerMessage): TableState {
+  // A table dealing a game this client cannot draw gets its identity kept and its GAME payloads
+  // dropped on the floor. Every view, legal-action set and game event on that socket is shaped for
+  // rules these components do not know, and the components have no way to tell: they would read a
+  // canasta round as a poker hand and crash on the first field that is not there. Refusing the
+  // payload here means no board can ever be handed one, whatever a future page forgets to check.
+  const known = drawsGame(msg.type === 'welcome' ? (msg.game ?? DRAWN_GAME) : state.game);
+  if (!known && msg.type !== 'welcome' && msg.type !== 'error' && msg.type !== 'pong') return state;
   switch (msg.type) {
     case 'welcome':
+      if (!known) {
+        // Enough to name the table and say what it deals, and not one field more.
+        return { ...state, tableId: msg.tableId, game: msg.game ?? DRAWN_GAME, playerId: msg.playerId, view: null, turn: null, connection: 'open' };
+      }
       return {
         ...state,
         tableId: msg.tableId,
+        game: msg.game ?? DRAWN_GAME,
         playerId: msg.playerId,
         view: msg.view,
         names: { ...state.names, ...msg.names },
@@ -249,9 +270,17 @@ export interface SocketLike {
 }
 export type SocketFactory = (url: string) => SocketLike;
 
-export interface TableSocketOptions {
+/**
+ * The TRANSPORT is the host's and knows no game.
+ *
+ * `M` is whichever binding of the wire the page speaks — poker's by default, because every caller
+ * but one speaks poker. A canasta page passes `CanastaServerMessage` and gets the same reconnect,
+ * the same backoff and the same keepalive, because none of that has ever depended on the payloads.
+ * The narrowing happens once, here, at the app's socket boundary, exactly as the protocol says.
+ */
+export interface TableSocketOptions<M = ServerMessage> {
   url: string;
-  onMessage: (msg: ServerMessage) => void;
+  onMessage: (msg: M) => void;
   onStatus?: (status: ConnectionStatus) => void;
   /** Injected for tests; defaults to the browser WebSocket. */
   factory?: SocketFactory;
@@ -267,16 +296,16 @@ export interface TableSocketOptions {
 
 const OPEN = 1;
 
-export class TableSocket {
+export class TableSocket<M = ServerMessage> {
   private ws: SocketLike | null = null;
   private closed = false;
   private attempt = 0;
   private reconnectHandle: unknown = null;
   private pingHandle: unknown = null;
   private queue: string[] = [];
-  private readonly opts: Required<Omit<TableSocketOptions, 'onStatus'>> & Pick<TableSocketOptions, 'onStatus'>;
+  private readonly opts: Required<Omit<TableSocketOptions<M>, 'onStatus'>> & Pick<TableSocketOptions<M>, 'onStatus'>;
 
-  constructor(options: TableSocketOptions) {
+  constructor(options: TableSocketOptions<M>) {
     this.opts = {
       factory: (url) => new WebSocket(url) as unknown as SocketLike,
       setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
@@ -314,8 +343,10 @@ export class TableSocket {
       this.startPing();
     };
     ws.onmessage = (ev) => {
+      // Parsed structurally — the envelope is checked, the payload is the game's and is carried
+      // whole. `M` is the binding this page reads it as, and the page is the thing that knows.
       const msg = parseServerMessage(ev.data);
-      if (msg) this.opts.onMessage(msg);
+      if (msg) this.opts.onMessage(msg as unknown as M);
     };
     ws.onerror = () => {
       /* onclose follows; nothing to do here */
@@ -328,7 +359,7 @@ export class TableSocket {
       if (ev.code === 4401 || ev.code === 4403) {
         this.closed = true;
         this.opts.onStatus?.('closed');
-        this.opts.onMessage({ type: 'error', code: 'unauthenticated', message: ev.reason || 'connection refused' });
+        this.opts.onMessage({ type: 'error', code: 'unauthenticated', message: ev.reason || 'connection refused' } as unknown as M);
         return;
       }
       this.scheduleReconnect();

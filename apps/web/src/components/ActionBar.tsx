@@ -3,6 +3,7 @@ import type { Action, LegalActions, TableView } from '../lib/types';
 import type { TurnState } from '../lib/tableSocket';
 import { fmtChips, potOdds, secondsLeft } from '../lib/format';
 import { dualAmount, type TableRate } from '../lib/money';
+import { waitingToBeDealtIn } from '../lib/seating';
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -118,7 +119,16 @@ export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null }: Ac
    * running, say that instead; it is both true and the thing that explains the silence.
    */
   const handRunning = view.hand != null && view.hand.result == null;
-  const idleTitle = handRunning ? (waitingOn ? `Waiting for ${waitingOn}` : 'Not your turn') : 'No hand running';
+  // A newcomer who is not in this hand is not having a turn they missed — they are not in it at all,
+  // and "Not your turn" sends them looking for one. Their own state comes first.
+  const notDealtIn = waitingToBeDealtIn(view) != null;
+  const idleTitle = notDealtIn
+    ? 'Dealt in shortly'
+    : handRunning
+      ? waitingOn
+        ? `Waiting for ${waitingOn}`
+        : 'Not your turn'
+      : 'No hand running';
 
   return (
     <section className={`actions panel${live ? ' live' : ''}`} aria-label="Your action">
