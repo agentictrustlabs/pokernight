@@ -185,5 +185,10 @@ describe('invariants under random play', () => {
     expect(handsPlayed).toBe(HANDS);
     expect(showdowns).toBeGreaterThan(HANDS / 10);
     expect(sidePots).toBeGreaterThan(HANDS / 50);
-  });
+    // EXPLICIT, because two thousand hands is legitimately slower than vitest's five-second default:
+    // about two seconds alone and well past five under a full suite. It passed when run on its own and
+    // failed when everything ran together — and turbo replays a cached pass as a pass, so `pnpm test`
+    // reported green while `pnpm test --force` did not. Sixty seconds is a backstop against a hang,
+    // not a performance budget.
+  }, 60_000);
 });
