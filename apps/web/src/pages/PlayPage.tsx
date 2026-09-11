@@ -25,7 +25,7 @@ export function PlayPage({ session }: { session: AppSession }) {
   return (
     <div className="play">
       <PracticeCard session={session} game="canasta" />
-      <PracticeCard session={session} game="texas-holdem" />
+      <PracticeCard session={session} game="poker" />
       <Running session={session} />
     </div>
   );
@@ -39,7 +39,7 @@ const PITCH: Record<string, { title: string; blurb: string; cta: string }> = {
       'Your own table, with three of the house players and somebody talking you through every move — what to draw, what to keep, and why a three is worth putting down. Leave whenever you like; it is still here, and one press deals a new game.',
     cta: 'Deal me in',
   },
-  'texas-holdem': {
+  poker: {
     title: 'Play hold’em against the house',
     blurb:
       'Your own table and the house players, for play money. No buy-in, no authorisation, nothing to set up — it is the same engine the money tables run, so what works here works there.',

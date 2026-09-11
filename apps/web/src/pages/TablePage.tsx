@@ -22,6 +22,8 @@ import { OtherGame } from '../components/OtherGame';
 import { Table } from '../components/Table';
 import { drawsGame } from '../lib/games';
 import { Toast } from '../components/Toast';
+import { PokerCoach } from '../components/PokerCoach';
+import type { AgentListing } from '../lib/api';
 
 /**
  * The treasury view changes when money moves or the player acts, both of which this page knows about
@@ -31,13 +33,31 @@ import { Toast } from '../components/Toast';
  */
 const TREASURY_POLL_MS = 15_000;
 
+/**
+ * What a learner is given at their own practice table. The top of the buy-in range rather than the
+ * bottom: a beginner who busts in three hands has learnt nothing except that they busted, and this
+ * table settles nothing, so there is no argument for keeping them short.
+ */
+const PRACTICE_STACK = 200;
+/** Enough other players that position, folding and a multi-way pot all exist. Three is a real game. */
+const PRACTICE_OPPONENTS = 3;
+
 export function TablePage({
   tableId,
+  practice = false,
   session,
   config,
   onSignOut,
 }: {
   tableId: string;
+  /**
+   * Set the table up on arrival — a seat, the house players in the other chairs, the coach on.
+   *
+   * From `?practice=1`, which is only ever on the link the "deal me in" button builds. Deliberately
+   * NOT "is this my practice table": a bookmark to your own table, or a link you typed, should open
+   * the table you left rather than quietly reseating you and switching the coach back on.
+   */
+  practice?: boolean;
   session: AppSession | null;
   /** `GET /auth/config`, so the set-up card can send a player to their own Home and back. */
   config: AuthConfig | null;
@@ -123,8 +143,56 @@ export function TablePage({
   // Whether a settled seat would be allowed right now, from the one read above.
   const ready = stakeStage(treasury) === 'ready';
 
+  /** The viewer's own seat. `viewerSeat` is the table's answer, so it is never inferred from a name. */
+  const mySeat = state.view?.viewerSeat ?? null;
+
   const send = useCallback((c: ClientCommand) => sockRef.current?.send(c), []);
   const onDismiss = useCallback(() => setState((s) => dismissError(s)), []);
+
+  /**
+   * Set a practice table up, once, on arrival — the same errand canasta's page runs, and for the same
+   * reason: sitting down, finding the house players and switching the coach on are three chores
+   * between "deal me in" and a hand, and the practice table exists to remove them.
+   *
+   * Guarded by a ref rather than state so a re-render cannot do it twice, and it stops as soon as
+   * somebody is seated, so re-opening a table you already sit at changes nothing.
+   */
+  const setUp = useRef(false);
+  useEffect(() => {
+    if (!practice || !session || setUp.current) return;
+    const seats = state.view?.seats;
+    if (!seats) return; // no view yet: nothing to set up against
+    setUp.current = true;
+    void (async () => {
+      const cap = state.view?.config.seats ?? 6;
+      const taken = new Set(seats.map((s) => s.seat));
+      const seatIHave = seats.find((s) => s.playerId === state.playerId)?.seat ?? null;
+      let free = Array.from({ length: cap }, (_, n) => n).filter((n) => !taken.has(n));
+      if (seatIHave === null && free.length > 0) {
+        send({ type: 'join', seat: free[0] as number, buyIn: PRACTICE_STACK });
+        free = free.slice(1);
+      }
+      if (free.length === 0) return;
+      try {
+        const { agents } = await api.listAgents('poker');
+        for (let i = 0; i < Math.min(free.length, agents.length, PRACTICE_OPPONENTS); i++) {
+          await api.seatAgent(
+            tableId,
+            {
+              seat: free[i] as number,
+              buyIn: PRACTICE_STACK,
+              agentName: (agents[i] as AgentListing).agentName,
+              displayName: (agents[i] as AgentListing).displayName,
+            },
+            session.token,
+          );
+        }
+      } catch {
+        // The seats stay empty and the table's own panels offer them by hand. A practice table that
+        // could not fill itself is still a table.
+      }
+    })();
+  }, [practice, send, session, state.playerId, state.view?.config.seats, state.view?.seats, tableId]);
 
   const ctx = useMemo(() => {
     const bySeat = new Map<number, string>();
@@ -201,6 +269,27 @@ export function TablePage({
             treasury={treasury}
             onChanged={loadTreasury}
           />
+          {/* THE COACH SITS ABOVE THE LOG while it is on, because when it is on it is the reason the
+              person is at this table. Only offered to somebody actually holding a seat: there is
+              nothing to advise a spectator about, and the card room refuses to answer for one. */}
+          {mySeat != null ? (
+            <PokerCoach
+              tableId={tableId}
+              session={session}
+              view={state.view}
+              viewerSeat={mySeat}
+              myTurn={state.view?.hand?.toAct === mySeat && !state.view?.hand?.result}
+              handNo={state.view?.hand?.handNo ?? state.view?.handNo ?? 0}
+              street={state.view?.hand?.street ?? null}
+              log={state.log}
+              logSeq={state.logSeq}
+              ctx={ctx}
+              /* At a practice table the coach IS the point, so it starts on rather than waiting to be
+                 found. Anywhere else it stays off until somebody asks for it. */
+              startOn={practice ? 'play' : 'off'}
+              send={send}
+            />
+          ) : null}
           <LogPanel log={state.log} ctx={ctx} canChat={session != null} onChat={(text) => send({ type: 'chat', text })} />
         </aside>
         ) : null}

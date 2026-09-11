@@ -46,6 +46,15 @@ export interface TableState {
   players: Record<string, PlayerInfo>;
   /** Latest events, oldest first, capped at LOG_LIMIT. */
   log: TableEvent[];
+  /**
+   * How many events have EVER arrived.
+   *
+   * Not the same as `log.length`, which is why it exists: the log is capped, so once it is full its
+   * length stops changing and anything that used it as a position in the stream silently stops seeing
+   * new events. The coach narrates from this — "how many since I last looked" — which is a question
+   * a capped array cannot answer about itself.
+   */
+  logSeq: number;
   /** Set while it is the viewer's turn. */
   turn: TurnState | null;
   error: { code: string; message: string } | null;
@@ -64,6 +73,7 @@ export const initialState: TableState = {
   names: {},
   players: {},
   log: [],
+  logSeq: 0,
   turn: null,
   error: null,
   lastHand: null,
@@ -131,20 +141,27 @@ export function reduce(state: TableState, msg: ServerMessage): TableState {
         // Enough to name the table and say what it deals, and not one field more.
         return { ...state, tableId: msg.tableId, game: msg.game ?? DRAWN_GAME, playerId: msg.playerId, view: null, turn: null, connection: 'open' };
       }
-      return {
-        ...state,
-        tableId: msg.tableId,
-        game: msg.game ?? DRAWN_GAME,
-        playerId: msg.playerId,
-        view: msg.view,
-        names: { ...state.names, ...msg.names },
-        players: { ...state.players, ...msg.players },
-        turn: turnFromView(msg.view),
-        lastHand: lastHandFromView(msg.view, state.lastHand),
+      {
         // Only seed on a first join; a reconnect keeps whatever the client already saw.
-        log: state.log.length === 0 ? seedLog(msg.view) : state.log,
-        connection: 'open',
-      };
+        const seeded = state.log.length === 0 ? seedLog(msg.view) : null;
+        return {
+          ...state,
+          tableId: msg.tableId,
+          game: msg.game ?? DRAWN_GAME,
+          playerId: msg.playerId,
+          view: msg.view,
+          names: { ...state.names, ...msg.names },
+          players: { ...state.players, ...msg.players },
+          turn: turnFromView(msg.view),
+          lastHand: lastHandFromView(msg.view, state.lastHand),
+          log: seeded ?? state.log,
+          // The seeded history is NOT narration: it already happened, before this person was looking.
+          // Counting it in means the coach starts from now rather than reading the whole hand out as
+          // though it were arriving.
+          logSeq: seeded ? seeded.length : state.logSeq,
+          connection: 'open',
+        };
+      }
     case 'snapshot':
       return {
         ...state,
@@ -208,7 +225,7 @@ export function reduce(state: TableState, msg: ServerMessage): TableState {
       if (ev.type === 'turn' && msg.view.hand && msg.view.viewerSeat === ev.seat && ev.seat === msg.view.hand.toAct) {
         turn = { handNo: msg.view.hand.handNo, seat: ev.seat, legal: ev.legal, deadline: msg.view.hand.actionDeadline };
       }
-      return { ...state, view: msg.view, names, players, log: appendLog(state.log, ev), turn, lastHand };
+      return { ...state, view: msg.view, names, players, log: appendLog(state.log, ev), logSeq: state.logSeq + 1, turn, lastHand };
     }
     case 'turn':
       return { ...state, turn: { handNo: msg.handNo, seat: msg.seat, legal: msg.legal, deadline: msg.deadline } };

@@ -31,9 +31,16 @@ import type { Action, EngineEvent, TableConfig, TableState, TableView } from './
 
 export const POKER_GAME_ID = 'poker';
 
-/** The action shapes the engine accepts. Parsed here rather than at the host, because which actions
- *  are legal at all is the game's question and only the game can answer it. */
-const ACTION_TYPES = new Set(['fold', 'check', 'call', 'bet', 'raise', 'allin']);
+/**
+ * The action shapes the engine accepts. Parsed here rather than at the host, because which actions
+ * are legal at all is the game's question and only the game can answer it.
+ *
+ * SPELLED EXACTLY AS THE `Action` UNION SPELLS IT. This list read `allin` while the union, the wire
+ * schema and every strategy in the workspace say `all-in` — so an agent that shoved was told "all-in
+ * is not something you can do at a poker table" by the one function whose job is to know that it is.
+ * Nothing caught it because only the A2A seat path and the coach's suggested move come through here.
+ */
+const ACTION_TYPES = new Set(['fold', 'check', 'call', 'bet', 'raise', 'all-in']);
 
 function seatSnapshot(s: TableState['seats'][number]): SeatSnapshot {
   return { seat: s.seat, playerId: s.playerId, stack: s.stack, status: s.status, timeouts: s.timeouts };

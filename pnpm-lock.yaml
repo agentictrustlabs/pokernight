@@ -154,6 +154,9 @@ importers:
       '@agenticprimitives/types':
         specifier: link:../../../agenticprimitives/packages/types
         version: link:../../../agenticprimitives/packages/types
+      '@pokernight/agent-kit':
+        specifier: workspace:*
+        version: link:../../packages/agent-kit
       '@pokernight/canasta':
         specifier: workspace:*
         version: link:../../packages/canasta

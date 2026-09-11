@@ -30,7 +30,8 @@
     "@pokernight/table-game": "workspace:*",
     "@pokernight/canasta": "workspace:*",
     "@agenticprimitives/agent-naming": "link:../../../agenticprimitives/packages/agent-naming",
-    "@pokernight/canasta-agent": "workspace:*"
+    "@pokernight/canasta-agent": "workspace:*",
+    "@pokernight/agent-kit": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.8.0",

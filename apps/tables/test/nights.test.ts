@@ -30,7 +30,7 @@ const THURSDAYS = {
   startLocal: '20:00',
   timezone: 'America/Denver',
   recurrence: { kind: 'weekly', weekdays: ['thu'] },
-  defaults: { title: 'Thursday Night', seatCap: 8, game: 'texas-holdem' },
+  defaults: { title: 'Thursday Night', seatCap: 8, game: 'poker' },
 };
 
 /** A club, its host, and somebody on the roster who is not. */
@@ -96,7 +96,7 @@ describe('setting one materialises the nights', () => {
   it('carries the schedule’s defaults onto each night', async () => {
     const { club, host } = await clubWithMember();
     const { nights } = (await (await setSchedule(club, THURSDAYS, host.token)).json()) as { nights: Night[] };
-    expect(nights[0]).toMatchObject({ title: 'Thursday Night', seatCap: 8, game: 'texas-holdem' });
+    expect(nights[0]).toMatchObject({ title: 'Thursday Night', seatCap: 8, game: 'poker' });
   });
 
   it('is IDEMPOTENT — reading the nights again materialises nothing new', async () => {

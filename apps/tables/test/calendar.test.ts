@@ -22,7 +22,7 @@ const THURSDAYS = {
   startLocal: '20:00',
   timezone: 'America/Denver',
   recurrence: { kind: 'weekly', weekdays: ['thu'] },
-  defaults: { title: 'Thursday Night', game: 'texas-holdem' },
+  defaults: { title: 'Thursday Night', game: 'poker' },
 };
 
 /** A club with a schedule, its host, and a member. */

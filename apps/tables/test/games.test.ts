@@ -275,3 +275,54 @@ describe('the patience a game asks for', () => {
     expect(pokerGame.maxTimeouts).toBeUndefined();
   });
 });
+
+/**
+ * BOTH GAMES HAVE A COACH, and it answers the same three things in both.
+ *
+ * Poker's was added second, and the reason it was added is worth writing down: the front door offers
+ * "learn canasta" and "play hold'em", and for a while only one of the two had anybody to learn from.
+ * A learning table with no coach is just a table you lose at alone.
+ */
+describe('the coach', () => {
+  /** Deal a hand between two seats and hand back the state, so advice has a spot to be about. */
+  function pokerHandInProgress() {
+    const game = gameFor('poker');
+    let state = game.create({ seats: 6, smallBlind: 1, bigBlind: 2, minBuyIn: 40, maxBuyIn: 200 });
+    state = game.sitDown(state, 0, 'learner', 200);
+    state = game.sitDown(state, 1, 'house', 200);
+    expect(game.canStart(state)).toBe(true);
+    state = game.start(state, new Uint8Array(32).fill(7)).state;
+    return { game, state };
+  }
+
+  it('advises the seat it is asked about, with a move and a reason', () => {
+    const { game, state } = pokerHandInProgress();
+    const toAct = game.snapshot(state).toAct as number;
+    const advice = game.advise?.(state, toAct);
+    expect(advice).not.toBeNull();
+    // A move the table will actually take, said in words a person can read.
+    expect(game.parseAction(advice?.action).ok).toBe(true);
+    expect(advice?.say.length).toBeGreaterThan(0);
+    expect(advice?.because.length).toBeGreaterThan(0);
+  });
+
+  it('answers the same thing twice, because advice that moves when you ask again is not advice', () => {
+    const { game, state } = pokerHandInProgress();
+    const toAct = game.snapshot(state).toAct as number;
+    expect(game.advise?.(state, toAct)).toEqual(game.advise?.(state, toAct));
+  });
+
+  it('has nothing to say to a seat whose turn it is not', () => {
+    // The coach is about the decision in front of somebody. Out of turn there is no decision, and
+    // inventing one would be advice about a spot that will have changed by the time it arrives.
+    const { game, state } = pokerHandInProgress();
+    const toAct = game.snapshot(state).toAct as number;
+    const other = [0, 1].find((s) => s !== toAct) as number;
+    expect(game.advise?.(state, other)).toBeNull();
+  });
+
+  it('is offered by both games this card room deals', () => {
+    expect(typeof gameFor('poker').advise).toBe('function');
+    expect(typeof gameFor('canasta').advise).toBe('function');
+  });
+});

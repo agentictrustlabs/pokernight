@@ -494,6 +494,11 @@ export function Coach({
 /**
  * WHOSE ADVICE THIS IS — the house's coach, or an agent of the person's own.
  *
+ * EXPORTED, and the one piece of the coach that both games share. Naming your own adviser is a fact
+ * about you rather than about canasta: the same agent advises you at either table, the card room
+ * checks the same card for the game's own advise skill, and the wire is identical. A second copy of
+ * this form in the poker coach would be a second place for that sentence to drift.
+ *
  * The card room's coach is one strategy and the same for everybody. A person's own agent carries
  * THEIR style, written as their own artifacts somewhere the card room never reaches; naming it here
  * says where to ask and nothing else.
@@ -501,7 +506,7 @@ export function Coach({
  * Folded, because the house coach is the right answer for almost everybody and a card table is not
  * the place to meet a configuration form. Open, it is one field.
  */
-function Adviser({
+export function Adviser({
   tableId,
   session,
   adviser,

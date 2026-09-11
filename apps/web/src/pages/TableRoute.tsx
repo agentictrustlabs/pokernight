@@ -77,7 +77,7 @@ export function TableRoute({
 
   if (game === null) return <div className="page"><p className="hint">Opening the table…</p></div>;
   if (game === 'canasta') return <CanastaPage tableId={tableId} practice={practice} session={session} onSignOut={onSignOut} />;
-  if (drawsGame(game)) return <TablePage tableId={tableId} session={session} config={config} onSignOut={onSignOut} />;
+  if (drawsGame(game)) return <TablePage tableId={tableId} practice={practice} session={session} config={config} onSignOut={onSignOut} />;
 
   return (
     <div className="page">
