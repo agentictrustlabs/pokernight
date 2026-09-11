@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSession, ClientCommand } from '../lib/types';
 import type { CanastaServerMessage } from '../lib/canastaSocket';
-import { ApiError, api, type AgentListing } from '../lib/api';
+import { ApiError, api, costsTokens, type AgentListing } from '../lib/api';
 import { tableSocketUrl } from '../lib/api';
 import { TableSocket } from '../lib/tableSocket';
 import {
@@ -192,7 +192,10 @@ export function CanastaPage({
       }
       if (free.length === 0) return;
       try {
-        const { agents } = await api.listAgents('canasta');
+        // Rules-based only, for the same reason as the poker page: a practice table must not spend
+        // language-model tokens on opponents nobody chose. (Today every canasta persona is rules-based;
+        // the filter is what keeps that true if one is not.)
+        const agents = (await api.listAgents('canasta')).agents.filter((a) => !costsTokens(a));
         for (let i = 0; i < Math.min(free.length, agents.length); i++) {
           await api.seatAgent(
             tableId,
@@ -564,7 +567,10 @@ function FillSeats({ tableId, session, empty, mySeat }: { tableId: string; sessi
     let alive = true;
     api
       .listAgents('canasta')
-      .then((r) => alive && setAgents(r.agents))
+      // Free players first. Filling takes from the top of the list, so the order IS the policy: a
+      // rules-based agent costs nothing per turn and a language-model one costs tokens every turn,
+      // and nobody pressing "fill the table" chose to spend them.
+      .then((r) => alive && setAgents([...r.agents.filter((a) => !costsTokens(a)), ...r.agents.filter(costsTokens)]))
       .catch(() => alive && setAgents([]));
     return () => {
       alive = false;

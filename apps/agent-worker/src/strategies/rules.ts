@@ -18,7 +18,7 @@ import type { Action } from '@pokernight/engine';
 import type { PokerActInput, PokerActOutput } from '@pokernight/protocol';
 import type { Strategy, StrategyContext } from './types.js';
 
-export type RulesStyle = 'tight-aggressive' | 'loose-passive';
+export type RulesStyle = 'tight-aggressive' | 'loose-passive' | 'tight-passive';
 
 export interface StyleBias {
   /** Maps a uniform sample before `decide` sees it. Identity keeps the baseline frequencies. */
@@ -36,6 +36,11 @@ export const STYLES: Record<RulesStyle, StyleBias> = {
   'tight-aggressive': { rng: (u) => u, callOddsCeiling: 0, callStackCeiling: 0, aggression: 1 },
   // Calls three times as wide, and only one raise in five survives.
   'loose-passive': { rng: (u) => 0.65 + u * 0.35, callOddsCeiling: 0.42, callStackCeiling: 0.2, aggression: 0.2 },
+  // THE ROCK. The baseline's narrow range, and then most of its raises flattened to calls: it waits
+  // for a hand and then does not tell you it has one. Exists so a practice table can be four-handed
+  // without a language model in a chair — three rules-based players, three different mistakes to
+  // learn to punish, and nothing spent per turn.
+  'tight-passive': { rng: (u) => u, callOddsCeiling: 0, callStackCeiling: 0, aggression: 0.3 },
 };
 
 export interface RulesOptions extends DecideOptions {

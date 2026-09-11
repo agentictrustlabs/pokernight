@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSession, ClientCommand } from '../lib/types';
 import type { CanastaTableEvent, CanastaView } from '../lib/canasta';
-import { ApiError, advertises, api, type AgentListing, type CoachAdvice } from '../lib/api';
+import { ApiError, advertises, api, costsTokens, type AgentListing, type CoachAdvice } from '../lib/api';
 import { adviseSkillFor } from '../lib/games';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { alertsFor, newAlerts } from '../lib/alerts';
@@ -630,6 +630,9 @@ export function Adviser({
               <li key={a.agentName}>
                 <button type="button" disabled={busy} onClick={() => void ask(a.agentName)}>
                   {a.displayName}
+                  {/* SAID BEFORE IT IS CHOSEN. A language-model adviser calls a model on every question,
+                      and that is a cost somebody should agree to rather than discover on a bill. */}
+                  {costsTokens(a) ? <span className="who-tag agent">language model · uses tokens</span> : <span className="who-tag">rules-based · free</span>}
                   <span className="hint">{a.description}</span>
                 </button>
               </li>

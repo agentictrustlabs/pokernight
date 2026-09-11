@@ -37,7 +37,7 @@ export interface Persona {
   game?: PersonaGame;
   strategy: StrategyName;
   /** Style knob for the rules strategy. Ignored by `claude`. */
-  style?: 'tight-aggressive' | 'loose-passive';
+  style?: 'tight-aggressive' | 'loose-passive' | 'tight-passive';
   /** System-prompt persona for the `claude` strategy. Ignored by `rules`. */
   persona?: string;
 }
@@ -60,6 +60,15 @@ export const PERSONAS: readonly Persona[] = [
       'Loose-passive rules variant: calls far too wide, almost never raises, and pays off value bets. The same engine as Sharkbot with the thresholds biased.',
     strategy: 'rules',
     style: 'loose-passive',
+  },
+  {
+    id: 'rock',
+    agentName: 'rock.svc',
+    displayName: 'The Rock',
+    description:
+      'Tight-passive rules variant: waits for a real hand and then calls with it rather than raising. Hard to bluff, easy to read, free to play against.',
+    strategy: 'rules',
+    style: 'tight-passive',
   },
   {
     id: 'deepthought',

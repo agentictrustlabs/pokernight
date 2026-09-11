@@ -49,6 +49,20 @@ export interface AgentListing {
   skills?: string[];
 }
 
+/**
+ * WHETHER SEATING OR ASKING THIS AGENT SPENDS LANGUAGE-MODEL TOKENS.
+ *
+ * The house personas are two kinds of thing under one name. A rules-based one costs nothing: the
+ * A2A hop is a subrequest to the card room's own Worker and the decision is a lookup. A Claude-backed
+ * one calls a model EVERY TURN — and a practice table filling its chairs from the top of the list was
+ * seating one without saying so, so every hand somebody played to learn was spending tokens on an
+ * opponent they had not chosen. The strategy label is the card room's own, so this is a fact rather
+ * than a guess; anything unrecognised is treated as costing, never as free.
+ */
+export function costsTokens(agent: AgentListing): boolean {
+  return agent.strategy !== 'rules';
+}
+
 /** Whether a listed agent advertises one particular skill. Absent skills mean no, never "probably". */
 export function advertises(agent: AgentListing, skill: string): boolean {
   return (agent.skills ?? []).includes(skill);
@@ -347,6 +361,9 @@ export const api = {
    */
   listAgents: (game: string) => request<{ agents: AgentListing[] }>(`/agents?game=${encodeURIComponent(game)}`, {}),
   /** Sit an agent down. The card room resolves it, fetches its card, and refuses one that cannot play. */
+  /** Stand an agent up and cash it out. Anybody signed in may; it is the house's seat, not a person's. */
+  unseatAgent: (tableId: string, seat: number, token: string) =>
+    request<unknown>(`/tables/${encodeURIComponent(tableId)}/seat-agent/${seat}`, { method: 'DELETE' }, token),
   seatAgent: (tableId: string, body: { seat: number; buyIn: number; agentName: string; displayName?: string }, token: string) =>
     request<{ seated: true }>(`/tables/${encodeURIComponent(tableId)}/seat-agent`, { method: 'POST', body: JSON.stringify(body) }, token),
   /** The people you already play with — everyone on the roster of a club of yours, but you. */

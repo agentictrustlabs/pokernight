@@ -23,7 +23,7 @@ import { Table } from '../components/Table';
 import { drawsGame } from '../lib/games';
 import { Toast } from '../components/Toast';
 import { PokerCoach } from '../components/PokerCoach';
-import type { AgentListing } from '../lib/api';
+import { costsTokens, type AgentListing } from '../lib/api';
 
 /**
  * The treasury view changes when money moves or the player acts, both of which this page knows about
@@ -187,27 +187,52 @@ export function TablePage({
         // a table that deals to everybody except you is the worst version of this screen.
         send({ type: 'sit-in' });
       }
-      if (free.length === 0) return;
+      // AN OPPONENT ALREADY SEATED THAT COSTS TOKENS IS STOOD UP. Practice tables filled from the top
+      // of the list before this rule existed, so an existing one has Deep Thought in a chair and is
+      // calling a model every turn it plays. Standing it up here is what makes the rule true for the
+      // tables already dealt, not only the next one — and it is a practice table, so nobody else's
+      // game is being rearranged.
+      const keep = new Set<string>();
+      for (const s of seats) {
+        const p = state.players[s.playerId];
+        if (p?.kind !== 'agent') continue;
+        if (p.agentKind && p.agentKind !== 'rules') {
+          await api.unseatAgent(tableId, s.seat, session.token).catch(() => {});
+          // The chair is NOT free yet: a seat left mid-hand comes free when the hand ends, so seating
+          // into it now is refused as taken. The replacement goes into a chair that is actually empty.
+        } else if (p.agentName) {
+          keep.add(p.agentName);
+        }
+      }
+      // How many opponents to add: up to the usual three, counting the free ones already here.
+      const want = Math.max(0, PRACTICE_OPPONENTS - keep.size);
+      if (free.length === 0 || want === 0) return;
       try {
-        const { agents } = await api.listAgents('poker');
-        for (let i = 0; i < Math.min(free.length, agents.length, PRACTICE_OPPONENTS); i++) {
-          await api.seatAgent(
-            tableId,
-            {
-              seat: free[i] as number,
-              buyIn: PRACTICE_STACK,
-              agentName: (agents[i] as AgentListing).agentName,
-              displayName: (agents[i] as AgentListing).displayName,
-            },
-            session.token,
-          );
+        // RULES-BASED OPPONENTS ONLY. A practice table is for learning, and learning should not spend
+        // language-model tokens on players nobody chose: the third name on the list is Claude-backed,
+        // and filling from the top was calling a model once per turn, every hand, unasked. Somebody
+        // who wants a language model at their table can seat one by hand, where it is labelled.
+        // Never the same agent twice: a table names an agent seat by the agent, so seating one that is
+        // already here is refused.
+        const agents = (await api.listAgents('poker')).agents.filter((a) => !costsTokens(a) && !keep.has(a.agentName));
+        let seated = 0;
+        for (const seat of free) {
+          if (seated >= want || seated >= agents.length) break;
+          const agent = agents[seated] as AgentListing;
+          try {
+            await api.seatAgent(tableId, { seat, buyIn: PRACTICE_STACK, agentName: agent.agentName, displayName: agent.displayName }, session.token);
+            seated += 1;
+          } catch {
+            // That chair was refused — taken between the view and the request, or not free after all.
+            // Try the next chair with the same agent rather than giving up on the whole table.
+          }
         }
       } catch {
         // The seats stay empty and the table's own panels offer them by hand. A practice table that
         // could not fill itself is still a table.
       }
     })();
-  }, [practice, send, session, state.playerId, state.view?.config.seats, state.view?.seats, tableId]);
+  }, [practice, send, session, state.playerId, state.players, state.view?.config.seats, state.view?.seats, tableId]);
 
   const ctx = useMemo(() => {
     const bySeat = new Map<number, string>();
