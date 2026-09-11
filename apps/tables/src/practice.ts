@@ -20,6 +20,7 @@
  */
 
 import type { Env } from './env.js';
+import { practiceConfigFor } from './games.js';
 
 /** The namespace, so this hash can never collide with any other id derived from a player. */
 const NS = 'pokernight:practice:v1';
@@ -67,7 +68,8 @@ export async function ensurePracticeTable(
     body: JSON.stringify({
       tableId,
       name: practiceTableName(playerName, game),
-      config: {},
+      // A learner's clock — the same one "start over" rebuilds with (`practiceConfigFor`).
+      config: practiceConfigFor(game),
       // Practice is practice. A table for learning a game settles nothing, whatever the game
       // normally does, and this is the one place that has to be decided rather than inherited.
       settlement: 'play-money',

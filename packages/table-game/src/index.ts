@@ -192,6 +192,15 @@ export interface TableGame<S = unknown, A = unknown, V = unknown, E = unknown, C
    * them a way of playing that will not work when they are on their own.
    */
   advise?(state: S, seat: number): Advice | null;
+  /**
+   * THE SEAT'S OWN READ, AS DATA — every number an adviser would otherwise have to work out.
+   *
+   * For an adviser that is a language model at somebody's Home: it reasons well over facts it is
+   * handed and badly over facts it must compute. The price of a call, the outs, position, the money
+   * behind, what the cards have made — deterministic, from `viewFor(state, seat)` and nothing else, so
+   * it discloses nothing the seat cannot see. Optional; a game with no read sends its view alone.
+   */
+  readFor?(state: S, seat: number): unknown;
 }
 
 /** What a coach says about one move: the move itself, one clause to speak, and the rule behind it. */

@@ -10,7 +10,7 @@
  * exactly as `LEGACY_CHIP_VALUE` is what tables older than the rate pin settle at.
  */
 
-import { decide, readHand } from '@pokernight/agent-kit';
+import { decide, handRead, readHand } from '@pokernight/agent-kit';
 import { canastaGame, legalFor as canastaLegalFor, viewFor as canastaViewFor, type CanastaState } from '@pokernight/canasta';
 import { chooseCanastaAction, explainMove } from '@pokernight/canasta-agent';
 import {
@@ -91,6 +91,15 @@ const pokerWithCoach: HostedGame = {
     const { say, because } = readHand(view, seat, legal);
     return { action, say, because };
   },
+  // The same facts as fields, for an adviser that reasons rather than looks up: the price, the outs,
+  // position, the money behind, what the cards have made. Handed these, a model at somebody's Home
+  // does not fold from the big blind when checking is free — which is what computing them wrong looked
+  // like, live.
+  readFor(state: unknown, seat: number): unknown {
+    const s = state as PokerState;
+    if (!s.hand || s.hand.toAct !== seat) return null;
+    return handRead(pokerViewFor(s, seat), seat, pokerLegalFor(s, seat));
+  },
 };
 
 // ONE LINE PER GAME. Each brings its own engine and its own adapter; neither knows the other.
@@ -114,4 +123,17 @@ export function gameFor(id: GameId | undefined): HostedGame {
   const game = registry.get(wanted);
   if (!game) throw new Error(`this card room does not deal "${wanted}" — it deals ${registry.ids().join(', ')}`);
   return game;
+}
+
+/**
+ * WHAT A PRACTICE TABLE IS SET TO, per game — one place, read on creation AND on "start over".
+ *
+ * Poker's default 30 s turn is right for a money table and wrong for the one table that exists to
+ * be learnt at: reading the advice, and the 15–20 s a person's own agent at their Home takes to write
+ * it, do not fit inside it. Canasta already runs 90 s by default for the same reason. `reset` used to
+ * rebuild from `{}`, so a practice table dealt again went back to the money clock — the setting was
+ * true for exactly one game per table.
+ */
+export function practiceConfigFor(id: GameId | undefined): Record<string, unknown> {
+  return (id ?? DEFAULT_GAME) === POKER_GAME_ID ? { actionTimeoutMs: 60_000 } : {};
 }

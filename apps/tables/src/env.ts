@@ -56,6 +56,9 @@ export interface Env {
   AGENT_CARD_ZONE: string;
   /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
   A2A_TIMEOUT_MS?: string;
+  /** How long ADVICE may take. Longer than a turn call: a person's own agent at their Home reasons
+   *  through a spot in 15–20 s, and advice is read by a person, not applied by a clock. */
+  A2A_ADVICE_TIMEOUT_MS?: string;
   /**
    * How long an agent's answer WAITS before it is applied, in ms. Default 1400; 0 disables.
    *
@@ -198,6 +201,20 @@ export const DEFAULT_AGENT_PACE_MS = 3500;
 export function a2aTimeoutMs(env: Env): number {
   const n = Number(env.A2A_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_A2A_TIMEOUT_MS;
+}
+
+/**
+ * The advice budget — its own number, because it is a different kind of wait.
+ *
+ * A turn call is inside a clock: an agent that is slow costs everybody at the table time, so 20 s is
+ * generous. Advice goes to ONE person's own agent at their Home, where a run that reasons through the
+ * spot takes 15–20 s, and the only thing waiting on it is that person's decision. Cut at 20 s, the
+ * best answers were the ones that timed out and fell back to the house. Defaults to 35 s.
+ */
+export const DEFAULT_A2A_ADVICE_TIMEOUT_MS = 35_000;
+export function a2aAdviceTimeoutMs(env: Env): number {
+  const n = Number(env.A2A_ADVICE_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_A2A_ADVICE_TIMEOUT_MS;
 }
 
 /** How long an agent's answer waits before it lands. `0` turns the pacing off entirely. */

@@ -11,10 +11,12 @@
  * "They have ace-king" is a lie with a rule of thumb behind it.
  */
 
-import type { LegalActions, TableView } from '@pokernight/engine';
+import type { Card, LegalActions, TableView } from '@pokernight/engine';
 // `inPosition` is this package's own: it walks the real order from the button rather than
 // re-deriving it. A second implementation of who acts last is a second chance to be wrong.
-import { inPosition } from './view.js';
+import { inPosition, raisesOnStreet } from './view.js';
+import { classifyPreflop } from './preflop.js';
+import { postflopStrength } from './strength.js';
 
 export interface Read {
   /** One sentence, mid-hand, for somebody with a clock running. */
@@ -110,4 +112,79 @@ export function readHand(view: TableView, seat: number, legal: LegalActions | nu
         : 'Your turn.';
 
   return { say, because: parts.join(' ') };
+}
+
+/**
+ * THE READ AS DATA — every number an adviser would otherwise have to work out from the view.
+ *
+ * `readHand` says the spot in sentences for a person. This says it in fields for an AGENT — a
+ * language model at somebody's Home reasoning about their hand. The difference between the two
+ * audiences is the whole reason this exists: a model reasons well over facts it is handed and badly
+ * over facts it must compute, and "fold 8-2 from the big blind in a limped pot" (seen live) is what
+ * computing the price wrong looks like. Handed `toCall: 0` and `checkIsFree: true`, it does not fold.
+ *
+ * Deterministic and complete: the price, the outs and their rough chance, position, who is still in,
+ * the money behind as a multiple of the pot, what the two cards are before the flop and what they have
+ * made after it. Nothing here is a decision — that is the adviser's — and nothing is inferred about
+ * another player's cards: the seat sees its own two, the board, and what everybody DID.
+ */
+export interface HandRead {
+  street: string;
+  /** The two cards, as the seat holds them, and their preflop class ("AKs", Chen 20/20). */
+  hole: { cards: readonly Card[]; label: string; shape: string; strength: number } | null;
+  /** After the flop: what the cards have made, and what they are drawing to. */
+  made?: { hand: string; draws: string[]; outs: number; chanceByRiver: number | null };
+  pot: number;
+  toCall: number;
+  /** `toCall / (pot + toCall)` as a percentage — how often a call has to be best. Null when nothing to call. */
+  priceToCall: number | null;
+  /** Checking costs nothing. The single fact most beginners' worst folds ignore. */
+  checkIsFree: boolean;
+  /** Last to act on this street, or not. */
+  inPosition: boolean;
+  /** Opponents still in the hand. */
+  opponents: number;
+  /** Chips behind, and as a multiple of the pot — what is actually at risk. */
+  behind: number;
+  stackToPot: number | null;
+  /** Big blinds behind, the unit short-stack decisions are made in. */
+  bigBlindsBehind: number | null;
+  /** How many raises have gone in on this street — pressure, as evidence. */
+  raisesThisStreet: number;
+  /** The legal moves, verbatim — the action union the answer must use. */
+  legal: LegalActions | null;
+}
+
+export function handRead(view: TableView, seat: number, legal: LegalActions | null): HandRead | null {
+  const hand = view.hand;
+  if (!hand) return null;
+  const me = (view.seats ?? []).find((s) => s.seat === seat);
+  const cards = me?.inHand?.holeCards ?? [];
+  const pot = potSize(view);
+  const toCall = legal?.call ?? 0;
+  const behind = me?.stack ?? 0;
+  const bb = view.config?.bigBlind || 0;
+  const pre = cards.length === 2 ? classifyPreflop(cards) : null;
+  const read: HandRead = {
+    street: hand.street,
+    hole: pre ? { cards, label: pre.label, shape: pre.shape, strength: pre.strength } : null,
+    pot,
+    toCall,
+    priceToCall: priceToCall(pot, toCall),
+    checkIsFree: !!legal?.check,
+    inPosition: inPosition(view),
+    opponents: liveOpponents(view, seat),
+    behind,
+    stackToPot: pot > 0 ? Math.round((behind / pot) * 10) / 10 : null,
+    bigBlindsBehind: bb > 0 ? Math.floor(behind / bb) : null,
+    raisesThisStreet: raisesOnStreet(view, hand.street),
+    legal,
+  };
+  if (cards.length === 2 && hand.board.length >= 3) {
+    const s = postflopStrength(cards, hand.board);
+    const draws = [s.draws.flush ? 'flush draw' : '', s.draws.openEnded ? 'open-ended straight draw' : '', s.draws.gutshot ? 'gutshot' : ''].filter(Boolean);
+    const toCome = cardsToCome(hand.street);
+    read.made = { hand: s.made, draws, outs: s.outs, chanceByRiver: s.outs > 0 && toCome > 0 ? chanceFromOuts(s.outs, toCome) : null };
+  }
+  return read;
 }

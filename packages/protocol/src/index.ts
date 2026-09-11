@@ -897,6 +897,18 @@ export interface ActInput {
  */
 export interface AdviseInput extends ActInput {
   question?: string;
+  /**
+   * THE SEAT'S READ AS DATA, from the game's own `readFor` — the price, the outs, position, the money
+   * behind — so an adviser that reasons is handed the facts rather than left to compute them. Opaque
+   * to the host, like the view; the game that wrote it is the one that knows its shape.
+   */
+  read?: unknown;
+  /**
+   * THE HOUSE'S OWN LINE, as an observation. The rules coach is right about the mechanics every time;
+   * sent alongside, a person's own agent starts from a correct floor and adds their style — and the
+   * style skill says it outranks the craft, so this is the intended shape. Never applied by anybody.
+   */
+  baseline?: { say: string; because?: string; action?: unknown };
 }
 
 /**

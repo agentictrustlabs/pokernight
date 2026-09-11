@@ -47,7 +47,7 @@ import {
 } from '@pokernight/engine';
 import { failedReceipt, pendingReceipt, type LedgerEntryKind, type SettlementAdapter, type SettlementReceipt } from '@pokernight/ledger';
 import type { HostedGame, TableSnapshot } from '@pokernight/table-game';
-import { DEFAULT_GAME, gameFor } from './games.js';
+import { DEFAULT_GAME, gameFor, practiceConfigFor } from './games.js';
 import type { PlayerFunding } from '@pokernight/treasury';
 import {
   parseClientCommand,
@@ -71,6 +71,7 @@ import {
   type TableSummary,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, callAct, callAdvise, callReview, resolveAgentBase } from './a2a.js';
+import { a2aAdviceTimeoutMs } from './env.js';
 import { readSessionRecord } from './auth.js';
 import { agentPaceMs, seatIdleMs } from './env.js';
 import type { Env } from './env.js';
@@ -786,7 +787,9 @@ export class PokerTableDO extends DurableObject<Env> {
        *
        * This route is practice-only (refused above), so nothing a person chose is discarded here.
        */
-      fresh = this.game.create({} as Partial<unknown>);
+      // The practice defaults, not the game's: "start over" must keep the learner's clock, or the one
+      // table that exists to be learnt at goes back to the money clock the second time it is dealt.
+      fresh = this.game.create(practiceConfigFor(this.game.id) as Partial<unknown>);
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
@@ -1643,6 +1646,8 @@ export class PokerTableDO extends DurableObject<Env> {
     if (!state) return { ok: false, error: 'this table has not dealt yet' };
     const at = this.snap(state);
     const skill = this.game.id === 'canasta' ? CANASTA_ADVISE_SKILL : POKER_ADVISE_SKILL;
+    const read = this.game.readFor?.(state, seat) ?? null;
+    const baseline = this.game.advise?.(state, seat) ?? null;
     const res = await callAdvise(
       adviser.endpoint,
       {
@@ -1652,12 +1657,18 @@ export class PokerTableDO extends DurableObject<Env> {
         seat,
         view: this.game.viewFor(state, seat),
         legal: this.game.legalFor(state, seat),
-        deadlineMs: a2aTimeoutMs(this.env),
+        deadlineMs: a2aAdviceTimeoutMs(this.env),
         // The person's own words, passed through untouched. The card room does not parse it, answer
         // it, or keep it — it is for the agent that is doing the remembering.
         ...(question ? { question } : {}),
+        // THE FACTS, AND THE HOUSE'S LINE, FOR AN ADVISER THAT REASONS. Both from the game's own
+        // functions over the seat's own view — nothing here the seat cannot see. The read is the
+        // arithmetic a language model would otherwise get wrong; the baseline is the rules coach's
+        // answer, sent as an observation the person's agent may start from and depart from.
+        ...(read != null ? { read } : {}),
+        ...(baseline ? { baseline: { say: baseline.say, because: baseline.because, action: baseline.action } } : {}),
       },
-      a2aTimeoutMs(this.env),
+      a2aAdviceTimeoutMs(this.env),
       this.env,
     );
     return res.ok ? { ok: true, advice: res.output } : { ok: false, error: res.error };
