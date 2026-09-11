@@ -77,6 +77,15 @@ export function TablePage({
   // in two different currencies, so the ticker is never a constant of the deployment.
   const [assetSymbol, setAssetSymbol] = useState<string | null>(null);
   const [treasury, setTreasury] = useState<TreasuryView | null>(null);
+  /**
+   * Whether this is YOUR OWN practice table — asked of the TABLE, not of the URL.
+   *
+   * `practice` is an intent that rides on one link and is gone the moment you navigate again;
+   * `practiceFor` is a fact the card room keeps. The coach's default has to come from the fact: a
+   * person who reached their own practice table from history, a bookmark or the back button is at the
+   * table whose whole reason to exist is being taught, and they were getting a coach switched off.
+   */
+  const [mine, setMine] = useState(false);
   const sockRef = useRef<TableSocket | null>(null);
   const token = session?.token ?? null;
   const settles = settlement !== 'play-money';
@@ -107,6 +116,7 @@ export function TablePage({
         if (!alive) return;
         setTableName(detail.name ?? null);
         setClub(detail.club && detail.clubName ? { id: detail.club, name: detail.clubName } : null);
+        setMine(detail.practiceFor != null && detail.practiceFor === session?.playerId);
         setSettlement(detail.settlement ?? 'play-money');
         setChipValue(detail.chipValue ?? null);
         setAssetSymbol(detail.assetSymbol ?? null);
@@ -262,6 +272,30 @@ export function TablePage({
             something else shows the one panel that is true and none of the ones that are not. */}
         {drawable ? (
         <aside className="side">
+          {/* THE COACH IS FIRST, the same place canasta's is.
+              It used to sit under the money panels and be rendered ONLY for somebody already holding a
+              seat — so a person who arrived at a table and had not sat down yet, or who reached it by
+              its own link rather than through "deal me in", saw no coach and nothing saying one
+              existed. "I still don't see any coach stuff in the texas holdem table area." A teacher
+              you have to already know about is not being offered. */}
+          <PokerCoach
+            tableId={tableId}
+            session={session}
+            view={state.view}
+            viewerSeat={mySeat}
+            myTurn={mySeat != null && state.view?.hand?.toAct === mySeat && !state.view?.hand?.result}
+            handNo={state.view?.hand?.handNo ?? state.view?.handNo ?? 0}
+            street={state.view?.hand?.street ?? null}
+            log={state.log}
+            logSeq={state.logSeq}
+            ctx={ctx}
+            /* At a practice table the coach IS the point, so it starts on rather than waiting to be
+               found — and that is true however you arrived, which is why it reads the table's own
+               `practiceFor` and not only the link's `?practice=1`. Anywhere else it stays off until
+               somebody asks for it. */
+            startOn={practice || mine ? 'play' : 'off'}
+            send={send}
+          />
           {/* A player who is not ready to sit sees the ONE action that fixes that, above the money
               summary — not a refusal pointing at a panel somewhere else. */}
           {settles && session && !ready ? <StartPanel session={session} config={config} treasury={treasury} onChanged={loadTreasury} /> : null}
@@ -274,27 +308,6 @@ export function TablePage({
             treasury={treasury}
             onChanged={loadTreasury}
           />
-          {/* THE COACH SITS ABOVE THE LOG while it is on, because when it is on it is the reason the
-              person is at this table. Only offered to somebody actually holding a seat: there is
-              nothing to advise a spectator about, and the card room refuses to answer for one. */}
-          {mySeat != null ? (
-            <PokerCoach
-              tableId={tableId}
-              session={session}
-              view={state.view}
-              viewerSeat={mySeat}
-              myTurn={state.view?.hand?.toAct === mySeat && !state.view?.hand?.result}
-              handNo={state.view?.hand?.handNo ?? state.view?.handNo ?? 0}
-              street={state.view?.hand?.street ?? null}
-              log={state.log}
-              logSeq={state.logSeq}
-              ctx={ctx}
-              /* At a practice table the coach IS the point, so it starts on rather than waiting to be
-                 found. Anywhere else it stays off until somebody asks for it. */
-              startOn={practice ? 'play' : 'off'}
-              send={send}
-            />
-          ) : null}
           <LogPanel log={state.log} ctx={ctx} canChat={session != null} onChat={(text) => send({ type: 'chat', text })} />
         </aside>
         ) : null}

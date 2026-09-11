@@ -83,6 +83,19 @@ export function PokerCoach({
   send: (c: ClientCommand) => void;
 }) {
   const [mode, setMode] = useState<CoachMode>(startOn);
+  /**
+   * Whether the person has chosen for themselves.
+   *
+   * Until they have, a default that arrives LATE is still the default. `startOn` depends on whether
+   * this is the viewer's own practice table, and that is a fact the card room keeps — it comes back
+   * from an HTTP read a moment after the board has mounted. A coach that fixed its mode on the first
+   * frame ignored it, so arriving at your own practice table any way other than through the "deal me
+   * in" link gave you a coach switched off. Once somebody presses one of the three, this stops.
+   */
+  const chosen = useRef(false);
+  useEffect(() => {
+    if (!chosen.current) setMode(startOn);
+  }, [startOn]);
   const [advice, setAdvice] = useState<CoachAdvice | null>(null);
   const [said, setSaid] = useState<Recommendation[]>([]);
   const [adviser, setAdviser] = useState<{ agentName: string; displayName: string } | null>(null);
@@ -261,6 +274,7 @@ export function PokerCoach({
               // Switching it on is a real gesture, which is the moment a browser will let the voice
               // list load. Asking here means the first line is not the one that goes unheard.
               primeVoices();
+              chosen.current = true;
               setMode(m);
               if (m === 'off') hush();
             }}

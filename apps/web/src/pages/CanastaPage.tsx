@@ -415,8 +415,10 @@ export function CanastaPage({
               scoreboard={state.view ? { scores: state.view.scores, target: state.view.target } : null}
               nameOf={nameOf}
               /* At a practice table the coach IS the point, so it starts on rather than waiting to
-                 be found. Anywhere else it stays off until somebody asks for it. */
-              startOn={practice ? 'play' : 'off'}
+                 be found — and that is true however you arrived, which is why it reads the table's own
+                 `practiceFor` (`mine`) and not only the link's `?practice=1`. Anywhere else it stays
+                 off until somebody asks for it. */
+              startOn={practice || mine ? 'play' : 'off'}
               send={send}
             />
           ) : null}
