@@ -201,6 +201,16 @@ export interface TableGame<S = unknown, A = unknown, V = unknown, E = unknown, C
    * it discloses nothing the seat cannot see. Optional; a game with no read sends its view alone.
    */
   readFor?(state: S, seat: number): unknown;
+  /**
+   * THE FINISHED ROUND AS THIS SEAT SAW IT, IN COUNTS — for an adviser to remember, never to act on.
+   *
+   * The other end of `readFor`. When a round is over, the host offers it to the adviser the person in
+   * this seat named, and this is what it offers: what each player did, counted — put money in, raised,
+   * folded to a bet, showed down, won — keyed by the player id the seat's own view shows. Never cards
+   * the seat could not see, never a transcript. Optional; a game with none sends the round's view alone.
+   * The host keeps nothing it returns: a memory of how somebody plays belongs to the agent that keeps it.
+   */
+  observeFor?(state: S, seat: number): unknown;
 }
 
 /** What a coach says about one move: the move itself, one clause to speak, and the rule behind it. */

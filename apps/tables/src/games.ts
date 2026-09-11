@@ -10,7 +10,7 @@
  * exactly as `LEGACY_CHIP_VALUE` is what tables older than the rate pin settle at.
  */
 
-import { decide, handRead, readHand } from '@pokernight/agent-kit';
+import { decide, handRead, observeRound, readHand } from '@pokernight/agent-kit';
 import { canastaGame, legalFor as canastaLegalFor, viewFor as canastaViewFor, type CanastaState } from '@pokernight/canasta';
 import { chooseCanastaAction, explainMove } from '@pokernight/canasta-agent';
 import {
@@ -105,6 +105,14 @@ const pokerWithCoach: HostedGame = {
     const s = state as PokerState;
     if (!s.hand || s.hand.toAct !== seat) return null;
     return handRead(pokerViewFor(s, seat), seat, pokerLegalFor(s, seat));
+  },
+  // The finished hand as counts, for the person's own adviser to remember: who put money in, who
+  // raised, who folded to a bet, who showed down. From the seat's own view, so nothing the seat could
+  // not see is counted; the card room keeps none of it.
+  observeFor(state: unknown, seat: number): unknown {
+    const s = state as PokerState;
+    if (!s.hand?.result) return null;
+    return observeRound(pokerViewFor(s, seat), seat);
   },
 };
 

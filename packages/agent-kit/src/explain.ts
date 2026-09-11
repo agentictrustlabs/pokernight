@@ -14,7 +14,7 @@
 import type { Card, LegalActions, TableView } from '@pokernight/engine';
 // `inPosition` is this package's own: it walks the real order from the button rather than
 // re-deriving it. A second implementation of who acts last is a second chance to be wrong.
-import { inPosition, raisesOnStreet } from './view.js';
+import { aggressorOnStreet, inPosition, raisesOnStreet } from './view.js';
 import { classifyPreflop } from './preflop.js';
 import { postflopStrength } from './strength.js';
 
@@ -151,6 +151,12 @@ export interface HandRead {
   bigBlindsBehind: number | null;
   /** How many raises have gone in on this street — pressure, as evidence. */
   raisesThisStreet: number;
+  /**
+   * WHAT THE PRICE IS FOR, in words: "the big blind; nobody has raised" or "a raise to 6 by seat 2".
+   * A model handed `toCall: 2` before the flop called it "a raise" one time in three (seen live); the
+   * blind is a price, not an opponent's decision, and the difference is the whole preflop read.
+   */
+  facing: string;
   /** The legal moves, verbatim — the action union the answer must use. */
   legal: LegalActions | null;
   /**
@@ -186,6 +192,7 @@ export function handRead(view: TableView, seat: number, legal: LegalActions | nu
     stackToPot: pot > 0 ? Math.round((behind / pot) * 10) / 10 : null,
     bigBlindsBehind: bb > 0 ? Math.floor(behind / bb) : null,
     raisesThisStreet: raisesOnStreet(view, hand.street),
+    facing: facingWhat(view, seat, toCall),
     legal,
     story: handStory(view, seat),
   };
@@ -196,6 +203,19 @@ export function handRead(view: TableView, seat: number, legal: LegalActions | nu
     read.made = { hand: s.made, draws, outs: s.outs, chanceByRiver: s.outs > 0 && toCome > 0 ? chanceFromOuts(s.outs, toCome) : null };
   }
   return read;
+}
+
+/** What the amount to call IS: a blind nobody has raised, or somebody's bet or raise, named. */
+export function facingWhat(view: TableView, seat: number, toCall: number): string {
+  const hand = view.hand;
+  if (!hand) return 'nothing';
+  if (toCall <= 0) return hand.street === 'preflop' && raisesOnStreet(view, 'preflop') === 0 ? 'nothing; the pot is limped or you posted the big blind' : 'nothing; checking is free';
+  const who = aggressorOnStreet(view, hand.street);
+  if (who === null || raisesOnStreet(view, hand.street) === 0) return `the big blind (${toCall} to call); nobody has bet or raised`;
+  const name = who === seat ? 'you' : `seat ${who + 1}`;
+  const last = [...hand.actions].reverse().find((a) => a.seat === who && a.street === hand.street && (a.action.type === 'bet' || a.action.type === 'raise' || a.action.type === 'all-in'));
+  const verb = last?.action.type === 'bet' ? `a bet of ${(last.action as { amount: number }).amount}` : last?.action.type === 'raise' ? `a raise to ${(last.action as { amount: number }).amount}` : 'an all-in';
+  return `${verb} by ${name}`;
 }
 
 /** "preflop: you raised to 6 from the big blind, seat 2 called" — the record, street by street. */

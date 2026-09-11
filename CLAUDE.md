@@ -190,6 +190,19 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   `~/agenticprimitives/scripts/add-cardroom-skills.mts <handle>` then `rebuild-card-release.mts` +
   `republish-card-record.mts`. A Home run takes ~14 s against the 20 s A2A limit; a miss falls back
   to the house coach and the panel says so.
+- **A FINISHED ROUND IS COUNTED, AND THE COUNTS ARE THE AGENT'S TO KEEP.** `TableGame.observeFor?(state,
+  seat)` is the other end of `readFor`: the round as the seat saw it, IN COUNTS — vpip, pfr, three-bet,
+  fold-to-bet, c-bet, showdowns, won, net — keyed by the player id the view shows, never cards, never a
+  transcript (`agent-kit/src/observe.ts`). `reviewWithAdvisers` sends it in the `poker.review` message
+  (`encodeReviewParts`, whose text says the round is OVER rather than asking for a move) with the host's
+  names on the subjects. The card room keeps none of it. At the Home, `playbook.answer` folds a review
+  into `playbook.memory:<family>` in the agent's own vault WITHOUT A MODEL CALL — it used to spend one on
+  "what is worth remembering" and keep nothing — and hands advice the players AT THIS TABLE back with
+  rates ("foldToBet 80% of 5"); `holdem-table-read` teaches what the numbers mean. A new vault record
+  type is four registrations (ontology tbox + binding, the two grant-scope lists, the DO allowlist) and a
+  grant re-issue per agent (`scripts/reissue-interactions-grants.mts alice`), the same as every one
+  before it. A cold ask is ~12–15 s door to door: the playbook's vault read (~3.5 s), the model
+  (~5.5 s) and the edge (~2.5 s); the standing and catalog reads now start beside the playbook's.
 - Wrangler: one `wrangler.toml` per app, `[env.faithnet]` per deployment universe, bindings repeated per env,
   migration tags never renamed. Worker names `pokernight-<app>-<env>`.
 - Tests: vitest. Engine has property tests; run `pnpm test` at the root before claiming anything works.

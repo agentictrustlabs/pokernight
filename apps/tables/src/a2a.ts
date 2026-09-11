@@ -12,6 +12,7 @@
 
 import {
   encodeAdviseParts,
+  encodeReviewParts,
   A2A_AGENT_CARD_PATH,
   A2A_JSONRPC_PATH,
   A2A_SEND_MESSAGE,
@@ -24,6 +25,7 @@ import {
   type ActOutput,
   type AdviseInput,
   type AdviseOutput,
+  type ReviewInput,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, agentBaseUrl, allowAgentEndpoint, type Env } from './env.js';
 import { houseAuthorization } from './house-caller.js';
@@ -259,7 +261,7 @@ export async function callAct(base: string, input: ActInput, timeoutMs: number):
  * its person's seat so the agent can remember it; there is no answer the table would act on, and a
  * reply that failed must not disturb a round that is already over.
  */
-export async function callReview(base: string, input: ActInput, timeoutMs: number, env?: Env): Promise<void> {
+export async function callReview(base: string, input: ReviewInput, timeoutMs: number, env?: Env): Promise<void> {
   const url = a2aUrl(base, A2A_JSONRPC_PATH);
   try {
     // Serialised once; the signature binds these bytes. A review is the moment a personal coach
@@ -268,7 +270,7 @@ export async function callReview(base: string, input: ActInput, timeoutMs: numbe
       jsonrpc: '2.0',
       id: `${input.tableId}:${input.handNo}:${input.seat}:review`,
       method: A2A_SEND_MESSAGE,
-      params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeAdviseParts(input) } },
+      params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeReviewParts(input) } },
     });
     const authorization = env ? await houseAuthorization(env, url, A2A_SEND_MESSAGE, raw) : null;
     await fetch(url, {

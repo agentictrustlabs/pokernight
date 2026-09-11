@@ -852,6 +852,36 @@ export const POKER_REVIEW_SKILL = 'poker.review';
 export const CANASTA_REVIEW_SKILL = 'canasta.review';
 
 /**
+ * THE ROUND, REPORTED: the final view as the seat saw it, and the game's own COUNTS of it.
+ *
+ * `observation` is `observeFor`'s answer — what each player did this round, counted, keyed by the
+ * player id the view shows. Opaque to the host like the view; it is the half an adviser can add to
+ * what it already remembers without reading the round twice, and it carries nothing the seat's view
+ * does not already show.
+ */
+export interface ReviewInput extends ActInput {
+  observation?: unknown;
+}
+
+/**
+ * THE REVIEW, said in words as well as in data — the same two parts as an advice request, but the
+ * words say the round is OVER. A review that read "advise seat 0 … answer with one JSON object" asked
+ * a person's own agent for a move at a table where the hand had ended.
+ */
+export function encodeReviewParts(
+  input: ReviewInput,
+): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const game = input.skill.split('.')[0] ?? 'the game';
+  const counted = input.observation && typeof input.observation === 'object' ? Object.keys((input.observation as { subjects?: Record<string, unknown> }).subjects ?? {}).length : 0;
+  const text = [
+    `${input.skill}: round ${input.handNo} at ${game} is over, as seat ${input.seat} saw it. Nothing is asked; remember what is worth remembering.`,
+    counted ? `The round's counts, per player, are in the data part (${counted} players).` : 'The data part carries the final view.',
+  ].join('\n');
+  const [data] = encodeActParts(input);
+  return [{ kind: 'data', data: (data as { data: Record<string, unknown> }).data }, { kind: 'text', text }];
+}
+
+/**
  * THE TURN REQUEST, with the game's own three fields carried opaquely.
  *
  * Same split as the WebSocket wire, for the same reason and with the same seam: the ENVELOPE is the

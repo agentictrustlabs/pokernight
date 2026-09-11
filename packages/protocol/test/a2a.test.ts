@@ -2,7 +2,7 @@
  * The A2A turn and advice requests, as message parts.
  */
 import { describe, expect, it } from 'vitest';
-import { encodeActParts, encodeAdviseParts } from '../src/index.js';
+import { encodeActParts, encodeAdviseParts, encodeReviewParts } from '../src/index.js';
 
 describe('the advice request, in words as well as in data', () => {
   const input = {
@@ -44,5 +44,35 @@ describe('the advice request, in words as well as in data', () => {
     const text = (encodeAdviseParts({ ...input, question: undefined })[1] as { kind: 'text'; text: string }).text;
     expect(text).toContain('Nothing was asked');
     expect(text).not.toContain('""');
+  });
+});
+
+describe('the review, in words as well as in data', () => {
+  const round = {
+    skill: 'poker.review',
+    tableId: 't',
+    handNo: 7,
+    seat: 2,
+    view: { handNo: 7, seats: [] },
+    legal: null,
+    deadlineMs: 5000,
+    observation: { game: 'poker', round: 7, subjects: { me: { you: true, counters: { hands: 1 } }, 'agent:sharkbot.svc': { label: 'Sharkbot', counters: { hands: 1, pfr: 1 } } } },
+  };
+
+  it('carries the observation in the data part, and says the round is over rather than asking for a move', () => {
+    const parts = encodeReviewParts(round);
+    const data = (parts[0] as { data: { skill: string; input: { observation: unknown } } }).data;
+    expect(data.skill).toBe('poker.review');
+    expect(data.input.observation).toEqual(round.observation);
+    const text = (parts[1] as { kind: 'text'; text: string }).text;
+    expect(text).toContain('round 7 at poker is over');
+    expect(text).toContain('2 players');
+    expect(text).not.toMatch(/advise|Answer with/);
+  });
+
+  it('is still a review with nothing counted', () => {
+    const { observation: _o, ...bare } = round;
+    const text = (encodeReviewParts(bare)[1] as { kind: 'text'; text: string }).text;
+    expect(text).toContain('final view');
   });
 });

@@ -1708,6 +1708,10 @@ export class PokerTableDO extends DurableObject<Env> {
       const seat = at.seats.find((x) => x.playerId === playerId)?.seat;
       // Named an adviser and then stood up: there is no seat to report and nothing to say about one.
       if (seat === undefined) continue;
+      // THE ROUND IN COUNTS, when the game can count it — what each player did, keyed by the player id
+      // the seat's view shows — with the names the card room knows them by, so the agent remembers
+      // "Sharkbot" and not "agent:sharkbot.svc". Labels are the host's to add; counts are the game's.
+      const observation = labelled(this.game.observeFor?.(state, seat) ?? null, (id) => this.players[id]?.name ?? this.names[id] ?? null);
       const input = {
         skill,
         tableId: this.meta?.tableId ?? '',
@@ -1716,6 +1720,7 @@ export class PokerTableDO extends DurableObject<Env> {
         view: this.game.viewFor(state, seat),
         legal: this.game.legalFor(state, seat),
         deadlineMs: a2aTimeoutMs(this.env),
+        ...(observation ? { observation } : {}),
       };
       const sent = callReview(adviser.endpoint, input, a2aTimeoutMs(this.env), this.env);
       // Kept alive past the response the table is about to send, without the table waiting for it.
@@ -2565,6 +2570,23 @@ export const SETTLING_KINDS = ['buy-in', 'add-chips', 'cash-out'] as const satis
 function nextIdx(sql: SqlStorage, table: 'events' | 'actions', handNo: number): number {
   const row = sql.exec<{ n: number | null }>(`SELECT MAX(idx) AS n FROM ${table} WHERE hand_no = ?`, handNo).toArray()[0];
   return row && row.n !== null ? row.n + 1 : 0;
+}
+
+/**
+ * A round's observation with the host's names on its subjects. The game counts by player id — the only
+ * identity it has — and the host is the one that knows what to call them; a label is added and nothing
+ * else is touched, so an observation with no subjects goes through as it came.
+ */
+export function labelled(observation: unknown, nameOf: (playerId: string) => string | null): unknown {
+  if (!observation || typeof observation !== 'object') return observation;
+  const subjects = (observation as { subjects?: Record<string, unknown> }).subjects;
+  if (!subjects || typeof subjects !== 'object') return observation;
+  const out: Record<string, unknown> = {};
+  for (const [id, s] of Object.entries(subjects)) {
+    const name = nameOf(id);
+    out[id] = s && typeof s === 'object' && name ? { ...(s as Record<string, unknown>), label: name } : s;
+  }
+  return { ...(observation as Record<string, unknown>), subjects: out };
 }
 
 /** Synthetic playerId for an agent seat: agents never hold a session token. */
