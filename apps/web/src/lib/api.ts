@@ -367,6 +367,18 @@ export const api = {
       { method: 'DELETE' },
       token,
     ),
+  /**
+   * Close a table. Whoever opened it, or a host of its club — the card room checks, not this.
+   *
+   * The table's own condition is that nobody is seated: a seat holds chips, and at a settled table
+   * those chips are money.
+   */
+  closeTable: (tableId: string, token: string, club?: string) =>
+    request<{ retired: true; tableId: string; name: string }>(
+      `/tables/${encodeURIComponent(tableId)}${club ? `?club=${encodeURIComponent(club)}` : ''}`,
+      { method: 'DELETE' },
+      token,
+    ),
   getTable: (id: string, token?: string) => request<TableDetail>(`/tables/${encodeURIComponent(id)}`, {}, token),
 
   /** The treasury that funds this session's play, its live balance, and what else it could be. */

@@ -1136,7 +1136,8 @@ app.post('/tables', async (c) => {
   const res = await lobby(c.env, clubId).fetch('https://lobby/create', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...parsed.data, ...(clubId ? { club: clubId, clubName } : {}) }),
+    // WHO OPENED IT travels with the request, so the table can let them close it again.
+    body: JSON.stringify({ ...parsed.data, createdBy: session.playerId, ...(clubId ? { club: clubId, clubName } : {}) }),
   });
   return passthrough(res);
 });
@@ -1364,13 +1365,54 @@ app.delete('/tables/:id/seat/:seat', async (c) => {
  * ("stand them up first") is in the answer rather than in someone's head.
  */
 app.delete('/tables/:id', async (c) => {
-  const gate = await checkOperator(c.env, c.req.raw);
-  // Never logged, never echoed: the refusal says which gate closed and nothing about the token.
-  if (!gate.ok) return c.json({ error: gate.reason, refused: 'operator' }, gate.status);
+  /**
+   * WHOEVER OPENED IT MAY CLOSE IT — and so may a host of the club it belongs to.
+   *
+   * This was operator-only, and an operator token is a shared secret held by whoever runs the
+   * deployment. So a person who opened a table by mistake, or finished a game, had no way to remove
+   * it and it stayed in the public list for good. That is the same gap clubs had until they got a
+   * retire route, and it produces the same result: a list nobody can tidy.
+   *
+   * Three roads in, and the operator's is unchanged — it is the one that still works on a table
+   * opened before tables recorded who opened them, and the one an operator needs for a table whose
+   * owner has gone.
+   *
+   * The CONDITION is the table's own and is enforced in the object either way: nobody may be seated.
+   * A seated table holds somebody's chips, and at a settled table those chips are their money.
+   */
+  const tableId = c.req.param('id');
+  const operator = await checkOperator(c.env, c.req.raw);
+  if (!operator.ok) {
+    const session = await resolveSession(c.env, sessionToken(c.req.raw));
+    // No session and no token: answer as the operator gate did, saying which gate closed and nothing
+    // about the token itself.
+    if (!session) return c.json({ error: operator.reason, refused: 'operator' }, operator.status);
+
+    const got = await table(c.env, tableId).fetch('https://table/summary');
+    if (!got.ok) return c.json({ error: 'no such table' }, 404);
+    const meta = (await got.json()) as { createdBy?: string; club?: string };
+
+    let mayClose = meta.createdBy !== undefined && meta.createdBy === session.playerId;
+    if (!mayClose && meta.club) {
+      // A club's table is the club's, so its host may close it even if somebody else opened it.
+      const answer = await standingAt(c.env, meta.club, session.playerId);
+      mayClose = answer?.standing === 'host';
+    }
+    if (!mayClose) {
+      return c.json(
+        {
+          error: meta.createdBy
+            ? 'only whoever opened this table, or a host of its club, can close it'
+            : 'this table was opened before tables recorded who opened them, so only an operator can close it',
+        },
+        403,
+      );
+    }
+  }
   const res = await lobby(c.env, c.req.query('club') ?? c.req.query('circle')).fetch('https://lobby/retire', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tableId: c.req.param('id') }),
+    body: JSON.stringify({ tableId }),
   });
   return passthrough(res);
 });

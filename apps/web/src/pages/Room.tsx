@@ -89,6 +89,15 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
     void loadClubs();
   }, [loadClubs]);
 
+  /**
+   * Read the public list again NOW, rather than waiting for the next poll.
+   *
+   * Closing a table is a thing somebody just did; a list that still shows it for five seconds reads
+   * as a button that did not work.
+   */
+  const [reloadAt, setReloadAt] = useState(0);
+  const reload = useCallback(() => setReloadAt((n) => n + 1), []);
+
   // The PUBLIC tables. A club's own list is read on the club's page, against that club — this one is
   // never filtered, because it is the pickup list and it means the same thing on every page.
   useEffect(() => {
@@ -111,7 +120,7 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
       alive = false;
       clearInterval(h);
     };
-  }, [session.token]);
+  }, [session.token, reloadAt]);
 
   const money = (treasury?.assetSymbol ?? '').trim() || 'SHQ';
   // ONE READ of whether this person can sit at a money table, from the shell, so the create form and
@@ -123,7 +132,7 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
       <Rail r={r} clubs={clubs} />
       <main className="room-main">
         {r.page === 'tables' ? (
-          <TablesPage session={session} tables={tables} err={err} money={money} ready={ready} />
+          <TablesPage session={session} tables={tables} err={err} money={money} ready={ready} onChanged={reload} />
         ) : r.page === 'money' ? (
           <MoneyPage session={session} config={auth.config} treasury={treasury} treasuryErr={treasuryErr} tables={tables} onChanged={loadTreasury} />
         ) : r.page === 'newClub' ? (

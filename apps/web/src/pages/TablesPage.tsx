@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { AppSession, CreateTableRequest, TableSummary } from '../lib/types';
-import { api } from '../lib/api';
+import { ApiError, api } from '../lib/api';
 import { dualAmount, tableRate } from '../lib/money';
 import { SettlementTag } from '../components/SettlementTag';
-import { seatsFree, stakeLabel } from '../lib/lobby';
+import { mayClose, seatsFree, stakeLabel } from '../lib/lobby';
 import { BOARDS, DRAWN_GAME, gameLabel, hasBoard } from '../lib/games';
 import { HOME_HASH, MONEY_HASH } from '../lib/routes';
 
@@ -24,6 +24,8 @@ export function TablesPage({
   err,
   money,
   ready = true,
+  hostOf = [],
+  onChanged,
 }: {
   session: AppSession;
   /** Read by the shell, so the money that gates a seat and the list that offers one agree. */
@@ -33,10 +35,21 @@ export function TablesPage({
   money: string;
   /** Whether this person could sit at a money table. Same read as the seat gate uses. */
   ready?: boolean;
+  /** The clubs this person hosts, so a club table's row can offer to close it. */
+  hostOf?: readonly string[];
+  /** Re-read the list once a table is closed. */
+  onChanged?: () => void;
 }) {
   return (
     <div className="stack">
-      <TableList tables={tables} err={err} />
+      <TableList
+        tables={tables}
+        err={err}
+        playerId={session.playerId}
+        hostOf={hostOf}
+        session={session}
+        {...(onChanged ? { onChanged } : {})}
+      />
       {/* Opening a table is a thing a host does, not a step in playing, so it is folded shut. */}
       <details className="panel lobby-create">
         <summary>Open your own table</summary>
@@ -55,17 +68,31 @@ export function TableList({
   err,
   title = 'Open tables',
   empty,
+  playerId = null,
+  hostOf = [],
+  session = null,
+  onChanged,
 }: {
   tables: TableSummary[] | null;
   err: string | null;
   title?: string;
   /** What to say when there are none. The public list and a club's differ; the rows do not. */
   empty?: React.ReactNode;
+  /** Who is looking, so a row can offer to close a table they may actually close. */
+  playerId?: string | null;
+  /** The clubs they host — a club's table is the club's, whoever opened it. */
+  hostOf?: readonly string[];
+  session?: AppSession | null;
+  /** Re-read the list once a table is gone. */
+  onChanged?: () => void;
 }) {
+  const [closing, setClosing] = useState<string | null>(null);
+  const [closeErr, setCloseErr] = useState<string | null>(null);
   return (
     <section className="panel">
       <h2>{title}</h2>
       {err ? <div className="form-error">{err}</div> : null}
+      {closeErr ? <div className="form-error">{closeErr}</div> : null}
       {tables == null ? (
         <p className="hint">Loading…</p>
       ) : tables.length === 0 ? (
@@ -83,6 +110,7 @@ export function TableList({
                 <th className="num">Buy-in (chips)</th>
                 <th className="num">Hand</th>
                 <th>Settlement</th>
+                <th />
                 <th />
               </tr>
             </thead>
@@ -118,6 +146,34 @@ export function TableList({
                     <td className="num">{t.handNo}</td>
                     <td>
                       <SettlementTag settlement={t.settlement} rate={rate} />
+                    </td>
+                    <td className="row-close">
+                      {/* CLOSING IT. Offered only to whoever opened it or a host of its club, because
+                          a button that will be refused is worse than no button. A table opened before
+                          tables recorded an opener belongs to nobody here and stays operator-only. */}
+                      {session && mayClose(t, playerId, hostOf) ? (
+                        <button
+                          type="button"
+                          className="link-button"
+                          disabled={closing === t.tableId}
+                          onClick={async () => {
+                            setClosing(t.tableId);
+                            setCloseErr(null);
+                            try {
+                              await api.closeTable(t.tableId, session.token, t.club);
+                              onChanged?.();
+                            } catch (e) {
+                              // The card room refuses a SEATED table by name, and that sentence is the
+                              // useful one — somebody has to stand up before this can happen.
+                              setCloseErr(e instanceof ApiError ? e.message : `${t.name} could not be closed.`);
+                            } finally {
+                              setClosing(null);
+                            }
+                          }}
+                        >
+                          {closing === t.tableId ? 'Closing…' : 'Close'}
+                        </button>
+                      ) : null}
                     </td>
                     <td>
                       {/* "Join" is a promise of a seat, and it is only made when both halves of it

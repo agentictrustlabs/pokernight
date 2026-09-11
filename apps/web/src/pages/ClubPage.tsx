@@ -73,6 +73,9 @@ export function ClubPage({
     void loadView();
   }, [loadView]);
 
+  /** Read the club's tables again now, rather than waiting out the poll after closing one. */
+  const [reloadAt, setReloadAt] = useState(0);
+
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -93,7 +96,7 @@ export function ClubPage({
       alive = false;
       clearInterval(h);
     };
-  }, [session.token, clubId]);
+  }, [session.token, clubId, reloadAt]);
 
   if (retired) {
     return (
@@ -141,6 +144,10 @@ export function ClubPage({
         tables={tables}
         err={err}
         title={`Tables at ${view.name}`}
+        playerId={session.playerId}
+        hostOf={host ? [clubId] : []}
+        session={session}
+        onChanged={() => setReloadAt((n) => n + 1)}
         empty={
           host ? (
             noTablesLine(view.you.standing, view.name)

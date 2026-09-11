@@ -18,7 +18,7 @@ import type { InitRequest } from './table-do.js';
 
 /** What the Worker sends to `/create`: the client's request plus the club NAME it resolved, which the
  *  client never supplies (it would be a label the club itself did not agree to). */
-type CreateTableBody = CreateTableRequest & { clubName?: string };
+type CreateTableBody = CreateTableRequest & { clubName?: string; createdBy?: string };
 
 type TableRow = {
   table_id: string;
@@ -82,6 +82,8 @@ export class LobbyDO extends DurableObject<Env> {
       // Which game, passed straight through. The table resolves it and refuses by name; the lobby
       // does not keep a list of games, because two lists of games is one list too many.
       ...(req.game ? { game: req.game } : {}),
+      // WHO OPENED IT, so they can close it again. Same pinning rule as the club above.
+      ...(req.createdBy ? { createdBy: req.createdBy } : {}),
     };
     const stub = this.env.TABLES.get(this.env.TABLES.idFromName(tableId));
     const res = await stub.fetch('https://table/init', { method: 'POST', body: JSON.stringify(init), headers: { 'content-type': 'application/json' } });

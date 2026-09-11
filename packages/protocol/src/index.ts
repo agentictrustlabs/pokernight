@@ -471,6 +471,13 @@ export const TableSummarySchema = z.object({
   asset: AssetAddressSchema.optional(),
   /** What that asset calls itself. See {@link AssetSymbolSchema}. */
   assetSymbol: AssetSymbolSchema.optional(),
+  /**
+   * Whoever opened it, pinned when it was created — so they can close it again.
+   *
+   * Absent on a table opened before tables recorded this, which is why it is optional: those stay
+   * closeable by an operator alone rather than by whoever asks first.
+   */
+  createdBy: z.string().optional(),
   /** The club that owns this table, pinned when it was created. Absent on a pickup table. */
   club: ClubIdSchema.optional(),
   /** That club's name at the instant the table was created. A label, not a lookup — a table whose

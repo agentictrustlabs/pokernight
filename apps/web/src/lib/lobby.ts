@@ -105,6 +105,24 @@ export function pickFeaturedTable(tables: readonly TableSummary[]): TableSummary
   return best;
 }
 
+/**
+ * Whether this person may close this table — as far as the CLIENT can tell.
+ *
+ * The card room decides; this only governs whether a control is offered, because a button that will
+ * be refused is worse than no button. Two ways in: they opened it, or they host the club it belongs
+ * to. A table opened before tables recorded an opener has no `createdBy` and belongs to nobody here,
+ * so it is operator-only and nothing is offered.
+ *
+ * The SEATED condition is deliberately not checked here — the card room refuses a seated table and
+ * says so, and a control that vanished whenever somebody sat down would be a control nobody could
+ * find when they needed it.
+ */
+export function mayClose(t: Pick<TableSummary, 'createdBy' | 'club'>, playerId: string | null, hostOfClubs: readonly string[] = []): boolean {
+  if (!playerId) return false;
+  if (t.createdBy && t.createdBy === playerId) return true;
+  return t.club !== undefined && hostOfClubs.includes(t.club);
+}
+
 /** How many chairs are free. Never negative, whatever a stale summary says. */
 export function seatsFree(t: TableSummary): number {
   return Math.max(0, t.config.seats - t.seated);

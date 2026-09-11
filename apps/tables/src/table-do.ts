@@ -87,6 +87,17 @@ import {
 export interface TableMeta {
   tableId: string;
   name: string;
+  /**
+   * The `playerId` of whoever opened it, so they can close it again.
+   *
+   * PINNED like the club and the chip rate. Until this existed a table had no owner at all: the only
+   * way to remove one was an operator token, so a mistake, a test, or a game that finished stayed in
+   * the public list for good and nobody but an operator could do anything about it.
+   *
+   * Absent on every table opened before the field existed — those stay operator-only, which is the
+   * honest answer rather than handing them to whoever asks first.
+   */
+  createdBy?: string;
   settlement: SettlementMode;
   createdAt: number;
   /**
@@ -179,6 +190,8 @@ export interface InitRequest {
   /** The club that owns it. The Worker has already checked the creator is one of its hosts. */
   club?: string;
   clubName?: string;
+  /** The `playerId` of whoever opened it, so they can close it again. */
+  createdBy?: string;
   /** Which game to deal. Absent is poker. Refused at creation if this deployment does not have it. */
   game?: string;
   /**
@@ -787,6 +800,8 @@ export class PokerTableDO extends DurableObject<Env> {
       ...(asset === null || assetSymbol === null ? {} : { assetSymbol }),
       ...(body.club ? { club: body.club } : {}),
       ...(body.club && body.clubName ? { clubName: body.clubName } : {}),
+      // WHO OPENED IT, pinned, so they can close it again.
+      ...(body.createdBy ? { createdBy: body.createdBy } : {}),
       // Always stamped, including when it is the default. A field that is present only for the
       // non-default case is a field you cannot tell apart from an old row that predates it.
       game: this.game.id,
@@ -867,6 +882,9 @@ export class PokerTableDO extends DurableObject<Env> {
       // tell a club table from a pickup one at a glance.
       ...(meta.club ? { club: meta.club } : {}),
       ...(meta.clubName ? { clubName: meta.clubName } : {}),
+      // WHO OPENED IT, so the Worker can let them close it and a client can offer the control only to
+      // somebody it will not be refused for.
+      ...(meta.createdBy ? { createdBy: meta.createdBy } : {}),
       // Said out loud so a lobby can show what is being dealt without opening the table, and so a
       // client can pick the right board to draw before the first snapshot arrives.
       game: meta.game ?? DEFAULT_GAME,

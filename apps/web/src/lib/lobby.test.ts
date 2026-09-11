@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { TableSummary } from './types';
-import { describeMoment, fmtSeats, isRunning, pickFeaturedTable, pickSeat, plural, stakeLabel, summarizeLobby, summarizeRoster, type TableDetail } from './lobby';
+import { describeMoment, fmtSeats, isRunning, pickFeaturedTable, pickSeat, plural, stakeLabel, summarizeLobby, summarizeRoster, type TableDetail , mayClose} from './lobby';
 
 const table = (over: Partial<TableSummary> = {}): TableSummary => ({
   tableId: 't1',
@@ -228,5 +228,29 @@ describe('stakeLabel', () => {
     expect(stakeLabel({ game: 'poker' })).toBe("Texas Hold'em");
     // No game named at all is poker, because that is what every table opened before games were.
     expect(stakeLabel({})).toBe("Texas Hold'em");
+  });
+});
+
+describe('who may close a table', () => {
+  const t = (over: Partial<TableSummary> = {}) => ({ createdBy: 'dev:barb', ...over }) as TableSummary;
+
+  it('offers it to whoever opened it', () => {
+    expect(mayClose(t(), 'dev:barb')).toBe(true);
+    expect(mayClose(t(), 'dev:someone-else')).toBe(false);
+  });
+
+  it('offers it to a host of the club the table belongs to', () => {
+    // A club's table is the club's, whoever happened to open it.
+    expect(mayClose(t({ createdBy: 'dev:other', club: 'c1' }), 'dev:barb', ['c1'])).toBe(true);
+    expect(mayClose(t({ createdBy: 'dev:other', club: 'c1' }), 'dev:barb', ['c2'])).toBe(false);
+  });
+
+  it('offers NOTHING on a table that records no opener — those are operator-only', () => {
+    // Opened before tables remembered. Handing it to whoever asks first would be worse than leaving it.
+    expect(mayClose(t({ createdBy: undefined }), 'dev:barb')).toBe(false);
+  });
+
+  it('offers nothing to somebody who is not signed in', () => {
+    expect(mayClose(t(), null)).toBe(false);
   });
 });
