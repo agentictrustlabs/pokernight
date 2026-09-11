@@ -20,6 +20,13 @@ import { buildCard, cardFor, endpointFor } from './card.js';
 import type { Env } from './env.js';
 import { createPokerActExecutor } from './executor.js';
 import { createCanastaActExecutor } from './canasta-executor.js';
+import {
+  createCanastaAdviseExecutor,
+  createPokerAdviseExecutor,
+  createReviewExecutor,
+  createRoutingExecutor,
+} from './advise-executor.js';
+import { CANASTA_REVIEW_SKILL, POKER_REVIEW_SKILL } from '@pokernight/protocol';
 import { PERSONAS, gameOf, resolvePersona, type Resolution } from './personas.js';
 
 /** Server-to-server traffic needs no CORS, but a browser poking at the card should not be blocked. */
@@ -43,10 +50,19 @@ function a2aServer(resolution: Resolution, env: Env, url: URL) {
     // ONE EXECUTOR PER GAME. They share the envelope — one data part in, one out, a message and not
     // a task — and share nothing else, because a canasta view has no pot and a canasta move has no
     // amount. Which one answers is decided by the persona, not by sniffing the request.
-    executor:
+    // Three skills through one server, routed by the skill the caller NAMED — see
+    // `createRoutingExecutor`. Taking a turn, giving advice and being told how a round went are
+    // different acts, and a request meaning one must never fall through into another.
+    executor: createRoutingExecutor(
+      resolution.persona,
       gameOf(resolution.persona) === 'canasta'
         ? createCanastaActExecutor(resolution.persona)
         : createPokerActExecutor(resolution.persona, env),
+      gameOf(resolution.persona) === 'canasta'
+        ? createCanastaAdviseExecutor(resolution.persona)
+        : createPokerAdviseExecutor(resolution.persona),
+      createReviewExecutor(resolution.persona, gameOf(resolution.persona) === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL),
+    ),
     // PHASE 2: NO ADMISSION. `principal` is deliberately omitted, so every caller is admitted and
     // `ctx.principal` is null. That is safe only while a seat cannot move money.
     //

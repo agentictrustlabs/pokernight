@@ -11,3 +11,4 @@ export * from './view.js';
 export * from './preflop.js';
 export * from './strength.js';
 export * from './strategy.js';
+export * from './explain.js';
