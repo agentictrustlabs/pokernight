@@ -4825,3 +4825,33 @@ a.button.primary:hover {
   padding: 0 0.3rem;
   margin: 0.1rem 0;
 }
+.adviser-own {
+  margin: 0.3rem 0 0.5rem;
+}
+.adviser-own button {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border-color: var(--brass);
+}
+.adviser-own code {
+  font-size: 0.85em;
+  color: var(--ink-soft);
+}
+.adviser-own .hint {
+  margin: 0;
+  font-weight: 400;
+}
+.held-banner {
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.8rem;
+  border-left: 3px solid var(--warn);
+  background: var(--brass-soft);
+  border-radius: 0 7px 7px 0;
+  font-weight: 600;
+}
+.practice-panel.held {
+  border-color: var(--brass);
+}

@@ -74,3 +74,30 @@ export async function resolveAgentName(env: Env, raw: string): Promise<NameAnswe
   if (!address) return { ok: false, error: `${name} is not a name this chain knows — check the spelling with them` };
   return { ok: true, name, address };
 }
+
+/**
+ * THE NAME OF AN AGENT, from its address — the other direction.
+ *
+ * Needed because the Home's `agent_name` claim is not always a handle: `nameClaimForIdToken` at the
+ * Home falls back to the PROFILE name when the account has no handle, so a demo person arrives as
+ * "Alice Okoro" while `alice.me` is right there on chain. The address is asserted by the id_token
+ * and is the one thing a session can be sure of, so the name is read from the registry's own
+ * reverse record rather than trusted from a field that may be a display string.
+ *
+ * `null` means the chain has no primary name for this address — not an error, and not a guess.
+ */
+export async function nameOfAgent(env: Env, address: string): Promise<string | null> {
+  if (!namingConfigured(env) || !/^0x[0-9a-fA-F]{40}$/.test(address)) return null;
+  const client = new AgentNamingClient({
+    rpcUrl: rpcUrl(env),
+    chainId: chainId(env),
+    registry: env.AGENT_NAME_REGISTRY as `0x${string}`,
+    universalResolver: env.AGENT_NAME_UNIVERSAL_RESOLVER as `0x${string}`,
+  });
+  try {
+    const name = await client.reverseResolve(address as `0x${string}`);
+    return name && looksLikeAgentName(name) ? normalizeAgentName(name) : null;
+  } catch {
+    return null;
+  }
+}

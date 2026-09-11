@@ -79,16 +79,27 @@ export function resolveAgentBase(env: Env, agentName: string, endpoint?: string)
     return `${scheme}://${named}`;
   }
 
+  const zone = (env.AGENT_CARD_ZONE ?? '').trim();
+  const scheme = zone === 'localhost' || zone.endsWith('.localhost') ? 'http' : 'https';
+
+  /**
+   * A PERSON'S AGENT LIVES AT THE ESTATE, never on the house worker.
+   *
+   * `alice.me` is a person: the estate serves it at `alice-me.<zone>` (and `alice.<zone>`), and the
+   * house base serves only the house's own personas. Sending a `.me` name to the house base first
+   * asked `agents.faithnet.io/alice.me/…`, got the 404 that base gives every name it does not have,
+   * and stopped there — so "your own agent" could never be named, whatever its card said. The house
+   * base is the right FIRST answer for the house's `*.svc` personas and the wrong one for a person.
+   */
+  if (zone && named.endsWith('.me')) return `${scheme}://${agentNameToHost(agentName, zone)}`;
+
   // A single-host deployment names the persona in the path instead of the hostname. This is how the
-  // HOUSE agents are reached; a published agent took the branch above.
+  // HOUSE agents are reached; a published agent took one of the branches above.
   const base = agentBaseUrl(env);
   if (base) return `${base}/${encodeURIComponent(agentName)}`;
 
-  const zone = (env.AGENT_CARD_ZONE ?? '').trim();
   if (!zone) throw new Error('AGENT_CARD_ZONE is not configured; pass an explicit endpoint');
-  const host = agentNameToHost(agentName, zone);
-  const scheme = zone === 'localhost' || zone.endsWith('.localhost') ? 'http' : 'https';
-  return `${scheme}://${host}`;
+  return `${scheme}://${agentNameToHost(agentName, zone)}`;
 }
 
 /** Append an A2A path to a base URL, keeping any path prefix AND query string the base carries. */

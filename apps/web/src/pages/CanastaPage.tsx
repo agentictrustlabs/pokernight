@@ -25,6 +25,7 @@ import { SoundToggle } from '../components/SoundToggle';
 import { canastaCue } from '../lib/cues';
 import { useCues } from '../lib/useCues';
 import { Toast } from '../components/Toast';
+import { PracticePanel } from '../components/PracticePanel';
 import { PileReveal } from '../components/PileReveal';
 import { RoundCurtain } from '../components/RoundCurtain';
 import { curtainFor } from '../lib/roundEnd';
@@ -75,7 +76,6 @@ export function CanastaPage({
   const [club, setClub] = useState<{ id: string; name: string } | null>(null);
   /** How long each agent's move waits before it lands. Read from the table, changed by the slider. */
   const [pace, setPace] = useState(3500);
-  const [paceErr, setPaceErr] = useState<string | null>(null);
   /**
    * Whether the TABLE has told us its own pace yet.
    *
@@ -126,34 +126,6 @@ export function CanastaPage({
     };
   }, [tableId, token]);
 
-  /**
-   * SEND THE PACE ONCE THE DRAG SETTLES, and believe the answer.
-   *
-   * A range input fires on every step, so one drag sent eleven requests. They all succeeded and they
-   * landed out of order — so the last one to arrive was not the last one sent, and the bar ended up
-   * showing five seconds while the table was set to four point six. The control was lying, which is
-   * worse than a control that does not work: you cannot tell the difference by looking.
-   *
-   * So: one request when the dragging stops, and the label takes the value the TABLE reports back
-   * rather than the one the slider happens to be sitting on.
-   */
-  useEffect(() => {
-    // Nothing is sent until the table has said what it is already set to. See `paceKnown`.
-    if (!mine || !session || !paceKnown) return;
-    const h = setTimeout(async () => {
-      try {
-        const { paceMs } = await api.setPace(tableId, pace, session.token);
-        setPaceErr(null);
-        // The table's answer wins. If it clamped or refused the number, the bar shows what is real.
-        if (paceMs !== pace) setPace(paceMs);
-      } catch {
-        setPaceErr('not saved');
-      }
-    }, 350);
-    return () => clearTimeout(h);
-    // Only the value matters; re-running on identity changes would resend on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine, pace, paceKnown, tableId]);
 
   const send = useCallback((c: ClientCommand) => sockRef.current?.send(c), []);
 
@@ -164,7 +136,6 @@ export function CanastaPage({
    * coach on — which is the errand the practice table exists to remove. Guarded by a ref rather than
    * state so a re-render cannot do it twice, and it stops as soon as the seats are full.
    */
-  const [resetting, setResetting] = useState(false);
   /** Why pausing or dealing again did not happen. Both used to fail in silence. */
   const [tableErr, setTableErr] = useState<string | null>(null);
   /** Whether the table is holding. Nothing moves while it is — clock, agents and next round alike. */
@@ -434,67 +405,10 @@ export function CanastaPage({
             <FillSeats tableId={tableId} session={session} empty={empty} mySeat={mySeat} />
           ) : null}
           {mine && session ? (
-            <section className="panel can-practice">
-              <h2>Your practice table</h2>
+            <>
               {tableErr ? <div className="form-error">{tableErr}</div> : null}
-              <p className="hint">
-                This one is yours and nobody else can see it. Leave whenever you like — it is still here next time.
-              </p>
-              {/* PAUSE, and mean it. Pausing the narration alone would leave the clock running and
-                  the agents playing, so somebody who stopped to read would come back to a turn they
-                  had already lost. This holds the clock, the agents and the next round together, and
-                  resuming gives back exactly the time the pause took. */}
-              <button
-                type="button"
-                className={paused ? 'primary' : ''}
-                onClick={() => {
-                  setTableErr(null);
-                  // Through the same one door as the freeze, so pressing this while a round-end hold is
-                  // still in flight cannot end with the card room holding the opposite opinion.
-                  setHeld(!paused);
-                }}
-              >
-                {paused ? '▶ Carry on' : '⏸ Pause'}
-              </button>
-              <button
-                type="button"
-                disabled={resetting}
-                onClick={async () => {
-                  setResetting(true);
-                  setTableErr(null);
-                  try {
-                    await api.resetPractice(tableId, session.token);
-                  } catch (e) {
-                    // "The board is the record" is true and is not an answer: a reset that was refused
-                    // leaves the same board, so nothing on screen changes and nothing says why.
-                    setTableErr(e instanceof ApiError ? e.message : 'The table could not be dealt again.');
-                  } finally {
-                    setResetting(false);
-                  }
-                }}
-              >
-                {resetting ? 'Dealing…' : 'Start a new game'}
-              </button>
-              {/* HOW FAST THE OTHERS PLAY. An agent answers in a couple of hundred milliseconds, so
-                  the table's pace is entirely a choice about what a person can follow — and what
-                  that is differs by person and changes as they learn. It is the table's own setting
-                  because only at a practice table does one person's preference slow nobody else. */}
-              <label className="pace">
-                How fast the others play
-                <input
-                  type="range"
-                  min={600}
-                  max={6000}
-                  step={200}
-                  value={pace}
-                  onChange={(e) => setPace(Number(e.target.value))}
-                />
-                <span className="hint">
-                  {(pace / 1000).toFixed(1)} s a move
-                  {paceErr ? <span className="form-error"> {paceErr}</span> : null}
-                </span>
-              </label>
-            </section>
+              <PracticePanel tableId={tableId} session={session} game="canasta" paused={paused} onHold={setHeld} paceMs={paceKnown ? pace : null} />
+            </>
           ) : null}
           {mySeat != null ? (
             <section className="panel can-seated">

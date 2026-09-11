@@ -583,6 +583,23 @@ export function Adviser({
    * advertises THIS game's advise skill — and the field stays, for an agent of your own.
    */
   const [offers, setOffers] = useState<AgentListing[]>([]);
+  /**
+   * YOUR OWN AGENT'S NAME, from the card room — which reverse-resolves the address your Home
+   * asserted. Not from `session.agentName`: the Home's claim is a profile name for an account with
+   * no handle, and "Alice Okoro" is not something a card can be fetched for. `null` after the read
+   * means the chain has no name for you, and the panel says that rather than offering a broken press.
+   */
+  const [own, setOwn] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    api
+      .myAgent(session.token)
+      .then((r) => alive && setOwn(r.agentName))
+      .catch(() => alive && setOwn(null));
+    return () => {
+      alive = false;
+    };
+  }, [session.token]);
   useEffect(() => {
     let alive = true;
     api
@@ -622,6 +639,30 @@ export function Adviser({
         The house coach is one strategy, the same for everybody. An agent of your own answers with YOUR style, from
         your own skills — it is sent only what your seat already sees.
       </p>
+      {/* YOUR OWN AGENT, FIRST — the card room knows its name from the Home sign-in, so nobody should
+          have to type it. Pressing it asks the card room to fetch the agent's card and check for this
+          game's advise skill; a refusal comes back BY NAME and says which skill is missing, which is
+          the honest state of most people's agents today: they carry their Home's skills, and the
+          card-room ones are added at the Home, not here. */}
+      {!adviser && own ? (
+        <div className="adviser-own">
+          <button type="button" disabled={busy} onClick={() => void ask(own)}>
+            Your own agent
+            <code>{own}</code>
+            <span className="hint">
+              Answers with your style, from skills held at your Home. After each hand the card room sends it the
+              hand as you saw it, so it can remember. It has to advertise <code>{adviseSkillFor(game)}</code> on its
+              card — if it does not yet, the answer says so by name.
+            </span>
+          </button>
+        </div>
+      ) : null}
+      {!adviser && own === null && session.via !== 'dev' ? (
+        <p className="hint adviser-own-none">
+          This card room could not find a name for your agent on the chain, so it cannot offer it here — type its
+          name below if you know it.
+        </p>
+      ) : null}
       {!adviser && offers.length > 0 ? (
         <>
           <p className="hint">Agents this card room knows can advise at {game === 'canasta' ? 'canasta' : 'hold’em'}:</p>

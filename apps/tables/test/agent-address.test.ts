@@ -53,3 +53,18 @@ describe('an explicit endpoint', () => {
     expect(() => resolveAgentBase(env(), 'x', 'https://anywhere.example')).toThrow(/not accepted here/);
   });
 });
+
+describe('a person’s own agent', () => {
+  it('is looked for at the estate, never under the house base', () => {
+    // `alice.me` is a person. The house base serves only the house's personas and answers 404 to any
+    // other name — so sending a `.me` name there first meant "your own agent" could never be named,
+    // whatever its card advertised.
+    const e = env({ AGENT_BASE_URL: 'https://agents.faithnet.io' } as Partial<Env>);
+    expect(resolveAgentBase(e, 'alice.me')).toBe('https://alice-me.faithnet.at');
+  });
+
+  it('while a house `.svc` persona still goes to the house base first', () => {
+    const e = env({ AGENT_BASE_URL: 'https://agents.faithnet.io' } as Partial<Env>);
+    expect(resolveAgentBase(e, 'sharkbot.svc')).toBe('https://agents.faithnet.io/sharkbot.svc');
+  });
+});

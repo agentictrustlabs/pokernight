@@ -61,6 +61,7 @@ export function PokerCoach({
   logSeq,
   ctx,
   players,
+  paused = false,
   startOn = 'off',
   send,
 }: {
@@ -85,6 +86,8 @@ export function PokerCoach({
   ctx: FormatContext;
   /** What the table said about whoever holds each seat: a person, or an agent and what is behind it. */
   players: Record<string, PlayerInfo>;
+  /** The table is holding. Nothing is said and nothing is played until it starts again. */
+  paused?: boolean;
   startOn?: CoachMode;
   send: (c: ClientCommand) => void;
 }) {
@@ -190,7 +193,10 @@ export function PokerCoach({
   /* ---------------------------------------------------- what YOU should do */
 
   const ask = useCallback(async () => {
-    if (!session || !myTurn || mode === 'off') return;
+    // A PAUSED TABLE IS NOT PLAYED, and the coach is the one thing that would otherwise carry on:
+    // the table refuses a move with `paused`, and a coach that kept asking and pressing would be a
+    // loop of refusals with a voice attached.
+    if (!session || !myTurn || mode === 'off' || paused) return;
     const key = `${handNo}:${street ?? ''}`;
     asked.current = key;
     try {
@@ -233,7 +239,7 @@ export function PokerCoach({
       setAdvice(null);
       setMissed((n) => n + 1);
     }
-  }, [handNo, mode, myTurn, send, session, street, tableId]);
+  }, [handNo, mode, myTurn, paused, send, session, street, tableId]);
 
   // A new decision is a new question: forget the old answer and let the heartbeat ask.
   useEffect(() => {
@@ -252,10 +258,19 @@ export function PokerCoach({
    * of them, because playing a move is what clears the advice.
    */
   useEffect(() => {
-    if (mode === 'off' || !myTurn || advice || countdown != null || missed > RETRIES) return;
+    if (mode === 'off' || paused || !myTurn || advice || countdown != null || missed > RETRIES) return;
     const h = setTimeout(() => void ask(), missed === 0 ? FIRST_ASK_MS : RETRY_MS);
     return () => clearTimeout(h);
-  }, [advice, ask, countdown, missed, mode, myTurn]);
+  }, [advice, ask, countdown, missed, mode, myTurn, paused]);
+
+  /** PAUSE MEANS NOW: a voice partway through a sentence keeps talking otherwise, and from a chair
+   *  that is not a pause, it is a request that gets around to being honoured. */
+  useEffect(() => {
+    if (paused) {
+      hush();
+      setCountdown(null);
+    }
+  }, [paused]);
 
   useEffect(() => {
     if (mode === 'off') {
@@ -318,7 +333,9 @@ export function PokerCoach({
       ) : (
         <>
           <p className="coach-now">
-            {countdown != null
+            {paused
+              ? 'Paused. Nothing moves until you carry on.'
+              : countdown != null
               ? `Playing in ${countdown}…`
               : myTurn
                 ? advice

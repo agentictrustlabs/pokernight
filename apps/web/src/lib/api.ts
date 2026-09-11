@@ -337,6 +337,10 @@ export const api = {
   advice: (tableId: string, token: string) =>
     request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice`, {}, token),
   /** Name the agent that advises YOU at this table. The card room checks it advertises the skill. */
+  /** Your own agent by NAME, reverse-resolved from the address your Home asserted. `agentName` is null
+   *  when the chain has no primary name for it — which is a fact to show, not a field to guess at. */
+  myAgent: (token: string) =>
+    request<{ address: string | null; agentName: string | null; asserted: string | null }>('/me/agent', {}, token),
   /** Who is advising you at this table right now — the table's answer, never the client's memory. */
   getAdviser: (tableId: string, token: string) =>
     request<{ adviser: { agentName: string; displayName: string } | null }>(

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSession, ClientCommand } from '../lib/types';
-import { api, tableSocketUrl } from '../lib/api';
+import { ApiError, api, tableSocketUrl } from '../lib/api';
 import type { AuthConfig } from '../lib/home';
 import type { TreasuryView } from '../lib/treasury';
 import { seatLabel } from '../lib/format';
@@ -23,6 +23,7 @@ import { Table } from '../components/Table';
 import { drawsGame } from '../lib/games';
 import { Toast } from '../components/Toast';
 import { PokerCoach } from '../components/PokerCoach';
+import { PracticePanel } from '../components/PracticePanel';
 import { costsTokens, type AgentListing } from '../lib/api';
 
 /**
@@ -86,6 +87,11 @@ export function TablePage({
    * table whose whole reason to exist is being taught, and they were getting a coach switched off.
    */
   const [mine, setMine] = useState(false);
+  /** The table is held — read from the table on arrival, then owned by this page's one door. */
+  const [paused, setPaused] = useState(false);
+  /** The pace the table reported, or null until it has. */
+  const [paceMs, setPaceMs] = useState<number | null>(null);
+  const [holdErr, setHoldErr] = useState<string | null>(null);
   const sockRef = useRef<TableSocket | null>(null);
   const token = session?.token ?? null;
   const settles = settlement !== 'play-money';
@@ -117,6 +123,9 @@ export function TablePage({
         setTableName(detail.name ?? null);
         setClub(detail.club && detail.clubName ? { id: detail.club, name: detail.clubName } : null);
         setMine(detail.practiceFor != null && detail.practiceFor === session?.playerId);
+        setPaused(detail.paused === true);
+        // Known either way: a table that reports no pace is one running the deployment's default.
+        setPaceMs(typeof detail.paceMs === 'number' ? detail.paceMs : 2800);
         setSettlement(detail.settlement ?? 'play-money');
         setChipValue(detail.chipValue ?? null);
         setAssetSymbol(detail.assetSymbol ?? null);
@@ -155,6 +164,27 @@ export function TablePage({
 
   /** The viewer's own seat. `viewerSeat` is the table's answer, so it is never inferred from a name. */
   const mySeat = state.view?.viewerSeat ?? null;
+
+  /**
+   * HOLD OR RELEASE THE TABLE — one door, requests in order. The screen changes at once (it is saying
+   * what was asked for); the card room is told in the order it was asked, so two presses close
+   * together cannot leave it holding the opposite opinion. Same shape as the canasta page's.
+   */
+  const holdQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const setHeld = useCallback(
+    (next: boolean) => {
+      if (!session) return;
+      setPaused(next);
+      setHoldErr(null);
+      holdQueue.current = holdQueue.current
+        .then(() => api.setPaused(tableId, next, session.token))
+        .catch((e) => {
+          setPaused(!next);
+          setHoldErr(e instanceof ApiError ? e.message : `The table could not be ${next ? 'held' : 'restarted'}.`);
+        });
+    },
+    [session, tableId],
+  );
 
   const send = useCallback((c: ClientCommand) => sockRef.current?.send(c), []);
   const onDismiss = useCallback(() => setState((s) => dismissError(s)), []);
@@ -289,7 +319,12 @@ export function TablePage({
       </div>
       <div className="page table-page">
         {drawable ? (
-          <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} assetSymbol={assetSymbol} treasury={treasury} />
+          <div className="table-main">
+            {/* THE HOLD IS SAID WHERE THE CARDS ARE, not only in the side column: a table that has
+                stopped moving and says nothing about it looks broken. */}
+            {paused ? <div className="held-banner">Paused. Nothing moves until you carry on.</div> : null}
+            <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} assetSymbol={assetSymbol} treasury={treasury} />
+          </div>
         ) : (
           <OtherGame game={state.game ?? ''} tableName={tableName} />
         )}
@@ -315,6 +350,7 @@ export function TablePage({
             logSeq={state.logSeq}
             ctx={ctx}
             players={state.players}
+            paused={paused}
             /* At a practice table the coach IS the point, so it starts on rather than waiting to be
                found — and that is true however you arrived, which is why it reads the table's own
                `practiceFor` and not only the link's `?practice=1`. Anywhere else it stays off until
@@ -322,6 +358,12 @@ export function TablePage({
             startOn={practice || mine ? 'play' : 'off'}
             send={send}
           />
+          {mine && session ? (
+            <>
+              {holdErr ? <div className="form-error">{holdErr}</div> : null}
+              <PracticePanel tableId={tableId} session={session} game="poker" paused={paused} onHold={setHeld} paceMs={paceMs} />
+            </>
+          ) : null}
           {/* A player who is not ready to sit sees the ONE action that fixes that, above the money
               summary — not a refusal pointing at a panel somewhere else. */}
           {settles && session && !ready ? <StartPanel session={session} config={config} treasury={treasury} onChanged={loadTreasury} /> : null}

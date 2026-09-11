@@ -64,6 +64,7 @@ import {
   type TableSummary,
 } from '@pokernight/protocol';
 import { agentKindFromCard, fetchAgentCard, hasActSkill, resolveAgentBase } from './a2a.js';
+import { looksLikeAgentName, nameOfAgent } from './naming.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aTimeoutMs, allowedOrigins, isDevAuth, siteOrigin, type Env } from './env.js';
 import { OPERATOR_HEADER, checkOperator } from './operator.js';
@@ -1285,6 +1286,27 @@ app.get('/tables/:id/advice', async (c) => {
  *
  * `DELETE` goes back to the house coach.
  */
+/**
+ * YOUR OWN AGENT, by name — so the coach panel can offer it without anybody typing.
+ *
+ * The session holds the Smart Agent's ADDRESS (asserted by the Home's id_token) and whatever the Home
+ * put in `agent_name`, which for an account with no handle is a profile name like "Alice Okoro". A
+ * profile name is not something an agent card can be fetched for. The registry's reverse record is,
+ * so this answers with that when there is one, and says plainly when there is not.
+ */
+app.get('/me/agent', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  // Only a Home session has an agent at all: a dev session is a name and nothing behind it.
+  const home = 'address' in session ? (session as { address?: string; agentName?: string }) : null;
+  const address = home?.address ?? null;
+  const resolved = address ? await nameOfAgent(c.env, address) : null;
+  // The asserted field is offered ONLY when it is shaped like a name: "Alice Okoro" would otherwise
+  // be fetched as `agents.faithnet.io/Alice%20Okoro/…`, which is what happened.
+  const asserted = home?.agentName && looksLikeAgentName(home.agentName) ? home.agentName : null;
+  return c.json({ address, agentName: resolved ?? asserted, asserted: home?.agentName ?? null });
+});
+
 /** Whose advice you are getting at this table — yours to ask about, and nobody else's. */
 app.get('/tables/:id/adviser', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
