@@ -177,11 +177,18 @@ export function CanastaPage({
     setUp.current = true;
     void (async () => {
       const taken = new Set(seats.map((s) => s.seat));
-      const seatIHave = seats.find((s) => s.playerId === state.playerId)?.seat ?? null;
+      const mySeatNow = seats.find((s) => s.playerId === state.playerId) ?? null;
+      const seatIHave = mySeatNow?.seat ?? null;
       let free = [0, 1, 2, 3].filter((n) => !taken.has(n));
       if (seatIHave === null && free.length > 0) {
         send({ type: 'join', seat: free[0] as number, buyIn: 1 });
         free = free.slice(1);
+      } else if (mySeatNow?.status === 'sitting-out') {
+        // STILL YOUR CHAIR, but the table stopped dealing to you — a missed turn or a dropped
+        // connection, from some session you have long forgotten. Pressing "deal me in" and being shown
+        // a table that deals to everybody except you is the worst version of this screen, and sitting
+        // back in is one of the chores the practice table exists to do for you.
+        send({ type: 'sit-in' });
       }
       if (free.length === 0) return;
       try {
@@ -257,16 +264,24 @@ export function CanastaPage({
    */
   const froze = useRef<number | null>(null);
   useEffect(() => {
-    if (!mine || !session || !curtain || paused) return;
+    if (!mine || !session || !curtain) return;
+    // ONCE PER ROUND, and spent the moment the curtain is first seen — including when the table was
+    // ALREADY held. Marking it only on the freeze itself meant "Deal the next round" unpaused and this
+    // effect, whose `curtain` does not go away until the next round actually starts, immediately froze
+    // it again. From the outside the button did nothing.
     if (froze.current === roundNo) return;
     froze.current = roundNo;
+    if (paused) return;
     setPaused(true);
     void api.setPaused(tableId, true, session.token).catch(() => {
       // A freeze that could not be asked for is a table that deals on. The curtain is still up and
       // still says what happened; what it must not do is claim to be holding something it is not.
       setPaused(false);
     });
-  }, [curtain, mine, paused, roundNo, session, tableId]);
+    // `paused` is read but deliberately not a dependency: this runs when a ROUND ends, and re-running
+    // it because the pause changed is exactly the loop described above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curtain, mine, roundNo, session, tableId]);
 
   /** Let it go: put the curtain aside and start the table again. */
   const carryOn = useCallback(() => {

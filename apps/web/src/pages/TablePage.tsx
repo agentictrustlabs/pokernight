@@ -166,11 +166,16 @@ export function TablePage({
     void (async () => {
       const cap = state.view?.config.seats ?? 6;
       const taken = new Set(seats.map((s) => s.seat));
-      const seatIHave = seats.find((s) => s.playerId === state.playerId)?.seat ?? null;
+      const mySeatNow = seats.find((s) => s.playerId === state.playerId) ?? null;
       let free = Array.from({ length: cap }, (_, n) => n).filter((n) => !taken.has(n));
-      if (seatIHave === null && free.length > 0) {
+      if (mySeatNow === null && free.length > 0) {
         send({ type: 'join', seat: free[0] as number, buyIn: PRACTICE_STACK });
         free = free.slice(1);
+      } else if (mySeatNow?.status === 'sitting-out') {
+        // STILL YOUR CHAIR, but the table stopped dealing to you — a missed turn or a dropped
+        // connection from some session you have long forgotten. Pressing "deal me in" and being shown
+        // a table that deals to everybody except you is the worst version of this screen.
+        send({ type: 'sit-in' });
       }
       if (free.length === 0) return;
       try {

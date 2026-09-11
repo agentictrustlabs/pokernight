@@ -429,6 +429,7 @@ export function CanastaTable({
             canMeld={canMeld}
             takeWhy={takeWhy}
             opening={opening}
+            paused={paused}
             onDraw={onDraw}
             onTake={onTake}
             onMeld={onMeld}
@@ -645,6 +646,7 @@ function Controls({
   canMeld,
   takeWhy,
   opening,
+  paused,
   onDraw,
   onTake,
   onMeld,
@@ -665,6 +667,8 @@ function Controls({
   takeWhy: string | null;
   /** How far short of opening the picked cards are, or null once the side is down. */
   opening: { short: number; line: string } | null;
+  /** The table is held, which changes what a scored round can honestly promise about the next one. */
+  paused: boolean;
   onDraw: () => void;
   onTake: () => void;
   onMeld: () => void;
@@ -719,7 +723,7 @@ function Controls({
       </div>
 
       <p className="hint can-why">
-        {why({ view, myTurn, drawing, legal, selection, check, meldShort, minimum, takeWhy })}
+        {why({ view, myTurn, drawing, legal, selection, check, meldShort, minimum, takeWhy, paused })}
       </p>
     </section>
   );
@@ -743,8 +747,17 @@ export function why(a: {
   minimum: number;
   /** Why the pile will not come, or null when it will. Both gates, not only the engine's. */
   takeWhy: string | null;
+  /** The table is held. A scored round that is FROZEN does not deal shortly — it deals when asked. */
+  paused?: boolean;
 }): string {
-  if (a.view.result) return 'The round is scored. The next one deals shortly.';
+  // A scored round says something different depending on whether the table is still running. Saying
+  // "the next one deals shortly" at a table that is being held is the app promising something nothing
+  // is going to do, and it is the exact moment a person is deciding whether to wait or to press.
+  if (a.view.result) {
+    return a.paused
+      ? 'The round is scored and the table is held. Deal the next one when you are ready.'
+      : 'The round is scored. The next one deals shortly.';
+  }
   if (!a.myTurn) return 'Waiting for the other players.';
   if (a.drawing) {
     // `takeWhy` is the WHOLE answer — both gates, not just the engine's. This line used to read the
