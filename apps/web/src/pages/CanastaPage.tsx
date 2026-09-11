@@ -6,6 +6,7 @@ import { tableSocketUrl } from '../lib/api';
 import { TableSocket } from '../lib/tableSocket';
 import {
   dismissCanastaError,
+  dismissTookPile,
   initialCanastaState,
   reduceCanasta,
   seatOf,
@@ -24,6 +25,9 @@ import { SoundToggle } from '../components/SoundToggle';
 import { canastaCue } from '../lib/cues';
 import { useCues } from '../lib/useCues';
 import { Toast } from '../components/Toast';
+import { PileReveal } from '../components/PileReveal';
+import { RoundCurtain } from '../components/RoundCurtain';
+import { curtainFor } from '../lib/roundEnd';
 
 /**
  * The page for a canasta table.
@@ -221,6 +225,57 @@ export function CanastaPage({
     [state.view, state.names],
   );
 
+  /* ------------------------------------------------------ the end of a round */
+
+  /**
+   * WHAT TO SAY WHEN IT ENDS, read off the view's own result rather than off an event.
+   *
+   * The result rides on the view and is cleared by the next round, which is exactly the property this
+   * needs: there is nothing to remember and nothing to forget, and a reconnect mid-interval shows the
+   * curtain again rather than skipping it.
+   */
+  const curtain = useMemo(
+    () => curtainFor(state.view?.result ?? null, mySeat, state.view?.winner ?? null, nameOf),
+    [state.view?.result, state.view?.winner, mySeat, nameOf],
+  );
+  /** Put aside, by round, so dismissing one round's curtain does not dismiss the next one's. */
+  const [reviewed, setReviewed] = useState<number | null>(null);
+  const roundNo = state.view?.roundNo ?? 0;
+  const showCurtain = curtain != null && reviewed !== roundNo;
+
+  /**
+   * FREEZE THE TABLE WHEN THE ROUND ENDS — but only at a table where one person's pause is nobody
+   * else's problem.
+   *
+   * Holding the table is the pause that already exists, and it holds the right things: the clock, the
+   * other players and the next deal, together. Reusing it means a round-end review cannot drift out of
+   * step with what a pause actually does.
+   *
+   * ONLY AT YOUR OWN PRACTICE TABLE. At a table with other people in it, one player wanting to study
+   * the board must not stop three others from playing — so there the curtain is a screen of your own
+   * and the table deals on its own schedule, which is the same reasoning as the pace slider's.
+   */
+  const froze = useRef<number | null>(null);
+  useEffect(() => {
+    if (!mine || !session || !curtain || paused) return;
+    if (froze.current === roundNo) return;
+    froze.current = roundNo;
+    setPaused(true);
+    void api.setPaused(tableId, true, session.token).catch(() => {
+      // A freeze that could not be asked for is a table that deals on. The curtain is still up and
+      // still says what happened; what it must not do is claim to be holding something it is not.
+      setPaused(false);
+    });
+  }, [curtain, mine, paused, roundNo, session, tableId]);
+
+  /** Let it go: put the curtain aside and start the table again. */
+  const carryOn = useCallback(() => {
+    setReviewed(roundNo);
+    if (!mine || !session || !paused) return;
+    setPaused(false);
+    void api.setPaused(tableId, false, session.token).catch(() => setPaused(true));
+  }, [mine, paused, roundNo, session, tableId]);
+
   return (
     <>
       <div className="topbar">
@@ -250,6 +305,27 @@ export function CanastaPage({
       </div>
       <div className="page table-page">
         <CanastaTable state={state} session={session} paused={paused} send={send} />
+        {/* WHAT WAS IN THE PILE. Over the board, because the board is what it is explaining. */}
+        {state.took ? <PileReveal took={state.took} onDismiss={() => setState((s) => dismissTookPile(s))} /> : null}
+        {showCurtain && curtain ? (
+          <RoundCurtain
+            curtain={curtain}
+            frozen={paused}
+            /* Putting it aside leaves the table held, which is the point: the board is still the one
+               the round ended on, and it is there to be read. */
+            onReview={() => setReviewed(roundNo)}
+            onContinue={curtain.scope === 'round' ? carryOn : undefined}
+            /* Only whoever's table it is can deal a new game at it. */
+            onNewGame={
+              curtain.scope === 'game' && mine && session
+                ? () => {
+                    setReviewed(roundNo);
+                    void api.resetPractice(tableId, session.token).catch(() => {});
+                  }
+                : undefined
+            }
+          />
+        ) : null}
         <aside className="side">
           {/* Canasta is four-handed and partnered, so a seat is a choice of SIDE as well as a
               chair. The picker says which, because sitting down opposite your partner is the whole

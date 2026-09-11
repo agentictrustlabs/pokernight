@@ -11,7 +11,7 @@
  * has been melded is the thing a player most needs to look back at.
  */
 
-import type { CanastaLegal, CanastaTableEvent, CanastaView } from './canasta';
+import type { CanastaCard, CanastaLegal, CanastaTableEvent, CanastaView } from './canasta';
 import type { PlayerInfo } from './types';
 import type { CanastaServerMessage } from '@pokernight/protocol';
 import { LOG_LIMIT, type ConnectionStatus } from './tableSocket';
@@ -45,8 +45,40 @@ export interface CanastaTableState {
    */
   logSeq: number;
   turn: CanastaTurn | null;
+  /**
+   * THE CARD YOU JUST DREW, so the hand can point at it.
+   *
+   * A draw adds one card to a dozen that are already sorted by rank, so it does not arrive at the end
+   * where you are looking — it appears somewhere in the middle and the count goes up by one. "Which
+   * one is new?" is a question a person should never have to answer by counting.
+   *
+   * Kept until that turn ends, not for a second or two: the drawn card is what the rest of the turn is
+   * a decision about.
+   */
+  drawn: CanastaCard | null;
+  /** The pile you just took, and what became of every card in it. Cleared when it is dismissed. */
+  took: TookPile | null;
   error: { code: string; message: string } | null;
   connection: ConnectionStatus;
+}
+
+/**
+ * WHAT WAS IN THE PILE AND WHERE IT WENT — the private half of taking one.
+ *
+ * Taking the pile is the biggest move in canasta and the least legible: a dozen cards leave the middle
+ * of the table, three appear on the board, and the rest appear in a hand that was eleven cards a
+ * moment ago. Nothing on the screen joins those up, and the board redraws before anybody has looked.
+ */
+export interface TookPile {
+  /** The pile bottom-to-top, as it stood. The last card is the one that was showing. */
+  cards: CanastaCard[];
+  top: CanastaCard;
+  /** What went onto the board in that one move: your naturals, the top card, and anything alongside. */
+  toMeld: CanastaCard[];
+  /** What went into your hand — the rest of the pile, which is what you took it for. */
+  toHand: CanastaCard[];
+  /** Monotonic, so dismissing one reveal and taking another pile is two different reveals. */
+  seq: number;
 }
 
 export const initialCanastaState: CanastaTableState = {
@@ -58,6 +90,8 @@ export const initialCanastaState: CanastaTableState = {
   log: [],
   logSeq: 0,
   turn: null,
+  drawn: null,
+  took: null,
   error: null,
   connection: 'connecting',
 };
@@ -147,7 +181,34 @@ export function reduceCanasta(state: CanastaTableState, msg: CanastaServerMessag
       // A round that has ended, or moved on to somebody else, takes the controls with it. Leaving a
       // stale legal set on screen is how a player presses a button for a turn they no longer have.
       const turn = turnFromView(msg.view, seat, state.turn);
-      return { ...state, view: msg.view, names, players, log: appendLog(state.log, ev), logSeq: state.logSeq + 1, turn };
+
+      /* WHAT JUST HAPPENED TO YOUR OWN CARDS, kept so the screen can show it rather than leaving the
+         player to spot it. Both of these ride on PRIVATE events, which only ever arrive for the seat
+         they belong to — so there is no need to check whose they are, and no way for one seat's draw
+         to mark up another's hand. */
+      let drawn = state.drawn;
+      let took = state.took;
+      if (ev.type === 'drew-card') drawn = ev.card as CanastaCard;
+      if (ev.type === 'took-pile-cards') {
+        took = {
+          cards: ev.cards as CanastaCard[],
+          top: ev.top as CanastaCard,
+          toMeld: ev.toMeld as CanastaCard[],
+          toHand: ev.toHand as CanastaCard[],
+          seq: (state.took?.seq ?? 0) + 1,
+        };
+      }
+      // YOUR OWN DISCARD ENDS YOUR TURN, and with it the drawn card stops being news. Gated on the
+      // seat because `discarded` arrives for everybody — the first version cleared the highlight the
+      // moment any of the other three discarded, which is three times a lap.
+      if (ev.type === 'discarded' && seat != null && ev.seat === seat) drawn = null;
+      // A new round is a clean table: nothing from the last one is still worth pointing at.
+      if (ev.type === 'round-started') {
+        drawn = null;
+        took = null;
+      }
+
+      return { ...state, view: msg.view, names, players, log: appendLog(state.log, ev), logSeq: state.logSeq + 1, turn, drawn, took };
     }
     case 'turn':
       return { ...state, turn: { roundNo: msg.handNo, seat: msg.seat, legal: msg.legal, deadline: msg.deadline } };
@@ -163,6 +224,12 @@ export function reduceCanasta(state: CanastaTableState, msg: CanastaServerMessag
     default:
       return state;
   }
+}
+
+/** The pile reveal has been read. It is one-shot: nothing brings it back, because the board now shows
+ *  the answer it was explaining. */
+export function dismissTookPile(state: CanastaTableState): CanastaTableState {
+  return state.took ? { ...state, took: null } : state;
 }
 
 export function dismissCanastaError(state: CanastaTableState): CanastaTableState {

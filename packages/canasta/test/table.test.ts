@@ -455,3 +455,81 @@ describe('purity', () => {
     expect(s.config).toEqual(DEFAULT_CONFIG);
   });
 });
+
+/**
+ * TAKING THE PILE, AND BEING TOLD WHAT WAS IN IT.
+ *
+ * `took-pile` tells the table how many cards and which top card, which is what everybody is entitled
+ * to. It is not enough for the person who took it: a dozen cards leave the middle of the table, three
+ * appear on the board, and the rest appear in a hand that was eleven cards a moment ago — and nothing
+ * joins those up. The private `took-pile-cards` is what does.
+ */
+describe('what the taker is told about the pile', () => {
+  /** A hand-built round where seat 0 holds two natural aces and the pile is showing a third. */
+  function pileReady(): CanastaState {
+    let s = seated();
+    s = startRound(s, seed(9)).state;
+    const r = round(s);
+    // Set the table by hand: a state machine driven to this exact spot from a deal would be a test
+    // about shuffling rather than about the event.
+    // Aces rather than sevens: three aces is 60, which clears the 50 a side needs to open. Three
+    // sevens is 15, and a take that cannot open is refused before it reaches the event.
+    r.hands[0] = ['AS', 'AD', 'KS', 'KH', 'KC', '4S', '9D'] as Card[];
+    r.discard = ['4H', '9S', 'KD', 'AH'] as Card[];
+    r.frozen = false;
+    r.opened[0] = false;
+    r.toAct = 0;
+    r.phase = 'draw';
+    s.scores[0] = 0;
+    return s;
+  }
+
+  it('names every card that was in the pile, and where each of them went', () => {
+    const s = pileReady();
+    const pileBefore = round(s).discard.slice();
+    const { events } = applyAction(s, 0, {
+      type: 'take-pile',
+      // Two natural aces from hand, plus the pile's top ace — which is what makes it legal.
+      meld: { rank: 'A', cards: ['AS', 'AD'] as Card[] },
+      also: [{ rank: 'K', cards: ['KS', 'KH', 'KC'] as Card[] }],
+    });
+    const told = events.find((e) => e.type === 'took-pile-cards') as Extract<CanastaEvent, { type: 'took-pile-cards' }>;
+    expect(told).toBeDefined();
+    expect(told.cards).toEqual(pileBefore);
+    expect(told.top).toBe('AH');
+    // Onto the board: the naturals from hand, the pile's top card, and the kings laid alongside.
+    expect(told.toMeld).toEqual(['AS', 'AD', 'AH', 'KS', 'KH', 'KC']);
+    // Into the hand: the whole pile EXCEPT the top card, which went onto the board instead.
+    expect(told.toHand).toEqual(['4H', '9S', 'KD']);
+  });
+
+  it('accounts for the pile exactly once — every card either melded or went into the hand', () => {
+    const s = pileReady();
+    const { events } = applyAction(s, 0, { type: 'take-pile', meld: { rank: 'A', cards: ['AS', 'AD'] as Card[] } });
+    const told = events.find((e) => e.type === 'took-pile-cards') as Extract<CanastaEvent, { type: 'took-pile-cards' }>;
+    const fromPile = [...told.toHand, told.top];
+    expect(fromPile.slice().sort()).toEqual(told.cards.slice().sort());
+  });
+
+  it('agrees with the public event about how many and which top card', () => {
+    const s = pileReady();
+    const { events } = applyAction(s, 0, { type: 'take-pile', meld: { rank: 'A', cards: ['AS', 'AD'] as Card[] } });
+    const pub = events.find((e) => e.type === 'took-pile') as Extract<CanastaEvent, { type: 'took-pile' }>;
+    const told = events.find((e) => e.type === 'took-pile-cards') as Extract<CanastaEvent, { type: 'took-pile-cards' }>;
+    expect(pub.cards).toBe(told.cards.length);
+    expect(pub.top).toBe(told.top);
+  });
+
+  it('goes to the taker and to nobody else', () => {
+    // Every other seat watched the pile being built and can count it. Being HANDED its contents is a
+    // different thing, and it would say exactly which cards are now in somebody's hand.
+    const s = pileReady();
+    const { events } = applyAction(s, 0, { type: 'take-pile', meld: { rank: 'A', cards: ['AS', 'AD'] as Card[] } });
+    const told = events.find((e) => e.type === 'took-pile-cards') as CanastaEvent;
+    expect(redactEvent(told, 0)).toBe(told);
+    for (const other of [1, 2, 3, null]) expect(redactEvent(told, other)).toBeNull();
+    // …while the public one reaches everybody.
+    const pub = events.find((e) => e.type === 'took-pile') as CanastaEvent;
+    for (const seat of [0, 1, 2, 3, null]) expect(redactEvent(pub, seat)).toBe(pub);
+  });
+});

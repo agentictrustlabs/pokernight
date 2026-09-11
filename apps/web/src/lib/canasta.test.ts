@@ -19,6 +19,7 @@ import {
 import {
   cardValue,
   checkSelection,
+  drawnIndex,
   hasCanasta,
   isBlackThree,
   isRedThree,
@@ -329,5 +330,38 @@ describe('how close to opening', () => {
       expect(openingMinimum(score)).toBe(min);
       expect(openingProgress({ opened: false, value: 40, minimum: min })?.short).toBe(min - 40);
     }
+  });
+});
+
+/**
+ * WHICH CARD IS NEW.
+ *
+ * A draw puts one card into a dozen sorted by rank, so it lands in the middle rather than at the end
+ * where a person is looking, and the count going from eleven to twelve says nothing about which one it
+ * is. Answering that by counting is not something a card game should ask of anybody.
+ */
+describe('the card you just drew', () => {
+  const groups = () => groupHand(['7C', '7D', 'KS', '2H', '3H'] as CanastaCard[]);
+
+  it('is located in the flat order the hand actually renders in', () => {
+    const g = groups();
+    const flat = g.flatMap((x) => x.cards);
+    const i = drawnIndex(g, 'KS' as CanastaCard);
+    expect(flat[i]).toBe('KS');
+  });
+
+  it('picks the first of two identical cards, so the mark does not move between renders', () => {
+    const g = groupHand(['7C', '7C', 'KS'] as CanastaCard[]);
+    const flat = g.flatMap((x) => x.cards);
+    const i = drawnIndex(g, '7C' as CanastaCard);
+    expect(flat[i]).toBe('7C');
+    expect(drawnIndex(g, '7C' as CanastaCard)).toBe(i);
+  });
+
+  it('points at nothing when there is nothing to point at', () => {
+    expect(drawnIndex(groups(), null)).toBe(-1);
+    // Drawn earlier and since melded or discarded: the hand no longer holds it.
+    expect(drawnIndex(groups(), 'AS' as CanastaCard)).toBe(-1);
+    expect(drawnIndex([], '7C' as CanastaCard)).toBe(-1);
   });
 });

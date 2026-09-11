@@ -4409,3 +4409,298 @@ a.button.primary:hover {
   padding: 0;
   font: inherit;
 }
+
+/* ---------------------------------------------------------------------------
+ * THE CARD YOU JUST DREW.
+ *
+ * A draw puts one card into a dozen sorted by rank, so it lands in the middle rather than where you
+ * are looking. A brass ring and a lift say which one, and they hold for the whole turn because the
+ * drawn card is what the rest of the turn is a decision about.
+ *
+ * Brass rather than the selection green: a highlight in the same colour as "picked" would read as a
+ * card the game had selected for you, which is a different and much worse claim.
+ * ------------------------------------------------------------------------ */
+.can-card.drawn {
+  box-shadow: 0 0 0 2px var(--brass), 0 6px 14px rgba(169, 124, 46, 0.3);
+  transform: translateY(-5px);
+}
+.can-card.drawn.picked {
+  /* Picked wins on the lift; the ring stays, so a drawn card you have selected still says both. */
+  transform: translateY(-11px);
+  box-shadow: 0 0 0 2px var(--focus), 0 0 0 4px var(--brass);
+}
+.can-card.drawn::after {
+  content: 'new';
+  position: absolute;
+  inset: auto auto -0.55rem 50%;
+  transform: translateX(-50%);
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brass);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 0 0.25rem;
+  line-height: 1.4;
+  pointer-events: none;
+}
+.can-card {
+  position: relative;
+}
+
+/* ---------------------------------------------------------------------------
+ * WHAT WAS IN THE PILE.
+ *
+ * Over the board, because the board is what it explains, and translucent at the edges so the melds it
+ * is talking about are still visible behind it. It leaves on its own after a few seconds: a modal in
+ * the middle of your own turn is a modal in the way of the move you took the pile to make.
+ * ------------------------------------------------------------------------ */
+/* FIXED, not absolute. These are siblings of the board inside a grid that is not a positioned
+   ancestor, so `absolute` would anchor them to the page rather than to what they cover — and an
+   overlay that scrolls away from the thing it is explaining is not an overlay. */
+.pile-reveal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(14, 46, 32, 0.45);
+  z-index: 40;
+  padding: 1rem;
+  animation: pile-reveal-in 160ms ease-out;
+}
+@keyframes pile-reveal-in {
+  from {
+    opacity: 0;
+  }
+}
+.pile-reveal-box {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 0.9rem 1rem 1rem;
+  max-width: min(46rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+}
+.pile-reveal-box header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 0.4rem;
+}
+.pile-reveal-box header h3 {
+  margin: 0;
+  grid-column: 1;
+}
+.pile-reveal-box header .hint {
+  grid-column: 1;
+  margin: 0.1rem 0 0;
+}
+.pile-reveal-box header button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0 0.3rem;
+}
+/* THE PILE AS IT SAT: overlapped, bottom-to-top, so the shape on screen is the shape it had in the
+   middle of the table. It scrolls sideways in its own box rather than widening the page. */
+.pile-reveal-stack {
+  display: flex;
+  margin: 0.75rem 0;
+  padding: 0.3rem 0 0.5rem;
+  overflow-x: auto;
+}
+.pile-reveal-stack .pile-reveal-card + .pile-reveal-card {
+  margin-left: -0.85rem;
+}
+.pile-reveal-card {
+  display: inline-block;
+  line-height: 0;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+.pile-reveal-card.top {
+  box-shadow: 0 0 0 2px var(--brass);
+  transform: translateY(-5px);
+}
+.pile-reveal-card.from-hand {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+.pile-reveal-flow {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+.pile-reveal-group {
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  padding: 0.55rem 0.7rem 0.7rem;
+}
+.pile-reveal-group h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.pile-reveal-group.to-meld {
+  border-left: 3px solid var(--brass);
+}
+.pile-reveal-group.to-hand {
+  border-left: 3px solid var(--focus);
+}
+.pile-reveal-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-bottom: 0.35rem;
+}
+.pile-reveal-group .hint {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * THE END OF A ROUND.
+ *
+ * A curtain over the board rather than a banner beside it, because the point is to stop. The board
+ * stays visible behind it: "Look at the board" puts this aside and leaves the table held.
+ * ------------------------------------------------------------------------ */
+.curtain {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(14, 46, 32, 0.55);
+  z-index: 50;
+  padding: 1rem;
+  overflow: hidden;
+  animation: pile-reveal-in 200ms ease-out;
+}
+.curtain-box {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 1.1rem 1.3rem 1.2rem;
+  max-width: min(34rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  text-align: center;
+}
+.curtain-scope {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.curtain-box h2 {
+  margin: 0.2rem 0 0.35rem;
+  font-size: clamp(1.5rem, 4vw, 2.1rem);
+  text-wrap: balance;
+}
+.curtain-detail {
+  margin: 0;
+  color: var(--ink);
+}
+/* CREDIT, not consolation: it is set apart so it reads as a fact about the round rather than as a
+   softening of the headline above it. */
+.curtain-credit {
+  margin: 0.6rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--brass);
+  border-radius: 0 7px 7px 0;
+  background: var(--brass-soft);
+  color: var(--ink);
+  text-align: left;
+}
+.curtain-lines {
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  text-align: left;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+.curtain-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin: 1rem 0 0.6rem;
+}
+.curtain.scope-game .curtain-box h2 {
+  font-size: clamp(1.7rem, 5vw, 2.5rem);
+}
+.curtain.mood-won .curtain-box {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px var(--brass-soft), var(--shadow);
+}
+.curtain.mood-won .curtain-box h2 {
+  color: var(--gold);
+}
+.curtain.mood-lost .curtain-box h2 {
+  color: var(--ink);
+}
+
+/* THE BURST. Colour that falls and settles, once — not a loop, because a loop behind something being
+   read is a distraction rather than a celebration. Every piece is a lane and a delay computed from its
+   index, so the same moment renders the same way twice. */
+.curtain-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.curtain-burst i {
+  position: absolute;
+  top: -8%;
+  width: 7px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--brass);
+  opacity: 0;
+  animation: curtain-fall 2.4s cubic-bezier(0.3, 0.7, 0.4, 1) forwards;
+}
+.curtain-burst i:nth-child(3n) {
+  background: var(--focus);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.curtain-burst i:nth-child(3n + 1) {
+  background: var(--hero-brass);
+}
+.curtain-burst i:nth-child(4n) {
+  background: var(--card-red);
+}
+@keyframes curtain-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(0) rotate(0deg);
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(105vh) rotate(540deg);
+  }
+}
+/* None of the information is in the animation, so taking it away costs nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .curtain-burst {
+    display: none;
+  }
+  .pile-reveal,
+  .curtain {
+    animation: none;
+  }
+  .can-card.drawn {
+    transform: none;
+  }
+}

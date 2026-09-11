@@ -33,7 +33,7 @@ function view(over: Record<string, unknown> = {}, handOver: Record<string, unkno
       smallBlindSeat: 1,
       bigBlindSeat: 2,
       street: 'flop',
-      board: ['2C', '7D', 'KS'],
+      board: ['2c', '7d', 'Ks'],
       pots: [{ amount: 30, eligible: [0, 1, 2] }],
       toAct: 0,
       currentBet: 0,
@@ -88,7 +88,7 @@ describe('what is said out loud', () => {
 
   it('stays quiet about the events that do not need a voice', () => {
     expect(spokenPokerLine({ type: 'pots', pots: [] } as TableEvent, ctx)).toBeNull();
-    expect(spokenPokerLine({ type: 'hole-cards', seat: 0, cards: ['AS', 'KS'], private: true } as TableEvent, ctx)).toBeNull();
+    expect(spokenPokerLine({ type: 'hole-cards', seat: 0, cards: ['As', 'Ks'], private: true } as TableEvent, ctx)).toBeNull();
   });
 });
 

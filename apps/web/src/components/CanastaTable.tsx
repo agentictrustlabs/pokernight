@@ -4,6 +4,7 @@ import type { AppSession, ClientCommand } from '../lib/types';
 import type { CanastaCard, CanastaLegal, CanastaView, ViewMeld } from '../lib/canasta';
 import {
   checkSelection,
+  drawnIndex,
   groupHand,
   hasCanasta,
   openingMinimum,
@@ -212,6 +213,8 @@ export function CanastaTable({
   const myTurn = mySeat != null && view.toAct === mySeat && !view.result;
   const legal = state.turn?.seat === mySeat ? state.turn.legal : null;
   const groups = groupHand(hand);
+  // The card drawn this turn, so the hand can point at it. The socket keeps it; this only locates it.
+  const justDrawn = drawnIndex(groups, state.drawn);
   const flat = groups.flatMap((g) => g.cards);
   const selection = picked.map((i) => flat[i]).filter((c): c is CanastaCard => c != null);
   const myTeam = mySeat == null ? null : teamOf(mySeat);
@@ -395,7 +398,15 @@ export function CanastaTable({
             <span className="cs-team">you · seat {mySeat + 1}</span>
             {view.toAct === mySeat && !view.result ? <span className="tag turn-tag">your turn</span> : null}
           </div>
-          <CanastaHand groups={groups} selected={picked} onToggle={toggle} onPickRank={pickRank} onCardDown={onCardDown} disabled={!myTurn} />
+          <CanastaHand
+            groups={groups}
+            selected={picked}
+            justDrawn={justDrawn}
+            onToggle={toggle}
+            onPickRank={pickRank}
+            onCardDown={onCardDown}
+            disabled={!myTurn}
+          />
           {/* The cards in the air, following the pointer. Purely a picture: what is actually being
               dragged lives in a ref, and where it lands is decided by what is under the pointer. */}
           {dragging && point ? (

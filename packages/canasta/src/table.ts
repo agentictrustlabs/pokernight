@@ -73,6 +73,19 @@ export type CanastaEvent =
   /** Private: the card drawn, to the seat that drew it. */
   | { type: 'drew-card'; seat: number; card: Card; private: true }
   | { type: 'took-pile'; seat: number; cards: number; top: Card }
+  /**
+   * Private: THE PILE ITSELF, to the seat that just took it, and what became of every card in it.
+   *
+   * `took-pile` says how many and which top card, which is what the rest of the table is entitled to.
+   * It is not enough for the person who took it: a dozen cards leave the middle of the table, three
+   * appear on the board and the remainder appear in a hand that was eleven cards a moment ago, and
+   * nothing on the screen connects the three. "I cannot see what was in the pile and how it was used."
+   *
+   * So this carries the pile bottom-to-top, the cards that went onto the board in this move, and the
+   * cards that went into the hand. Redacted to the taker like `drew-card`: every other seat watched
+   * the pile being built and can count it, but being HANDED its contents is not the same thing.
+   */
+  | { type: 'took-pile-cards'; seat: number; cards: Card[]; top: Card; toMeld: Card[]; toHand: Card[]; private: true }
   | { type: 'melded'; seat: number; team: TeamId; rank: Rank; cards: Card[]; size: number; canasta: boolean }
   | { type: 'opened'; seat: number; team: TeamId; value: number }
   | { type: 'discarded'; seat: number; card: Card; frozen: boolean }
@@ -430,16 +443,31 @@ function doTakePile(state: CanastaState, seat: number, spec: MeldSpec, also: rea
   }
 
   const taken = round.discard.length;
+  // The pile as it stood, kept before it is emptied: this is what the taker is shown, and it is the
+  // only moment the information exists in one place.
+  const pile = round.discard.slice();
+  const intoHand = round.discard.slice(0, -1);
   round.melds[team] = laid.melds;
   // The rest of the pile goes into the hand, and only then. Melding out of it happens on later
   // moves this turn, which is exactly what a player takes the pile for.
-  round.hands[seat] = [...rest, ...round.discard.slice(0, -1)];
+  round.hands[seat] = [...rest, ...intoHand];
   round.discard = [];
   round.frozen = false;
   round.phase = 'play';
   round.meldedThisTurn = true;
 
   events.push({ type: 'took-pile', seat, cards: taken, top: topCard });
+  events.push({
+    type: 'took-pile-cards',
+    seat,
+    cards: pile,
+    top: topCard,
+    // Everything that went onto the board in this one move: the naturals from hand plus the pile's
+    // top card, and any other meld laid down alongside it.
+    toMeld: [...spec.cards, topCard, ...also.flatMap((m) => m.cards)],
+    toHand: intoHand.slice(),
+    private: true,
+  });
   if (justOpened) events.push({ type: 'opened', seat, team, value: openingValue(laid.laid) });
   for (const m of [{ rank: spec.rank, cards: [...spec.cards, topCard] }, ...also]) {
     const done = findMeld(laid.melds, m.rank) as { rank: Rank; cards: Card[] };

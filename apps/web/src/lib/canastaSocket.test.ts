@@ -11,6 +11,7 @@ import type { CanastaLegal, CanastaView } from './canasta';
 import { LOG_LIMIT } from './tableSocket';
 import {
   dismissCanastaError,
+  dismissTookPile,
   initialCanastaState,
   reduceCanasta,
   seatOf,
@@ -235,5 +236,96 @@ describe('counting events', () => {
     for (let i = 0; i < LOG_LIMIT + 3; i++) s = reduceCanasta(s, drew(500 - i));
     const last = s.log[s.log.length - 1] as { stock?: number };
     expect(last.stock).toBe(500 - (LOG_LIMIT + 2));
+  });
+});
+
+/**
+ * WHAT JUST HAPPENED TO YOUR OWN CARDS.
+ *
+ * Both of these ride on PRIVATE events, which only ever arrive for the seat they belong to — so the
+ * reducer never has to ask whose they are, and one seat's draw can never mark up another's hand.
+ */
+describe('the card you just drew', () => {
+  const drewCard = (card: string, v = view()): CanastaServerMessage =>
+    ({ type: 'event', event: { type: 'drew-card', seat: 0, card, private: true }, view: v }) as CanastaServerMessage;
+
+  it('is remembered, so the hand can point at it', () => {
+    let s = reduceCanasta(initialCanastaState, welcome());
+    s = reduceCanasta(s, drewCard('KD'));
+    expect(s.drawn).toBe('KD');
+  });
+
+  it('is forgotten when YOUR OWN discard ends the turn', () => {
+    let s = reduceCanasta(initialCanastaState, welcome());
+    s = reduceCanasta(s, drewCard('KD'));
+    s = reduceCanasta(s, { type: 'event', event: { type: 'discarded', seat: 0, card: 'KD', frozen: false }, view: view() } as CanastaServerMessage);
+    expect(s.drawn).toBeNull();
+  });
+
+  it('survives everybody ELSE discarding, which happens three times a lap', () => {
+    // The first version cleared the highlight on any `discarded` event, so the card you drew stopped
+    // being marked the moment the next player threw something away.
+    let s = reduceCanasta(initialCanastaState, welcome());
+    s = reduceCanasta(s, drewCard('KD'));
+    for (const seat of [1, 2, 3]) {
+      s = reduceCanasta(s, { type: 'event', event: { type: 'discarded', seat, card: '4H', frozen: false }, view: view() } as CanastaServerMessage);
+    }
+    expect(s.drawn).toBe('KD');
+  });
+
+  it('is forgotten when a new round starts, because nothing from the last one is worth pointing at', () => {
+    let s = reduceCanasta(initialCanastaState, welcome());
+    s = reduceCanasta(s, drewCard('KD'));
+    s = reduceCanasta(s, {
+      type: 'event',
+      event: { type: 'round-started', roundNo: 2, seedCommit: 'x', dealer: 1, stock: 80 },
+      view: view({ roundNo: 2 }),
+    } as CanastaServerMessage);
+    expect(s.drawn).toBeNull();
+  });
+});
+
+describe('the pile you just took', () => {
+  const took = (v = view()): CanastaServerMessage =>
+    ({
+      type: 'event',
+      event: {
+        type: 'took-pile-cards',
+        seat: 0,
+        cards: ['4H', 'KD', '9S', '7C'],
+        top: '7C',
+        toMeld: ['7D', '7H', '7C'],
+        toHand: ['4H', 'KD', '9S'],
+        private: true,
+      },
+      view: v,
+    }) as CanastaServerMessage;
+
+  it('keeps the pile, and what became of every card in it', () => {
+    let s = reduceCanasta(initialCanastaState, welcome());
+    s = reduceCanasta(s, took());
+    expect(s.took?.cards).toHaveLength(4);
+    expect(s.took?.top).toBe('7C');
+    expect(s.took?.toHand).toEqual(['4H', 'KD', '9S']);
+    // The top card came from the PILE; the other two in the meld came from the hand. That is the
+    // distinction the reveal is about, and it is why the top card is carried separately.
+    expect(s.took?.toMeld).toContain('7C');
+  });
+
+  it('counts each take separately, so a second pile is a second reveal', () => {
+    let s = reduceCanasta(initialCanastaState, welcome());
+    s = reduceCanasta(s, took());
+    const first = s.took?.seq as number;
+    s = reduceCanasta(s, took());
+    expect(s.took?.seq).toBe(first + 1);
+  });
+
+  it('is dismissed once, and nothing brings it back', () => {
+    let s = reduceCanasta(initialCanastaState, welcome());
+    s = reduceCanasta(s, took());
+    s = dismissTookPile(s);
+    expect(s.took).toBeNull();
+    // Idempotent: dismissing nothing is not a new state object.
+    expect(dismissTookPile(s)).toBe(s);
   });
 });

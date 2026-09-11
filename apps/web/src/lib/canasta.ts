@@ -90,6 +90,31 @@ export interface HandGroup {
   bonus: boolean;
 }
 
+/**
+ * WHERE THE CARD YOU JUST DREW ENDED UP in the grouped hand.
+ *
+ * A draw adds one card to a dozen that are sorted by rank, so it does not arrive where you are looking
+ * — it appears somewhere in the middle and the count goes up by one. Answering "which one is new?" by
+ * counting is not something a game should ask of anybody.
+ *
+ * The FIRST matching card, deliberately and not the last: two decks means a hand can hold two of the
+ * same card, either of them is the one that was drawn as far as anything on screen can tell, and
+ * picking a fixed one keeps the highlight from jumping between renders of an unchanged hand.
+ *
+ * Returns -1 when there is nothing to point at — no draw yet, or a card that has since been played.
+ */
+export function drawnIndex(groups: readonly HandGroup[], drawn: CanastaCard | null): number {
+  if (!drawn) return -1;
+  let i = -1;
+  for (const g of groups) {
+    for (const c of g.cards) {
+      i += 1;
+      if (c === drawn) return i;
+    }
+  }
+  return -1;
+}
+
 export function groupHand(cards: readonly CanastaCard[]): HandGroup[] {
   const by = new Map<string, CanastaCard[]>();
   for (const c of cards) {

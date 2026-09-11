@@ -20,6 +20,7 @@ import { Card } from './Card';
 export function CanastaHand({
   groups,
   selected,
+  justDrawn = -1,
   onToggle,
   onPickRank,
   onCardDown,
@@ -28,6 +29,14 @@ export function CanastaHand({
   groups: readonly HandGroup[];
   /** Indices into the FLAT grouped hand — the same order this renders in. */
   selected: readonly number[];
+  /**
+   * The card drawn this turn, as a flat index, or -1 for none.
+   *
+   * MARKED FOR THE WHOLE TURN, not for a second: the drawn card is what the rest of the turn is a
+   * decision about, so it stays pointed at until the discard that ends the turn. A hand sorted by rank
+   * does not put a new card where anybody is looking.
+   */
+  justDrawn?: number;
   onToggle: (index: number) => void;
   onPickRank: (rank: string) => void;
   /**
@@ -70,10 +79,14 @@ export function CanastaHand({
                   <button
                     key={`${c}-${n}`}
                     type="button"
-                    className={`can-card${picked.has(n) ? ' picked' : ''}${g.bonus ? ' bonus' : ''}`}
+                    className={`can-card${picked.has(n) ? ' picked' : ''}${g.bonus ? ' bonus' : ''}${n === justDrawn ? ' drawn' : ''}`}
                     disabled={disabled || g.bonus}
                     aria-pressed={picked.has(n)}
-                    title={g.bonus ? 'A red three is a bonus — it lays itself down' : `${c} · ${cardValue(c as CanastaCard)} points`}
+                    title={
+                      g.bonus
+                        ? 'A red three is a bonus — it lays itself down'
+                        : `${c} · ${cardValue(c as CanastaCard)} points${n === justDrawn ? ' · you drew this' : ''}`
+                    }
                     onPointerDown={(e) => onCardDown(n, e)}
                     onClick={() => onToggle(n)}
                   >
