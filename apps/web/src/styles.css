@@ -3074,6 +3074,20 @@ a.button.primary:hover {
   opacity: 0.75;
 }
 
+/* HOW FAR SHORT OF OPENING, beside the running count. Warn while there is a gap, felt once there is
+   not — the colour is the answer at a glance and the words are the answer exactly. */
+.can-short,
+.can-enough {
+  margin-left: 0.5rem;
+  font-weight: 600;
+}
+.can-short {
+  color: var(--warn);
+}
+.can-enough {
+  color: var(--felt-deep);
+}
+
 /* Keeping a chair for somebody, and saying whose side they are on. Folded, because filling the table
    and dealing is what most people want and the choice only matters when somebody is on their way. */
 .can-keep {

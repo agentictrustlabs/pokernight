@@ -298,3 +298,24 @@ export function primaryAction(a: {
   if (a.canMeld) return 'meld';
   return null;
 }
+
+/* --------------------------------------------------------- how close to opening */
+
+/**
+ * HOW FAR SHORT OF OPENING the cards in your hand currently are.
+ *
+ * A side that has not laid anything down yet must open with a meld worth at least a minimum, and that
+ * minimum climbs with the score — 50, then 90, then 120. So the number that matters while somebody is
+ * picking cards is not the total, it is the GAP: "60 points" answers a question nobody asked, and
+ * "30 short of 90" is the one that tells them whether to keep looking.
+ *
+ * Null once the side has opened, because then there is no minimum and a running total is just noise.
+ */
+export function openingProgress(a: { opened: boolean; value: number; minimum: number }): { short: number; line: string } | null {
+  if (a.opened || a.minimum <= 0) return null;
+  const short = a.minimum - a.value;
+  return {
+    short: Math.max(0, short),
+    line: short > 0 ? `${short} short of ${a.minimum}` : `enough to open (${a.minimum})`,
+  };
+}

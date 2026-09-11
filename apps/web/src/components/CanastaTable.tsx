@@ -7,6 +7,7 @@ import {
   groupHand,
   hasCanasta,
   openingMinimum,
+  openingProgress,
   rankOf,
   seatRing,
   teamName,
@@ -303,6 +304,10 @@ export function CanastaTable({
   const opened = existingRanks.length > 0;
   const minimum = myTeam == null ? 0 : openingMinimum(view.scores[myTeam]);
   const meldShort = !opened && check.ok && check.value < minimum;
+  // The running gap to opening, for the counter beside the picked cards. Uses the SELECTION's value
+  // whether or not it is yet a legal meld, because somebody part-way through choosing is exactly who
+  // needs to know how far they still have to go.
+  const opening = openingProgress({ opened, value: valueOf(selection), minimum });
   const canMeld = myTurn && view.phase === 'play' && check.ok && !meldShort;
 
   const onDraw = () => canDraw && act({ type: 'draw' });
@@ -412,6 +417,7 @@ export function CanastaTable({
             canTake={canTake}
             canMeld={canMeld}
             takeWhy={takeWhy}
+            opening={opening}
             onDraw={onDraw}
             onTake={onTake}
             onMeld={onMeld}
@@ -627,6 +633,7 @@ function Controls({
   canTake,
   canMeld,
   takeWhy,
+  opening,
   onDraw,
   onTake,
   onMeld,
@@ -645,6 +652,8 @@ function Controls({
   canMeld: boolean;
   /** Why the pile will not come, or null when it will. Both gates, not only the engine's. */
   takeWhy: string | null;
+  /** How far short of opening the picked cards are, or null once the side is down. */
+  opening: { short: number; line: string } | null;
   onDraw: () => void;
   onTake: () => void;
   onMeld: () => void;
@@ -663,6 +672,10 @@ function Controls({
         {selection.length > 0 ? (
           <span className="can-picked">
             {selection.length} picked · {valueOf(selection)} points
+            {/* AND HOW FAR SHORT, while a side has not opened. The total on its own does not say
+                whether to keep looking; the gap does. Silent once they are down, when there is no
+                minimum left to be short of. */}
+            {opening ? <span className={opening.short > 0 ? 'can-short' : 'can-enough'}>{opening.line}</span> : null}
             <button type="button" className="link-button" onClick={onClear}>
               clear
             </button>
@@ -732,7 +745,8 @@ export function why(a: {
   if (a.selection.length === 0) return 'Pick cards to lay down, or pick one card to discard and end your turn. You can drag them instead.';
   if (a.selection.length === 1) return 'Discard that to end your turn, or pick more cards to make a meld. Dragging it to the pile discards it.';
   if (!a.check.ok) return a.check.why;
-  if (a.meldShort) return `Your side has not opened. That is ${a.check.value} and you need ${a.minimum}. Pick more, or discard to pass.`;
+  if (a.meldShort)
+    return `Your side has not opened. That is ${a.check.value} — ${a.minimum - a.check.value} short of ${a.minimum}. Pick more, or discard to pass.`;
   return `That is a legal ${a.check.rank} meld worth ${a.check.value}. Lay it down, or press one of your melds to add to it.`;
 }
 

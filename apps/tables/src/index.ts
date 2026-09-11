@@ -54,6 +54,8 @@ import {
   type KnownPerson,
   type SeatStandUpFailure,
   type SeatStoodUp,
+  CANASTA_ADVISE_SKILL,
+  POKER_ADVISE_SKILL,
   SetScheduleRequestSchema,
   icsCalendar,
   type ClubStanding,
@@ -1260,7 +1262,74 @@ app.get('/tables/:id/advice', async (c) => {
   // Not seated is not an error worth a 403: you are watching, and there is nothing to advise.
   if (!mine) return c.json({ error: 'you are not seated at this table' }, 404);
 
-  return passthrough(await table(c.env, tableId).fetch(`https://table/advice?seat=${mine.seat}`));
+  // WHO IS ASKING travels with it, because the adviser is theirs: two people at one table may each
+  // have named their own, and neither should get the other's.
+  return passthrough(
+    await table(c.env, tableId).fetch(`https://table/advice?seat=${mine.seat}&player=${encodeURIComponent(session.playerId)}`),
+  );
+});
+
+/**
+ * NAME THE AGENT THAT ADVISES YOU HERE — your own, not the house's.
+ *
+ * The card room's coach is one strategy, the same for everybody. A person's own agent carries THEIR
+ * style, written as their own artifacts somewhere this card room never reaches; naming it here says
+ * where to ask, and nothing else. The reasoning stays theirs.
+ *
+ * Refused unless the agent's card advertises the ADVISE skill for this table's game — a skill
+ * deliberately separate from `*.act`, so an agent that only ever meant to talk is never handed a turn.
+ *
+ * `DELETE` goes back to the house coach.
+ */
+app.post('/tables/:id/adviser', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const tableId = c.req.param('id');
+  const gate = await clubGate(c, await tableClub(c.env, tableId));
+  if (gate) return gate;
+
+  const body = (await c.req.json().catch(() => null)) as { agentName?: unknown; endpoint?: unknown } | null;
+  const agentName = typeof body?.agentName === 'string' ? body.agentName.trim() : '';
+  if (!agentName) return c.json({ error: 'name the agent that should advise you' }, 400);
+
+  const got = await table(c.env, tableId).fetch('https://table/summary');
+  if (!got.ok) return c.json({ error: 'no such table' }, 404);
+  const game = ((await got.json()) as { game?: string }).game ?? 'poker';
+  const skill = game === 'canasta' ? CANASTA_ADVISE_SKILL : POKER_ADVISE_SKILL;
+
+  let base: string;
+  try {
+    base = resolveAgentBase(c.env, agentName, typeof body?.endpoint === 'string' ? body.endpoint : undefined);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+  const card = await fetchAgentCard(base, a2aTimeoutMs(c.env));
+  if (!card.ok) return c.json({ error: card.error }, 400);
+  // Refused here rather than at the first question, so nobody discovers mid-hand that their adviser
+  // cannot answer.
+  if (!hasActSkill(card.card, skill)) {
+    return c.json({ error: `${agentName} does not advertise the ${skill} skill` }, 400);
+  }
+
+  return passthrough(
+    await table(c.env, tableId).fetch('https://table/adviser', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: session.playerId, agentName, endpoint: base, displayName: card.card.name ?? agentName }),
+    }),
+  );
+});
+
+app.delete('/tables/:id/adviser', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  return passthrough(
+    await table(c.env, c.req.param('id')).fetch('https://table/adviser', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: session.playerId }),
+    }),
+  );
 });
 
 app.get('/tables/:id/hands/:handNo', async (c) => {

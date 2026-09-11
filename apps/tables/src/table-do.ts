@@ -51,6 +51,8 @@ import { DEFAULT_GAME, gameFor } from './games.js';
 import type { PlayerFunding } from '@pokernight/treasury';
 import {
   parseClientCommand,
+  CANASTA_ADVISE_SKILL,
+  POKER_ADVISE_SKILL,
   type ChatEvent,
   type ClientCommand,
   type PlayerInfo,
@@ -66,7 +68,7 @@ import {
   type TableEvent,
   type TableSummary,
 } from '@pokernight/protocol';
-import { a2aTimeoutMs, callAct, resolveAgentBase } from './a2a.js';
+import { a2aTimeoutMs, callAct, callAdvise, resolveAgentBase } from './a2a.js';
 import { readSessionRecord } from './auth.js';
 import { agentPaceMs, seatIdleMs } from './env.js';
 import type { Env } from './env.js';
@@ -424,6 +426,13 @@ export class PokerTableDO extends DurableObject<Env> {
   private game: HostedGame = gameFor(undefined);
   private names: Record<string, string> = {};
   private players: Record<string, SeatRecord> = {};
+  /**
+   * The agent each player has named to advise THEM here, keyed by playerId.
+   *
+   * Per player rather than per table: an adviser is somebody's own, and two people at one table may
+   * each bring their own without either seeing the other's. It holds no strategy — only where to ask.
+   */
+  private advisers: Record<string, { agentName: string; endpoint: string; displayName: string }> = {};
   private adapter: SettlementAdapter | null = null;
   /**
    * Turn calls to agent seats that are still on the wire, keyed `handNo:seat:deadline` (one turn
@@ -439,13 +448,14 @@ export class PokerTableDO extends DurableObject<Env> {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(SCHEMA);
-      const kv = await ctx.storage.get<unknown>(['meta', 'state', 'names', 'players']);
+      const kv = await ctx.storage.get<unknown>(['meta', 'state', 'names', 'players', 'advisers']);
       this.meta = (kv.get('meta') as TableMeta | undefined) ?? null;
       this.state = (kv.get('state') as unknown) ?? null;
       // Resolved once, from the table's own stamp. A table stamped with a game this deployment does
       // not ship throws HERE, on load, rather than dealing the wrong game to people already seated.
       if (this.meta) this.game = gameFor(this.meta.game);
       this.names = (kv.get('names') as Record<string, string> | undefined) ?? {};
+      this.advisers = (kv.get('advisers') as Record<string, { agentName: string; endpoint: string; displayName: string }> | undefined) ?? {};
       // Migration: a table created before phase 2 has `names` but no `players`. Everyone in it was a
       // human on a WebSocket, so the record is derivable; it is persisted on the next seat change.
       this.players = (kv.get('players') as Record<string, SeatRecord> | undefined) ?? migratePlayers(this.names);
@@ -529,12 +539,52 @@ export class PokerTableDO extends DurableObject<Env> {
      * Only for a game that HAS a coach, and only for the seat asking. The Worker has already checked
      * that the caller holds that seat.
      */
+    /**
+     * WHAT SHOULD I DO — asked of the person's OWN agent when they have named one, and of the house
+     * coach when they have not.
+     *
+     * The house coach is one strategy, the same for everybody. A person's own agent carries THEIR
+     * style, written as their own artifacts somewhere this card room never reaches — so the app's
+     * whole part is to ask and to say whose answer it is showing.
+     *
+     * The agent is sent the SEAT'S OWN redacted view, which is what that seat already sees. Advising
+     * discloses nothing its holder does not hold, which is why this needs no mandate while taking a
+     * turn does.
+     */
     if (request.method === 'GET' && path === '/advice') {
       const seat = Number(url.searchParams.get('seat'));
       if (!Number.isInteger(seat) || seat < 0) return json({ error: 'which seat?' }, 400);
+      const playerId = url.searchParams.get('player') ?? '';
+      const adviser = playerId ? this.advisers[playerId] : undefined;
+
+      if (adviser) {
+        const asked = await this.askAdviser(adviser, seat);
+        // A partner that cannot be reached falls back to the house coach rather than leaving somebody
+        // mid-hand with nothing — and SAYS it fell back, because silently swapping whose advice this
+        // is would be the one dishonest thing available here.
+        if (asked.ok) return json({ ...asked.advice, source: { agent: adviser.agentName, displayName: adviser.displayName } });
+        const house = this.game.advise?.(this.state, seat);
+        if (!house) return json({ error: asked.error }, 502);
+        return json({ ...house, source: 'house', note: `${adviser.displayName} could not be reached — ${asked.error}` });
+      }
+
       const advice = this.game.advise?.(this.state, seat);
       if (!advice) return json({ error: 'this game has no coach' }, 404);
-      return json(advice);
+      return json({ ...advice, source: 'house' });
+    }
+
+    /** Name the agent that advises this player here, or drop it and go back to the house coach. */
+    if (request.method === 'POST' && path === '/adviser') {
+      const body = (await request.json()) as { playerId?: string; agentName?: string; endpoint?: string; displayName?: string };
+      const who = (body.playerId ?? '').trim();
+      if (!who) return json({ error: 'which player?' }, 400);
+      if (!body.agentName || !body.endpoint) {
+        delete this.advisers[who];
+      } else {
+        this.advisers[who] = { agentName: body.agentName, endpoint: body.endpoint, displayName: body.displayName ?? body.agentName };
+      }
+      await this.ctx.storage.put('advisers', this.advisers);
+      return json({ adviser: this.advisers[who] ?? null });
     }
 
     /**
@@ -1562,6 +1612,37 @@ export class PokerTableDO extends DurableObject<Env> {
    * `ctx.waitUntil` asks the runtime to keep the DO alive for it; if the DO is evicted anyway, the
    * persisted alarm still fires at the deadline and applies the default action.
    */
+  /**
+   * Ask somebody's own agent what they should do in their seat.
+   *
+   * It is handed exactly what the seat sees — `viewFor(seat)` — and its answer is applied to nothing.
+   * The card room does not check whether the advice is good, because it has no standing to: the whole
+   * point is that this is the person's own adviser rather than the house's.
+   */
+  private async askAdviser(
+    adviser: { agentName: string; endpoint: string; displayName: string },
+    seat: number,
+  ): Promise<{ ok: true; advice: { say: string; because?: string; action?: unknown } } | { ok: false; error: string }> {
+    const state = this.state;
+    if (!state) return { ok: false, error: 'this table has not dealt yet' };
+    const at = this.snap(state);
+    const skill = this.game.id === 'canasta' ? CANASTA_ADVISE_SKILL : POKER_ADVISE_SKILL;
+    const res = await callAdvise(
+      adviser.endpoint,
+      {
+        skill,
+        tableId: this.meta?.tableId ?? '',
+        handNo: at.round,
+        seat,
+        view: this.game.viewFor(state, seat),
+        legal: this.game.legalFor(state, seat),
+        deadlineMs: a2aTimeoutMs(this.env),
+      },
+      a2aTimeoutMs(this.env),
+    );
+    return res.ok ? { ok: true, advice: res.output } : { ok: false, error: res.error };
+  }
+
   private startAgentTurn(state: unknown, handNo: number, seat: number, deadline: number, record: SeatRecord): void {
     const key = `${handNo}:${seat}:${deadline}`;
     if (this.paused) return; // a paused table is one nobody is playing at, agents included

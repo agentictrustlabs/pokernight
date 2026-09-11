@@ -31,6 +31,7 @@ import {
   teamOf,
   turnLine,
   valueOf,
+  openingProgress,
   primaryAction,
   whyNotTakePile,
 } from './canasta';
@@ -300,5 +301,33 @@ describe('which button is green', () => {
       { ...base, selectionCount: 3, canMeld: true },
     ];
     for (const a of every) expect(typeof primaryAction(a)).toBe('string');
+  });
+});
+
+describe('how close to opening', () => {
+  it('counts the GAP, which is the number somebody is actually asking about', () => {
+    // "60 points" answers a question nobody asked. "30 short of 90" says whether to keep looking.
+    expect(openingProgress({ opened: false, value: 60, minimum: 90 })).toEqual({ short: 30, line: '30 short of 90' });
+  });
+
+  it('says when there is enough, rather than counting down past zero', () => {
+    expect(openingProgress({ opened: false, value: 95, minimum: 90 })).toEqual({ short: 0, line: 'enough to open (90)' });
+    expect(openingProgress({ opened: false, value: 90, minimum: 90 })).toEqual({ short: 0, line: 'enough to open (90)' });
+  });
+
+  it('is silent once the side has opened — there is no minimum left to be short of', () => {
+    expect(openingProgress({ opened: true, value: 10, minimum: 90 })).toBeNull();
+  });
+
+  it('is silent when there is no minimum to meet', () => {
+    expect(openingProgress({ opened: false, value: 0, minimum: 0 })).toBeNull();
+  });
+
+  it('tracks the minimum as it climbs with the score', () => {
+    // 50 below 1500, 90 below 3000, 120 above — so the same cards are short by different amounts.
+    for (const [score, min] of [[0, 50], [1500, 90], [3000, 120]] as const) {
+      expect(openingMinimum(score)).toBe(min);
+      expect(openingProgress({ opened: false, value: 40, minimum: min })?.short).toBe(min - 40);
+    }
   });
 });

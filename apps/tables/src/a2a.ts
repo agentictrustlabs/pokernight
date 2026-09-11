@@ -17,9 +17,11 @@ import {
   POKER_ACT_SKILL,
   agentNameToHost,
   decodeActReply,
+  decodeAdviseReply,
   encodeActParts,
   type ActInput,
   type ActOutput,
+  type AdviseOutput,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, agentBaseUrl, allowAgentEndpoint, type Env } from './env.js';
 
@@ -168,6 +170,52 @@ export async function callAct(base: string, input: ActInput, timeoutMs: number):
   const parts = replyParts(env?.result);
   if (parts.length === 0) return { ok: false, error: `${input.skill} reply carried no message parts` };
   const decoded = decodeActReply(parts);
+  if ('error' in decoded) return { ok: false, error: decoded.error };
+  return { ok: true, output: decoded };
+}
+
+export type AdviseResult = { ok: true; output: AdviseOutput } | { ok: false; error: string };
+
+/**
+ * Ask an agent what the person in a seat should do.
+ *
+ * The same JSON-RPC call as `callAct` with a different skill and a different reply shape — and the
+ * difference matters more than the similarity. `act` hands a turn away; this asks for a sentence. An
+ * agent that answers here has taken nobody's turn, and the card room applies nothing it returns.
+ */
+export async function callAdvise(base: string, input: ActInput, timeoutMs: number): Promise<AdviseResult> {
+  const url = a2aUrl(base, A2A_JSONRPC_PATH);
+  const body = {
+    jsonrpc: '2.0',
+    id: `${input.tableId}:${input.handNo}:${input.seat}:advise`,
+    method: A2A_SEND_MESSAGE,
+    params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeActParts(input) } },
+  };
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    return { ok: false, error: `${input.skill} call to ${url} failed: ${errText(e)}` };
+  }
+  if (!res.ok) return { ok: false, error: `${input.skill} call to ${url} returned ${res.status}` };
+  let payload: unknown;
+  try {
+    payload = await res.json();
+  } catch {
+    return { ok: false, error: `${input.skill} reply from ${url} is not JSON` };
+  }
+  const env = payload as { error?: { code?: number; message?: string }; result?: unknown };
+  if (env && typeof env === 'object' && env.error) {
+    return { ok: false, error: `${input.skill} JSON-RPC error ${env.error.code ?? '?'}: ${env.error.message ?? 'unknown'}` };
+  }
+  const parts = replyParts(env?.result);
+  if (parts.length === 0) return { ok: false, error: `${input.skill} reply carried no message parts` };
+  const decoded = decodeAdviseReply(parts);
   if ('error' in decoded) return { ok: false, error: decoded.error };
   return { ok: true, output: decoded };
 }

@@ -815,6 +815,25 @@ export const POKER_ACT_SKILL = 'poker.act';
 export const CANASTA_ACT_SKILL = 'canasta.act';
 
 /**
+ * ASKING SOMEBODY'S OWN AGENT WHAT THEY SHOULD DO.
+ *
+ * The same wire as `*.act`, and deliberately a DIFFERENT skill, because they are different acts: one
+ * moves cards in a seat, the other says something to the person sitting in it. An agent may advertise
+ * either, both or neither, and a card room that conflated them would be handing a turn to something
+ * that only ever meant to talk.
+ *
+ * WHY THE CARD ROOM ASKS AN AGENT AT ALL, rather than advising from its own coach: the coach is the
+ * house's — one strategy, the same for everybody. A person's own agent carries THEIR style, written
+ * as their own artifacts, and the card room neither holds it nor wants to. So the app's part is to
+ * ask, and to say whose answer it is showing; the reasoning is somewhere it does not reach.
+ *
+ * The payload is the seat's own redacted view — the same one that seat already sees. Advising
+ * discloses nothing the person does not hold.
+ */
+export const POKER_ADVISE_SKILL = 'poker.advise';
+export const CANASTA_ADVISE_SKILL = 'canasta.advise';
+
+/**
  * THE TURN REQUEST, with the game's own three fields carried opaquely.
  *
  * Same split as the WebSocket wire, for the same reason and with the same seam: the ENVELOPE is the
@@ -837,6 +856,47 @@ export interface ActInput {
   legal: GamePayload;
   /** Milliseconds the agent has to answer before the table applies the default. */
   deadlineMs: number;
+}
+
+/**
+ * What an adviser says back.
+ *
+ * `say` is the sentence a person reads mid-hand, so it is short on purpose. `because` is the reason,
+ * which is the half that teaches and the half a person can disagree with. `action` is optional and is
+ * only ever a SUGGESTION — nothing in the card room applies it, and an adviser that returns one has
+ * still not taken anybody's turn.
+ */
+export const AdviseOutputSchema = z.object({
+  say: z.string().min(1).max(280),
+  because: z.string().max(600).optional(),
+  action: GamePayloadSchema.optional(),
+});
+export type AdviseOutput = z.infer<typeof AdviseOutputSchema>;
+
+/** Pull an adviser's answer out of an A2A reply. Same shape of search as `decodeActReply`. */
+export function decodeAdviseReply(parts: unknown): AdviseOutput | { error: string } {
+  if (!Array.isArray(parts)) return { error: 'reply has no parts' };
+  for (const part of parts) {
+    if (!part || typeof part !== 'object') continue;
+    const p = part as { kind?: string; data?: unknown; text?: string };
+    let candidate: unknown = p.kind === 'data' ? p.data : undefined;
+    if (candidate === undefined && typeof p.text === 'string') {
+      try {
+        candidate = JSON.parse(p.text);
+      } catch {
+        // A plain sentence with no JSON around it is a perfectly good piece of advice.
+        const said = p.text.trim();
+        if (said) return { say: said.slice(0, 280) };
+        continue;
+      }
+    }
+    if (!candidate || typeof candidate !== 'object') continue;
+    const obj = candidate as Record<string, unknown>;
+    const inner = obj.output ?? obj.advice ?? obj;
+    const parsed = AdviseOutputSchema.safeParse(inner);
+    if (parsed.success) return parsed.data;
+  }
+  return { error: 'no advice in the reply' };
 }
 
 export const ActOutputSchema = z.object({
