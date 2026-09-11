@@ -9,6 +9,7 @@
 import type { Action, LegalActions, TableView } from '@pokernight/engine';
 import type { PokerActInput, PokerActOutput } from '@pokernight/protocol';
 import { chartDecision } from './preflop-chart.js';
+import { postflopChartDecision } from './postflop-chart.js';
 import { classifyPreflop, preflopDecision, type Facing, type TableSize } from './preflop.js';
 import { madeAtLeast, postflopStrength, type Evaluator, type PostflopStrength } from './strength.js';
 import {
@@ -300,7 +301,13 @@ export function decide(input: PokerActInput, opts: DecideOptions = {}): PokerAct
         note = `chart ${chart.from} ${chart.key}: ${chart.spots} spots, ${chart.agree}% agree`;
       } else ({ action: desired, note } = decidePreflop(input, rng));
     } else if (view.hand.board.length >= 3) {
-      ({ action: desired, note } = decidePostflop(input, opts.evaluate, rng));
+      // THE SOLVER'S CHART FIRST here too, keyed on the spot's features; the rules answer what it
+      // never saw. Measured against PokerBench: the rules alone scored 54% postflop.
+      const chart = postflopChartDecision(view, legal);
+      if (chart) {
+        desired = chart.action;
+        note = `chart post ${chart.key}: ${chart.spots} spots, ${chart.agree}% agree`;
+      } else ({ action: desired, note } = decidePostflop(input, opts.evaluate, rng));
     } else {
       desired = fallback(legal, view);
       note = 'board missing, default';
