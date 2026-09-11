@@ -18,9 +18,11 @@ import { Card } from './Card';
  * into your hand. The top card gets its own mark, because it is the one card that came from the pile
  * rather than from your hand and the rule that lets you take a pile at all is about it.
  *
- * IT GOES AWAY ON ITS OWN. A modal that has to be dismissed in the middle of your own turn is a modal
- * that gets in the way of the move you took the pile to make, so it holds for a few seconds and then
- * leaves — and a press dismisses it early.
+ * IT GOES AWAY ON ITS OWN AND IT TAKES NOTHING WITH IT. This arrives in the middle of YOUR own turn —
+ * you took the pile, and the next thing you want is to meld out of it. So it is not a modal: the
+ * backdrop takes no clicks, the board underneath stays live, and the panel leaves after a few seconds
+ * or the moment you dismiss it. A dialog standing in front of the move it exists to explain would be
+ * a worse version of the problem it was written for.
  */
 
 /** Long enough to read a dozen cards, short enough not to sit over the turn it explains. */
@@ -37,7 +39,9 @@ export function PileReveal({ took, onDismiss }: { took: TookPile; onDismiss: () 
   const meldedFromHand = took.toMeld.filter((c) => c !== took.top);
 
   return (
-    <div className="pile-reveal" role="dialog" aria-label="What was in the pile">
+    // `role="status"` rather than `dialog`: nothing here is being asked, nothing is being blocked, and
+    // announcing it as a dialog would tell a screen reader the turn had stopped when it has not.
+    <div className="pile-reveal" role="status" aria-label="What was in the pile">
       <div className="pile-reveal-box">
         <header>
           <h3>

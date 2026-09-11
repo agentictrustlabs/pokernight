@@ -31,6 +31,9 @@ import { CanastaTable } from './components/CanastaTable';
 import { describe as describeCanastaEvent } from './components/CanastaLog';
 import { initialCanastaState, reduceCanasta, type CanastaTableState } from './lib/canastaSocket';
 import { emptyView, endOfHandScript, event, flopView, seat, welcome } from './lib/mockServer';
+import { PileReveal } from './components/PileReveal';
+import { RoundCurtain } from './components/RoundCurtain';
+import { PokerCoach } from './components/PokerCoach';
 
 const session = { token: 't', playerId: 'p-alice', name: 'Alice' };
 const ctx = { seatName: (n: number) => ['Alice', 'Bob'][n] ?? `Seat ${n + 1}`, viewerSeat: 0 };
@@ -895,5 +898,141 @@ describe('the canasta log', () => {
     // A log that repeats your hand is a log you cannot show anyone.
     expect(describeCanastaEvent({ type: 'dealt', seat: 0, cards: ['AS'], private: true } as never, nameOf)).toBeNull();
     expect(describeCanastaEvent({ type: 'drew-card', seat: 0, card: 'AS', private: true } as never, nameOf)).toBeNull();
+  });
+});
+
+/**
+ * THE THREE THINGS THE BOARD DID NOT USED TO SHOW.
+ *
+ * A render test rather than a walk, because the interesting part is the ARITHMETIC of each one — which
+ * card went where, which side won, what gets credited — and that is a thing to assert rather than to
+ * watch for on a live table where the cards are whatever the shuffle gave.
+ */
+describe('what was in the pile', () => {
+  const took = {
+    cards: ['4H', '9S', 'KD', '7H'],
+    top: '7H',
+    toMeld: ['7C', '7D', '7H'],
+    toHand: ['4H', '9S', 'KD'],
+    seq: 1,
+  } as const;
+  const reveal = (over: Record<string, unknown> = {}) =>
+    renderToStaticMarkup(createElement(PileReveal, { took: { ...took, ...over } as never, onDismiss: () => {} }));
+
+  it('says how many cards came, and what they were worth', () => {
+    const html = reveal();
+    expect(html).toContain('You took 4');
+    // 4H=5, 9S=10, KD=10, 7H=5 — a number a beginner has no way to work out mid-turn.
+    expect(html).toContain('30 points of cards');
+    // …and separately, what the part that went into the hand is worth if it is still there at the end.
+    expect(html).toContain('worth 25 if they stay there');
+  });
+
+  it('separates what went onto the board from what went into your hand', () => {
+    const html = reveal();
+    expect(html).toContain('Onto the board');
+    expect(html).toContain('Into your hand');
+    // Two from hand plus the pile's own top card, which is the pair of facts that made it legal.
+    expect(html).toContain('plus 2 from your hand');
+  });
+
+  it('says so plainly when a one-card pile gave nothing back', () => {
+    expect(reveal({ cards: ['7H'], toHand: [], toMeld: ['7C', '7D', '7H'] })).toContain('the pile was one card');
+  });
+
+  it('is a status, never a dialog — nothing here stops the turn it explains', () => {
+    expect(reveal()).toContain('role="status"');
+  });
+});
+
+describe('the end of a round', () => {
+  const lost = {
+    scope: 'round' as const,
+    mood: 'lost' as const,
+    headline: 'Their round',
+    detail: '300 to 900 this round. You are 600 behind.',
+    credit: '2 canastas, 1 natural and 1 mixed — 800 of your 1,100.',
+    lines: ['They went out.', 'Your side scored 300 this round. They scored 900.'],
+  };
+
+  it('credits what you actually did when you lost, rather than sympathising', () => {
+    const html = renderToStaticMarkup(
+      createElement(RoundCurtain, { curtain: lost, frozen: true, onReview: () => {} }),
+    );
+    expect(html).toContain('2 canastas');
+    expect(html).toContain('curtain-credit');
+    // And it says what the table is doing, because that decides whether to wait or to press.
+    expect(html).toContain('The table is held');
+  });
+
+  it('offers the next round only when there is somebody to deal it', () => {
+    const held = (over: Record<string, unknown>) =>
+      renderToStaticMarkup(createElement(RoundCurtain, { curtain: lost, frozen: true, onReview: () => {}, ...over }));
+    expect(held({})).not.toContain('Deal the next round');
+    expect(held({ onContinue: () => {} })).toContain('Deal the next round');
+  });
+
+  it('offers a new game at the end of one, and never a next round', () => {
+    const game = { ...lost, scope: 'game' as const, headline: 'They take the game' };
+    const html = renderToStaticMarkup(
+      createElement(RoundCurtain, {
+        curtain: game,
+        frozen: false,
+        onReview: () => {},
+        onContinue: () => {},
+        onNewGame: () => {},
+      }),
+    );
+    expect(html).toContain('Start a new game');
+    expect(html).not.toContain('Deal the next round');
+    expect(html).toContain('carries on in its own time');
+  });
+
+  it('bursts on a win and does not on a loss', () => {
+    const won = { ...lost, mood: 'won' as const, headline: 'Your round', credit: null };
+    expect(renderToStaticMarkup(createElement(RoundCurtain, { curtain: won, frozen: true, onReview: () => {} }))).toContain('curtain-burst');
+    expect(renderToStaticMarkup(createElement(RoundCurtain, { curtain: lost, frozen: true, onReview: () => {} }))).not.toContain('curtain-burst');
+  });
+});
+
+describe('the coach at a hold’em table', () => {
+  it('renders with no session as nothing at all, because advice is about a seat', () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerCoach, {
+        tableId: 't-1',
+        session: null,
+        view: null,
+        viewerSeat: null,
+        myTurn: false,
+        handNo: 0,
+        street: null,
+        log: [],
+        logSeq: 0,
+        ctx,
+        send: () => {},
+      }),
+    );
+    expect(html).toBe('');
+  });
+
+  it('says what it is for before it is switched on', () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerCoach, {
+        tableId: 't-1',
+        session,
+        view: null,
+        viewerSeat: 0,
+        myTurn: false,
+        handNo: 1,
+        street: 'preflop' as const,
+        log: [],
+        logSeq: 0,
+        ctx,
+        send: () => {},
+      }),
+    );
+    // The price is the thing a beginner is missing, so that is what the pitch names.
+    expect(html).toContain('what a call costs against what it can win');
+    expect(html).toContain('Play for me');
   });
 });

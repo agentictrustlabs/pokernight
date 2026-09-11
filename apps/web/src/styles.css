@@ -4463,10 +4463,18 @@ a.button.primary:hover {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(14, 46, 32, 0.45);
+  /* A LIGHT SCRIM AND NO BLOCKING. This arrives in the middle of YOUR OWN turn — you took the pile,
+     and the next thing you want to do is meld out of it. A full modal would spend seven seconds
+     standing in front of the move it exists to explain, so the backdrop takes no clicks and the board
+     underneath stays live; only the box itself is interactive. */
+  background: rgba(14, 46, 32, 0.22);
+  pointer-events: none;
   z-index: 40;
   padding: 1rem;
   animation: pile-reveal-in 160ms ease-out;
+}
+.pile-reveal-box {
+  pointer-events: auto;
 }
 @keyframes pile-reveal-in {
   from {
