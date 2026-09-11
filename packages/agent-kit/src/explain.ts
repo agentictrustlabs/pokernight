@@ -153,6 +153,14 @@ export interface HandRead {
   raisesThisStreet: number;
   /** The legal moves, verbatim — the action union the answer must use. */
   legal: LegalActions | null;
+  /**
+   * THE HAND SO FAR, one line per street, in words — who did what, from where, for how much.
+   *
+   * The turn is not a new hand. An adviser handed only the board and the pot reasons as if it were —
+   * "I have a draw, so I should bet" — without what the flop action already said about both sides.
+   * This carries the story forward so the strategy stays one strategy across streets.
+   */
+  story: string[];
 }
 
 export function handRead(view: TableView, seat: number, legal: LegalActions | null): HandRead | null {
@@ -179,6 +187,7 @@ export function handRead(view: TableView, seat: number, legal: LegalActions | nu
     bigBlindsBehind: bb > 0 ? Math.floor(behind / bb) : null,
     raisesThisStreet: raisesOnStreet(view, hand.street),
     legal,
+    story: handStory(view, seat),
   };
   if (cards.length === 2 && hand.board.length >= 3) {
     const s = postflopStrength(cards, hand.board);
@@ -187,4 +196,31 @@ export function handRead(view: TableView, seat: number, legal: LegalActions | nu
     read.made = { hand: s.made, draws, outs: s.outs, chanceByRiver: s.outs > 0 && toCome > 0 ? chanceFromOuts(s.outs, toCome) : null };
   }
   return read;
+}
+
+/** "preflop: you raised to 6 from the big blind, seat 2 called" — the record, street by street. */
+export function handStory(view: TableView, seat: number): string[] {
+  const hand = view.hand;
+  if (!hand) return [];
+  const name = (s: number) => (s === seat ? 'you' : `seat ${s + 1}`);
+  const byStreet = new Map<string, string[]>();
+  for (const a of hand.actions) {
+    const who = name(a.seat);
+    const verb =
+      a.action.type === 'fold' ? `${who} folded`
+      : a.action.type === 'check' ? `${who} checked`
+      : a.action.type === 'call' ? `${who} called${a.amount ? ` ${a.amount}` : ''}`
+      : a.action.type === 'bet' ? `${who} bet ${a.action.amount}`
+      : a.action.type === 'raise' ? `${who} raised to ${a.action.amount}`
+      : `${who} went all in`;
+    byStreet.set(a.street, [...(byStreet.get(a.street) ?? []), verb]);
+  }
+  const out: string[] = [];
+  for (const st of ['preflop', 'flop', 'turn', 'river'] as const) {
+    const lines = byStreet.get(st);
+    if (!lines?.length) continue;
+    const board = st === 'flop' ? hand.board.slice(0, 3) : st === 'turn' ? hand.board.slice(3, 4) : st === 'river' ? hand.board.slice(4, 5) : [];
+    out.push(`${st}${board.length ? ` (${board.join(' ')})` : ''}: ${lines.join(', ')}`);
+  }
+  return out;
 }
