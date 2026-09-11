@@ -1009,6 +1009,7 @@ describe('the coach at a hold’em table', () => {
         log: [],
         logSeq: 0,
         ctx,
+        players: {},
         send: () => {},
       }),
     );
@@ -1028,6 +1029,7 @@ describe('the coach at a hold’em table', () => {
         log: [],
         logSeq: 0,
         ctx,
+        players: {},
         send: () => {},
       }),
     );

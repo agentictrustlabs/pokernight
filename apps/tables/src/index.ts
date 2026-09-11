@@ -1285,6 +1285,18 @@ app.get('/tables/:id/advice', async (c) => {
  *
  * `DELETE` goes back to the house coach.
  */
+/** Whose advice you are getting at this table — yours to ask about, and nobody else's. */
+app.get('/tables/:id/adviser', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const tableId = c.req.param('id');
+  const gate = await clubGate(c, await tableClub(c.env, tableId));
+  if (gate) return gate;
+  return passthrough(
+    await table(c.env, tableId).fetch(`https://table/adviser?player=${encodeURIComponent(session.playerId)}`),
+  );
+});
+
 app.post('/tables/:id/adviser', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);

@@ -32,6 +32,7 @@ import type { Alert } from './alerts';
 export function actionWords(action: unknown, legal?: LegalActions | null): string {
   const a = action as Action | null;
   if (!a || typeof a !== 'object') return 'act';
+  // (see `playable` below — a caller that would render this as a button must check that first)
   switch (a.type) {
     case 'fold':
       return 'Fold';
@@ -182,3 +183,21 @@ export function pokerAlerts(view: TableView | null, seat: number | null, nameOf:
 
   return out;
 }
+
+/**
+ * WHETHER THERE IS A MOVE HERE AT ALL.
+ *
+ * An adviser is not obliged to suggest one — the skill's output has `action` as optional, and a coach
+ * that only ever talks is a legitimate coach. What is NOT legitimate is the card room drawing a button
+ * for a move that does not exist: the reference adviser shipped without an action for a while, so
+ * "tell me" offered a button labelled `act` that sent nothing, the card room had nothing to apply, and
+ * the clock ran out. After enough of those the table sat the person out and hands went by without
+ * them. A button that does nothing is worse than no button, because the person waits for it.
+ */
+export function playable(action: unknown): boolean {
+  const a = action as { type?: unknown } | null;
+  return !!a && typeof a === 'object' && typeof a.type === 'string' && PLAYABLE.has(a.type);
+}
+
+/** The move types the engine accepts, spelled as the `Action` union spells them. */
+const PLAYABLE = new Set(['fold', 'check', 'call', 'bet', 'raise', 'all-in']);

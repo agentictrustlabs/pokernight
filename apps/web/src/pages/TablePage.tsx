@@ -289,6 +289,7 @@ export function TablePage({
             log={state.log}
             logSeq={state.logSeq}
             ctx={ctx}
+            players={state.players}
             /* At a practice table the coach IS the point, so it starts on rather than waiting to be
                found — and that is true however you arrived, which is why it reads the table's own
                `practiceFor` and not only the link's `?practice=1`. Anywhere else it stays off until

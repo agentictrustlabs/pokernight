@@ -414,6 +414,7 @@ export function CanastaPage({
               viewerSeat={mySeat}
               scoreboard={state.view ? { scores: state.view.scores, target: state.view.target } : null}
               nameOf={nameOf}
+              players={state.players}
               /* At a practice table the coach IS the point, so it starts on rather than waiting to
                  be found — and that is true however you arrived, which is why it reads the table's own
                  `practiceFor` (`mine`) and not only the link's `?practice=1`. Anywhere else it stays

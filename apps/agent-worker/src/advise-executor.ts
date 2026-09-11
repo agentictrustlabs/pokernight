@@ -19,11 +19,12 @@
 
 import { chooseCanastaAction } from '@pokernight/canasta-agent';
 import { explainMove } from '@pokernight/canasta-agent';
-import { readHand } from '@pokernight/agent-kit';
+import { decide, readHand } from '@pokernight/agent-kit';
 import type { LegalActions, TableView } from '@pokernight/engine';
 import {
   CANASTA_ADVISE_SKILL,
   CANASTA_REVIEW_SKILL,
+  POKER_ACT_SKILL,
   POKER_ADVISE_SKILL,
   POKER_REVIEW_SKILL,
 } from '@pokernight/protocol';
@@ -84,7 +85,19 @@ function looksLikePokerView(v: unknown): v is TableView {
   return isRecord(v) && Array.isArray(v.seats) && 'handNo' in v;
 }
 
-/** Hold'em advice: the price, the position, the money behind — the things that are certain. */
+/**
+ * Hold'em advice: THE MOVE, and the price, position and money behind that argue for it.
+ *
+ * The move matters as much as the words, and leaving it out was not a missing nicety — it broke the
+ * table. Canasta's adviser returned one from the start and this one did not, so a person on "tell me"
+ * got a sentence and a button with nothing behind it: pressing it sent no action, the card room had
+ * nothing to apply, the clock ran out, and after enough of those the table sat them out. Hands went by
+ * and they were never dealt in. An adviser that cannot be acted on is worse than one that says
+ * nothing, because the screen offers a move that does not exist.
+ *
+ * Deterministic, like the house coach and for the same reason: advice that changes when you ask again
+ * is not advice, and the straightforward line is the one somebody learning can reproduce.
+ */
 export function createPokerAdviseExecutor(persona: Persona): StandardExecutor {
   return {
     async execute(ctx: ExecutionContext): Promise<void> {
@@ -109,8 +122,22 @@ export function createPokerAdviseExecutor(persona: Persona): StandardExecutor {
       }
       const asked = questionOf(parts);
       const read = readHand(view, seat, legal);
+      // The READING and the MOVE come from different places on purpose — the same split the house
+      // coach makes. `readHand` says what is true about the spot; `decide` picks the line. A coach
+      // that explained itself by restating its own choice would teach the choice.
+      const suggested = legal
+        ? decide(
+            { skill: POKER_ACT_SKILL, tableId: '', handNo: view.hand?.handNo ?? 0, seat, view, legal, deadlineMs: 0 },
+            { rng: () => 1 },
+          ).action
+        : null;
       await ctx.reply([
-        dataPart({ say: read.say, because: asked ? `You asked: ${asked}. ${read.because}` : read.because }),
+        dataPart({
+          say: read.say,
+          because: asked ? `You asked: ${asked}. ${read.because}` : read.because,
+          // Only ever a SUGGESTION. Nothing in the card room applies it; the person presses or does not.
+          ...(suggested ? { action: suggested as unknown as Record<string, unknown> } : {}),
+        }),
       ]);
     },
   };

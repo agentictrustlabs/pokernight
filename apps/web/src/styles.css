@@ -4740,3 +4740,88 @@ a.button.primary:hover {
   border-radius: 4px;
   padding: 0 0.25rem;
 }
+
+/* WHO IS WHO. Four different things sit at one of these tables and the screen used to tell them
+   apart nowhere: people, A2A agents taking turns, the card room's own coach, and an agent you named
+   to advise you. The tag is what does the work — the name alone never said which kind of thing it
+   was. */
+.who-is-who {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+}
+.who-is-who > summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.who-tag {
+  display: inline-block;
+  font-size: 0.62rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  margin-right: 0.35rem;
+  vertical-align: 0.08em;
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+}
+.who-tag.you {
+  border-color: var(--focus);
+  color: var(--focus);
+}
+.who-tag.agent {
+  border-color: var(--brass);
+  color: var(--gold);
+}
+.who-tag.house {
+  border-color: var(--rule);
+  background: var(--paper);
+}
+.who-tag.adviser {
+  border-color: var(--brass);
+  background: var(--brass-soft);
+  color: var(--gold);
+}
+.who-coach {
+  margin: 0.4rem 0 0.5rem;
+}
+/* THE ONE THING WORTH A COLOUR: the agent advising you is also playing against you. Not forbidden,
+   not a bug — a fact nobody should have to deduce from two names matching. */
+.who-coach.conflict {
+  border-left: 3px solid var(--warn);
+  background: var(--brass-soft);
+  border-radius: 0 7px 7px 0;
+  padding: 0.4rem 0.6rem;
+}
+.who-seats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+.who-seats li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+.who-seats code {
+  font-size: 0.8em;
+  color: var(--ink-soft);
+}
+.who-seats .hint {
+  margin: 0;
+  font-size: 0.8em;
+}
+.cs-agent {
+  display: inline-block;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hero-brass);
+  border: 1px solid rgba(217, 178, 106, 0.55);
+  border-radius: 4px;
+  padding: 0 0.3rem;
+  margin: 0.1rem 0;
+}

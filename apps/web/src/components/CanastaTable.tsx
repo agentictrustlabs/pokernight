@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
-import type { AppSession, ClientCommand } from '../lib/types';
+import type { AppSession, ClientCommand, PlayerInfo } from '../lib/types';
 import type { CanastaCard, CanastaLegal, CanastaView, ViewMeld } from '../lib/canasta';
 import {
   checkSelection,
@@ -19,6 +19,7 @@ import {
   whyNotTakePile,
 } from '../lib/canasta';
 import { seatBadge } from '../lib/commentary';
+import { strategyWords } from '../lib/whoIsWho';
 import { scoreSummary } from '../lib/scoreWords';
 import type { CanastaTableState } from '../lib/canastaSocket';
 import { seatOf } from '../lib/canastaSocket';
@@ -212,6 +213,11 @@ export function CanastaTable({
 
   const myTurn = mySeat != null && view.toAct === mySeat && !view.result;
   const legal = state.turn?.seat === mySeat ? state.turn.legal : null;
+  /** What the table said about whoever holds a seat, for the plate to say what kind of thing it is. */
+  const playerAt = (seat: number): PlayerInfo | undefined => {
+    const holder = view?.seats.find((x) => x.seat === seat);
+    return holder ? state.players[holder.playerId] : undefined;
+  };
   const groups = groupHand(hand);
   // The card drawn this turn, so the hand can point at it. The socket keeps it; this only locates it.
   const justDrawn = drawnIndex(groups, state.drawn);
@@ -325,16 +331,16 @@ export function CanastaTable({
 
       <div className="can-arena">
         <div className="can-felt">
-          <SeatPlate where="north" seat={ring.north} view={view} viewerSeat={mySeat} nameOf={nameOf} now={now} did={lastMove.get(ring.north)} />
-          <SeatPlate where="west" seat={ring.west} view={view} viewerSeat={mySeat} nameOf={nameOf} now={now} did={lastMove.get(ring.west)} />
-          <SeatPlate where="east" seat={ring.east} view={view} viewerSeat={mySeat} nameOf={nameOf} now={now} did={lastMove.get(ring.east)} />
+          <SeatPlate where="north" seat={ring.north} view={view} viewerSeat={mySeat} nameOf={nameOf} now={now} did={lastMove.get(ring.north)} player={playerAt(ring.north)} />
+          <SeatPlate where="west" seat={ring.west} view={view} viewerSeat={mySeat} nameOf={nameOf} now={now} did={lastMove.get(ring.west)} player={playerAt(ring.west)} />
+          <SeatPlate where="east" seat={ring.east} view={view} viewerSeat={mySeat} nameOf={nameOf} now={now} did={lastMove.get(ring.east)} player={playerAt(ring.east)} />
           {/* THE SOUTH SEAT IS DRAWN TOO, FOR A SPECTATOR.
               A player sees their own seat below the felt with their hand in it, so the south slot on
               the felt is theirs and stays empty. A spectator has no seat and no hand — and without
               this, the player in the south chair was simply not on the table. One of four people
               invisible is not a smaller bug than a crash; it is a quieter one. */}
           {mySeat == null ? (
-            <SeatPlate where="south" seat={ring.south} view={view} viewerSeat={mySeat} nameOf={nameOf} now={now} did={lastMove.get(ring.south)} />
+            <SeatPlate where="south" seat={ring.south} view={view} viewerSeat={mySeat} nameOf={nameOf} now={now} did={lastMove.get(ring.south)} player={playerAt(ring.south)} />
           ) : null}
 
           <div className="can-piles">
@@ -496,6 +502,7 @@ function SeatPlate({
   nameOf,
   now,
   did,
+  player,
 }: {
   where: 'north' | 'west' | 'east' | 'south';
   seat: number;
@@ -505,6 +512,8 @@ function SeatPlate({
   now: number;
   /** The last thing this seat did, in two or three words. */
   did?: string;
+  /** What the table said about whoever holds the seat — an agent, and what is behind it. */
+  player?: PlayerInfo;
 }) {
   const s = view.seats.find((x) => x.seat === seat);
   const toAct = view.toAct === seat && !view.result;
@@ -516,6 +525,14 @@ function SeatPlate({
       {/* Partner or opponent, said on the plate — in a partnership game it is the first thing you
           need about anybody at the table, and seat numbers do not say it. */}
       <span className="cs-team">{s ? (viewerSeat == null ? `seat ${seat + 1}` : partner ? 'partner' : 'opponent') : `seat ${seat + 1}`}</span>
+      {/* AN AGENT SAYS SO, and says what is behind it. The canasta plate showed a name and a side and
+          nothing else, so the three house players and a person looked identical — "I cannot see which
+          ones are playing vs coaches vs agent coaches from a2a and my llm's." */}
+      {s && player?.kind === 'agent' ? (
+        <span className="cs-agent" title={`A2A agent · ${player.agentName ?? ''}`}>
+          {strategyWords(player.agentKind)} agent
+        </span>
+      ) : null}
       {s ? (
         <span className="cs-cards">
           <CardFan n={s.cards} />

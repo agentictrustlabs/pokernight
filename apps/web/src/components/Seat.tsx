@@ -3,6 +3,7 @@ import type { ActionRecord, Card as CardCode, PlayerInfo, SeatView } from '../li
 import { actionBadge, fmtDelta } from '../lib/format';
 import { DEALT_IN_SOON } from '../lib/seating';
 import type { TableRate } from '../lib/money';
+import { strategyWords } from '../lib/whoIsWho';
 import { Card } from './Card';
 import { ChipStack } from './ChipStack';
 import { TurnClock } from './TurnClock';
@@ -157,8 +158,11 @@ export function Seat(p: SeatProps) {
         </span>
         <span className="seat-id">
           {isAgent ? (
-            <span className="agent" title={`Agent · ${p.player?.agentName ?? p.player?.agentKind ?? 'a2a'}`}>
-              <span className="agent-tag">Agent</span>
+            // WHAT IS BEHIND IT, on the seat itself — a rules table or a language model. "Agent" alone
+            // said only that it was not a person, and the question people actually have is which of
+            // the players are LLMs.
+            <span className="agent" title={`A2A agent · ${p.player?.agentName ?? 'a2a'} · ${strategyWords(p.player?.agentKind)}`}>
+              <span className="agent-tag">{p.player?.agentKind ? strategyWords(p.player.agentKind) : 'Agent'}</span>
               <span className="agent-name">{p.player?.agentName ?? p.player?.agentKind ?? 'a2a'}</span>
             </span>
           ) : null}

@@ -323,6 +323,13 @@ export const api = {
   advice: (tableId: string, token: string) =>
     request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice`, {}, token),
   /** Name the agent that advises YOU at this table. The card room checks it advertises the skill. */
+  /** Who is advising you at this table right now — the table's answer, never the client's memory. */
+  getAdviser: (tableId: string, token: string) =>
+    request<{ adviser: { agentName: string; displayName: string } | null }>(
+      `/tables/${encodeURIComponent(tableId)}/adviser`,
+      {},
+      token,
+    ),
   setAdviser: (tableId: string, agentName: string, token: string) =>
     request<{ adviser: { agentName: string; displayName: string } | null }>(
       `/tables/${encodeURIComponent(tableId)}/adviser`,

@@ -575,6 +575,19 @@ export class PokerTableDO extends DurableObject<Env> {
       return json({ ...advice, source: 'house' });
     }
 
+    /**
+     * WHO ADVISES THIS PLAYER HERE — asked of the table, which is the only thing that knows.
+     *
+     * The client used to hold this in a `useState` set only by its own POST, so a reload, a second
+     * tab, or simply coming back later showed "advised by the house coach" while somebody's own agent
+     * was in fact answering every question. A screen that names the wrong voice is the one dishonest
+     * thing this feature must not do.
+     */
+    if (request.method === 'GET' && path === '/adviser') {
+      const who = url.searchParams.get('player') ?? '';
+      return json({ adviser: (who && this.advisers[who]) || null });
+    }
+
     /** Name the agent that advises this player here, or drop it and go back to the house coach. */
     if (request.method === 'POST' && path === '/adviser') {
       const body = (await request.json()) as { playerId?: string; agentName?: string; endpoint?: string; displayName?: string };

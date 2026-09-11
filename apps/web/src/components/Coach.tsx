@@ -8,6 +8,9 @@ import { alertsFor, newAlerts } from '../lib/alerts';
 import { commentaryFor, spokenLine } from '../lib/commentary';
 import { roundOpening, scoreLines } from '../lib/scoreWords';
 import { announce, canSpeak, hush, primeVoices, rate, say, setRate, setVoiceName, voiceName, voices } from '../lib/speech';
+import { WhoIsWhoPanel } from './WhoIsWho';
+import { whoIsWho } from '../lib/whoIsWho';
+import type { PlayerInfo } from '../lib/types';
 
 /**
  * Somebody to play your hand while you learn it, and tell you what is going on.
@@ -71,6 +74,7 @@ export function Coach({
   viewerSeat,
   scoreboard,
   nameOf,
+  players,
   startOn = 'off',
   send,
 }: {
@@ -91,6 +95,8 @@ export function Coach({
   /** The running scores and the target, for the line that opens a round. */
   scoreboard: { scores: Record<number, number>; target: number } | null;
   nameOf: (seat: number) => string;
+  /** What the table said about whoever holds each seat: a person, or an agent and what is behind it. */
+  players: Record<string, PlayerInfo>;
   /** What it starts as. `play` at a practice table, where coaching is the reason to be there. */
   startOn?: CoachMode;
   send: (c: ClientCommand) => void;
@@ -118,8 +124,24 @@ export function Coach({
    * the newest sentence. `lib/recommendations.ts` decides what it keeps and what it forgets.
    */
   const [said, setSaid] = useState<Recommendation[]>([]);
-  /** The agent this person has named to advise them here, or null for the house's own coach. */
+  /**
+   * The agent this person has named to advise them here, or null for the house's own coach — read from
+   * the TABLE rather than remembered from this client's own last press. Held in state alone it was
+   * wrong for anybody who reloaded or came back later: the panel said "advised by the house coach"
+   * while somebody's own agent answered every question.
+   */
   const [adviser, setAdviser] = useState<{ agentName: string; displayName: string } | null>(null);
+  useEffect(() => {
+    if (!session) return;
+    let alive = true;
+    api
+      .getAdviser(tableId, session.token)
+      .then((r) => alive && setAdviser(r.adviser))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [session, tableId]);
   const [feed, setFeed] = useState<Said[]>([]);
   /** Seconds left before it plays, so the pause is legible rather than a hang. */
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -447,6 +469,16 @@ export function Coach({
           ) : null}
 
           <Adviser tableId={tableId} session={session} game="canasta" adviser={adviser} onChanged={setAdviser} />
+
+          <WhoIsWhoPanel
+            roster={whoIsWho(
+              view?.seats ?? [],
+              nameOf,
+              (playerId) => players[playerId],
+              viewerSeat,
+              adviser,
+            )}
+          />
 
           {/* No `aria-live` on the feed: it is a running commentary, and a screen reader announcing
               every line of it would talk over the one thing that matters — whose turn it is. */}

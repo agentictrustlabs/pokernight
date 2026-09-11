@@ -4,9 +4,12 @@ import { api, type CoachAdvice } from '../lib/api';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { newAlerts } from '../lib/alerts';
 import type { FormatContext } from '../lib/format';
-import { actionWords, handEndLines, pokerAlerts, pokerFeedLines, spokenAction, spokenPokerLine } from '../lib/pokerWords';
+import { actionWords, handEndLines, playable, pokerAlerts, pokerFeedLines, spokenAction, spokenPokerLine } from '../lib/pokerWords';
 import { announce, canSpeak, hush, primeVoices, say } from '../lib/speech';
 import { Adviser, type CoachMode } from './Coach';
+import { WhoIsWhoPanel } from './WhoIsWho';
+import { whoIsWho } from '../lib/whoIsWho';
+import type { PlayerInfo } from '../lib/types';
 
 /**
  * SOMEBODY AT YOUR SHOULDER WHILE YOU LEARN HOLD'EM.
@@ -57,6 +60,7 @@ export function PokerCoach({
   log,
   logSeq,
   ctx,
+  players,
   startOn = 'off',
   send,
 }: {
@@ -79,6 +83,8 @@ export function PokerCoach({
   logSeq: number;
   /** How to name a seat, and which one is the viewer's — the log's own context, reused. */
   ctx: FormatContext;
+  /** What the table said about whoever holds each seat: a person, or an agent and what is behind it. */
+  players: Record<string, PlayerInfo>;
   startOn?: CoachMode;
   send: (c: ClientCommand) => void;
 }) {
@@ -98,7 +104,25 @@ export function PokerCoach({
   }, [startOn]);
   const [advice, setAdvice] = useState<CoachAdvice | null>(null);
   const [said, setSaid] = useState<Recommendation[]>([]);
+  /**
+   * WHO IS ADVISING YOU, read from the TABLE rather than remembered from your own last press.
+   *
+   * Held in state alone, this was wrong for everybody who reloaded, opened a second tab, or simply
+   * came back later: the panel said "advised by the house coach" while somebody's own agent answered
+   * every question. A screen that names the wrong voice is the one dishonest thing here.
+   */
   const [adviser, setAdviser] = useState<{ agentName: string; displayName: string } | null>(null);
+  useEffect(() => {
+    if (!session) return;
+    let alive = true;
+    api
+      .getAdviser(tableId, session.token)
+      .then((r) => alive && setAdviser(r.adviser))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [session, tableId]);
   const [feed, setFeed] = useState<Said[]>([]);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [missed, setMissed] = useState(0);
@@ -196,7 +220,9 @@ export function PokerCoach({
           // picks the next one up, which is what stops a dropped move becoming a table that sits
           // there until the clock runs down.
           if (asked.current !== key) return;
-          send({ type: 'act', handNo, action: a.action } as ClientCommand);
+          // Same rule as the button: nothing is sent for advice that named no move. Sending an empty
+          // action burned the turn silently, which is the worst of both — no move and no explanation.
+          if (playable(a.action)) send({ type: 'act', handNo, action: a.action } as ClientCommand);
           setAdvice(null);
         }, READ_MS);
       }
@@ -311,7 +337,16 @@ export function PokerCoach({
             <div className="coach-said">
               <p className="coach-say">{advice.say}</p>
               <p className="coach-why">{advice.because}</p>
-              {mode === 'watch' ? (
+              {/* NO BUTTON WITHOUT A MOVE BEHIND IT. An adviser may answer with words and no action —
+                  the skill allows it, and a coach that only talks is a real coach. What must never
+                  happen is a button for a move that does not exist: it sends nothing, the card room
+                  has nothing to apply, and the clock runs out while the person waits for the press to
+                  do something. Enough of those and the table sits them out. */}
+              {!playable(advice.action) ? (
+                <p className="hint">
+                  {whoSaid(advice.source ?? 'house')} did not name a move here — play this one yourself.
+                </p>
+              ) : mode === 'watch' ? (
                 // THE BUTTON NAMES THE MOVE, not "do that". At a poker table the difference between
                 // calling 8 and raising to 24 is the whole decision, and a button that hid which one
                 // it was about to make would be asking for blind consent.
@@ -343,6 +378,16 @@ export function PokerCoach({
           ) : null}
 
           <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={setAdviser} />
+
+          <WhoIsWhoPanel
+            roster={whoIsWho(
+              view?.seats ?? [],
+              ctx.seatName,
+              (playerId) => players[playerId],
+              viewerSeat,
+              adviser,
+            )}
+          />
 
           {/* No `aria-live`: it is a running commentary, and a screen reader announcing every line of
               it would talk over the one thing that matters — whose turn it is. Always rendered, even
