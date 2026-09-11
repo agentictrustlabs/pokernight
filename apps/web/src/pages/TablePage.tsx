@@ -351,11 +351,11 @@ export function TablePage({
             ctx={ctx}
             players={state.players}
             paused={paused}
-            /* At a practice table the coach IS the point, so it starts on rather than waiting to be
-               found — and that is true however you arrived, which is why it reads the table's own
-               `practiceFor` and not only the link's `?practice=1`. Anywhere else it stays off until
-               somebody asks for it. */
-            startOn={practice || mine ? 'play' : 'off'}
+            /* EVERY TABLE OPENS IN "TELL ME". It used to be "play for me" at a practice table and off
+               anywhere else, and both were wrong the same way: one played the hand for the person who
+               came to learn it, the other hid the coach from the person who came to play it. "Tell
+               me" explains and leaves the move to you, at every table, until you choose otherwise. */
+            startOn="watch"
             send={send}
           />
           {mine && session ? (

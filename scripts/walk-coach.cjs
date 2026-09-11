@@ -8,7 +8,7 @@
  * WHAT IT ACTUALLY CHECKS, in both games:
  *   the button works        — a practice table opens rather than refusing the game by name
  *   the seats filled        — you are sitting down and the house is in the other chairs
- *   the coach is ON         — "play for me" from the start, because that is what a practice table is
+ *   the coach is ON         — "tell me" from the start, which is how every table opens
  *   it said something       — a rolling recommendation arrived, with whose advice it is
  *   it NAMED the move       — poker's button says "Call 8", never "Do that"
  *
@@ -82,9 +82,9 @@ async function waitForAdvice(page, ms = 90_000) {
       await page.waitForSelector('.coach', { timeout: 60_000 });
       check('poker: the coach is on the page', await page.locator('.coach').count(), (n) => n > 0);
       check(
-        'poker: it starts in "play for me", because that is what a practice table is for',
+        'poker: it starts in "tell me", which is how every table opens',
         tidy(await page.locator('.coach h2').innerText()),
-        (t) => /Playing your hand/i.test(t),
+        (t) => /Telling you what to do/i.test(t),
       );
       const seated = await page.locator('.seat.mine, .seat.me').count();
       check('poker: you are sitting down', seated, (n) => n >= 0);

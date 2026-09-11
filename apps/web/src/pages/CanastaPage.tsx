@@ -389,11 +389,10 @@ export function CanastaPage({
               scoreboard={state.view ? { scores: state.view.scores, target: state.view.target } : null}
               nameOf={nameOf}
               players={state.players}
-              /* At a practice table the coach IS the point, so it starts on rather than waiting to
-                 be found — and that is true however you arrived, which is why it reads the table's own
-                 `practiceFor` (`mine`) and not only the link's `?practice=1`. Anywhere else it stays
-                 off until somebody asks for it. */
-              startOn={practice || mine ? 'play' : 'off'}
+              /* EVERY TABLE OPENS IN "TELL ME" — the same rule as hold'em's board, for the same
+                 reason: it explains and leaves the move to you, wherever you sit, until you choose
+                 otherwise. */
+              startOn="watch"
               send={send}
             />
           ) : null}
