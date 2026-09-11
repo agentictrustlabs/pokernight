@@ -8,6 +8,8 @@
 
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+import { canastaGame, DEFAULT_CONFIG } from '@pokernight/canasta';
+import { pokerGame } from '@pokernight/engine';
 import type { TableSummary } from '@pokernight/protocol';
 import { TestClient, createTableViaHttp, devSession, engineReady, sleep, soloClub } from './helpers.js';
 import { DEFAULT_GAME, gameFor, gameIds } from '../src/games.js';
@@ -248,4 +250,28 @@ describe('sitting back in at a table with no stakes', () => {
     expect(mine?.status, 'a canasta player who reconnects is dealt back in').toBe('active');
     back.close();
   }, 20_000);
+});
+
+/**
+ * HOW LONG A TABLE WAITS is the GAME's to decide, not the host's.
+ *
+ * A poker turn is a decision about two cards; a canasta turn is a search through a dozen for melds
+ * that may not be there, made by somebody who is often learning the game. Holding both to the same
+ * patience benched the canasta player for thinking — "it keeps taking the person out of the game".
+ */
+describe('the patience a game asks for', () => {
+  it('lets canasta wait longer than the host would', () => {
+    expect(canastaGame.maxTimeouts).toBe(4);
+  });
+
+  it('gives a canasta turn twice as long as a poker one', () => {
+    // Forty-five seconds was inherited from poker rather than chosen for this game.
+    expect(DEFAULT_CONFIG.turnMs).toBe(90_000);
+  });
+
+  it('leaves poker on the host’s own default, which is right for it', () => {
+    // A seat held by somebody who has gone stops a poker table, and a missed turn there costs a
+    // check or a fold in a second.
+    expect(pokerGame.maxTimeouts).toBeUndefined();
+  });
 });

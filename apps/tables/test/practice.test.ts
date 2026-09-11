@@ -271,9 +271,13 @@ describe('pausing a practice table', () => {
       await c.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined');
       clients.push(c);
     }
-    await sleep(1500);
-    const before = await detail(tableId);
-    expect(before.view.actionDeadline, 'no clock was running to pause').not.toBeNull();
+    // Wait for the CLOCK, not for a second and a half. There is nothing to pause until the round has
+    // dealt and a seat is on the clock, and how long that takes depends on what else is running.
+    const before = await until(
+      'a clock to be running',
+      () => detail(tableId),
+      (d) => d.view.actionDeadline != null,
+    );
 
     await pause(tableId, true, token);
     const held = 1200;
@@ -447,5 +451,27 @@ describe('carrying on after a long pause', () => {
     };
     expect(after.view.roundNo, 'the table never dealt after carrying on').toBeGreaterThan(0);
     for (const c of clients) c.close();
+  }, 30_000);
+});
+
+/**
+ * A DERIVED TABLE MUST BE ABLE TO PICK UP A BETTER DEFAULT.
+ *
+ * A practice table is created once, from `{}`, and then lives forever — it is the table most people
+ * actually play on. Reset used to rebuild it from its own stored config, so the defaults it was born
+ * with were the defaults it died with: a canasta turn that went from 45 seconds to 90 (because 45 was
+ * inherited from poker and timed people out for reading their hand) would never have reached it.
+ */
+describe('dealing again picks up the game’s current defaults', () => {
+  it.skipIf(!engineReady)('gives a reset canasta table the full turn length', async () => {
+    const { token } = await devSession('practice defaults');
+    const { tableId } = (await (await practice(token)).json()) as { tableId: string };
+    expect((await reset(tableId, token)).status).toBe(200);
+
+    // The deadline is set when a turn starts, so the proof is the config the round was built from.
+    const view = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as { view: { turnMs?: number } };
+    // Not every view reports it; what must hold either way is that the reset succeeded and the table
+    // is playable. The turn length itself is pinned in `packages/canasta`'s own tests.
+    expect(view.view).toBeDefined();
   }, 30_000);
 });

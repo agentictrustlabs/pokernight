@@ -268,6 +268,10 @@ export async function runExecutor(persona: Persona, parts: PartV1[], env: Env = 
     message,
     task,
     principal: null,
+    // The platform's `ExecutionContext` carries the request's headers so an executor can pass W3C
+    // Trace Context into the run it starts (agenticprimitives spec 390 W2). Correlation only —
+    // nothing in them admits anything — so a test that starts no trace hands over an empty set.
+    headers: new Headers(),
     streaming: false,
     working: unexpected,
     inputRequired: unexpected,

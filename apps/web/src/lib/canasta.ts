@@ -208,3 +208,93 @@ export function turnLine(view: CanastaView, viewerSeat: number | null, nameOf: (
   }
   return mine ? 'Your turn — lay melds if you can, then discard one card to finish.' : `${who} to play.`;
 }
+
+/* ------------------------------------------------------- why the pile will not come */
+
+/**
+ * WHY "TAKE THE PILE" IS DEAD, in words, or null when it is not.
+ *
+ * Taking the pile has TWO gates and they fail for different reasons, which is how this came to be a
+ * button that did nothing and said nothing:
+ *
+ *   THE ENGINE'S gate — do you hold what the rules require for this top card, given whether the pile
+ *   is frozen and what your side has down. It reports its own refusal, and when it is satisfied that
+ *   reason is `null`.
+ *
+ *   THE TABLE'S gate — the cards you have SELECTED, plus the top card, have to make a legal meld,
+ *   because taking the pile means using its top card immediately. Select nothing and the check runs
+ *   on one card and fails with "a meld is three cards or more" — a sentence about laying down, for a
+ *   button you pressed to pick up.
+ *
+ * The screen showed the first reason and never the second. So the ordinary case — the pile is takeable
+ * and you simply have not chosen your cards yet — disabled the button with no explanation at all, and
+ * the guidance underneath cheerfully said "take the pile with those".
+ */
+export function whyNotTakePile(a: {
+  /** The engine's answer, which owns the rules. */
+  canTakePile: boolean;
+  takePileReason: string | null;
+  pileTop: CanastaCard | null;
+  selection: readonly CanastaCard[];
+  existingRanks: readonly string[];
+}): string | null {
+  if (!a.pileTop) return 'The pile is empty.';
+  // The engine owns the rules; when it refuses, its words are the answer and nothing here improves them.
+  if (!a.canTakePile) return a.takePileReason ?? 'The pile cannot be taken right now.';
+
+  const rank = rankOf(a.pileTop);
+  const withTop = checkSelection([...a.selection, a.pileTop], a.existingRanks);
+  if (withTop.ok) return null;
+
+  if (a.selection.length === 0) {
+    return a.existingRanks.includes(rank)
+      ? `Pick the ${rank}s you want to add, or take the pile onto your ${rank} meld.`
+      : `Pick the cards from your hand that go with the ${rank} on top, then take the pile.`;
+  }
+  // The selection IS wrong, and the meld checker already says why in the right words — it is only
+  // the frame that has to change, because this is about picking the pile up rather than laying down.
+  return `Those and the ${rank} on top do not make a meld: ${withTop.why[0]?.toLowerCase()}${withTop.why.slice(1)}`;
+}
+
+/* ------------------------------------------------------------- which button is green */
+
+/** The four things a canasta turn offers. */
+export type CanastaAction = 'draw' | 'take' | 'meld' | 'discard';
+
+/**
+ * WHICH ONE BUTTON IS GREEN — and it is never more than one.
+ *
+ * `Draw` and `Discard` were both permanently primary, and green reads as "this is what you do next".
+ * So a player who picked up three matching cards still saw the green on DISCARD, pressed it, and
+ * never noticed `Lay down` beside it — the melding half of the game hidden by a colour.
+ *
+ * The rule is that green follows the SELECTION: it marks the act the cards in your hand currently
+ * afford, so choosing cards visibly changes what the table is offering you.
+ *
+ *   nothing picked      the step's own default — draw, or nothing at all in the second half
+ *   one card            DISCARD. One card is the shape of ending a turn.
+ *   a legal meld        LAY DOWN.
+ *   anything else       nothing is green, because nothing is ready.
+ *
+ * ONE CARD IS DISCARD EVEN WHEN IT WOULD EXTEND A MELD, and that is deliberate. A single card that
+ * happens to match a meld already down can be laid off — but the common reason to pick one card is to
+ * throw it, and putting the green on `Lay down` there would turn a routine discard into an
+ * irreversible meld on a mis-click. The safer of two plausible readings wins.
+ */
+export function primaryAction(a: {
+  drawing: boolean;
+  selectionCount: number;
+  canDraw: boolean;
+  canTake: boolean;
+  canMeld: boolean;
+  canDiscard: boolean;
+}): CanastaAction | null {
+  if (a.drawing) {
+    // Taking the pile is only ever possible once the cards are chosen, so it IS the selection's act.
+    if (a.canTake) return 'take';
+    return a.canDraw ? 'draw' : null;
+  }
+  if (a.selectionCount === 1 && a.canDiscard) return 'discard';
+  if (a.canMeld) return 'meld';
+  return null;
+}

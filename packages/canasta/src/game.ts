@@ -90,6 +90,19 @@ export const canastaGame: TableGame<CanastaState, CanastaAction, CanastaView, Ca
   },
 
   timeout: (state, seat) => timeoutAction(state, seat),
+  /**
+   * FOUR, not the host's default of two.
+   *
+   * A canasta turn is reading a hand of a dozen cards, hunting melds in it, weighing whether the pile
+   * is worth taking, and only then discarding — and a player learning the game is doing all of that
+   * for the first time. Two missed turns is about a minute and a half of thinking before the table
+   * takes their seat away, which is the complaint this answers: "it keeps taking the person out".
+   *
+   * Missing a turn already costs something — the clock draws and throws the cheapest card for them —
+   * so this is only the point at which the table stops waiting, and being slow at a thinking game is
+   * not the same as being gone.
+   */
+  maxTimeouts: 4,
   setDeadline: (state, deadline) => setActionDeadline(state, deadline),
 
   viewFor: (state, seat) => viewFor(state, seat),

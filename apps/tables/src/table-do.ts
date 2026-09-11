@@ -377,6 +377,14 @@ const OUTBOX_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000] as const;
  * something a player and an operator can both act on.
  */
 const MAX_OUTBOX_ATTEMPTS = 6;
+/**
+ * How many turns a silent player may miss before the table frees their seat, when the GAME does not
+ * say otherwise (`TableGame.maxTimeouts`).
+ *
+ * Two is right for poker, where a missed turn is checked or folded in a second and a seat held by
+ * somebody who has gone stops the table. It is wrong for a game where a turn is a puzzle, which is
+ * why the number is now the game's to raise — this is only the floor for a game with no opinion.
+ */
 const MAX_TIMEOUTS_BEFORE_SIT_OUT = 2;
 /**
  * How stale a seat's persisted `lastActiveAt` is allowed to get. The in-memory value is always
@@ -685,9 +693,22 @@ export class PokerTableDO extends DurableObject<Env> {
     const before = this.snap(this.state);
     let fresh: unknown;
     try {
-      // The table's own config, handed straight back. Opaque to the host, which is the point: the
-      // game validated it once when the table opened and will validate it again here.
-      fresh = this.game.create(this.game.config(this.state) as Partial<unknown>);
+      /**
+       * THE GAME'S CURRENT DEFAULTS, not the ones this table was born with.
+       *
+       * Reset used to hand the table's own config straight back, which is right for a table somebody
+       * configured — and a practice table is not one. `POST /practice` always creates it with `{}`,
+       * so its stored config is not a choice anybody made; it is a snapshot of whatever the defaults
+       * were on the day it first existed. Handing that back meant a derived table, which lives
+       * forever and is the one most people actually play on, could never pick up a better default.
+       *
+       * Concretely: a canasta turn went from 45 seconds to 90 because 45 was inherited from poker and
+       * timed people out for reading their hand — and every practice table made before that would
+       * have stayed at 45 for good.
+       *
+       * This route is practice-only (refused above), so nothing a person chose is discarded here.
+       */
+      fresh = this.game.create({} as Partial<unknown>);
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
@@ -1692,7 +1713,8 @@ export class PokerTableDO extends DurableObject<Env> {
           let next = r.state;
           const extra: TableEvent[] = [];
           const s = this.snap(next).seats.find((x) => x.seat === seat);
-          if (s && s.status === 'active' && s.timeouts >= MAX_TIMEOUTS_BEFORE_SIT_OUT) {
+          const allowed = this.game.maxTimeouts ?? MAX_TIMEOUTS_BEFORE_SIT_OUT;
+          if (s && s.status === 'active' && s.timeouts >= allowed) {
             try {
               next = this.game.sitOut(next, seat);
               await this.noteSitOut(s.playerId, 'timeouts');

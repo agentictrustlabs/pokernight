@@ -31,8 +31,10 @@ import {
   teamOf,
   turnLine,
   valueOf,
+  primaryAction,
+  whyNotTakePile,
 } from './canasta';
-import type { CanastaView } from './canasta';
+import type { CanastaCard, CanastaView } from './canasta';
 
 describe('the copied card predicates agree with the engine', () => {
   const deck = fullDeck();
@@ -215,5 +217,88 @@ describe('the turn line', () => {
   it('says the round is over rather than naming a turn nobody has', () => {
     expect(turnLine(view({ result: {} as never }), 0, nameOf)).toBe('The round is over.');
     expect(turnLine(view({ toAct: null }), 0, nameOf)).toMatch(/next round/);
+  });
+});
+
+describe('why the pile will not come', () => {
+  const three = (r: string): CanastaCard => `${r}H` as CanastaCard;
+  const base = { canTakePile: true, takePileReason: null, pileTop: '7H' as CanastaCard, selection: [], existingRanks: [] as string[] };
+
+  it('is silent when the pile really can be taken', () => {
+    // Two natural sevens in hand plus the seven on top is a meld.
+    expect(whyNotTakePile({ ...base, selection: ['7S', '7D'] as CanastaCard[] })).toBeNull();
+  });
+
+  it('gives the ENGINE’s reason when the rules are what refuse it', () => {
+    // The engine owns the rules; nothing here improves on its words.
+    expect(whyNotTakePile({ ...base, canTakePile: false, takePileReason: 'the pile is frozen and you need two natural sevens' })).toBe(
+      'the pile is frozen and you need two natural sevens',
+    );
+  });
+
+  it('says to PICK CARDS when that is all that is missing — the case that said nothing at all', () => {
+    // The ordinary failure: the pile is takeable, no cards chosen yet, so the button sat dead with an
+    // empty tooltip and the guidance said "take the pile with those".
+    expect(whyNotTakePile(base)).toBe('Pick the cards from your hand that go with the 7 on top, then take the pile.');
+  });
+
+  it('is silent with NOTHING selected when the side already has that rank down', () => {
+    // The top card can be added to a meld already on the table, so no cards from hand are needed and
+    // the button is genuinely live. Asserted because it is the one case where an empty selection is
+    // not a mistake, and a blanket "pick some cards first" would be wrong.
+    expect(whyNotTakePile({ ...base, existingRanks: ['7'] })).toBeNull();
+  });
+
+  it('explains a WRONG selection in terms of picking the pile up, not laying down', () => {
+    const said = whyNotTakePile({ ...base, selection: ['8S', '9D'] as CanastaCard[] });
+    expect(said).toMatch(/^Those and the 7 on top do not make a meld: /);
+    expect(said).toMatch(/one rank/i);
+  });
+
+  it('says so when there is no pile', () => {
+    expect(whyNotTakePile({ ...base, pileTop: null })).toBe('The pile is empty.');
+  });
+});
+
+describe('which button is green', () => {
+  const base = { drawing: false, selectionCount: 0, canDraw: false, canTake: false, canMeld: false, canDiscard: false };
+
+  it('marks DRAW in the first half, until the pile is actually takeable', () => {
+    expect(primaryAction({ ...base, drawing: true, canDraw: true })).toBe('draw');
+    // Taking needs the cards chosen, so it is the selection's act and takes the green when it is on.
+    expect(primaryAction({ ...base, drawing: true, canDraw: true, canTake: true, selectionCount: 2 })).toBe('take');
+  });
+
+  it('marks DISCARD for exactly one card — the shape of ending a turn', () => {
+    expect(primaryAction({ ...base, selectionCount: 1, canDiscard: true })).toBe('discard');
+  });
+
+  it('marks LAY DOWN for a legal meld, which is the thing that used to be invisible', () => {
+    // Discard was permanently green, so a player holding three matching cards pressed it and never
+    // saw `Lay down` beside it.
+    expect(primaryAction({ ...base, selectionCount: 3, canMeld: true, canDiscard: false })).toBe('meld');
+  });
+
+  it('keeps DISCARD on one card even when it would extend a meld', () => {
+    // A single card matching a meld already down CAN be laid off. But the common reason to pick one
+    // card is to throw it, and green on `Lay down` would turn a routine discard into an irreversible
+    // meld on a mis-click.
+    expect(primaryAction({ ...base, selectionCount: 1, canMeld: true, canDiscard: true })).toBe('discard');
+  });
+
+  it('marks NOTHING when nothing is ready', () => {
+    expect(primaryAction(base)).toBeNull();
+    // Two cards that do not make a meld: not a discard, not a meld, so no green at all.
+    expect(primaryAction({ ...base, selectionCount: 2 })).toBeNull();
+    expect(primaryAction({ ...base, drawing: true })).toBeNull();
+  });
+
+  it('is never more than one thing', () => {
+    const every = [
+      { ...base, drawing: true, canDraw: true, canTake: true, selectionCount: 2 },
+      { ...base, selectionCount: 1, canDiscard: true, canMeld: true },
+      { ...base, selectionCount: 3, canMeld: true },
+    ];
+    for (const a of every) expect(typeof primaryAction(a)).toBe('string');
   });
 });

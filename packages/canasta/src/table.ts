@@ -50,7 +50,14 @@ import {
   type TeamId,
 } from './types.js';
 
-export const DEFAULT_CONFIG: CanastaConfig = { seats: SEATS, target: 5000, turnMs: 45_000 };
+/**
+ * NINETY SECONDS A TURN, where poker gives forty-five.
+ *
+ * The same reasoning as `maxTimeouts`: a poker turn is a decision about two cards, a canasta turn is
+ * a search through a dozen for melds that may not be there. Forty-five seconds was inherited from
+ * poker rather than chosen for this game, and it timed out people who were simply reading their hand.
+ */
+export const DEFAULT_CONFIG: CanastaConfig = { seats: SEATS, target: 5000, turnMs: 90_000 };
 /** Cards dealt to each player in the four-hand game. */
 export const HAND_SIZE = 11;
 

@@ -130,6 +130,18 @@ export interface TableGame<S = unknown, A = unknown, V = unknown, E = unknown, C
   apply(state: S, seat: number, action: A): Applied<S, E>;
   /** What happens when the clock runs out. Every game must have an answer that is not "nothing". */
   timeout(state: S, seat: number): { state: S; events: E[] };
+  /**
+   * How many turns a player may miss before the table sits them out. Default 2.
+   *
+   * IT BELONGS TO THE GAME, because how long a turn takes is a fact about the game and not about the
+   * host. A poker turn is call, raise or fold against two cards; a canasta turn is reading a hand of
+   * a dozen, looking for melds in it, deciding whether the pile is worth taking, and only then
+   * discarding. Holding both to the same patience benches the canasta player for thinking.
+   *
+   * Missing a turn is not nothing — `timeout` already plays a default move — so this is only the
+   * point at which the table stops asking and frees the seat.
+   */
+  readonly maxTimeouts?: number;
   setDeadline(state: S, deadline: number | null): S;
 
   /* ---- what each person is allowed to see ---- */

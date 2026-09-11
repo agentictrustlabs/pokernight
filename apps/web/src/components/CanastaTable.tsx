@@ -11,8 +11,10 @@ import {
   seatRing,
   teamName,
   teamOf,
+  primaryAction,
   turnLine,
   valueOf,
+  whyNotTakePile,
 } from '../lib/canasta';
 import { seatBadge } from '../lib/commentary';
 import { scoreSummary } from '../lib/scoreWords';
@@ -279,6 +281,24 @@ export function CanastaTable({
   const topRank = view.pileTop ? rankOf(view.pileTop) : null;
   const takeCheck = view.pileTop ? checkSelection([...selection, view.pileTop], existingRanks) : null;
   const canTake = myTurn && view.phase === 'draw' && legal?.canTakePile === true && takeCheck?.ok === true && topRank != null;
+  /**
+   * WHY IT WILL NOT COME, when it will not.
+   *
+   * Two gates guard this button and only one of them ever spoke. The engine refuses with its own
+   * words; the table's own check — your selected cards plus the top card have to make a meld — had
+   * none on screen at all, so the ordinary case (the pile is takeable, you simply have not chosen
+   * your cards) was a dead button with an empty tooltip.
+   */
+  const takeWhy =
+    myTurn && view.phase === 'draw'
+      ? whyNotTakePile({
+          canTakePile: legal?.canTakePile === true,
+          takePileReason: legal?.takePileReason ?? null,
+          pileTop: view.pileTop ?? null,
+          selection,
+          existingRanks,
+        })
+      : null;
   const canDraw = myTurn && view.phase === 'draw' && legal?.canDraw === true;
   const opened = existingRanks.length > 0;
   const minimum = myTeam == null ? 0 : openingMinimum(view.scores[myTeam]);
@@ -321,7 +341,7 @@ export function CanastaTable({
               data-drop="discard"
               disabled={!canTake}
               onClick={onTake}
-              title={canTake ? 'Take the pile with the cards you have picked' : (legal?.takePileReason ?? undefined)}
+              title={canTake ? 'Take the pile with the cards you have picked' : (takeWhy ?? undefined)}
             >
               <span className="lbl">Discard</span>
               {/* KEYED ON THE CARD, so React remounts it when somebody throws — and the deal
@@ -391,6 +411,7 @@ export function CanastaTable({
             canDraw={canDraw}
             canTake={canTake}
             canMeld={canMeld}
+            takeWhy={takeWhy}
             onDraw={onDraw}
             onTake={onTake}
             onMeld={onMeld}
@@ -605,6 +626,7 @@ function Controls({
   canDraw,
   canTake,
   canMeld,
+  takeWhy,
   onDraw,
   onTake,
   onMeld,
@@ -621,6 +643,8 @@ function Controls({
   canDraw: boolean;
   canTake: boolean;
   canMeld: boolean;
+  /** Why the pile will not come, or null when it will. Both gates, not only the engine's. */
+  takeWhy: string | null;
   onDraw: () => void;
   onTake: () => void;
   onMeld: () => void;
@@ -630,6 +654,7 @@ function Controls({
   const drawing = view.phase === 'draw';
   const one = selection.length === 1 ? (selection[0] as CanastaCard) : null;
   const canDiscard = myTurn && !drawing && one != null && !(one[0] === '3' && (one[1] === 'H' || one[1] === 'D'));
+  const primary = primaryAction({ drawing, selectionCount: selection.length, canDraw, canTake, canMeld, canDiscard });
 
   return (
     <section className="panel can-actions" aria-label="Your move">
@@ -645,23 +670,32 @@ function Controls({
         ) : null}
       </div>
 
+      {/* ONE GREEN BUTTON, and it follows the SELECTION — see `primaryAction`. Draw and Discard were
+          both permanently primary, so somebody who picked up three matching cards still saw the green
+          on Discard, pressed it, and never noticed Lay down beside it. */}
       <div className="can-buttons">
-        <button type="button" className="primary" disabled={!canDraw} onClick={onDraw}>
+        <button type="button" className={primary === 'draw' ? 'primary' : ''} disabled={!canDraw} onClick={onDraw}>
           Draw
         </button>
-        <button type="button" disabled={!canTake} title={legal?.takePileReason ?? undefined} onClick={onTake}>
+        <button
+          type="button"
+          className={primary === 'take' ? 'primary' : ''}
+          disabled={!canTake}
+          title={takeWhy ?? undefined}
+          onClick={onTake}
+        >
           Take the pile ({view.pileSize})
         </button>
-        <button type="button" disabled={!canMeld} onClick={onMeld}>
+        <button type="button" className={primary === 'meld' ? 'primary' : ''} disabled={!canMeld} onClick={onMeld}>
           Lay down{check.ok ? ` ${selection.length} × ${check.rank}` : ''}
         </button>
-        <button type="button" className="primary" disabled={!canDiscard} onClick={onDiscard}>
+        <button type="button" className={primary === 'discard' ? 'primary' : ''} disabled={!canDiscard} onClick={onDiscard}>
           Discard{one ? ` ${one}` : ''}
         </button>
       </div>
 
       <p className="hint can-why">
-        {why({ view, myTurn, drawing, legal, selection, check, meldShort, minimum })}
+        {why({ view, myTurn, drawing, legal, selection, check, meldShort, minimum, takeWhy })}
       </p>
     </section>
   );
@@ -683,18 +717,17 @@ export function why(a: {
   check: ReturnType<typeof checkSelection>;
   meldShort: boolean;
   minimum: number;
+  /** Why the pile will not come, or null when it will. Both gates, not only the engine's. */
+  takeWhy: string | null;
 }): string {
   if (a.view.result) return 'The round is scored. The next one deals shortly.';
   if (!a.myTurn) return 'Waiting for the other players.';
   if (a.drawing) {
-    if (a.selection.length === 0) {
-      return a.legal?.canTakePile
-        ? 'Draw from the stock, or pick the cards that would use the top of the pile and take it.'
-        : `Draw from the stock.${a.legal?.takePileReason ? ` The pile is out: ${a.legal.takePileReason}.` : ''}`;
-    }
-    return a.legal?.canTakePile
-      ? 'Take the pile with those, or draw instead.'
-      : `The pile is out: ${a.legal?.takePileReason ?? 'not available'}.`;
+    // `takeWhy` is the WHOLE answer — both gates, not just the engine's. This line used to read the
+    // engine alone and so said "take the pile with those" while the button beside it was disabled,
+    // because the selected cards did not actually make a meld with the top card.
+    if (!a.takeWhy) return a.selection.length === 0 ? 'Take the pile, or draw from the stock.' : 'Take the pile with those, or draw instead.';
+    return `Draw from the stock. ${a.takeWhy}`;
   }
   if (a.selection.length === 0) return 'Pick cards to lay down, or pick one card to discard and end your turn. You can drag them instead.';
   if (a.selection.length === 1) return 'Discard that to end your turn, or pick more cards to make a meld. Dragging it to the pile discards it.';
