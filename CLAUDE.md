@@ -180,9 +180,16 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   host and the moment; the house's own personas get no header, because they ask nobody's name.
   A message goes WHERE THE CARD SAYS (`messageUrlFromCard`): a Home agent answers at the estate's edge
   (`edge…/api/a2a/<name>`) and refuses its own host with `gateway_assertion_required`. Proven live:
-  `pnpm ask:as-house alice-me.faithnet.ai "…"` — Alice's agent answered through her playbook. What
-  stops her ADVISING is her card: `poker.advise` is not in her on-chain `atl:capabilities`, and that
-  is a Home act under her own delegation, not the card room's.
+  `pnpm ask:as-house alice-me.faithnet.ai "…"` — Alice's agent answered through her playbook.
+  A PERSON'S AGENT ADVISES THROUGH THE HOME'S `playbook.answer` TOOL (branch `playbook-answer` in
+  `~/agenticprimitives`, deployed to `demo-a2a-faithnet` 2026-09-11): the Home's harness is a tool
+  planner, and that is the one tool that answers a question of judgement over material the message
+  carried, listed only for a skill the agent's `atl:capabilities` advertises. The advice request
+  therefore carries the answer's SHAPE in its data part (`adviseAnswerShape`) — the answering step at
+  a Home reads the data, not the text. Putting the four skills on a demo person's card is
+  `~/agenticprimitives/scripts/add-cardroom-skills.mts <handle>` then `rebuild-card-release.mts` +
+  `republish-card-record.mts`. A Home run takes ~14 s against the 20 s A2A limit; a miss falls back
+  to the house coach and the panel says so.
 - Wrangler: one `wrangler.toml` per app, `[env.faithnet]` per deployment universe, bindings repeated per env,
   migration tags never renamed. Worker names `pokernight-<app>-<env>`.
 - Tests: vitest. Engine has property tests; run `pnpm test` at the root before claiming anything works.
