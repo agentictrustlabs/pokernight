@@ -16,9 +16,16 @@ describe('the advice request, in words as well as in data', () => {
     question: 'should I bluff here?',
   };
 
-  it('keeps the data part exactly as the act request has it, first', () => {
+  it('keeps the act request\'s data part first, with the answer shape beside it', () => {
     const parts = encodeAdviseParts(input);
-    expect(parts[0]).toEqual(encodeActParts(input)[0]);
+    const act = encodeActParts(input)[0] as { data: Record<string, unknown> };
+    const data = (parts[0] as { data: Record<string, unknown> }).data;
+    expect(data.skill).toBe(act.data.skill);
+    expect(data.input).toEqual(act.data.input);
+    // The SHAPE rides in the data part because the thing that writes the answer at a Home reads the data,
+    // not the text: an action that came back as `{"raise":10}` was one the card room could not use.
+    expect((data.answer as { action: string }).action).toContain('{"type":"raise","amount":');
+    expect((encodeAdviseParts({ ...input, skill: 'canasta.advise' })[0] as { data: { answer: { action: string } } }).data.answer.action).toContain('"take-pile"');
   });
 
   it('adds a text part a conversational agent can reason from', () => {

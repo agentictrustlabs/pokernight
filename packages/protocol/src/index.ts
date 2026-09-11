@@ -917,15 +917,39 @@ export function encodeAdviseParts(
 ): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
   const game = input.skill.split('.')[0] ?? 'the game';
   const asked = input.question?.trim();
+  const shape = adviseAnswerShape(input.skill);
   const text = [
     `${input.skill}: advise seat ${input.seat} at ${game}, round ${input.handNo}.`,
     asked ? `The person asked: "${asked}".` : 'Nothing was asked; say what they should do and why.',
-    'Answer with ONE JSON object and nothing else: {"say": <one sentence for somebody with a clock running>,',
-    '"because": <the reason, which is the half that teaches>, "action": <the move in the game\'s own action shape, or omit it>}.',
+    `Answer with ONE JSON object and nothing else: {"say": ${shape.say}, "because": ${shape.because}, "action": ${shape.action}}.`,
     `Legal moves for this seat: ${JSON.stringify(input.legal)}`,
     `The table as this seat sees it: ${JSON.stringify(input.view)}`,
   ].join('\n');
-  return [...encodeActParts(input), { kind: 'text', text }];
+  // The data part carries the answer's SHAPE beside the input, because the thing that eventually writes
+  // the answer at a Home is not the thing that read this text: the planner reads the text, the answering
+  // step reads the data. An action that came back as `{"raise":10}` instead of `{type:"raise",amount:10}`
+  // was a move the card room could only refuse to draw a button for.
+  const [data] = encodeActParts(input);
+  return [{ kind: 'data', data: { ...(data as { data: Record<string, unknown> }).data, answer: shape } }, { kind: 'text', text }];
+}
+
+/**
+ * HOW AN ADVISER SHOULD SHAPE ITS ANSWER, per game — said once, sent with every request.
+ *
+ * `action` names the game's own action union exactly, because an adviser at somebody's Home is a
+ * language model reading a sentence, and "the game's own action shape" is not a sentence it can obey.
+ */
+export function adviseAnswerShape(skill: string): { say: string; because: string; action: string } {
+  const game = skill.split('.')[0];
+  const action =
+    game === 'canasta'
+      ? 'the move, EXACTLY one of {"type":"draw"} | {"type":"take-pile","meld":{"rank":<rank>,"cards":[<cards from hand>]}} | {"type":"meld","melds":[{"rank":<rank>,"cards":[<cards>]}]} | {"type":"discard","card":<card>} — or omit "action" to commit to none'
+      : 'the move, EXACTLY one of {"type":"fold"} | {"type":"check"} | {"type":"call"} | {"type":"bet","amount":<total chips>} | {"type":"raise","amount":<the total to raise TO, in chips>} | {"type":"all-in"} — or omit "action" to commit to none';
+  return {
+    say: 'one sentence, for somebody with a clock running',
+    because: 'the reason — the half that teaches',
+    action,
+  };
 }
 
 export const AdviseOutputSchema = z.object({
