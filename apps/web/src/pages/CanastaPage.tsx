@@ -16,6 +16,7 @@ import { Identity } from '../components/Identity';
 import { useLeaveTable } from '../lib/useLeaveTable';
 import { PRODUCT_NAME } from '../lib/brand';
 import { clubHash } from '../lib/routes';
+import { fillOutcome, seatsToFill, type FillPlan } from '../lib/fillSeats';
 import { CanastaTable } from '../components/CanastaTable';
 import { CanastaLog } from '../components/CanastaLog';
 import { Coach } from '../components/Coach';
@@ -306,7 +307,7 @@ export function CanastaPage({
               so without somebody to sit in the other chairs a person alone cannot play — which is
               why every canasta site worth using offers this and why it is not a nicety here. */}
           {session && empty.length > 0 ? (
-            <FillSeats tableId={tableId} session={session} empty={empty} />
+            <FillSeats tableId={tableId} session={session} empty={empty} mySeat={mySeat} />
           ) : null}
           {mine && session ? (
             <section className="panel can-practice">
@@ -422,17 +423,25 @@ export function CanastaPage({
 
 
 /**
- * Sit agents in the empty chairs.
+ * Sit house players in the empty chairs — and decide who is on your side.
  *
- * ONE PRESS FILLS THE TABLE, because that is the thing a person alone actually wants and asking
- * them to seat three agents one at a time is asking them to do it three times. Which agent goes
- * where is not a decision worth making: they are the same engine, and the only choice that matters
- * — who is your partner — is the seat the person themselves took.
+ * ONE PRESS FILLS THE TABLE, because that is what somebody alone wants and seating three agents one
+ * at a time is asking them to do it three times.
  *
- * The card room resolves each agent, fetches its card and refuses one that does not advertise this
- * table's game, so a seat that cannot play is refused here rather than timing out every turn.
+ * BUT WHICH CHAIRS IS NOT AN ARBITRARY DETAIL. Canasta's partnerships are fixed by seat — 0 and 2
+ * against 1 and 3 — so if a chair is being kept for a person who is on their way, whether it is the
+ * one ACROSS from you or one BESIDE you decides whether the two of you play together against the
+ * house or against each other. Filling the empty seats in order answers that by accident, which is
+ * how two friends end up on opposite sides of a game they sat down to play together.
+ *
+ * So: fill everything and deal, or keep one chair and say whose. `lib/fillSeats.ts` is the plan and
+ * the sentence; this is the buttons.
+ *
+ * Which AGENT goes in which chair is still not worth choosing — they are the same engine. The card
+ * room resolves each one, fetches its card and refuses one that does not advertise this table's
+ * game, so a seat that cannot play is refused here rather than timing out every turn.
  */
-function FillSeats({ tableId, session, empty }: { tableId: string; session: AppSession; empty: number[] }) {
+function FillSeats({ tableId, session, empty, mySeat }: { tableId: string; session: AppSession; empty: number[]; mySeat: number | null }) {
   const [agents, setAgents] = useState<AgentListing[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -450,15 +459,16 @@ function FillSeats({ tableId, session, empty }: { tableId: string; session: AppS
 
   if (agents != null && agents.length === 0) return null;
 
-  const fill = async () => {
+  const fill = async (plan: FillPlan) => {
     if (!agents || agents.length === 0 || busy) return;
     setBusy(true);
     setErr(null);
     // ONE AGENT PER SEAT, and never the same one twice: a table identifies an agent seat by the
     // agent's NAME, so seating the same persona in two chairs is seating the same player twice and
-    // is refused. If there are fewer agents than empty seats, the ones that can be filled are, and
-    // the rest are said out loud rather than failing silently half-way.
-    const takeable = Math.min(empty.length, agents.length);
+    // is refused. If there are fewer agents than chairs, the ones that can be filled are, and the
+    // rest are said out loud rather than failing silently half-way.
+    const wanted = seatsToFill(empty, mySeat, plan);
+    const takeable = Math.min(wanted.length, agents.length);
     try {
       for (let i = 0; i < takeable; i++) {
         const agent = agents[i] as AgentListing;
@@ -466,12 +476,12 @@ function FillSeats({ tableId, session, empty }: { tableId: string; session: AppS
           tableId,
           // `buyIn` is the port's word for a stake. Canasta is played for score and has none, so it
           // is the smallest positive number the schema accepts and means nothing at this table.
-          { seat: empty[i] as number, buyIn: 1, agentName: agent.agentName, displayName: agent.displayName },
+          { seat: wanted[i] as number, buyIn: 1, agentName: agent.agentName, displayName: agent.displayName },
           session.token,
         );
       }
-      if (takeable < empty.length) {
-        setErr(`Only ${takeable} of the ${empty.length} empty seats could be filled — this card room has ${agents.length} canasta agents.`);
+      if (takeable < wanted.length) {
+        setErr(`Only ${takeable} of the ${wanted.length} chairs could be filled — this card room has ${agents.length} canasta players.`);
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'That seat was refused.');
@@ -480,17 +490,48 @@ function FillSeats({ tableId, session, empty }: { tableId: string; session: AppS
     }
   };
 
+  const have = agents?.length ?? 0;
+  // The choice only exists when there is a chair to keep AND a side to keep it on: somebody who has
+  // not sat down has no "across from me", and one empty chair cannot be both filled and kept.
+  const canChoose = mySeat !== null && empty.length > 1;
+
   return (
     <section className="panel can-fill">
       <h2>Play with the house</h2>
       <p className="hint">
-        Canasta needs four. {empty.length === 1 ? 'One seat is' : `${empty.length} seats are`} empty — fill{' '}
-        {empty.length === 1 ? 'it' : 'them'} and the round deals.
+        Canasta is four, in two partnerships — you and the player across from you, against the other two.{' '}
+        {empty.length === 1 ? 'One chair is' : `${empty.length} chairs are`} empty.
       </p>
       {err ? <div className="form-error">{err}</div> : null}
-      <button type="button" className="primary" disabled={busy || agents == null} onClick={fill}>
-        {busy ? 'Seating…' : `Fill ${empty.length === 1 ? 'the seat' : `all ${empty.length} seats`}`}
+
+      <button type="button" className="primary" disabled={busy || agents == null} onClick={() => void fill({ kind: 'all' })}>
+        {busy ? 'Seating…' : empty.length === 1 ? 'Fill the chair and deal' : `Fill all ${empty.length} and deal`}
       </button>
+      <p className="hint">{agents == null ? 'Reading the house players…' : fillOutcome(empty, mySeat, { kind: 'all' }, have)}</p>
+
+      {/* KEEPING A CHAIR, and saying whose. This is the whole reason the panel is not one button:
+          two friends who sit down to play TOGETHER and let the seats fill in order end up on
+          opposite sides, and nothing on screen ever told them that was the choice being made. */}
+      {canChoose ? (
+        <details className="can-keep">
+          <summary>Somebody else is coming</summary>
+          <p className="hint">Keep a chair for them, and say which side they are on. The rest fill now.</p>
+          <div className="row">
+            <button type="button" disabled={busy || agents == null} onClick={() => void fill({ kind: 'keep-partner' })}>
+              They play with me
+            </button>
+            <button type="button" disabled={busy || agents == null} onClick={() => void fill({ kind: 'keep-opponent' })}>
+              They play against me
+            </button>
+          </div>
+          {/* Deliberately says no side. Two buttons are on offer and the side is exactly what they
+              choose between — a sentence describing one of them reads as a description of both. */}
+          <p className="hint">
+            {Math.min(empty.length - 1, have) === 1 ? 'One house player sits' : `${Math.min(empty.length - 1, have)} house players sit`} down and one chair
+            is held. The round deals when somebody takes it.
+          </p>
+        </details>
+      ) : null}
     </section>
   );
 }

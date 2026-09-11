@@ -3074,6 +3074,24 @@ a.button.primary:hover {
   opacity: 0.75;
 }
 
+/* Keeping a chair for somebody, and saying whose side they are on. Folded, because filling the table
+   and dealing is what most people want and the choice only matters when somebody is on their way. */
+.can-keep {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+.can-keep > summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.can-keep .row {
+  margin: 0.5rem 0;
+}
+.can-fill .hint {
+  margin: 0.4rem 0 0;
+}
+
 /* WHEN THE CLUB MEETS. The next night reads as a sentence; the rest are a quiet list under it. */
 .nights {
   display: grid;
