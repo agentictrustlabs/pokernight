@@ -262,6 +262,37 @@ export function CanastaPage({
    * the board must not stop three others from playing — so there the curtain is a screen of your own
    * and the table deals on its own schedule, which is the same reasoning as the pace slider's.
    */
+
+  /**
+   * HOLD OR RELEASE THE TABLE — one door, and requests go through it IN ORDER.
+   *
+   * Three things ask for this now: the freeze when a round ends, "deal the next round", and the pause
+   * button. Two of them can happen within a few hundred milliseconds of each other — the freeze fires
+   * on arrival at a table whose round has already ended, and a person can press "deal the next round"
+   * before that request has landed. Fired independently they race, and the loser is whichever the
+   * card room happens to receive last: the screen said running, the table said held, and the board sat
+   * there until somebody reloaded.
+   *
+   * So the requests are CHAINED. The screen changes at once, which is right — it is saying what was
+   * asked for — and the card room is told in the order it was asked.
+   */
+  const holdQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const setHeld = useCallback(
+    (next: boolean) => {
+      if (!session) return;
+      setPaused(next);
+      holdQueue.current = holdQueue.current
+        .then(() => api.setPaused(tableId, next, session.token))
+        .catch((e) => {
+          // The toggle springing back with no word was the whole of the feedback, and from the outside
+          // that is indistinguishable from a control that does not work.
+          setPaused(!next);
+          setTableErr(e instanceof ApiError ? e.message : `The table could not be ${next ? 'held' : 'restarted'}.`);
+        });
+    },
+    [session, tableId],
+  );
+
   const froze = useRef<number | null>(null);
   useEffect(() => {
     if (!mine || !session || !curtain) return;
@@ -272,24 +303,20 @@ export function CanastaPage({
     if (froze.current === roundNo) return;
     froze.current = roundNo;
     if (paused) return;
-    setPaused(true);
-    void api.setPaused(tableId, true, session.token).catch(() => {
-      // A freeze that could not be asked for is a table that deals on. The curtain is still up and
-      // still says what happened; what it must not do is claim to be holding something it is not.
-      setPaused(false);
-    });
+    setHeld(true);
     // `paused` is read but deliberately not a dependency: this runs when a ROUND ends, and re-running
     // it because the pause changed is exactly the loop described above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curtain, mine, roundNo, session, tableId]);
+  }, [curtain, mine, roundNo, session, setHeld]);
 
   /** Let it go: put the curtain aside and start the table again. */
   const carryOn = useCallback(() => {
     setReviewed(roundNo);
-    if (!mine || !session || !paused) return;
-    setPaused(false);
-    void api.setPaused(tableId, false, session.token).catch(() => setPaused(true));
-  }, [mine, paused, roundNo, session, tableId]);
+    // NOT gated on `paused`. The freeze's own request may still be in flight, so "the screen does not
+    // think it is held yet" is not the same as "there is nothing to release" — and the chain is what
+    // makes asking anyway correct rather than a second racer.
+    if (mine && session) setHeld(false);
+  }, [mine, roundNo, session, setHeld]);
 
   return (
     <>
@@ -414,18 +441,11 @@ export function CanastaPage({
               <button
                 type="button"
                 className={paused ? 'primary' : ''}
-                onClick={async () => {
-                  const next = !paused;
-                  setPaused(next);
+                onClick={() => {
                   setTableErr(null);
-                  try {
-                    await api.setPaused(tableId, next, session.token);
-                  } catch (e) {
-                    // The toggle springing back with no word was the whole of the feedback, and from
-                    // the outside it is indistinguishable from a control that does not work.
-                    setPaused(!next);
-                    setTableErr(e instanceof ApiError ? e.message : `The table could not be ${next ? 'paused' : 'restarted'}.`);
-                  }
+                  // Through the same one door as the freeze, so pressing this while a round-end hold is
+                  // still in flight cannot end with the card room holding the opposite opinion.
+                  setHeld(!paused);
                 }}
               >
                 {paused ? '▶ Carry on' : '⏸ Pause'}

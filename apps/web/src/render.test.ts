@@ -1019,7 +1019,7 @@ describe('the coach at a hold’em table', () => {
     const html = renderToStaticMarkup(
       createElement(PokerCoach, {
         tableId: 't-1',
-        session,
+        session: session as never,
         view: null,
         viewerSeat: 0,
         myTurn: false,
