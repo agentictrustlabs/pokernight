@@ -37,7 +37,7 @@ export interface Persona {
   game?: PersonaGame;
   strategy: StrategyName;
   /** Style knob for the rules strategy. Ignored by `claude`. */
-  style?: 'tight-aggressive' | 'loose-passive' | 'tight-passive';
+  style?: 'tight-aggressive' | 'loose-passive' | 'tight-passive' | 'solid' | 'loose-aggressive';
   /** System-prompt persona for the `claude` strategy. Ignored by `rules`. */
   persona?: string;
 }
@@ -70,39 +70,29 @@ export const PERSONAS: readonly Persona[] = [
     strategy: 'rules',
     style: 'tight-passive',
   },
+  // NO HOUSE PLAYER USES A LANGUAGE MODEL. Deep Thought and The Bluffer were Claude-backed, which meant
+  // a practice table was spending tokens on opponents nobody chose, once per turn, every hand. They are
+  // rules-based now — the solver's preflop chart and the postflop rules, biased into two more shapes —
+  // and the only model in the card room is the one a connected person's OWN agent brings, on their own
+  // account, when they name it as their adviser.
   {
     id: 'deepthought',
     agentName: 'deepthought.svc',
     displayName: 'Deep Thought',
     description:
-      'Claude-backed thoughtful player: reasons about ranges, pot odds and board texture before acting, and explains itself in one line.',
-    strategy: 'claude',
-    persona: [
-      'You are Deep Thought, a careful, disciplined no-limit hold’em player.',
-      'You think in ranges, not in single hands. You weigh pot odds, board texture, position and stack depth.',
-      'You bet for a reason — value or fold equity — and you are perfectly willing to fold a good-looking hand.',
-      'You never tilt, never chase without odds, and never make a play you cannot justify in one sentence.',
-    ].join(' '),
+      'The solver’s line, unbiased: a preflop chart derived from PokerBench (92% against its held-out spots) and disciplined postflop rules. The strongest house player, and free to play against.',
+    strategy: 'rules',
+    style: 'solid',
   },
   {
     id: 'bluffer',
     agentName: 'bluffer.svc',
     displayName: 'The Bluffer',
     description:
-      'Claude-backed aggressor: applies maximum pressure, barrels scare cards, and represents the hands the board allows. High variance.',
-    strategy: 'claude',
-    persona: [
-      'You are The Bluffer, a fearless, hyper-aggressive no-limit hold’em player.',
-      'You attack weakness: unraised pots, checked flops, and scare cards on the turn and river.',
-      'You bet and raise far more often than you call, and you happily represent hands you do not have.',
-      'You are not reckless — you still fold to real strength when the price is wrong — but when in doubt you apply pressure.',
-    ].join(' '),
+      'Loose-aggressive rules variant: every intended bet survives, and it calls wider than the baseline to see more flops. Applies pressure; high variance; free to play against.',
+    strategy: 'rules',
+    style: 'loose-aggressive',
   },
-  /*
-   * CANASTA. Four-handed partnership, which is the reason these exist at all: poker deals to two,
-   * so a person with one friend can play. Canasta needs exactly four, so a person alone cannot sit
-   * down at all without somebody to fill the other seats. These are that somebody.
-   */
   {
     id: 'melder',
     agentName: 'melder.svc',

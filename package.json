@@ -30,7 +30,9 @@
     "walk:round-end": "node scripts/walk-round-end.cjs",
     "mint:house-wire": "tsx scripts/mint-house-wire.mts",
     "verify:house-wire": "tsx scripts/verify-house-wire.mts",
-    "ask:as-house": "tsx scripts/ask-as-house.mts"
+    "ask:as-house": "tsx scripts/ask-as-house.mts",
+    "bench:preflop": "tsx bench/pokerbench.mts --set preflop",
+    "bench:chart": "tsx bench/build-preflop-chart.mts"
   },
   "devDependencies": {
     "@agenticprimitives/a2a": "link:../agenticprimitives/packages/a2a",

@@ -75,7 +75,11 @@ describe('agent card', () => {
     expect(body.zone).toBe(ZONE);
     expect(body.agents.map((a) => a.agentName)).toEqual(PERSONAS.map((p) => p.agentName));
     expect(body.agents.map((a) => a.host)).toEqual(PERSONAS.map((p) => agentNameToHost(p.agentName, ZONE)));
-    expect(body.agents.filter((a) => a.strategy === 'claude')).toHaveLength(2);
+    // NO HOUSE PLAYER USES A LANGUAGE MODEL: a practice table fills its chairs from this list, and an
+    // opponent that spends tokens per turn is one nobody chose. The only model in the card room is the
+    // one a connected person's own agent brings.
+    expect(body.agents.filter((a) => a.strategy === 'claude')).toHaveLength(0);
+    expect(body.agents.every((a) => a.strategy === 'rules')).toBe(true);
 
     const health = await SELF.fetch('http://localhost:8788/health');
     expect(health.status).toBe(200);

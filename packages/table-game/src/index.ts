@@ -211,6 +211,13 @@ export interface Advice {
   say: string;
   /** The rule it turns on, meant to be read. This is the part that is actually teaching. */
   because: string;
+  /**
+   * THE GAME IS SURE. Set when the line comes from something better than a rule of thumb — a solver's
+   * chart that saw this exact spot many times and never disagreed — so that a caller may act on it
+   * without asking anybody else. A person's own agent is still theirs to name; this says only that on
+   * THIS decision, asking it would cost seconds and tokens to hear the same move back.
+   */
+  certain?: { because: string };
 }
 
 /**

@@ -15,3 +15,7 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/
 .house-a2a-session.json
+# PokerBench data is fetched, never committed (bench/pokerbench.mts says where from); the CHART built
+# from it (packages/agent-kit/src/preflop-chart.json) is committed, because it is what ships.
+bench/pokerbench/*.csv
+bench/pokerbench/*.json

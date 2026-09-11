@@ -18,7 +18,7 @@ import type { Action } from '@pokernight/engine';
 import type { PokerActInput, PokerActOutput } from '@pokernight/protocol';
 import type { Strategy, StrategyContext } from './types.js';
 
-export type RulesStyle = 'tight-aggressive' | 'loose-passive' | 'tight-passive';
+export type RulesStyle = 'tight-aggressive' | 'loose-passive' | 'tight-passive' | 'solid' | 'loose-aggressive';
 
 export interface StyleBias {
   /** Maps a uniform sample before `decide` sees it. Identity keeps the baseline frequencies. */
@@ -41,6 +41,15 @@ export const STYLES: Record<RulesStyle, StyleBias> = {
   // without a language model in a chair — three rules-based players, three different mistakes to
   // learn to punish, and nothing spent per turn.
   'tight-passive': { rng: (u) => u, callOddsCeiling: 0, callStackCeiling: 0, aggression: 0.3 },
+  // THE SOLVER'S LINE, UNBIASED. The baseline as `decide` ships it — the preflop chart, the postflop
+  // rules — with every mixed line taken (rng identity keeps the base frequencies). This is the house's
+  // best player and costs nothing per turn; it is what a person's own agent starts from.
+  'solid': { rng: (u) => u, callOddsCeiling: 0.1, callStackCeiling: 0.05, aggression: 1 },
+  // PRESSURE. Every intended bet or raise survives, and a fold facing a cheap bet becomes a call more
+  // often than the baseline's — the loose-aggressive shape, made from the same rules by bias rather
+  // than by a model. It was a language model once; it is not now, because no house player should be
+  // spending a person's tokens.
+  'loose-aggressive': { rng: (u) => u * 0.5, callOddsCeiling: 0.35, callStackCeiling: 0.15, aggression: 1 },
 };
 
 export interface RulesOptions extends DecideOptions {

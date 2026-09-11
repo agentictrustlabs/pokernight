@@ -8,6 +8,7 @@
 
 import type { Action, LegalActions, TableView } from '@pokernight/engine';
 import type { PokerActInput, PokerActOutput } from '@pokernight/protocol';
+import { chartDecision } from './preflop-chart.js';
 import { classifyPreflop, preflopDecision, type Facing, type TableSize } from './preflop.js';
 import { madeAtLeast, postflopStrength, type Evaluator, type PostflopStrength } from './strength.js';
 import {
@@ -290,7 +291,14 @@ export function decide(input: PokerActInput, opts: DecideOptions = {}): PokerAct
       desired = fallback(legal, view);
       note = 'no hand context, default';
     } else if (st === 'preflop') {
-      ({ action: desired, note } = decidePreflop(input, rng));
+      // THE SOLVER'S CHART FIRST, the rules as the floor. Measured against PokerBench: the rules alone
+      // score 60% on the preflop decision, the chart 85%. The chart answers the ordinary spot; the rules
+      // answer the one in twenty it never saw.
+      const chart = chartDecision(view, legal);
+      if (chart) {
+        desired = chart.action;
+        note = `chart ${chart.from} ${chart.key}: ${chart.spots} spots, ${chart.agree}% agree`;
+      } else ({ action: desired, note } = decidePreflop(input, rng));
     } else if (view.hand.board.length >= 3) {
       ({ action: desired, note } = decidePostflop(input, opts.evaluate, rng));
     } else {

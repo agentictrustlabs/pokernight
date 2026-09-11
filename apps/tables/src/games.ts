@@ -79,7 +79,7 @@ const pokerWithCoach: HostedGame = {
     const legal = pokerLegalFor(s, seat);
     // The ENVELOPE is filler and is never read: `decide` reasons from `view` and `legal` alone. A
     // coach holds the state rather than a turn request, so there is no request to quote here.
-    const { action } = decide({
+    const { action, note } = decide({
       skill: POKER_ACT_SKILL,
       tableId: '',
       handNo: hand.handNo,
@@ -89,7 +89,13 @@ const pokerWithCoach: HostedGame = {
       deadlineMs: 0,
     }, { rng: () => 1 });
     const { say, because } = readHand(view, seat, legal);
-    return { action, say, because };
+    // CERTAIN when the solver's chart saw this spot often and never disagreed: "chart fine BB|1|0|AKs:
+    // 77 spots, 100% agree" is not a rule of thumb, and a person's own agent asked about it would spend
+    // eight seconds and its tokens to say "raise" back. The bar is deliberately high — unanimous, and
+    // dozens of spots — so anything with a real choice in it still goes to whoever they named.
+    const m = /^chart \w+ (\S+): (\d+) spots, (\d+)% agree$/.exec(note ?? '');
+    const certain = m && Number(m[3]) >= 100 && Number(m[2]) >= 50 ? { because: `the solver saw this spot ${m[2]} times and never disagreed` } : undefined;
+    return { action, say, because, ...(certain ? { certain } : {}) };
   },
   // The same facts as fields, for an adviser that reasons rather than looks up: the price, the outs,
   // position, the money behind, what the cards have made. Handed these, a model at somebody's Home

@@ -561,7 +561,18 @@ export class PokerTableDO extends DurableObject<Env> {
       const adviser = playerId ? this.advisers[playerId] : undefined;
 
       if (adviser) {
-        const asked = await this.askAdviser(adviser, seat, url.searchParams.get('q') ?? undefined);
+        // THE HOUSE ANSWERS WHEN THE GAME IS CERTAIN AND NOBODY ASKED A QUESTION. A named adviser is a
+        // person's own agent at their Home — eight seconds and their tokens per question — and a spot
+        // the solver has seen fifty times without disagreeing has nothing for it to add. The reply says
+        // so, so the panel shows whose line it is and why. A question in the person's own words always
+        // goes to their agent: they asked it something, and only it can answer in their style.
+        const sure = this.game.advise?.(this.state, seat);
+        const asked = !url.searchParams.get('q') && sure?.certain
+          ? ({ ok: false as const, error: '' })
+          : await this.askAdviser(adviser, seat, url.searchParams.get('q') ?? undefined);
+        if (!asked.ok && asked.error === '' && sure?.certain) {
+          return json({ ...sure, source: 'house', note: `${adviser.displayName} was not asked — ${sure.certain.because}.` });
+        }
         // A partner that cannot be reached falls back to the house coach rather than leaving somebody
         // mid-hand with nothing — and SAYS it fell back, because silently swapping whose advice this
         // is would be the one dishonest thing available here.

@@ -326,3 +326,44 @@ describe('the coach', () => {
     expect(typeof gameFor('canasta').advise).toBe('function');
   });
 });
+
+/**
+ * WHEN THE GAME IS CERTAIN, it says so — and only then.
+ *
+ * A person's own adviser costs seconds and tokens per question. A spot the solver's chart has seen
+ * dozens of times without disagreeing has nothing for it to add, so poker's coach marks that line
+ * `certain` and the table answers from the house. The bar is unanimity over many spots; a hand with a
+ * real choice in it is never marked.
+ */
+describe('a certain line', () => {
+  it('is marked only when the chart is unanimous over many spots', () => {
+    const game = gameFor('poker');
+    let state = game.create({ seats: 6, smallBlind: 1, bigBlind: 2, minBuyIn: 40, maxBuyIn: 200 });
+    for (let s = 0; s < 6; s++) state = game.sitDown(state, s, `p${s}`, 200);
+    // Deal until the seat to act holds a hand the chart is unanimous about, or give up after a few
+    // seeds: what is asserted is the SHAPE of certainty, not that any one deal produces it.
+    let sawCertain = false;
+    let sawOpen = false;
+    // Unopened pots are thin in the chart; the unanimous spots are the ones FACING a raise. So each
+    // seat plays the house's own line and the next seat is asked, around the table, until the street
+    // ends — the spots a person actually sits in.
+    for (let seed = 1; seed <= 60 && !(sawCertain && sawOpen); seed++) {
+      let s = game.start(state, new Uint8Array(32).fill(seed)).state;
+      for (let step = 0; step < 6; step++) {
+        const snap = game.snapshot(s);
+        if (!snap.roundInProgress || snap.toAct == null) break;
+        const a = game.advise?.(s, snap.toAct);
+        if (!a) break;
+        if (a.certain) {
+          sawCertain = true;
+          expect(a.certain.because).toMatch(/saw this spot \d+ times and never disagreed/);
+        } else sawOpen = true;
+        const applied = game.apply(s, snap.toAct, a.action);
+        if (!applied.ok) break;
+        s = applied.state;
+      }
+    }
+    expect(sawCertain).toBe(true);
+    expect(sawOpen).toBe(true);
+  });
+});
