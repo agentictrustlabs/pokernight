@@ -19,6 +19,15 @@ export interface Env {
   /** "true" enables POST /dev/session. Never true in a deployed env. */
   DEV_AUTH: string;
   ALLOW_AGENT_ENDPOINT?: string;
+  /**
+   * HOW THE CARD ROOM NAMES ITSELF TO A PERSON'S OWN AGENT. Both secrets, both from
+   * `scripts/mint-house-wire.mts`: the wire is a narrow delegation from the house service Smart Agent to
+   * a session key, pinned to the one selector a Home's standard surface admits; the key is the only thing
+   * this Worker holds. Absent, calls to agents outside the house go out unsigned — which a Home refuses,
+   * and the refusal names the fact.
+   */
+  HOUSE_A2A_WIRE?: string;
+  HOUSE_A2A_SESSION_KEY?: string;
   AGENT_BASE_URL?: string;
   /** Comma-separated list of allowed browser origins. */
   ALLOWED_ORIGINS: string;

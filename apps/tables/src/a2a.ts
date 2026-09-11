@@ -26,6 +26,7 @@ import {
   type AdviseOutput,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, agentBaseUrl, allowAgentEndpoint, type Env } from './env.js';
+import { houseAuthorization } from './house-caller.js';
 
 export { a2aTimeoutMs };
 
@@ -35,6 +36,8 @@ export interface AgentCardLike {
   description?: string;
   version?: string;
   skills?: Array<{ id?: string; name?: string; description?: string; tags?: string[] } | null>;
+  /** Where the agent says to send it messages. Read, never built, when present. */
+  supportedInterfaces?: Array<{ url?: string; protocolBinding?: string } | null>;
 }
 
 /**
@@ -120,8 +123,37 @@ export function resolveAgentBase(env: Env, agentName: string, endpoint?: string)
 /** Append an A2A path to a base URL, keeping any path prefix AND query string the base carries. */
 export function a2aUrl(base: string, path: string): string {
   const u = new URL(base);
+  // ALREADY A MESSAGE URL: an endpoint taken off an agent's card carries its own path — the estate's
+  // edge addresses an agent as `/api/a2a/<name>` — and appending the path again would ask for a route
+  // that does not exist. An endpoint that is a bare base (the house personas, and every adviser stored
+  // before cards were read for this) still gets the path appended, so nothing stored has to change.
+  if (u.pathname.includes(path)) return u.toString();
   u.pathname = `${u.pathname.replace(/\/+$/, '')}${path}`;
   return u.toString();
+}
+
+/**
+ * WHERE TO SEND THIS AGENT A MESSAGE — the card's word, when it gives one.
+ *
+ * A Home agent's card names the estate's EDGE as its message URL (`https://edge…/api/a2a/alice.me`);
+ * the host the card was fetched from refuses a direct call with `gateway_assertion_required`. The card
+ * room used to build the endpoint from the hostname and never read the card's, so a person's own agent
+ * could be named, checked and stored — and then every question to it was refused at the door.
+ *
+ * Following a card's declared endpoint is what A2A is: a published card is trusted for where it
+ * answers. Only http(s) is followed, the same rule an explicit endpoint is held to.
+ */
+export function messageUrlFromCard(card: AgentCardLike, base: string): string {
+  const declared = (card.supportedInterfaces ?? []).find((i) => typeof i?.url === 'string' && (!i.protocolBinding || i.protocolBinding === 'JSONRPC'))?.url;
+  if (declared) {
+    try {
+      const u = new URL(declared);
+      if (u.protocol === 'https:' || u.protocol === 'http:') return u.toString();
+    } catch {
+      /* not a URL — fall through to the base */
+    }
+  }
+  return a2aUrl(base, A2A_JSONRPC_PATH);
 }
 
 export type CardResult = { ok: true; card: AgentCardLike } | { ok: false; error: string };
@@ -227,18 +259,22 @@ export async function callAct(base: string, input: ActInput, timeoutMs: number):
  * its person's seat so the agent can remember it; there is no answer the table would act on, and a
  * reply that failed must not disturb a round that is already over.
  */
-export async function callReview(base: string, input: ActInput, timeoutMs: number): Promise<void> {
+export async function callReview(base: string, input: ActInput, timeoutMs: number, env?: Env): Promise<void> {
   const url = a2aUrl(base, A2A_JSONRPC_PATH);
   try {
+    // Serialised once; the signature binds these bytes. A review is the moment a personal coach
+    // writes to its own memory, so it has to arrive with the card room's name on it like advice does.
+    const raw = JSON.stringify({
+      jsonrpc: '2.0',
+      id: `${input.tableId}:${input.handNo}:${input.seat}:review`,
+      method: A2A_SEND_MESSAGE,
+      params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeAdviseParts(input) } },
+    });
+    const authorization = env ? await houseAuthorization(env, url, A2A_SEND_MESSAGE, raw) : null;
     await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: `${input.tableId}:${input.handNo}:${input.seat}:review`,
-        method: A2A_SEND_MESSAGE,
-        params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeActParts(input) } },
-      }),
+      headers: { 'content-type': 'application/json', accept: 'application/json', ...(authorization ? { authorization } : {}) },
+      body: raw,
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
@@ -255,7 +291,7 @@ export type AdviseResult = { ok: true; output: AdviseOutput } | { ok: false; err
  * difference matters more than the similarity. `act` hands a turn away; this asks for a sentence. An
  * agent that answers here has taken nobody's turn, and the card room applies nothing it returns.
  */
-export async function callAdvise(base: string, input: AdviseInput, timeoutMs: number): Promise<AdviseResult> {
+export async function callAdvise(base: string, input: AdviseInput, timeoutMs: number, deployment?: Env): Promise<AdviseResult> {
   const url = a2aUrl(base, A2A_JSONRPC_PATH);
   const body = {
     jsonrpc: '2.0',
@@ -265,12 +301,21 @@ export async function callAdvise(base: string, input: AdviseInput, timeoutMs: nu
     // handed the text. One request that both kinds of adviser can read.
     params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeAdviseParts(input) } },
   };
+  // Serialised ONCE: the signature below binds these exact bytes, and the same string is what is sent.
+  const raw = JSON.stringify(body);
+  const authorization = deployment ? await houseAuthorization(deployment, url, A2A_SEND_MESSAGE, raw) : null;
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        // The card room's own name, for an agent that answers nobody it cannot name (a person's own
+        // agent at their Home). The house personas get no header: they ask nobody's.
+        ...(authorization ? { authorization } : {}),
+      },
+      body: raw,
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {

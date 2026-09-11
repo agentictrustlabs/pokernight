@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@agenticprimitives/a2a':
+        specifier: link:../agenticprimitives/packages/a2a
+        version: link:../agenticprimitives/packages/a2a
       '@agenticprimitives/agent-account':
         specifier: link:../agenticprimitives/packages/agent-account
         version: link:../agenticprimitives/packages/agent-account

@@ -9,7 +9,7 @@
  *   an explicit endpoint — a server-side request forgery primitive, gated off outside local dev.
  */
 import { describe, expect, it } from 'vitest';
-import { resolveAgentBase } from '../src/a2a.js';
+import { a2aUrl, messageUrlFromCard, resolveAgentBase } from '../src/a2a.js';
 import type { Env } from '../src/env.js';
 
 const env = (over: Partial<Env> = {}): Env => ({ AGENT_CARD_ZONE: 'faithnet.at', ...over }) as Env;
@@ -82,5 +82,25 @@ describe('a hostname', () => {
     const e = env({ AGENT_BASE_URL: 'https://agents.faithnet.io' } as Partial<Env>);
     expect(resolveAgentBase(e, 'sharkbot.svc')).toBe('https://agents.faithnet.io/sharkbot.svc');
     expect(resolveAgentBase(e, 'vault.svc@richcanvas.org')).toBe('https://agents.faithnet.io/vault.svc%40richcanvas.org');
+  });
+});
+
+describe('where a message goes', () => {
+  it('follows the card’s declared endpoint, which for a Home agent is the estate’s edge', () => {
+    // The host the card was fetched from refuses a direct call; the card says where it answers.
+    const card = { supportedInterfaces: [{ protocolBinding: 'JSONRPC', url: 'https://edge.faithnet.io/api/a2a/alice.me' }] };
+    expect(messageUrlFromCard(card, 'https://alice-me.faithnet.ai')).toBe('https://edge.faithnet.io/api/a2a/alice.me');
+  });
+
+  it('builds one from the base when the card names none, or names something that is not http(s)', () => {
+    expect(messageUrlFromCard({}, 'https://agents.faithnet.io/sharkbot.svc')).toBe('https://agents.faithnet.io/sharkbot.svc/api/a2a');
+    expect(messageUrlFromCard({ supportedInterfaces: [{ url: 'ftp://x' }] }, 'https://agents.faithnet.io/sharkbot.svc')).toBe('https://agents.faithnet.io/sharkbot.svc/api/a2a');
+  });
+
+  it('does not append the A2A path twice to an endpoint that already carries it', () => {
+    // Stored advisers from before cards were read carry a bare base; ones stored since carry the full
+    // message URL. Both have to keep working through the same call.
+    expect(a2aUrl('https://edge.faithnet.io/api/a2a/alice.me', '/api/a2a')).toBe('https://edge.faithnet.io/api/a2a/alice.me');
+    expect(a2aUrl('https://agents.faithnet.io/sharkbot.svc', '/api/a2a')).toBe('https://agents.faithnet.io/sharkbot.svc/api/a2a');
   });
 });

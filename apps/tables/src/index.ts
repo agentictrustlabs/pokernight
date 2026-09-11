@@ -63,7 +63,7 @@ import {
   type SignOutResult,
   type TableSummary,
 } from '@pokernight/protocol';
-import { agentKindFromCard, fetchAgentCard, hasActSkill, resolveAgentBase } from './a2a.js';
+import { agentKindFromCard, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
 import { looksLikeAgentName, nameOfAgent } from './naming.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aTimeoutMs, allowedOrigins, isDevAuth, siteOrigin, type Env } from './env.js';
@@ -1353,7 +1353,9 @@ app.post('/tables/:id/adviser', async (c) => {
     await table(c.env, tableId).fetch('https://table/adviser', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ playerId: session.playerId, agentName, endpoint: base, displayName: card.card.name ?? agentName }),
+      // The endpoint is the CARD's, not one built from the hostname: a Home agent answers at the
+      // estate's edge and refuses its own host.
+      body: JSON.stringify({ playerId: session.playerId, agentName, endpoint: messageUrlFromCard(card.card, base), displayName: card.card.name ?? agentName }),
     }),
   );
 });
@@ -1416,7 +1418,7 @@ app.post('/tables/:id/seat-agent', async (c) => {
     seat: req.seat,
     buyIn: req.buyIn,
     agentName: req.agentName,
-    endpoint: base,
+    endpoint: messageUrlFromCard(card.card, base),
     displayName: req.displayName ?? card.card.name ?? req.agentName,
     agentKind: agentKindFromCard(card.card),
   };

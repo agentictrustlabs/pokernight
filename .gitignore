@@ -14,3 +14,4 @@ coverage/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+.house-a2a-session.json

@@ -27,9 +27,13 @@
     "walk:money": "node scripts/walk-money.cjs",
     "walk:fill": "node scripts/walk-fill.cjs",
     "walk:coach": "node scripts/walk-coach.cjs",
-    "walk:round-end": "node scripts/walk-round-end.cjs"
+    "walk:round-end": "node scripts/walk-round-end.cjs",
+    "mint:house-wire": "tsx scripts/mint-house-wire.mts",
+    "verify:house-wire": "tsx scripts/verify-house-wire.mts",
+    "ask:as-house": "tsx scripts/ask-as-house.mts"
   },
   "devDependencies": {
+    "@agenticprimitives/a2a": "link:../agenticprimitives/packages/a2a",
     "@agenticprimitives/agent-account": "link:../agenticprimitives/packages/agent-account",
     "@agenticprimitives/contracts": "link:../agenticprimitives/packages/contracts",
     "@agenticprimitives/delegation": "link:../agenticprimitives/packages/delegation",

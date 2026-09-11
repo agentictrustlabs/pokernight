@@ -169,6 +169,20 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   nothing, losing chips owes nobody anything, and giving buys no advantage and no standing. The
   buy-in mandate is NOT a donation grant. Design: `docs/MISSION.md`, which supersedes three parts of
   `docs/WORKSPACES.md` (weekly recurrence, a Night's single table, the no-mute rule).
+- **THE CARD ROOM NAMES ITSELF TO A PERSON'S OWN AGENT, AS THE HOUSE.** A Home agent's standard A2A
+  surface answers nobody it cannot name: a person's Home session bearer, or an agent on a session
+  wire. The card room holds no person's bearer, so when it asks somebody's own agent for advice it asks
+  as the HOUSE SERVICE SMART AGENT (`house.faithchain.json`), signing each request with a session key
+  the custodian delegated to it ONCE, offline (`pnpm mint:house-wire` → secrets `HOUSE_A2A_WIRE`,
+  `HOUSE_A2A_SESSION_KEY`; `pnpm verify:house-wire` checks it on chain the way a Home will). Never the
+  custodian key itself: `treasury.ts` says that key signs userOpHashes and nothing else, and a wire is
+  revocable on chain without a redeploy. `house-caller.ts` signs the EXACT bytes sent, the method, the
+  host and the moment; the house's own personas get no header, because they ask nobody's name.
+  A message goes WHERE THE CARD SAYS (`messageUrlFromCard`): a Home agent answers at the estate's edge
+  (`edge…/api/a2a/<name>`) and refuses its own host with `gateway_assertion_required`. Proven live:
+  `pnpm ask:as-house alice-me.faithnet.ai "…"` — Alice's agent answered through her playbook. What
+  stops her ADVISING is her card: `poker.advise` is not in her on-chain `atl:capabilities`, and that
+  is a Home act under her own delegation, not the card room's.
 - Wrangler: one `wrangler.toml` per app, `[env.faithnet]` per deployment universe, bindings repeated per env,
   migration tags never renamed. Worker names `pokernight-<app>-<env>`.
 - Tests: vitest. Engine has property tests; run `pnpm test` at the root before claiming anything works.
@@ -190,6 +204,11 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   site, signed in as one of the Home's demo people — the real door, not a dev session. `--site` to
   point it elsewhere, `--headed` to watch. Playwright lives at `~/node_modules` and is required by
   absolute path, which is why the script is `.cjs`.)
+- `pnpm mint:house-wire [--days 90] [--rotate]` (the custodian signs, ONCE and offline, the narrow
+  delegation the card room uses to name itself to a person's own agent. Writes the session key to
+  `.house-a2a-session.json` — gitignored, mode 0600 — and prints the wire; both become Worker secrets.)
+- `pnpm verify:house-wire <wire.json>` · `pnpm ask:as-house <host> "<question>"` (the wire checked on
+  chain, and one signed question to a Home agent — a language-model run at that person's Home, so once.)
 - `pnpm settle:persona -- --handle elena --chips 200` (the whole money flow against the LIVE Home and
   faithchain: sign in as one of the Home's demo people, discover or create their treasury, fund it,
   have their Home sign a real buy-in mandate, then settle a buy-in and a cash-out on chain.)

@@ -1658,6 +1658,7 @@ export class PokerTableDO extends DurableObject<Env> {
         ...(question ? { question } : {}),
       },
       a2aTimeoutMs(this.env),
+      this.env,
     );
     return res.ok ? { ok: true, advice: res.output } : { ok: false, error: res.error };
   }
@@ -1694,7 +1695,7 @@ export class PokerTableDO extends DurableObject<Env> {
         legal: this.game.legalFor(state, seat),
         deadlineMs: a2aTimeoutMs(this.env),
       };
-      const sent = callReview(adviser.endpoint, input, a2aTimeoutMs(this.env));
+      const sent = callReview(adviser.endpoint, input, a2aTimeoutMs(this.env), this.env);
       // Kept alive past the response the table is about to send, without the table waiting for it.
       if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(sent);
       else void sent;
