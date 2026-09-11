@@ -68,3 +68,19 @@ describe('a person’s own agent', () => {
     expect(resolveAgentBase(e, 'sharkbot.svc')).toBe('https://agents.faithnet.io/sharkbot.svc');
   });
 });
+
+describe('a hostname', () => {
+  it('is its own address, whichever zone it is in', () => {
+    // The estate publishes the same card on more than one zone; the one a person types is the one
+    // to ask. Sending `alice.faithnet.io` to the house base asked for a persona that does not exist.
+    const e = env({ AGENT_BASE_URL: 'https://agents.faithnet.io' } as Partial<Env>);
+    expect(resolveAgentBase(e, 'alice.faithnet.io')).toBe('https://alice.faithnet.io');
+    expect(resolveAgentBase(e, 'Alice.FaithNet.IO')).toBe('https://alice.faithnet.io');
+  });
+
+  it('is not confused with a two-label agent name or a scoped one', () => {
+    const e = env({ AGENT_BASE_URL: 'https://agents.faithnet.io' } as Partial<Env>);
+    expect(resolveAgentBase(e, 'sharkbot.svc')).toBe('https://agents.faithnet.io/sharkbot.svc');
+    expect(resolveAgentBase(e, 'vault.svc@richcanvas.org')).toBe('https://agents.faithnet.io/vault.svc%40richcanvas.org');
+  });
+});

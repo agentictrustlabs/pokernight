@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { newBuildAvailable } from '../lib/version';
+import { newerBundle } from '../lib/version';
 
-/** Twice a minute would be noise; twice an hour would miss a session's worth of deploys. */
-const EVERY_MS = 3 * 60 * 1000;
+/** Once a minute: a person told a fix is live should see the offer to take it before they have
+ *  finished looking for it. It is one tiny HTML fetch, and only while the tab is visible. */
+const EVERY_MS = 60 * 1000;
 
 /**
  * "I don't see it" — when the site has it and the tab does not.
@@ -14,42 +15,50 @@ const EVERY_MS = 3 * 60 * 1000;
  *
  * NEVER RELOADS BY ITSELF. Taking somebody's page away mid-hand to install an improvement is worse
  * than the stale tab, so this is a sentence and a button and nothing else. It can be dismissed, and it
- * does not come back for that build.
+ * does not come back for THAT build — but it does for the next one. The first version hid itself for
+ * the life of the tab, so on a day with a dozen deploys one "not now" silenced every one after it, and
+ * a person was told three fixes were live and could see none of them.
  *
  * It only looks while the tab is VISIBLE. A background tab polling the origin forever is the kind of
  * thing that shows up in somebody's battery report.
  */
 export function NewBuild() {
-  const [stale, setStale] = useState(false);
-  const [hidden, setHidden] = useState(false);
+  /** The build the server is serving, when it is not this one. */
+  const [newer, setNewer] = useState<string | null>(null);
+  /** The build that was declined. A different one asks again. */
+  const [declined, setDeclined] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     const look = async () => {
       if (document.hidden || !alive) return;
-      if (await newBuildAvailable()) {
-        if (alive) setStale(true);
-      }
+      const b = await newerBundle();
+      if (alive && b) setNewer(b);
     };
     const h = setInterval(look, EVERY_MS);
-    // Also on coming back to the tab, which is exactly when somebody has been away long enough.
+    // Also on coming back to the tab, and on moving between screens — this is a hash-routed app, so
+    // navigating never reloads the page, and a person who has "gone to Play" three times since a
+    // deploy has never once fetched the new build.
     const onShow = () => void look();
     document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('hashchange', onShow);
+    void look();
     return () => {
       alive = false;
       clearInterval(h);
       document.removeEventListener('visibilitychange', onShow);
+      window.removeEventListener('hashchange', onShow);
     };
   }, []);
 
-  if (!stale || hidden) return null;
+  if (!newer || newer === declined) return null;
   return (
     <div className="new-build" role="status">
       <span>There is a newer version of this page.</span>
       <button type="button" className="link-button" onClick={() => location.reload()}>
         Reload
       </button>
-      <button type="button" className="link-button quiet" onClick={() => setHidden(true)} aria-label="dismiss">
+      <button type="button" className="link-button quiet" onClick={() => setDeclined(newer)} aria-label="dismiss">
         Not now
       </button>
     </div>

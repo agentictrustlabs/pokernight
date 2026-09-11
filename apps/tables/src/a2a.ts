@@ -79,6 +79,20 @@ export function resolveAgentBase(env: Env, agentName: string, endpoint?: string)
     return `${scheme}://${named}`;
   }
 
+  /**
+   * A HOSTNAME IS ITS OWN ADDRESS, whatever zone it is in.
+   *
+   * The estate serves a person's card on more than one zone — `alice.faithnet.io` and
+   * `alice.faithnet.ai` are the same released card — and a person who types the name their agent is
+   * actually published under should not be told it lives somewhere else. An agent NAME is two labels
+   * (`alice.me`, `sharkbot.svc`) or a scoped form with an `@`; three or more labels and no `@` is a
+   * DNS host, and the only honest thing to do with a host is to ask it.
+   */
+  if (!named.includes('@') && named.split('.').length >= 3 && /^[a-z0-9.-]+$/.test(named)) {
+    const scheme = named.endsWith('.localhost') ? 'http' : 'https';
+    return `${scheme}://${named}`;
+  }
+
   const zone = (env.AGENT_CARD_ZONE ?? '').trim();
   const scheme = zone === 'localhost' || zone.endsWith('.localhost') ? 'http' : 'https';
 

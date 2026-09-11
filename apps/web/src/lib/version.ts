@@ -37,13 +37,23 @@ export function bundleOf(text: string): string | null {
  * table away for nothing.
  */
 export async function newBuildAvailable(here = runningBundle()): Promise<boolean> {
-  if (!here) return false;
+  return (await newerBundle(here)) !== null;
+}
+
+/**
+ * WHICH build the server is serving, when it is not this one — or null.
+ *
+ * The name matters, not only the fact: a person who pressed "not now" on one build should be asked
+ * again when the NEXT one lands, and the only way to tell the two apart is by name.
+ */
+export async function newerBundle(here = runningBundle()): Promise<string | null> {
+  if (!here) return null;
   try {
     const res = await fetch(`/?v=${Date.now()}`, { cache: 'no-store', headers: { accept: 'text/html' } });
-    if (!res.ok) return false;
+    if (!res.ok) return null;
     const there = bundleOf(await res.text());
-    return there !== null && there !== here;
+    return there !== null && there !== here ? there : null;
   } catch {
-    return false;
+    return null;
   }
 }
