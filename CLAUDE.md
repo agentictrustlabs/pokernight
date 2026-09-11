@@ -98,6 +98,17 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   stops asking, and the client hushes the voice mid-sentence. Resuming gives back the time the pause
   took — except the NEXT-DEAL timer, which is capped at the ordinary start delay rather than shifted,
   or a table paused overnight sits there the next morning waiting out an elapsed delay.
+- **A ROUND ENDS BEHIND A CURTAIN, AND THE FREEZE IS THE TABLE'S OWN PAUSE.** Twenty minutes of
+  canasta used to end in a tenth of a second: last card, numbers jump, board clears, next deal out.
+  `RoundCurtain` stops it with the arithmetic and the board still underneath. Winning celebrates;
+  LOSING GETS CREDIT for the largest true thing that side earned, which is not consolation — "bad
+  luck" teaches nothing and "two canastas, 800 of your 1,100" is a reason to play the next round. A
+  spectator gets neither, because telling somebody who was not playing that they won invents a stake.
+  The freeze reuses the PAUSE rather than inventing a hold, so the clock, the agents and the next deal
+  stop together — and only at your own practice table, because one person studying the board must not
+  stop three others. It is spent ONCE PER ROUND, marked the first time the curtain is seen including
+  when the table was already held: the result stays on the view until the next round starts, so an
+  effect that re-checked it re-froze the table a frame after "deal the next round" let it go.
 - **SPEECH IS RATE-LIMITED AND THE TABLE IS NOT.** A lap is a dozen events, each line takes two or
   three seconds to say, and the lap takes about ten — so narrating per EVENT means the queue drops
   the oldest and a player hears only whatever arrived last. Narrate per TURN: one sentence, flushed
@@ -106,8 +117,18 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   from `viewFor(state, seat)` — never from the state it is handed. Advice built on cards the learner
   cannot see teaches a way of playing they can never reproduce alone. `GET /tables/:id/advice` is
   gated on a session, the club, and the seat being the caller's OWN; a game with no coach answers
-  404 rather than inventing one. Canasta's coach is composed in `apps/tables/src/games.ts`, because
-  the strategy depends on the engine and the engine must not depend back on it.
+  404 rather than inventing one. BOTH games have one, and both are composed in
+  `apps/tables/src/games.ts`, because each strategy depends on its engine and an engine must not
+  depend back on a strategy written for it. Hold'em's takes its MOVE from `agent-kit`'s `decide` and
+  its WORDS from `readHand` — a coach that explained itself by restating its own choice would teach
+  the choice, and what a learner needs is the reading. It runs with `rng: () => 1`, which takes every
+  mixed line off the table: advice that changes when you ask again is not advice, and the
+  straightforward value line is the one a beginner can reproduce.
+  **ONE SET OF WORDS PER GAME, like the boards.** `components/Coach.tsx` + `lib/canastaWords.ts` +
+  `lib/alerts.ts` are canasta's; `components/PokerCoach.tsx` + `lib/pokerWords.ts` are hold'em's.
+  Canasta's barrier is the RULES, so its coach says which moves exist; hold'em's is the PRICE, so
+  its coach keeps saying what a call costs against what it can win. `Adviser` is the one shared
+  piece, because naming your own agent is a fact about you rather than about a game.
 - **AN AGENT SEAT IS ASKED IN ITS OWN GAME'S SKILL.** `poker.act` and `canasta.act` are different
   skill ids, the table asks for its game's by name, and it refuses to seat an agent whose card does
   not advertise it. The A2A turn request (`ActInput`) carries `view`, `legal` and `action` opaquely,
@@ -160,6 +181,11 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
 - `pnpm walk:nav` (presses every road through the card room on the live deployment as one of the Home's
   demo people: every rail row, a refresh on two pages, a club created and found in the rail, a club you
   are not in, and leaving a table. `--site` to point it elsewhere, `--headed` to watch.)
+- `pnpm walk:coach` (presses "deal me in" for BOTH games on the live deployment and checks the coach
+  came with them: on by default at a practice table, narrating, saying whose advice it is.)
+- `pnpm walk:round-end` (the end of a canasta round on the live deployment: the curtain, the freeze
+  asked of the CARD ROOM rather than of the screen, "look at the board" leaving it held, and the card
+  you drew being marked in your hand.)
 - `pnpm play:canasta` (plays a WHOLE GAME of canasta against the three house bots through the live
   site, signed in as one of the Home's demo people — the real door, not a dev session. `--site` to
   point it elsewhere, `--headed` to watch. Playwright lives at `~/node_modules` and is required by

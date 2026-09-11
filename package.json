@@ -25,7 +25,9 @@
     "play:canasta:practice": "node scripts/play-canasta.cjs --practice",
     "walk:invite": "node scripts/walk-invite.cjs",
     "walk:money": "node scripts/walk-money.cjs",
-    "walk:fill": "node scripts/walk-fill.cjs"
+    "walk:fill": "node scripts/walk-fill.cjs",
+    "walk:coach": "node scripts/walk-coach.cjs",
+    "walk:round-end": "node scripts/walk-round-end.cjs"
   },
   "devDependencies": {
     "@agenticprimitives/agent-account": "link:../agenticprimitives/packages/agent-account",
