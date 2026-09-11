@@ -21,6 +21,7 @@ import {
   encodeActParts,
   type ActInput,
   type ActOutput,
+  type AdviseInput,
   type AdviseOutput,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, agentBaseUrl, allowAgentEndpoint, type Env } from './env.js';
@@ -60,7 +61,26 @@ export function resolveAgentBase(env: Env, agentName: string, endpoint?: string)
     if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error(`endpoint must be http(s): ${endpoint}`);
     return u.toString();
   }
-  // A single-host deployment names the persona in the path instead of the hostname.
+  /**
+   * A PUBLIC AGENT IS NAMED BY ITS HOST, and that is the whole of its address.
+   *
+   * An agent published in the card room's agent zone answers at its own name — `alice.faithnet.at`
+   * serves `/.well-known/agent-card.json` and the A2A endpoint beside it. So a name that already ends
+   * in the zone IS the host, and transforming it further would be inventing a different one.
+   *
+   * Checked BEFORE the single-host base, because that base is how this deployment reaches its own
+   * house personas — bare labels with no zone on them — and a person's published agent must not be
+   * looked for underneath it.
+   */
+  const zoneSuffix = (env.AGENT_CARD_ZONE ?? '').trim().toLowerCase();
+  const named = agentName.trim().toLowerCase();
+  if (zoneSuffix && named.endsWith(`.${zoneSuffix}`)) {
+    const scheme = zoneSuffix === 'localhost' || zoneSuffix.endsWith('.localhost') ? 'http' : 'https';
+    return `${scheme}://${named}`;
+  }
+
+  // A single-host deployment names the persona in the path instead of the hostname. This is how the
+  // HOUSE agents are reached; a published agent took the branch above.
   const base = agentBaseUrl(env);
   if (base) return `${base}/${encodeURIComponent(agentName)}`;
 
@@ -174,6 +194,32 @@ export async function callAct(base: string, input: ActInput, timeoutMs: number):
   return { ok: true, output: decoded };
 }
 
+/**
+ * Hand a finished round to somebody's adviser, and do not wait for an opinion about it.
+ *
+ * Deliberately returns nothing useful. A review is the card room telling an agent what happened at
+ * its person's seat so the agent can remember it; there is no answer the table would act on, and a
+ * reply that failed must not disturb a round that is already over.
+ */
+export async function callReview(base: string, input: ActInput, timeoutMs: number): Promise<void> {
+  const url = a2aUrl(base, A2A_JSONRPC_PATH);
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: `${input.tableId}:${input.handNo}:${input.seat}:review`,
+        method: A2A_SEND_MESSAGE,
+        params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeActParts(input) } },
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    // An adviser that is down, slow or uninterested costs nothing: the round is finished either way.
+  }
+}
+
 export type AdviseResult = { ok: true; output: AdviseOutput } | { ok: false; error: string };
 
 /**
@@ -183,7 +229,7 @@ export type AdviseResult = { ok: true; output: AdviseOutput } | { ok: false; err
  * difference matters more than the similarity. `act` hands a turn away; this asks for a sentence. An
  * agent that answers here has taken nobody's turn, and the card room applies nothing it returns.
  */
-export async function callAdvise(base: string, input: ActInput, timeoutMs: number): Promise<AdviseResult> {
+export async function callAdvise(base: string, input: AdviseInput, timeoutMs: number): Promise<AdviseResult> {
   const url = a2aUrl(base, A2A_JSONRPC_PATH);
   const body = {
     jsonrpc: '2.0',

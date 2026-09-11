@@ -834,6 +834,24 @@ export const POKER_ADVISE_SKILL = 'poker.advise';
 export const CANASTA_ADVISE_SKILL = 'canasta.advise';
 
 /**
+ * THE ROUND, AFTERWARDS — offered to a person's own adviser so it can learn something.
+ *
+ * An adviser asked only during a hand sees the moments somebody thought to ask about, and never
+ * finds out how any of them turned out. That is enough to give advice and not enough to notice "you
+ * have done this before": a pattern needs the ending as well as the decision.
+ *
+ * So when a round finishes, each seat's own adviser is offered that round AS THAT SEAT SAW IT — the
+ * final view, including its result. Best effort and fire-and-forget: an adviser that is down, slow or
+ * uninterested costs nothing, because nothing at the table is waiting on it.
+ *
+ * WHAT IS REMEMBERED IS THE AGENT'S BUSINESS, not the card room's. The card room keeps no profile of
+ * how anybody plays and has nowhere to put one — it reports a round to the one agent that person
+ * named, and that agent decides what is worth keeping in its own memory.
+ */
+export const POKER_REVIEW_SKILL = 'poker.review';
+export const CANASTA_REVIEW_SKILL = 'canasta.review';
+
+/**
  * THE TURN REQUEST, with the game's own three fields carried opaquely.
  *
  * Same split as the WebSocket wire, for the same reason and with the same seam: the ENVELOPE is the
@@ -866,6 +884,21 @@ export interface ActInput {
  * only ever a SUGGESTION — nothing in the card room applies it, and an adviser that returns one has
  * still not taken anybody's turn.
  */
+/**
+ * A turn request, plus the thing that was actually asked.
+ *
+ * `question` is the PERSON'S OWN WORDS when they asked one — "should I take the pile?", "why did that
+ * not work?" — and absent when nothing was asked and the coach simply offered. It is passed through
+ * untouched: the card room does not parse it, answer it, or keep it.
+ *
+ * It matters because an adviser that remembers is remembering QUESTIONS as much as positions. "You
+ * asked this about a frozen pile three times last week" is a different and better observation than
+ * "you have held wilds too long", and it cannot be made from the board alone.
+ */
+export interface AdviseInput extends ActInput {
+  question?: string;
+}
+
 export const AdviseOutputSchema = z.object({
   say: z.string().min(1).max(280),
   because: z.string().max(600).optional(),

@@ -1265,7 +1265,11 @@ app.get('/tables/:id/advice', async (c) => {
   // WHO IS ASKING travels with it, because the adviser is theirs: two people at one table may each
   // have named their own, and neither should get the other's.
   return passthrough(
-    await table(c.env, tableId).fetch(`https://table/advice?seat=${mine.seat}&player=${encodeURIComponent(session.playerId)}`),
+    await table(c.env, tableId).fetch(
+      `https://table/advice?seat=${mine.seat}&player=${encodeURIComponent(session.playerId)}` +
+        // The person's own question, when they asked one. Carried, never read.
+        (c.req.query('q') ? `&q=${encodeURIComponent(c.req.query('q') as string)}` : ''),
+    ),
   );
 });
 

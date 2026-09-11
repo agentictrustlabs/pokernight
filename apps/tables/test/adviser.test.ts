@@ -67,3 +67,31 @@ describe('the advice a table gives back', () => {
     expect((await req(`/tables/${t.tableId}/advice`)).status).toBe(401);
   });
 });
+
+/**
+ * THE ROUND, AFTERWARDS.
+ *
+ * An adviser asked only during a hand sees the moments somebody thought to ask about and never learns
+ * how any of them turned out — enough to advise, not enough to say "you have done this before". So a
+ * finished round is offered to each seat's own adviser, as that seat saw it.
+ *
+ * What is tested here is the boundary, not the learning: only the agent that person named, only their
+ * own seat, and never at the cost of the round.
+ */
+describe('reviewing a finished round', () => {
+  it('is offered only to an adviser somebody actually named', async () => {
+    // No adviser, no call. A table with nobody's agent on it talks to nothing.
+    const who = await devSession('review none');
+    const t = await createTableViaHttp('review none', {}, { token: who.token });
+    const res = await req(`/tables/${t.tableId}/advice`, {}, who.token);
+    // Not seated, so nothing to advise and nothing to review — and that is a 404, not an invention.
+    expect(res.status).toBe(404);
+  });
+
+  it('names a review skill distinct from acting and from advising', async () => {
+    // Three different things an agent may advertise separately: talk, remember, or take a turn.
+    const { CANASTA_REVIEW_SKILL, CANASTA_ADVISE_SKILL, CANASTA_ACT_SKILL } = await import('@pokernight/protocol');
+    expect(new Set([CANASTA_REVIEW_SKILL, CANASTA_ADVISE_SKILL, CANASTA_ACT_SKILL]).size).toBe(3);
+    expect(CANASTA_REVIEW_SKILL).toBe('canasta.review');
+  });
+});

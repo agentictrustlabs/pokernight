@@ -52,7 +52,9 @@ import type { PlayerFunding } from '@pokernight/treasury';
 import {
   parseClientCommand,
   CANASTA_ADVISE_SKILL,
+  CANASTA_REVIEW_SKILL,
   POKER_ADVISE_SKILL,
+  POKER_REVIEW_SKILL,
   type ChatEvent,
   type ClientCommand,
   type PlayerInfo,
@@ -68,7 +70,7 @@ import {
   type TableEvent,
   type TableSummary,
 } from '@pokernight/protocol';
-import { a2aTimeoutMs, callAct, callAdvise, resolveAgentBase } from './a2a.js';
+import { a2aTimeoutMs, callAct, callAdvise, callReview, resolveAgentBase } from './a2a.js';
 import { readSessionRecord } from './auth.js';
 import { agentPaceMs, seatIdleMs } from './env.js';
 import type { Env } from './env.js';
@@ -558,7 +560,7 @@ export class PokerTableDO extends DurableObject<Env> {
       const adviser = playerId ? this.advisers[playerId] : undefined;
 
       if (adviser) {
-        const asked = await this.askAdviser(adviser, seat);
+        const asked = await this.askAdviser(adviser, seat, url.searchParams.get('q') ?? undefined);
         // A partner that cannot be reached falls back to the house coach rather than leaving somebody
         // mid-hand with nothing — and SAYS it fell back, because silently swapping whose advice this
         // is would be the one dishonest thing available here.
@@ -1622,6 +1624,7 @@ export class PokerTableDO extends DurableObject<Env> {
   private async askAdviser(
     adviser: { agentName: string; endpoint: string; displayName: string },
     seat: number,
+    question?: string,
   ): Promise<{ ok: true; advice: { say: string; because?: string; action?: unknown } } | { ok: false; error: string }> {
     const state = this.state;
     if (!state) return { ok: false, error: 'this table has not dealt yet' };
@@ -1637,10 +1640,52 @@ export class PokerTableDO extends DurableObject<Env> {
         view: this.game.viewFor(state, seat),
         legal: this.game.legalFor(state, seat),
         deadlineMs: a2aTimeoutMs(this.env),
+        // The person's own words, passed through untouched. The card room does not parse it, answer
+        // it, or keep it — it is for the agent that is doing the remembering.
+        ...(question ? { question } : {}),
       },
       a2aTimeoutMs(this.env),
     );
     return res.ok ? { ok: true, advice: res.output } : { ok: false, error: res.error };
+  }
+
+  /**
+   * Offer the finished round to each seat's own adviser, as that seat saw it.
+   *
+   * An adviser asked only DURING a hand sees the moments somebody thought to ask about and never
+   * learns how any of them turned out — enough to advise, not enough to say "you have done this
+   * before". A pattern needs the ending as well as the decision, so this hands over the final view
+   * including its result.
+   *
+   * ONLY TO THE AGENT THAT PERSON NAMED, and only their own seat's view. One person's round is not
+   * reported to anybody else's adviser, and no adviser is told anything that seat could not see.
+   *
+   * The card room keeps no profile of how anybody plays and has nowhere to put one. What is worth
+   * remembering is the agent's business.
+   */
+  private reviewWithAdvisers(state: unknown): void {
+    const advisers = Object.entries(this.advisers);
+    if (advisers.length === 0) return;
+    const at = this.snap(state);
+    const skill = this.game.id === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL;
+    for (const [playerId, adviser] of advisers) {
+      const seat = at.seats.find((x) => x.playerId === playerId)?.seat;
+      // Named an adviser and then stood up: there is no seat to report and nothing to say about one.
+      if (seat === undefined) continue;
+      const input = {
+        skill,
+        tableId: this.meta?.tableId ?? '',
+        handNo: at.round,
+        seat,
+        view: this.game.viewFor(state, seat),
+        legal: this.game.legalFor(state, seat),
+        deadlineMs: a2aTimeoutMs(this.env),
+      };
+      const sent = callReview(adviser.endpoint, input, a2aTimeoutMs(this.env));
+      // Kept alive past the response the table is about to send, without the table waiting for it.
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(sent);
+      else void sent;
+    }
   }
 
   private startAgentTurn(state: unknown, handNo: number, seat: number, deadline: number, record: SeatRecord): void {
@@ -2080,6 +2125,10 @@ export class PokerTableDO extends DurableObject<Env> {
     await this.ctx.storage.put('state', state);
 
     if (handEnded) {
+      // THE ROUND, TO EACH PERSON'S OWN ADVISER. Not awaited and not checked: a personal coach that
+      // learns from a round is a thing happening on somebody else's server, and nothing at this table
+      // is waiting on it. The round is over either way.
+      this.reviewWithAdvisers(state);
       await this.ctx.storage.put('next-hand-at', now + NEXT_HAND_DELAY_MS);
     } else if (
       !this.snap(state).roundInProgress &&
