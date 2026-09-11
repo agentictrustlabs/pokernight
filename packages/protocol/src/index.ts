@@ -899,6 +899,35 @@ export interface AdviseInput extends ActInput {
   question?: string;
 }
 
+/**
+ * THE ADVICE REQUEST, said in words as well as in data.
+ *
+ * The house personas read the data part and nothing else. A person's OWN agent at their Home does the
+ * opposite: its A2A surface treats a message with no task extension as a CONVERSATION, and what it
+ * hands to the agent's playbook is the message's TEXT — a data part alone arrives as "the message
+ * carried no text". So the same request carries both: the data part for an adviser that parses, and a
+ * text part for one that reads. The text says what is being asked, in what shape to answer, and
+ * carries the seat's view inline, because an agent reasoning from its skills has to be handed the
+ * table rather than told where to look for it.
+ *
+ * Nothing here is visible to that agent that the seat cannot see: `view` is already redacted.
+ */
+export function encodeAdviseParts(
+  input: AdviseInput,
+): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const game = input.skill.split('.')[0] ?? 'the game';
+  const asked = input.question?.trim();
+  const text = [
+    `${input.skill}: advise seat ${input.seat} at ${game}, round ${input.handNo}.`,
+    asked ? `The person asked: "${asked}".` : 'Nothing was asked; say what they should do and why.',
+    'Answer with ONE JSON object and nothing else: {"say": <one sentence for somebody with a clock running>,',
+    '"because": <the reason, which is the half that teaches>, "action": <the move in the game\'s own action shape, or omit it>}.',
+    `Legal moves for this seat: ${JSON.stringify(input.legal)}`,
+    `The table as this seat sees it: ${JSON.stringify(input.view)}`,
+  ].join('\n');
+  return [...encodeActParts(input), { kind: 'text', text }];
+}
+
 export const AdviseOutputSchema = z.object({
   say: z.string().min(1).max(280),
   because: z.string().max(600).optional(),
@@ -987,6 +1016,7 @@ export function agentNameToHost(agentName: string, zone: string): string {
 export function encodeActParts(input: ActInput): Array<{ kind: 'data'; data: Record<string, unknown> }> {
   return [{ kind: 'data', data: { skill: input.skill, input: input as unknown as Record<string, unknown> } }];
 }
+
 
 /**
  * Pull an action out of an A2A reply. Accepts a data part, or a text part holding JSON.

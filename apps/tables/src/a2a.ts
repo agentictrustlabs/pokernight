@@ -11,6 +11,7 @@
  */
 
 import {
+  encodeAdviseParts,
   A2A_AGENT_CARD_PATH,
   A2A_JSONRPC_PATH,
   A2A_SEND_MESSAGE,
@@ -260,7 +261,9 @@ export async function callAdvise(base: string, input: AdviseInput, timeoutMs: nu
     jsonrpc: '2.0',
     id: `${input.tableId}:${input.handNo}:${input.seat}:advise`,
     method: A2A_SEND_MESSAGE,
-    params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeActParts(input) } },
+    // Data AND text: the house personas parse the data part; a person's own agent at their Home is
+    // handed the text. One request that both kinds of adviser can read.
+    params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeAdviseParts(input) } },
   };
   let res: Response;
   try {
