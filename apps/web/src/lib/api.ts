@@ -16,9 +16,19 @@ import type {
 
 /** What the coach says about one move: the move, one clause to speak, the rule behind it. */
 export interface CoachAdvice {
-  action: unknown;
+  action?: unknown;
   say: string;
-  because: string;
+  because?: string;
+  /**
+   * WHOSE ADVICE THIS IS — the house's own coach, or the agent this person named.
+   *
+   * Always present, and shown. The card room's coach is one strategy for everybody; a person's own
+   * agent carries their style. Which of the two just spoke is not a detail, and an app that showed
+   * them identically would be passing one off as the other.
+   */
+  source?: 'house' | { agent: string; displayName: string };
+  /** Said when the named adviser could not be reached and the house answered instead. */
+  note?: string;
 }
 
 /** One agent this card room can seat, as `GET /agents` reports it. */
@@ -299,6 +309,16 @@ export const api = {
    */
   advice: (tableId: string, token: string) =>
     request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice`, {}, token),
+  /** Name the agent that advises YOU at this table. The card room checks it advertises the skill. */
+  setAdviser: (tableId: string, agentName: string, token: string) =>
+    request<{ adviser: { agentName: string; displayName: string } | null }>(
+      `/tables/${encodeURIComponent(tableId)}/adviser`,
+      { method: 'POST', body: JSON.stringify({ agentName }) },
+      token,
+    ),
+  /** Back to the house coach. */
+  clearAdviser: (tableId: string, token: string) =>
+    request<{ adviser: null }>(`/tables/${encodeURIComponent(tableId)}/adviser`, { method: 'DELETE' }, token),
   /**
    * The agents this card room can seat for a game.
    *

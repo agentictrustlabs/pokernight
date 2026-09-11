@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSession, ClientCommand } from '../lib/types';
 import type { CanastaTableEvent, CanastaView } from '../lib/canasta';
-import { api, type CoachAdvice } from '../lib/api';
+import { ApiError, api, type CoachAdvice } from '../lib/api';
+import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { alertsFor, newAlerts } from '../lib/alerts';
 import { commentaryFor, spokenLine } from '../lib/commentary';
 import { roundOpening, scoreLines } from '../lib/scoreWords';
@@ -95,6 +96,16 @@ export function Coach({
 }) {
   const [mode, setMode] = useState<CoachMode>(startOn);
   const [advice, setAdvice] = useState<CoachAdvice | null>(null);
+  /**
+   * THE LAST FEW RECOMMENDATIONS, not just the current one.
+   *
+   * One line at a time is right for a voice and wrong for a screen: advice arrives per turn and a
+   * person looks up between turns, wanting "what did it say about the pile again?" rather than only
+   * the newest sentence. `lib/recommendations.ts` decides what it keeps and what it forgets.
+   */
+  const [said, setSaid] = useState<Recommendation[]>([]);
+  /** The agent this person has named to advise them here, or null for the house's own coach. */
+  const [adviser, setAdviser] = useState<{ agentName: string; displayName: string } | null>(null);
   const [feed, setFeed] = useState<Said[]>([]);
   /** Seconds left before it plays, so the pause is legible rather than a hang. */
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -221,11 +232,14 @@ export function Coach({
       // than no answer, because in `play` mode it would be PLAYED.
       if (asked.current !== key) return;
       setAdvice(a);
+      setSaid((cur) => remember(cur, a, roundNo));
       // The narration says WHAT ("You meld 4 eights"); the coach says WHY — and only when there is a
       // why worth hearing. Drawing and discarding happen every turn and have their reason on screen;
       // reading it aloud each time doubled the words and put the voice further behind the table.
       const teaching = (a.action as { type?: string })?.type;
-      if (teaching === 'meld' || teaching === 'take-pile') say(firstSentence(a.because));
+      // An adviser is not obliged to give a reason — the house coach always does, somebody's own
+      // agent may just say the move. No reason is silence here rather than an empty utterance.
+      if ((teaching === 'meld' || teaching === 'take-pile') && a.because) say(firstSentence(a.because));
       if (mode === 'play') {
         let left = Math.ceil(READ_MS / 1000);
         setCountdown(left);
@@ -402,6 +416,23 @@ export function Coach({
             </div>
           ) : null}
 
+          {/* THE ROLLING LIST. Newest first, each line carrying whose advice it was — the house's coach
+              and somebody's own agent are not the same voice, and an entry that lost its source would
+              be the app quietly passing one off as the other. */}
+          {said.length > 0 ? (
+            <ol className="coach-said-list">
+              {said.map((r) => (
+                <li key={r.id}>
+                  <span className="rec-say">{r.say}</span>
+                  {r.because ? <span className="rec-why">{r.because}</span> : null}
+                  <span className="rec-from">{whoSaid(r.from)}</span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+
+          <Adviser tableId={tableId} session={session} adviser={adviser} onChanged={setAdviser} />
+
           {/* No `aria-live` on the feed: it is a running commentary, and a screen reader announcing
               every line of it would talk over the one thing that matters — whose turn it is. */}
           {/* Always rendered, even empty, so the panel has one height whether the table is quiet
@@ -457,5 +488,91 @@ export function Coach({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * WHOSE ADVICE THIS IS — the house's coach, or an agent of the person's own.
+ *
+ * The card room's coach is one strategy and the same for everybody. A person's own agent carries
+ * THEIR style, written as their own artifacts somewhere the card room never reaches; naming it here
+ * says where to ask and nothing else.
+ *
+ * Folded, because the house coach is the right answer for almost everybody and a card table is not
+ * the place to meet a configuration form. Open, it is one field.
+ */
+function Adviser({
+  tableId,
+  session,
+  adviser,
+  onChanged,
+}: {
+  tableId: string;
+  session: AppSession;
+  adviser: { agentName: string; displayName: string } | null;
+  onChanged: (a: { agentName: string; displayName: string } | null) => void;
+}) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  return (
+    <details className="coach-adviser">
+      <summary>{adviser ? `Advised by ${adviser.displayName}` : 'Advised by the house coach'}</summary>
+      <p className="hint">
+        Name an agent of your own and it answers instead — with your style, from your own skills. It is sent only what
+        your seat already sees.
+      </p>
+      {err ? <div className="form-error">{err}</div> : null}
+      {adviser ? (
+        <button
+          type="button"
+          className="link-button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setErr(null);
+            try {
+              await api.clearAdviser(tableId, session.token);
+              onChanged(null);
+            } catch (e) {
+              setErr(e instanceof ApiError ? e.message : 'That could not be changed.');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Go back to the house coach
+        </button>
+      ) : (
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!name.trim() || busy) return;
+            setBusy(true);
+            setErr(null);
+            try {
+              const r = await api.setAdviser(tableId, name.trim(), session.token);
+              onChanged(r.adviser);
+              setName('');
+            } catch (ex) {
+              // The card room refuses an agent that does not advertise the advise skill, by name —
+              // and that sentence is far more use than "could not be saved".
+              setErr(ex instanceof ApiError ? ex.message : 'That agent could not be reached.');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <label>
+            Your agent
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="carol.me" autoComplete="off" />
+          </label>
+          <button type="submit" disabled={busy || !name.trim()}>
+            {busy ? 'Asking it…' : 'Ask this one instead'}
+          </button>
+        </form>
+      )}
+    </details>
   );
 }

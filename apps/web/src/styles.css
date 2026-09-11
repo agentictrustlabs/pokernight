@@ -3088,6 +3088,55 @@ a.button.primary:hover {
   color: var(--felt-deep);
 }
 
+/* THE ROLLING LIST of recommendations. Newest first, each carrying whose advice it was — the house
+   coach and somebody's own agent are not the same voice. */
+.coach-said-list {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.coach-said-list li {
+  display: grid;
+  gap: 0.15rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--rule);
+}
+/* The newest one is the one being acted on; the rest are there to be looked back at. */
+.coach-said-list li:first-child {
+  border-left-color: var(--felt);
+}
+.rec-say {
+  font-weight: 600;
+}
+.rec-why,
+.rec-from {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.rec-from {
+  font-style: italic;
+}
+
+/* Naming your own adviser. Folded: the house coach is right for almost everybody, and a card table
+   is not the place to meet a configuration form. */
+.coach-adviser {
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+.coach-adviser > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.coach-adviser form {
+  display: grid;
+  gap: 0.4rem;
+  max-width: 20rem;
+}
+
 /* Keeping a chair for somebody, and saying whose side they are on. Folded, because filling the table
    and dealing is what most people want and the choice only matters when somebody is on their way. */
 .can-keep {
