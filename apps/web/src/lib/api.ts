@@ -39,6 +39,19 @@ export interface AgentListing {
   description: string;
   game?: string;
   strategy: string;
+  /**
+   * What this agent will actually answer — `poker.act`, `canasta.advise`, and so on.
+   *
+   * Taking a turn and giving advice are DIFFERENT skills on purpose, so "who can sit down here" and
+   * "who can advise me here" are different questions and the list has to carry the answer to both.
+   * Absent from an older agent host, which is read as "it says nothing about advising".
+   */
+  skills?: string[];
+}
+
+/** Whether a listed agent advertises one particular skill. Absent skills mean no, never "probably". */
+export function advertises(agent: AgentListing, skill: string): boolean {
+  return (agent.skills ?? []).includes(skill);
 }
 
 /** One row of "the clubs you are in" — the index the club writes to, not the club itself. */

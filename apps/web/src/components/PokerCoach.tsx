@@ -342,7 +342,7 @@ export function PokerCoach({
             </ol>
           ) : null}
 
-          <Adviser tableId={tableId} session={session} adviser={adviser} onChanged={setAdviser} />
+          <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={setAdviser} />
 
           {/* No `aria-live`: it is a running commentary, and a screen reader announcing every line of
               it would talk over the one thing that matters — whose turn it is. Always rendered, even

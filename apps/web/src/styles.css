@@ -4712,3 +4712,31 @@ a.button.primary:hover {
     transform: none;
   }
 }
+
+/* WHO CAN ADVISE HERE. A list of real choices before the field for a name you have to already know —
+   the field alone, under a placeholder that looked like a value, made the disabled button beside it
+   read as broken. */
+.adviser-offers {
+  list-style: none;
+  margin: 0.3rem 0 0.7rem;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+.adviser-offers button {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+}
+.adviser-offers .hint {
+  margin: 0;
+  font-weight: 400;
+}
+.coach-adviser code {
+  font-size: 0.85em;
+  background: var(--paper);
+  border-radius: 4px;
+  padding: 0 0.25rem;
+}

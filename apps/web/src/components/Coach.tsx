@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSession, ClientCommand } from '../lib/types';
 import type { CanastaTableEvent, CanastaView } from '../lib/canasta';
-import { ApiError, api, type CoachAdvice } from '../lib/api';
+import { ApiError, advertises, api, type AgentListing, type CoachAdvice } from '../lib/api';
+import { adviseSkillFor } from '../lib/games';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { alertsFor, newAlerts } from '../lib/alerts';
 import { commentaryFor, spokenLine } from '../lib/commentary';
@@ -445,7 +446,7 @@ export function Coach({
             </ol>
           ) : null}
 
-          <Adviser tableId={tableId} session={session} adviser={adviser} onChanged={setAdviser} />
+          <Adviser tableId={tableId} session={session} game="canasta" adviser={adviser} onChanged={setAdviser} />
 
           {/* No `aria-live` on the feed: it is a running commentary, and a screen reader announcing
               every line of it would talk over the one thing that matters — whose turn it is. */}
@@ -523,25 +524,87 @@ export function Coach({
 export function Adviser({
   tableId,
   session,
+  game,
   adviser,
   onChanged,
 }: {
   tableId: string;
   session: AppSession;
+  /** Which game's advise skill an agent has to advertise to be offered here. */
+  game: string;
   adviser: { agentName: string; displayName: string } | null;
   onChanged: (a: { agentName: string; displayName: string } | null) => void;
 }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /**
+   * WHO CAN ACTUALLY ADVISE HERE, offered rather than left to be guessed.
+   *
+   * There was only a text field, under a placeholder that read `carol.me` — which looks like a value
+   * somebody already typed, so the greyed-out button beside it reads as broken rather than as empty.
+   * And the name it suggested is one the card room REFUSES: a person's Home agent advertises Home's
+   * skills, not this game's, and naming it gets "carol.me does not advertise the poker.advise skill".
+   * A field whose example is a wrong answer is worse than an empty one.
+   *
+   * So the agents this card room already knows about are listed, filtered to the ones whose card
+   * advertises THIS game's advise skill — and the field stays, for an agent of your own.
+   */
+  const [offers, setOffers] = useState<AgentListing[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api
+      .listAgents(game)
+      .then(({ agents }) => {
+        if (alive) setOffers(agents.filter((a) => advertises(a, adviseSkillFor(game))));
+      })
+      // An empty list is honest — "nobody on offer right now" — and the field below still works.
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [game]);
+
+  /** Name an agent and hand the answer back. Shared by the list and the field. */
+  const ask = async (agentName: string) => {
+    if (!agentName.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.setAdviser(tableId, agentName.trim(), session.token);
+      onChanged(r.adviser);
+      setName('');
+    } catch (ex) {
+      // The card room refuses an agent that does not advertise the advise skill, BY NAME — and that
+      // sentence is far more use than "could not be saved".
+      setErr(ex instanceof ApiError ? ex.message : 'That agent could not be reached.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <details className="coach-adviser">
       <summary>{adviser ? `Advised by ${adviser.displayName}` : 'Advised by the house coach'}</summary>
       <p className="hint">
-        Name an agent of your own and it answers instead — with your style, from your own skills. It is sent only what
-        your seat already sees.
+        The house coach is one strategy, the same for everybody. An agent of your own answers with YOUR style, from
+        your own skills — it is sent only what your seat already sees.
       </p>
+      {!adviser && offers.length > 0 ? (
+        <>
+          <p className="hint">Agents this card room knows can advise at {game === 'canasta' ? 'canasta' : 'hold’em'}:</p>
+          <ul className="adviser-offers">
+            {offers.map((a) => (
+              <li key={a.agentName}>
+                <button type="button" disabled={busy} onClick={() => void ask(a.agentName)}>
+                  {a.displayName}
+                  <span className="hint">{a.description}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
       {err ? <div className="form-error">{err}</div> : null}
       {adviser ? (
         <button
@@ -565,31 +628,30 @@ export function Adviser({
         </button>
       ) : (
         <form
-          onSubmit={async (e) => {
+          onSubmit={(e) => {
             e.preventDefault();
-            if (!name.trim() || busy) return;
-            setBusy(true);
-            setErr(null);
-            try {
-              const r = await api.setAdviser(tableId, name.trim(), session.token);
-              onChanged(r.adviser);
-              setName('');
-            } catch (ex) {
-              // The card room refuses an agent that does not advertise the advise skill, by name —
-              // and that sentence is far more use than "could not be saved".
-              setErr(ex instanceof ApiError ? ex.message : 'That agent could not be reached.');
-            } finally {
-              setBusy(false);
-            }
+            void ask(name);
           }}
         >
           <label>
-            Your agent
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="carol.me" autoComplete="off" />
+            Or name one of your own
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              /* NOT a plausible-looking name. A placeholder that reads like a value makes the disabled
+                 button beside it look broken rather than waiting for input. */
+              placeholder={`an agent that answers ${adviseSkillFor(game)}`}
+              autoComplete="off"
+            />
           </label>
           <button type="submit" disabled={busy || !name.trim()}>
-            {busy ? 'Asking it…' : 'Ask this one instead'}
+            {busy ? 'Asking it…' : name.trim() ? `Ask ${name.trim()} instead` : 'Type a name first'}
           </button>
+          <p className="hint">
+            It has to advertise the <code>{adviseSkillFor(game)}</code> skill on its agent card. A person’s own Home
+            agent carries the Home’s skills, not this game’s, so it will be refused by name until you add one.
+          </p>
         </form>
       )}
     </details>

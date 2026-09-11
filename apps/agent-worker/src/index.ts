@@ -113,6 +113,11 @@ export default {
           host: zone ? agentNameToHost(p.agentName, zone) : null,
           endpoint: endpointFor(p, env, url, false),
           card: `${endpointFor(p, env, url, false).replace(A2A_JSONRPC_PATH, '')}${A2A_AGENT_CARD_PATH}`,
+          // WHAT IT WILL ACTUALLY ANSWER, from the same builder that writes the card — never a second
+          // list that can drift from it. A card room deciding who may be SEATED and who may ADVISE
+          // needs both answers, and fetching seven cards to find out is seven requests to learn what
+          // this response already knows.
+          skills: buildCard(p, env, url, false).skills.map((sk) => sk.id),
         })),
       });
     }

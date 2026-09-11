@@ -70,3 +70,15 @@ const BLURBS: Record<string, string> = {
 export function gameBlurb(game: string | null | undefined): string | null {
   return BLURBS[game ?? DRAWN_GAME] ?? null;
 }
+
+/**
+ * THE SKILL AN AGENT HAS TO ADVERTISE TO ADVISE AT THIS GAME.
+ *
+ * Named per game for the same reason `*.act` is: an agent that can talk about hold'em has no business
+ * being handed a canasta seat's question, and the card room refuses one whose card does not say so —
+ * before the first question rather than mid-hand. Stated here so the screen can say WHICH skill it is
+ * when it explains a refusal, rather than the person discovering it from an error.
+ */
+export function adviseSkillFor(game: string | null | undefined): string {
+  return game === 'canasta' ? 'canasta.advise' : 'poker.advise';
+}
