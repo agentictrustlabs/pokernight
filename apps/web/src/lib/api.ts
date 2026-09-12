@@ -396,7 +396,7 @@ export const api = {
     request<{ ok: true; days: number; agent: string; tables: number; found: number; queued: number; note: string }>(`/me/hands/backfill?days=${days}`, { method: 'POST' }, token),
   /** DO I HAVE A COACH, AND HAVE I BEEN ASKED — from my own agent (playbook + my preferences record). */
   coachStatus: (token: string) =>
-    request<{ agent: string | null; coach: string | null; hasGrant?: boolean; asked: { at: string; answer: 'hired' | 'later' | 'no' } | null }>('/me/coach', {}, token),
+    request<{ agent: string | null; coach: string | null; hasGrant?: boolean; asked: { at: string; answer: 'hired' | 'later' | 'no' } | null; advertises?: boolean; note?: string }>('/me/coach', {}, token),
   /** I answered the coach question. Written to my vault by my own agent, so it is asked once. */
   coachAnswered: (answer: 'hired' | 'later' | 'no', token: string) =>
     request<{ agent: string | null; coach: string | null; asked: { at: string; answer: string } | null }>('/me/coach/asked', { method: 'POST', body: JSON.stringify({ answer }) }, token),

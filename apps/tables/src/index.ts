@@ -1463,10 +1463,21 @@ app.post('/me/coach', async (c) => {
  */
 app.get('/me/coach', async (c) => {
   const me = await myAgentCard(c, POKER_COACH_SKILL);
-  if (!me.ok) return c.json({ error: me.error, coach: null, asked: null, agent: null }, me.status as 400);
+  if (!me.ok) {
+    // AN AGENT WITHOUT THE CARD-ROOM SKILLS has no coach either — it cannot even be asked. Said as a fact with
+    // the agent's name (a 200, not a refusal), so the screen can still offer a coach and say what the agent
+    // is missing; the "asked once" then has to live in the browser until the skills are on the card.
+    if (me.status === 400 && /does not advertise/.test(me.error)) {
+      const session = await resolveSession(c.env, sessionToken(c.req.raw));
+      const home = session && 'address' in session ? (session as { address?: string; agentName?: string }) : null;
+      const agentName = (home?.address ? await nameOfAgent(c.env, home.address) : null) ?? (home?.agentName && looksLikeAgentName(home.agentName) ? home.agentName : null);
+      return c.json({ agent: agentName, coach: null, asked: null, advertises: false, note: me.error });
+    }
+    return c.json({ error: me.error, coach: null, asked: null, agent: null }, me.status as 400);
+  }
   const r = await callCoachStatus(me.endpoint, { skill: POKER_COACH_SKILL }, a2aTimeoutMs(c.env), c.env);
   if (!r.ok) return c.json({ error: r.error, coach: null, asked: null, agent: me.agentName }, 502);
-  return c.json({ ...r.output, agent: me.agentName });
+  return c.json({ ...r.output, agent: me.agentName, advertises: true });
 });
 
 /** You answered the coach question — hired, later, or no. Written to your vault by your own agent; asked once. */

@@ -15,8 +15,11 @@ import type { AppSession } from '../lib/types';
 import { api } from '../lib/api';
 import type { AuthConfig } from '../lib/home';
 
+/** Where "asked" lives for an agent that cannot yet keep it: this browser, keyed by the agent. */
+const ASKED_KEY = (agent: string) => `pokernight.coach.asked:${agent.toLowerCase()}`;
+
 export function CoachQuestion({ session, config }: { session: AppSession | null; config: AuthConfig | null }) {
-  const [show, setShow] = useState<{ agent: string } | null>(null);
+  const [show, setShow] = useState<{ agent: string; advertises: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     // A dev session is a name and nothing behind it; a demo or Home session has an agent to ask.
@@ -25,8 +28,13 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
     api
       .coachStatus(session.token)
       .then((r) => {
-        if (!alive) return;
-        if (r.agent && r.coach === null && r.asked === null) setShow({ agent: r.agent });
+        if (!alive || !r.agent || r.coach !== null || r.asked !== null) return;
+        // An agent WITHOUT the card-room skills cannot keep the answer in its person's vault yet, so the
+        // browser keeps it until it can — and the sheet says what the agent is missing.
+        if (r.advertises === false) {
+          try { if (localStorage.getItem(ASKED_KEY(r.agent))) return; } catch { /* ask anyway */ }
+        }
+        setShow({ agent: r.agent, advertises: r.advertises !== false });
       })
       .catch(() => {});
     return () => {
@@ -39,7 +47,8 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
     if (busy) return;
     setBusy(true);
     try {
-      await api.coachAnswered(a, session.token);
+      if (show.advertises) await api.coachAnswered(a, session.token);
+      else { try { localStorage.setItem(ASKED_KEY(show.agent), `${a}@${new Date().toISOString()}`); } catch { /* then it is asked again next time */ } }
     } catch {
       /* the sheet still closes; the question may come back next visit, which is the honest outcome */
     } finally {
@@ -47,6 +56,7 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
       setShow(null);
     }
   };
+  const homeCaps = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/capabilities` : null;
   const homeCoaches = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/coaches?game=poker` : null;
 
   return (
@@ -59,6 +69,13 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
           nothing else — and advises you in its own name, on its own tokens. You pick one per game at your Home, and you
           can fire it there any time.
         </p>
+        {!show.advertises ? (
+          <p className="hint">
+            First, your agent needs the card room’s skills on its card — at your Home, under{' '}
+            {homeCaps ? <a href={homeCaps} target="_blank" rel="noreferrer">Capabilities</a> : 'Capabilities'}, add{' '}
+            <code>poker.advise</code>, <code>poker.record</code>, <code>poker.review</code>, <code>poker.coach</code>, publish, and release the card. Until then the house coach answers for you, and this answer is kept in this browser only.
+          </p>
+        ) : null}
         <div className="sheet-actions">
           {homeCoaches ? (
             <a
@@ -78,7 +95,7 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
             Don’t ask again
           </button>
         </div>
-        <p className="hint">Asked once. Whatever you choose is kept in your own vault, and the desk beside a table always has the option.</p>
+        <p className="hint">Asked once. Whatever you choose is kept{show.advertises ? ' in your own vault' : ' here until your agent can keep it'}, and the desk beside a table always has the option.</p>
       </div>
     </div>
   );
