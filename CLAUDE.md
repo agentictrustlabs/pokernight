@@ -201,18 +201,39 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   `~/agenticprimitives/scripts/add-cardroom-skills.mts <handle>` then `rebuild-card-release.mts` +
   `republish-card-record.mts`. A Home run takes ~14 s against the 20 s A2A limit; a miss falls back
   to the house coach and the panel says so.
-- **A FINISHED ROUND IS COUNTED, AND THE COUNTS ARE THE AGENT'S TO KEEP.** `TableGame.observeFor?(state,
-  seat)` is the other end of `readFor`: the round as the seat saw it, IN COUNTS — vpip, pfr, three-bet,
-  fold-to-bet, c-bet, showdowns, won, net — keyed by the player id the view shows, never cards, never a
-  transcript (`agent-kit/src/observe.ts`). `reviewWithAdvisers` sends it in the `poker.review` message
-  (`encodeReviewParts`, whose text says the round is OVER rather than asking for a move) with the host's
-  names on the subjects. The card room keeps none of it. At the Home, `playbook.answer` folds a review
-  into `playbook.memory:<family>` in the agent's own vault WITHOUT A MODEL CALL — it used to spend one on
-  "what is worth remembering" and keep nothing — and hands advice the players AT THIS TABLE back with
-  rates ("foldToBet 80% of 5"); `holdem-table-read` teaches what the numbers mean. A new vault record
-  type is four registrations (ontology tbox + binding, the two grant-scope lists, the DO allowlist) and a
-  grant re-issue per agent (`scripts/reissue-interactions-grants.mts alice`), the same as every one
-  before it. **A MIXED SPOT IS CARRIED AS ONE**: the postflop chart keeps the solver's runner-up
+  **THE PERSON'S AGENT CONSULTS A COACH SERVICE; IT GENERATES NOTHING ITSELF** (2026-09-12,
+  `~/agenticprimitives/apps/demo-a2a/src/card-room.ts`; the story with diagrams is
+  `docs/ARCHITECTURE-ADVISER.md`). The table addresses ONE agent per seat — the person's own
+  (`alice.me`) — and never learns the coach's endpoint. On `poker.advise` that agent runs no model: it
+  reads the specialist its playbook names for the skill (`{capability:'poker.advise', executor:
+  'bob-coach.svc'}`, a `.svc` — a coach is a service, never a person), fetches the STUDY GRANT the
+  person signed for it (delegator the person, delegate the service, vault-record-scope read on
+  `cardroom.hand|style|read|note`, write on `cardroom.note` only), forwards the SAME seat payload with
+  the grant beside it, and returns the coach's `{say, because, action}` with `source` = the service.
+  No specialist, no grant, revoked, or late ⇒ one-line refusal; the table falls back to the house and
+  the panel says why. The screen names both voices ("bob-coach.svc, via alice.me"). The coach reads
+  her records at HER vault under the grant and appends at most one note to HER `cardroom.note`; the
+  vault refuses `cardroom.hand/style/read/note` on a service principal, so firing the coach (revoking
+  the grant) leaves nothing of hers behind. Estate: `charter-coach.mts bob bob-coach`,
+  `bind-coach-specialist.mts alice bob-coach.svc`, `seed-cardroom-style.mts`, `add-cardroom-skills.mts
+  --service bob-coach.svc --by bob`; the registry archetype is `holdem-coach-bob` (texas-holdem).
+- **A FINISHED ROUND IS RECORDED TO THE PERSON'S OWN AGENT — A VAULT PUT, NO MODEL, NEVER TO THE
+  COACH.** `TableGame.observeFor?(state, seat)` is the other end of `readFor`: the round as the seat
+  saw it, IN COUNTS — vpip, pfr, three-bet, fold-to-bet, c-bet, showdowns, won, net — keyed by the
+  player id the view shows, never cards, never a transcript (`agent-kit/src/observe.ts`).
+  `recordWithAdvisers` sends the final view and the counts in the `poker.record` message
+  (`encodeRecordParts`, whose text says the round is OVER and asks for nothing) with the host's names
+  on the subjects, only to an adviser whose card advertises `*.record` (a person's own agent; the house
+  personas advertise neither record nor review and refuse both by name). The card room keeps none of
+  it. At the Home the person's agent puts it into `cardroom.hand` — the hand kept whole, the counts
+  folded into running totals — without a model call; the coach reads them back at the next
+  consultation with rates ("foldToBet 80% of 5"), and `holdem-memory` teaches what the numbers mean.
+  A REVIEW is the person's own question (`poker.review`, `GET /tables/:id/review?q=`, the panel's
+  "Review my hands"): forwarded by their agent to the coach with the grant, answered from the hands on
+  file, one note written back. A hand ending never triggers one. A new vault record type is four
+  registrations (ontology tbox + binding, the two grant-scope lists, the DO allowlist) and a grant
+  re-issue per agent (`scripts/reissue-interactions-grants.mts alice`), the same as every one before
+  it. **A MIXED SPOT IS CARRIED AS ONE**: the postflop chart keeps the solver's runner-up
   (`Decision.mix`, `Advice.mix`, `baseline.mix` on the wire), the house words say "the solver also
   bets here 32% of the time", and the person's agent is told the memory is what picks a side — proven
   live: top pair checked to as the caller, baseline check 68/32, "The Rock folds to bets" → bet.

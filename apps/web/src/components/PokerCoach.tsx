@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession, ClientCommand, HandResult, Street, TableEvent, TableView } from '../lib/types';
-import { api, ApiError, type CoachAdvice } from '../lib/api';
+import { api, ApiError, type CoachAdvice, type CoachReview } from '../lib/api';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { newAlerts } from '../lib/alerts';
 import type { FormatContext } from '../lib/format';
@@ -115,6 +115,16 @@ export function PokerCoach({
    * every question. A screen that names the wrong voice is the one dishonest thing here.
    */
   const [adviser, setAdviser] = useState<{ agentName: string; displayName: string } | null>(null);
+  /**
+   * THE COACH BEHIND YOUR AGENT, learned from an answer. Your agent is what the table addresses; when
+   * it consulted the coaching service you named at your Home, the answer says so (`source.coach`), and
+   * from then on the panel names both. Nothing here is asked of the table — it holds no such address.
+   */
+  const [coach, setCoach] = useState<string | null>(null);
+  const noteVoice = (a: { source?: CoachAdvice['source'] } | null) => {
+    const src = a?.source;
+    if (src && src !== 'house' && src.coach) setCoach(src.coach);
+  };
   useEffect(() => {
     if (!session) return;
     let alive = true;
@@ -206,6 +216,7 @@ export function PokerCoach({
       // than no answer, because in `play` mode it would be PLAYED.
       if (asked.current !== key) return;
       setAdvice(a);
+      noteVoice(a);
       setSaid((cur) => remember(cur, a, handNo));
       // THE REASON IS THE POINT AT A POKER TABLE, so unlike canasta it is spoken every time rather
       // than only for the interesting moves. The reason here is the price, and the price is what the
@@ -397,7 +408,7 @@ export function PokerCoach({
           {/* A QUESTION IN YOUR OWN WORDS, to your own agent — the one voice here that remembers how you
               and the others have been playing. "How am I playing?" is one press because it is the
               question a learner most needs answered and least knows to ask. Costs its tokens; said so. */}
-          {adviser && session ? <AskYourAgent tableId={tableId} session={session} adviser={adviser} onAnswer={(a) => { setSaid((cur) => remember(cur, a, handNo)); if (a.because) say(firstSentence(a.because)); }} /> : null}
+          {adviser && session ? <AskYourAgent tableId={tableId} session={session} adviser={adviser} coach={coach} onAnswer={(a) => { noteVoice(a); setSaid((cur) => remember(cur, a, handNo)); if (a.because) say(firstSentence(a.because)); }} onReview={noteVoice} /> : null}
 
           <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={setAdviser} />
 
@@ -408,6 +419,7 @@ export function PokerCoach({
               (playerId) => players[playerId],
               viewerSeat,
               adviser,
+              coach,
             )}
           />
 
@@ -429,24 +441,49 @@ export function PokerCoach({
 
 /**
  * THE QUESTION BOX. Only for a named adviser: the house coach is a rule, and a rule has nothing to say
- * about "how am I playing" — it keeps no memory. Your own agent does (the card room sends it every
- * finished hand as you saw it), so the answer names your numbers and one thing to change.
+ * about "how am I playing" — it keeps no memory. Your own agent does: the card room records every
+ * finished hand, as you saw it, to YOUR vault, and the coach you named reads them there under a grant
+ * you signed. A question mid-hand goes the same way as advice (your agent consults the coach); "how
+ * have I been playing" is a REVIEW — your question, forwarded, answered from the recorded hands in a
+ * few short paragraphs. Both spend the coach's tokens, never your agent's, and the panel says so.
  */
 function AskYourAgent({
   tableId,
   session,
   adviser,
+  coach,
   onAnswer,
+  onReview,
 }: {
   tableId: string;
   session: AppSession;
   adviser: { agentName: string; displayName: string };
+  /** The coaching service your agent consults, once an answer has named it. */
+  coach: string | null;
   onAnswer: (advice: CoachAdvice) => void;
+  onReview: (review: CoachReview) => void;
 }) {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [answer, setAnswer] = useState<CoachAdvice | null>(null);
+  const [review, setReview] = useState<CoachReview | null>(null);
+  const voice = coach ? `${coach}, via ${adviser.displayName}` : adviser.displayName;
+  const askReview = async (question: string) => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api.reviewHands(tableId, question, session.token);
+      setReview(r);
+      onReview(r);
+      setQ('');
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : `${adviser.displayName} could not review your hands.`);
+    } finally {
+      setBusy(false);
+    }
+  };
   const ask = async (question: string) => {
     if (busy || !question.trim()) return;
     setBusy(true);
@@ -485,19 +522,30 @@ function AskYourAgent({
         </button>
       </div>
       <div className="coach-ask-presets">
-        <button type="button" className="link-button" disabled={busy} onClick={() => void ask('How am I playing? Name my two biggest leaks from what you remember, and one thing to change next hand.')}>
-          How am I playing?
+        {/* A REVIEW, not a question mid-hand: it reads the hands recorded to your vault, so it is asked
+            of the coach in its own time, and it takes a minute rather than a sentence. */}
+        <button type="button" className="link-button" disabled={busy} onClick={() => void askReview('How have I been playing? Name my two biggest leaks from my recorded hands, with the count behind each, and one thing to change next session.')}>
+          Review my hands
         </button>
         <button type="button" className="link-button" disabled={busy} onClick={() => void ask('How do the other players at this table play? What have you noticed about each of them?')}>
           How do they play?
         </button>
-        <span className="hint">Uses {adviser.displayName}’s tokens.</span>
+        <span className="hint">Uses {coach ? `${coach}’s` : `${adviser.displayName}’s`} tokens — never yours mid-hand.</span>
       </div>
       {err ? <div className="form-error">{err}</div> : null}
       {answer ? (
         <div className="coach-ask-answer">
           <p className="coach-say">{answer.say}</p>
           {answer.because ? <p className="coach-why">{answer.because}</p> : null}
+          <p className="hint">— {voice}</p>
+        </div>
+      ) : null}
+      {review ? (
+        <div className="coach-ask-answer coach-review">
+          {/* A review is paragraphs: the coach writes them with line breaks, and they are kept. */}
+          <p className="coach-say" style={{ whiteSpace: 'pre-line' }}>{review.say}</p>
+          {review.because ? <p className="coach-why">Next session: {review.because}</p> : null}
+          <p className="hint">— {review.source?.coach ? `${review.source.coach}, via ${review.source.displayName}` : review.source?.displayName ?? adviser.displayName}, from your recorded hands</p>
         </div>
       ) : null}
     </form>

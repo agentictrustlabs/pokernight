@@ -63,6 +63,19 @@ describe('the coach', () => {
     expect((r.coach as { alsoPlaying: boolean }).alsoPlaying).toBe(false);
   });
 
+  it('shows the person AND the service when your agent answered through a coach it consulted', () => {
+    // Two things, both said: the agent you named (the table's addressee) and the coaching service whose
+    // words came back. The table holds no address for the service; it appears here because an answer did.
+    const r = whoIsWho(seats, nameOf, playerOf, 0, { agentName: 'alice.me', displayName: 'alice.me' }, 'bob-coach.svc');
+    expect(r.coach.kind).toBe('agent');
+    expect(r.coach.label).toBe('alice.me, consulting bob-coach.svc');
+    expect((r.coach as { coach?: string }).coach).toBe('bob-coach.svc');
+    expect(r.coach.what).toContain('under a grant you signed');
+    expect(r.coach.what).toContain('neither takes a turn');
+    // Without an answer through a coach, it is just your agent.
+    expect((whoIsWho(seats, nameOf, playerOf, 0, { agentName: 'alice.me', displayName: 'alice.me' }).coach as { coach?: string }).coach).toBeUndefined();
+  });
+
   it('says out loud when the agent advising you is also one of the players', () => {
     // Not forbidden and not a bug: a fact a person should see rather than deduce from two names.
     const r = whoIsWho(seats, nameOf, playerOf, 0, { agentName: 'sharkbot.svc', displayName: 'Sharkbot' });

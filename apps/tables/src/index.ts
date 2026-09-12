@@ -55,7 +55,11 @@ import {
   type SeatStandUpFailure,
   type SeatStoodUp,
   CANASTA_ADVISE_SKILL,
+  CANASTA_RECORD_SKILL,
+  CANASTA_REVIEW_SKILL,
   POKER_ADVISE_SKILL,
+  POKER_RECORD_SKILL,
+  POKER_REVIEW_SKILL,
   SetScheduleRequestSchema,
   icsCalendar,
   type ClubStanding,
@@ -1319,6 +1323,31 @@ app.get('/tables/:id/adviser', async (c) => {
   );
 });
 
+/**
+ * HOW HAVE I BEEN PLAYING — the person's own question about their past hands, in their own words,
+ * asked of the agent they named. That agent forwards it to their coach with their study grant; the
+ * coach reads the hands this table recorded to their vault and answers in its own name. Asked only
+ * when the person asks: nothing here runs at a hand's end, and the house coach keeps no hands.
+ */
+app.get('/tables/:id/review', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const tableId = c.req.param('id');
+  const gate = await clubGate(c, await tableClub(c.env, tableId));
+  if (gate) return gate;
+  const res = await table(c.env, tableId).fetch('https://table/view');
+  if (!res.ok) return passthrough(res);
+  const view = (await res.json()) as { view?: { seats?: { seat: number; playerId: string }[] } };
+  const mine = (view.view?.seats ?? []).find((s) => s.playerId === session.playerId);
+  if (!mine) return c.json({ error: 'you are not seated at this table' }, 404);
+  return passthrough(
+    await table(c.env, tableId).fetch(
+      `https://table/review?seat=${mine.seat}&player=${encodeURIComponent(session.playerId)}` +
+        (c.req.query('q') ? `&q=${encodeURIComponent(c.req.query('q') as string)}` : ''),
+    ),
+  );
+});
+
 app.post('/tables/:id/adviser', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
@@ -1334,6 +1363,8 @@ app.post('/tables/:id/adviser', async (c) => {
   if (!got.ok) return c.json({ error: 'no such table' }, 404);
   const game = ((await got.json()) as { game?: string }).game ?? 'poker';
   const skill = game === 'canasta' ? CANASTA_ADVISE_SKILL : POKER_ADVISE_SKILL;
+  const recordSkill = game === 'canasta' ? CANASTA_RECORD_SKILL : POKER_RECORD_SKILL;
+  const reviewSkill = game === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL;
 
   let base: string;
   try {
@@ -1355,7 +1386,10 @@ app.post('/tables/:id/adviser', async (c) => {
       headers: { 'content-type': 'application/json' },
       // The endpoint is the CARD's, not one built from the hostname: a Home agent answers at the
       // estate's edge and refuses its own host.
-      body: JSON.stringify({ playerId: session.playerId, agentName, endpoint: messageUrlFromCard(card.card, base), displayName: card.card.name ?? agentName }),
+      // WHAT ELSE THE CARD ANSWERS, read once here: a hand is RECORDED to an agent that advertises
+      // `*.record` (a person's own agent, which keeps it in their vault) and never to one that only
+      // advises; a REVIEW is offered where `*.review` is. Neither is required to advise.
+      body: JSON.stringify({ playerId: session.playerId, agentName, endpoint: messageUrlFromCard(card.card, base), displayName: card.card.name ?? agentName, records: hasActSkill(card.card, recordSkill), reviews: hasActSkill(card.card, reviewSkill) }),
     }),
   );
 });

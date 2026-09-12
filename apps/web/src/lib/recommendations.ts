@@ -19,15 +19,15 @@
  * Pure, because "what is on the list" is a decision worth reading as a table of cases.
  */
 
-import type { CoachAdvice } from './api';
+import type { AdviserVoice, CoachAdvice } from './api';
 
 export interface Recommendation {
   /** Monotonic, so React keys are stable as the list is trimmed. */
   id: number;
   say: string;
   because?: string;
-  /** The house's coach, or the agent this person named. Never dropped. */
-  from: 'house' | { agent: string; displayName: string };
+  /** The house's coach, or the agent this person named — and the coach it consulted, when one spoke. Never dropped. */
+  from: 'house' | AdviserVoice;
   /** Which round it was about, so a list read later is not mistaken for now. */
   round: number;
   at: number;
@@ -38,7 +38,11 @@ export const KEEP = 6;
 
 /** Who said it, in the words a screen shows. */
 export function whoSaid(from: Recommendation['from']): string {
-  return from === 'house' ? 'the house coach' : from.displayName;
+  if (from === 'house') return 'the house coach';
+  // THE COACH'S VOICE, through your agent. Your agent is what the table addressed; the coach is what
+  // answered. Both are said, because "advised by alice.me" when Bob's service wrote the sentence would
+  // be the app passing one voice off as another.
+  return from.coach ? `${from.coach}, via ${from.displayName}` : from.displayName;
 }
 
 /**

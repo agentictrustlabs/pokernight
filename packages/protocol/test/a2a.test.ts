@@ -2,7 +2,7 @@
  * The A2A turn and advice requests, as message parts.
  */
 import { describe, expect, it } from 'vitest';
-import { encodeActParts, encodeAdviseParts, encodeReviewParts } from '../src/index.js';
+import { AdviseOutputSchema, decodeAdviseReply, decodeReviewReply, encodeActParts, encodeAdviseParts, encodeRecordParts, encodeReviewParts } from '../src/index.js';
 
 describe('the advice request, in words as well as in data', () => {
   const input = {
@@ -47,9 +47,9 @@ describe('the advice request, in words as well as in data', () => {
   });
 });
 
-describe('the review, in words as well as in data', () => {
+describe('the record, in words as well as in data', () => {
   const round = {
-    skill: 'poker.review',
+    skill: 'poker.record',
     tableId: 't',
     handNo: 7,
     seat: 2,
@@ -60,19 +60,40 @@ describe('the review, in words as well as in data', () => {
   };
 
   it('carries the observation in the data part, and says the round is over rather than asking for a move', () => {
-    const parts = encodeReviewParts(round);
+    const parts = encodeRecordParts(round);
     const data = (parts[0] as { data: { skill: string; input: { observation: unknown } } }).data;
-    expect(data.skill).toBe('poker.review');
+    expect(data.skill).toBe('poker.record');
     expect(data.input.observation).toEqual(round.observation);
     const text = (parts[1] as { kind: 'text'; text: string }).text;
     expect(text).toContain('round 7 at poker is over');
+    expect(text).toContain('record the hand');
     expect(text).toContain('2 players');
-    expect(text).not.toMatch(/advise|Answer with/);
+    expect(text).not.toMatch(/advise|review|Answer with/);
   });
 
-  it('is still a review with nothing counted', () => {
+  it('is still a record with nothing counted', () => {
     const { observation: _o, ...bare } = round;
-    const text = (encodeReviewParts(bare)[1] as { kind: 'text'; text: string }).text;
+    const text = (encodeRecordParts(bare)[1] as { kind: 'text'; text: string }).text;
     expect(text).toContain('final view');
+  });
+});
+
+describe('the review — the person\'s own question, and the coach\'s answer', () => {
+  it('carries the question and no hand: the coach reads the recorded ones', () => {
+    const parts = encodeReviewParts({ skill: 'poker.review', tableId: 't', seat: 2, question: 'how did Thursday go?' });
+    const data = (parts[0] as { data: { skill: string; input: Record<string, unknown> } }).data;
+    expect(data.skill).toBe('poker.review');
+    expect(data.input).toEqual({ tableId: 't', seat: 2, question: 'how did Thursday go?' });
+    expect(Object.keys(data.input)).not.toContain('view');
+    expect((parts[1] as { text: string }).text).toBe('poker.review: how did Thursday go?');
+    expect((encodeReviewParts({ skill: 'poker.review', tableId: 't', seat: 0, question: '  ' })[1] as { text: string }).text).toContain('How have I been playing?');
+  });
+
+  it('decodes a review with the room a review needs, and advice names its source when the agent consulted a coach', () => {
+    const long = 'Thursday: 41 hands, down 60. '.repeat(30);
+    expect(decodeReviewReply([{ kind: 'text', text: JSON.stringify({ say: long, because: 'Fold the blinds to a raise.', source: 'bob-coach.svc' }) }])).toEqual({ say: long, because: 'Fold the blinds to a raise.', source: 'bob-coach.svc' });
+    expect(decodeAdviseReply([{ kind: 'text', text: JSON.stringify({ say: 'Fold.', because: '43% for 18%.', action: { type: 'fold' }, source: 'bob-coach.svc' }) }])).toEqual({ say: 'Fold.', because: '43% for 18%.', action: { type: 'fold' }, source: 'bob-coach.svc' });
+    // Advice is still one sentence: a review-length `say` is not advice.
+    expect(AdviseOutputSchema.safeParse({ say: long }).success).toBe(false);
   });
 });

@@ -23,10 +23,9 @@ import { createCanastaActExecutor } from './canasta-executor.js';
 import {
   createCanastaAdviseExecutor,
   createPokerAdviseExecutor,
-  createReviewExecutor,
+  createKeepsNothingExecutor,
   createRoutingExecutor,
 } from './advise-executor.js';
-import { CANASTA_REVIEW_SKILL, POKER_REVIEW_SKILL } from '@pokernight/protocol';
 import { PERSONAS, gameOf, resolvePersona, type Resolution } from './personas.js';
 
 /** Server-to-server traffic needs no CORS, but a browser poking at the card should not be blocked. */
@@ -61,7 +60,7 @@ function a2aServer(resolution: Resolution, env: Env, url: URL) {
       gameOf(resolution.persona) === 'canasta'
         ? createCanastaAdviseExecutor(resolution.persona)
         : createPokerAdviseExecutor(resolution.persona),
-      createReviewExecutor(resolution.persona, gameOf(resolution.persona) === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL),
+      createKeepsNothingExecutor(resolution.persona),
     ),
     // PHASE 2: NO ADMISSION. `principal` is deliberately omitted, so every caller is admitted and
     // `ctx.principal` is null. That is safe only while a seat cannot move money.

@@ -13,10 +13,8 @@ import {
   A2A_JSONRPC_PATH,
   CANASTA_ACT_SKILL,
   CANASTA_ADVISE_SKILL,
-  CANASTA_REVIEW_SKILL,
   POKER_ACT_SKILL,
   POKER_ADVISE_SKILL,
-  POKER_REVIEW_SKILL,
   agentNameToHost,
 } from '@pokernight/protocol';
 import type { Env } from './env.js';
@@ -123,30 +121,6 @@ function adviseSkill(persona: Persona, game: string): AgentSkillV1 {
   };
 }
 
-/**
- * BEING TOLD HOW A ROUND WENT — the only moment an adviser learns whether its advice was any good.
- *
- * Sent after a round ends, as that seat saw it. There is no answer the table acts on, which is why it
- * is a third skill rather than a variant of advising: an agent may remember without advising, or
- * advise without remembering.
- */
-function reviewSkill(persona: Persona, game: string): AgentSkillV1 {
-  const id = game === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL;
-  return {
-    id,
-    name: game === 'canasta' ? 'Canasta round review' : "Hold'em hand review",
-    description: [
-      'Receive a finished round as one seat saw it, including its result, so a coach can learn from it.',
-      `Input: one A2A data part \`{ skill: "${id}", input }\` with the same shape as the advice call.`,
-      'No answer is required and none is acted on. A personal coach writes to its own memory here.',
-    ].join(' '),
-    tags: [id, game, 'memory', 'coach', 'pokernight'],
-    examples: ['The round ended; here is how it went for your seat.'],
-    inputModes: ['application/json'],
-    outputModes: ['application/json'],
-  };
-}
-
 /** Where a table should send this persona's turn calls, given how this request arrived. */
 export function endpointFor(persona: Persona, env: Env, url: URL, onPersonaHost: boolean): string {
   if (onPersonaHost) return `${url.protocol}//${url.host}${A2A_JSONRPC_PATH}`;
@@ -169,13 +143,13 @@ export function buildCard(persona: Persona, env: Env, url: URL, onPersonaHost = 
     capabilities: { streaming: false },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
-    // THREE SKILLS, listed separately on purpose: take a turn, say something, remember something. A
-    // table reads this list to decide what it may ask of an agent, so an agent that only advises is
-    // never handed a seat.
+    // TWO SKILLS, listed separately on purpose: take a turn, say something. A table reads this list to
+    // decide what it may ask of an agent, so an agent that only advises is never handed a seat. No
+    // `*.record` and no `*.review`: a house persona keeps no hands and coaches nobody, and a table
+    // records a finished hand only to an agent whose card says it keeps them.
     skills: [
       gameOf(persona) === 'canasta' ? canastaActSkill(persona) : pokerActSkill(persona),
       adviseSkill(persona, gameOf(persona)),
-      reviewSkill(persona, gameOf(persona)),
     ],
     provider: { organization: 'Pokernight', url: (env.PUBLIC_ORIGIN ?? '').trim() || `${url.protocol}//${url.host}` },
   };

@@ -1,6 +1,11 @@
 # Hold'em coach — how advice sits in the Texas Hold'em flow
 
-Status: as-built, 2026-09-11. Companion to `docs/DESIGN.md` §6 and `docs/GAMES.md`.
+Status: as-built, 2026-09-11; updated 2026-09-12 for the coach service. Companion to `docs/DESIGN.md` §6
+and `docs/GAMES.md`. **Read `docs/ARCHITECTURE-ADVISER.md` first** — since 2026-09-12 the person's own
+agent CONSULTS a coaching service (`bob-coach.svc`) under a study grant and generates nothing itself, a
+finished hand is RECORDED (`poker.record`) to the person's agent rather than reviewed, and a REVIEW
+(`poker.review`) is the person's own question, forwarded to the coach. Where this document says the
+person's agent "reasons" mid-hand, read: forwards to the coach, which reasons over her records.
 
 A person at a Hold'em table can be playing **against** an agent, or being **advised by** one. Those
 are different acts, different A2A skills, and different places the web app calls out. This document
@@ -15,7 +20,8 @@ The card room never holds a person's style. It asks, and it says whose answer it
 |---|---|---|---|---|
 | Take a seat's turn | `poker.act` | `PokerTableDO`, when that seat is an agent | `{ action, note? }` | yes — `game.parseAction` + `game.apply` |
 | Say what **you** should do | `poker.advise` | `PokerTableDO`, when **you** asked and named an adviser | `{ say, because?, action? }` | no — `action` is a suggestion |
-| Learn how the hand went | `poker.review` | `PokerTableDO`, after the hand, fire-and-forget | nothing the table waits on | no |
+| Keep how the hand went | `poker.record` | `PokerTableDO`, after the hand, fire-and-forget, to the person's own agent only | nothing the table waits on | no |
+| Review past hands | `poker.review` | `PokerTableDO`, when the person asks (`GET /tables/:id/review?q=`) | `{ say, because?, source? }` | no |
 
 An agent may advertise any subset. The table reads the card and refuses the wrong job: an adviser
 that only talks is never handed a seat; a mover that only acts is never named as somebody's coach.
@@ -32,10 +38,11 @@ The **wire and the table object already treat poker as a first-class advise/revi
 
 | Piece | Hold'em | Where |
 |---|---|---|
-| House personas advertise `poker.act` + `poker.advise` + `poker.review` | yes | `apps/agent-worker/src/card.ts` |
+| House personas advertise `poker.act` + `poker.advise` (neither record nor review — they keep nothing) | yes | `apps/agent-worker/src/card.ts` |
 | Table asks `poker.act` when an agent seat is to act | yes | `table-do.ts` `startAgentTurn` |
 | Table asks `poker.advise` when a seated person has named an adviser | yes | `table-do.ts` `askAdviser` |
-| Table offers `poker.review` at hand end to each named adviser | yes | `table-do.ts` `reviewWithAdvisers` |
+| Table sends `poker.record` at hand end to each named adviser whose card advertises it | yes | `table-do.ts` `recordWithAdvisers` |
+| Table forwards `poker.review` when the person asks; the panel offers "Review my hands" | yes | `table-do.ts` `/review`, `PokerCoach.tsx` |
 | House fallback `TableGame.advise` | **no** — `pokerGame` does not declare it | `packages/engine/src/game.ts`; composed only onto canasta in `apps/tables/src/games.ts` |
 | `GET /tables/:id/advice` with no named adviser | **404** `"this game has no coach"` | `table-do.ts:573-574` |
 | Coach panel (`Tell me` / `Play for me`) | **canasta only** | `Coach.tsx` mounted from `CanastaPage`, not `TablePage` |

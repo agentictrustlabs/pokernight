@@ -26,9 +26,23 @@ export interface CoachAdvice {
    * agent carries their style. Which of the two just spoke is not a detail, and an app that showed
    * them identically would be passing one off as the other.
    */
-  source?: 'house' | { agent: string; displayName: string };
+  source?: 'house' | AdviserVoice;
   /** Said when the named adviser could not be reached and the house answered instead. */
   note?: string;
+}
+
+/**
+ * WHO SPOKE, when it was not the house. `agent` is the one you named and the table addressed — your own
+ * agent. `coach` is set when that agent CONSULTED your coach service (a `.svc` name) and returned its
+ * words: the voice is the coach's, the addressee is still yours, and the screen says both.
+ */
+export interface AdviserVoice { agent: string; displayName: string; coach?: string }
+
+/** A review of your past hands — a few short paragraphs, and one thing to change. */
+export interface CoachReview {
+  say: string;
+  because?: string;
+  source?: AdviserVoice;
 }
 
 /** One agent this card room can seat, as `GET /agents` reports it. */
@@ -343,6 +357,13 @@ export const api = {
    */
   askAdviser: (tableId: string, question: string, token: string) =>
     request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice?q=${encodeURIComponent(question)}`, {}, token),
+  /**
+   * HOW HAVE I BEEN PLAYING — your own question about your past hands, in your own words. Your agent
+   * forwards it to the coach you named, which reads the hands this card room recorded to your vault
+   * and answers in its own name. Takes longer than a sentence mid-hand; asked only when you ask.
+   */
+  reviewHands: (tableId: string, question: string, token: string) =>
+    request<CoachReview>(`/tables/${encodeURIComponent(tableId)}/review?q=${encodeURIComponent(question)}`, {}, token),
   /** Name the agent that advises YOU at this table. The card room checks it advertises the skill. */
   /** Your own agent by NAME, reverse-resolved from the address your Home asserted. `agentName` is null
    *  when the chain has no primary name for it — which is a fact to show, not a field to guess at. */

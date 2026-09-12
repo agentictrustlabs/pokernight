@@ -12,7 +12,9 @@
 
 import {
   encodeAdviseParts,
+  encodeRecordParts,
   encodeReviewParts,
+  decodeReviewReply,
   A2A_AGENT_CARD_PATH,
   A2A_JSONRPC_PATH,
   A2A_SEND_MESSAGE,
@@ -25,7 +27,9 @@ import {
   type ActOutput,
   type AdviseInput,
   type AdviseOutput,
+  type RecordInput,
   type ReviewInput,
+  type ReviewOutput,
 } from '@pokernight/protocol';
 import { a2aTimeoutMs, agentBaseUrl, allowAgentEndpoint, type Env } from './env.js';
 import { houseAuthorization } from './house-caller.js';
@@ -255,22 +259,23 @@ export async function callAct(base: string, input: ActInput, timeoutMs: number):
 }
 
 /**
- * Hand a finished round to somebody's adviser, and do not wait for an opinion about it.
+ * Hand a finished round to the seated person's OWN AGENT to record, and do not wait for anything.
  *
- * Deliberately returns nothing useful. A review is the card room telling an agent what happened at
- * its person's seat so the agent can remember it; there is no answer the table would act on, and a
- * reply that failed must not disturb a round that is already over.
+ * Deliberately returns nothing useful. A record is the card room telling somebody's agent what
+ * happened at their seat so the agent can put it in their vault; there is no answer the table would
+ * act on, and a reply that failed must not disturb a round that is already over. It is never sent to
+ * a coach — the coach is the person's agent's business, consulted under the person's grant.
  */
-export async function callReview(base: string, input: ReviewInput, timeoutMs: number, env?: Env): Promise<void> {
+export async function callRecord(base: string, input: RecordInput, timeoutMs: number, env?: Env): Promise<void> {
   const url = a2aUrl(base, A2A_JSONRPC_PATH);
   try {
-    // Serialised once; the signature binds these bytes. A review is the moment a personal coach
-    // writes to its own memory, so it has to arrive with the card room's name on it like advice does.
+    // Serialised once; the signature binds these bytes. A record is a write to somebody's own vault,
+    // so it has to arrive with the card room's name on it like advice does.
     const raw = JSON.stringify({
       jsonrpc: '2.0',
-      id: `${input.tableId}:${input.handNo}:${input.seat}:review`,
+      id: `${input.tableId}:${input.handNo}:${input.seat}:record`,
       method: A2A_SEND_MESSAGE,
-      params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeReviewParts(input) } },
+      params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeRecordParts(input) } },
     });
     const authorization = env ? await houseAuthorization(env, url, A2A_SEND_MESSAGE, raw) : null;
     await fetch(url, {
@@ -280,8 +285,58 @@ export async function callReview(base: string, input: ReviewInput, timeoutMs: nu
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
-    // An adviser that is down, slow or uninterested costs nothing: the round is finished either way.
+    // An agent that is down, slow or uninterested costs nothing: the round is finished either way.
   }
+}
+
+export type ReviewResult = { ok: true; output: ReviewOutput } | { ok: false; error: string };
+
+/**
+ * Ask the person's own agent to REVIEW their past hands — because the person asked, in their own words.
+ *
+ * The same signed call as advice, without a hand: the agent forwards the question to the coach the
+ * person named, which reads the hands the table recorded to the person's vault. Awaited, because the
+ * person is waiting for it; a coach's review takes longer than a sentence mid-hand, so the caller
+ * passes a review-sized timeout.
+ */
+export async function callReview(base: string, input: ReviewInput, timeoutMs: number, deployment?: Env): Promise<ReviewResult> {
+  const url = a2aUrl(base, A2A_JSONRPC_PATH);
+  const raw = JSON.stringify({
+    jsonrpc: '2.0',
+    id: `${input.tableId}:${input.seat}:review:${Date.now()}`,
+    method: A2A_SEND_MESSAGE,
+    params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeReviewParts(input) } },
+  });
+  const authorization = deployment ? await houseAuthorization(deployment, url, A2A_SEND_MESSAGE, raw) : null;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json', ...(authorization ? { authorization } : {}) },
+      body: raw,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    return { ok: false, error: `${input.skill} call to ${url} failed: ${errText(e)}` };
+  }
+  if (!res.ok) return { ok: false, error: `${input.skill} call to ${url} returned ${res.status}` };
+  let payload: unknown;
+  try {
+    payload = await res.json();
+  } catch {
+    return { ok: false, error: `${input.skill} reply from ${url} is not JSON` };
+  }
+  const env = payload as { error?: { code?: number; message?: string }; result?: unknown };
+  if (env && typeof env === 'object' && env.error) {
+    return { ok: false, error: `${input.skill} JSON-RPC error ${env.error.code ?? '?'}: ${env.error.message ?? 'unknown'}` };
+  }
+  const parts = replyParts(env?.result);
+  if (parts.length === 0) return { ok: false, error: `${input.skill} reply carried no message parts` };
+  // A refused task (the agent named no coach, or the grant is gone) says so in its text; that is the
+  // answer to show, not an error to hide.
+  const decoded = decodeReviewReply(parts);
+  if ('error' in decoded) return { ok: false, error: decoded.error };
+  return { ok: true, output: decoded };
 }
 
 export type AdviseResult = { ok: true; output: AdviseOutput } | { ok: false; error: string };

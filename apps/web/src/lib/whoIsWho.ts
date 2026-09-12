@@ -8,6 +8,9 @@
  *   THE HOUSE COACH — the card room's OWN advice, built into this deployment. Not an agent, no A2A
  *     call, no card, nobody's but the card room's. It never takes a turn.
  *   YOUR OWN ADVISER — an A2A agent YOU named, which answers your questions and takes no turn ever.
+ *   YOUR COACH — a SERVICE your own agent consults, under a grant you signed, when it is asked. The
+ *     table never addresses it and holds no address for it; it shows up here only because an answer
+ *     came back in its name. It reads your recorded hands at your vault; it takes no turn either.
  *
  * And cutting across the seats: what is BEHIND each agent — a rules table, or a language model. "I
  * cannot see which ones are playing vs coaches vs agent coaches from a2a and my llm's."
@@ -44,7 +47,9 @@ export interface Seated {
 
 export type CoachRole =
   | { kind: 'house'; label: string; what: string }
-  | { kind: 'agent'; label: string; what: string; agentName: string; alsoPlaying: boolean };
+  | { kind: 'agent'; label: string; what: string; agentName: string; alsoPlaying: boolean;
+      /** The coach SERVICE the agent consulted, when an answer has named one. */
+      coach?: string };
 
 export interface WhoIsWho {
   playing: Seated[];
@@ -64,6 +69,7 @@ interface PlayerLike {
  * @param playerOf   what the table said about whoever holds a seat, or undefined for a person
  * @param mySeat     the viewer's seat, or null for somebody watching
  * @param adviser    the agent this person named, or null for the house coach
+ * @param coach      the coach service that agent last answered through, when one has
  */
 export function whoIsWho(
   seats: readonly { seat: number; playerId: string; status?: string }[],
@@ -71,6 +77,7 @@ export function whoIsWho(
   playerOf: (playerId: string) => PlayerLike | undefined,
   mySeat: number | null,
   adviser: { agentName: string; displayName: string } | null,
+  coach?: string | null,
 ): WhoIsWho {
   const playing: Seated[] = seats.map((s) => {
     const p = playerOf(s.playerId);
@@ -103,12 +110,15 @@ export function whoIsWho(
     playing,
     coach: {
       kind: 'agent',
-      label: adviser.displayName,
+      label: coach ? `${adviser.displayName}, consulting ${coach}` : adviser.displayName,
       what: alsoPlaying
         ? `an A2A agent you named — and it is also PLAYING at this table, so the thing advising you is one of your opponents.`
-        : 'an A2A agent you named. It answers your questions over A2A and never takes a turn here.',
+        : coach
+          ? `your own agent, which consults ${coach} — a coaching service, under a grant you signed — and answers in its name. The table addresses only your agent; neither takes a turn here.`
+          : 'an A2A agent you named. It answers your questions over A2A and never takes a turn here.',
       agentName: adviser.agentName,
       alsoPlaying,
+      ...(coach ? { coach } : {}),
     },
   };
 }

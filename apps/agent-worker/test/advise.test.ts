@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { CANASTA_ADVISE_SKILL, CANASTA_REVIEW_SKILL } from '@pokernight/protocol';
-import { createCanastaAdviseExecutor, createReviewExecutor, createRoutingExecutor } from '../src/advise-executor.js';
+import { createCanastaAdviseExecutor, createKeepsNothingExecutor, createRoutingExecutor } from '../src/advise-executor.js';
 import { PERSONAS } from '../src/personas.js';
 
 const persona = PERSONAS.find((p) => p.agentName.includes('pile') || p.game === 'canasta') ?? PERSONAS[0]!;
@@ -27,11 +27,12 @@ describe('routing by the skill that was named', () => {
     expect(seen).toEqual(['advise']);
   });
 
-  it('sends a review to the one that remembers', async () => {
+  it('sends a review or a record to the refusal — a house persona keeps nothing, and never to the mover', async () => {
     const seen: string[] = [];
     const r = createRoutingExecutor(persona, spy('act', seen) as never, spy('advise', seen) as never, spy('review', seen) as never);
     await r.execute(ctxWith([{ kind: 'data', data: { skill: CANASTA_REVIEW_SKILL, input: {} } }]));
-    expect(seen).toEqual(['review']);
+    await r.execute(ctxWith([{ kind: 'data', data: { skill: 'canasta.record', input: {} } }]));
+    expect(seen).toEqual(['review', 'review']);
   });
 
   it('treats an unnamed skill as the act skill, which is what every table sends today', async () => {
@@ -42,19 +43,20 @@ describe('routing by the skill that was named', () => {
   });
 });
 
-describe('a review', () => {
-  it('acknowledges and says plainly that it kept nothing', async () => {
-    // A reference implementation claiming a memory it does not have would be the one misleading thing
-    // in an otherwise exact example.
-    let said: Record<string, unknown> | null = null;
+describe('a record or a review that reaches a house persona', () => {
+  it('is refused by name — it keeps no hands and coaches nobody, and says whose the hand is', async () => {
+    // The earlier reply said "noted" and kept nothing, which pretended to a shape it never filled. The
+    // hand belongs in the seated person's own vault, recorded by their own agent; a review is their
+    // question to the coach they named.
+    let failed: string | null = null;
     const ctx = {
       message: { parts: [] },
-      reply: async (parts: { data?: Record<string, unknown> }[]) => void (said = parts[0]?.data ?? null),
-      fail: async () => {},
+      reply: async () => {},
+      fail: async (parts: { text?: string }[]) => void (failed = parts[0]?.text ?? null),
     } as never;
-    await createReviewExecutor(persona, CANASTA_REVIEW_SKILL).execute(ctx);
-    expect(said).toMatchObject({ noted: true, skill: CANASTA_REVIEW_SKILL });
-    expect(String((said as unknown as { note: string }).note)).toMatch(/keeps no memory/i);
+    await createKeepsNothingExecutor(persona).execute(ctx);
+    expect(String(failed)).toMatch(/keeps no hands/);
+    expect(String(failed)).toMatch(/own agent/);
   });
 });
 

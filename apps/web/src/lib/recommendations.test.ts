@@ -41,6 +41,9 @@ describe('remembering advice', () => {
     const list = remember([], mine, 1);
     expect(whoSaid(list[0]!.from)).toBe('Carol’s agent');
     expect(whoSaid(remember([], house, 1)[0]!.from)).toBe('the house coach');
+    // Through a coach: the voice AND the agent it came through, never one passed off as the other.
+    const viaCoach = { say: 'Fold.', source: { agent: 'alice.me', displayName: 'alice.me', coach: 'bob-coach.svc' } };
+    expect(whoSaid(remember([], viaCoach, 1)[0]!.from)).toBe('bob-coach.svc, via alice.me');
   });
 
   it('defaults to the house when a reply says nothing about its source', () => {

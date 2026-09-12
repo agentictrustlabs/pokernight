@@ -52,8 +52,10 @@ import type { PlayerFunding } from '@pokernight/treasury';
 import {
   parseClientCommand,
   CANASTA_ADVISE_SKILL,
+  CANASTA_RECORD_SKILL,
   CANASTA_REVIEW_SKILL,
   POKER_ADVISE_SKILL,
+  POKER_RECORD_SKILL,
   POKER_REVIEW_SKILL,
   type ChatEvent,
   type ClientCommand,
@@ -70,8 +72,8 @@ import {
   type TableEvent,
   type TableSummary,
 } from '@pokernight/protocol';
-import { a2aTimeoutMs, callAct, callAdvise, callReview, resolveAgentBase } from './a2a.js';
-import { a2aAdviceTimeoutMs } from './env.js';
+import { a2aTimeoutMs, callAct, callAdvise, callRecord, callReview, resolveAgentBase } from './a2a.js';
+import { a2aAdviceTimeoutMs, a2aReviewTimeoutMs } from './env.js';
 import { readSessionRecord } from './auth.js';
 import { agentPaceMs, seatIdleMs } from './env.js';
 import type { Env } from './env.js';
@@ -415,6 +417,14 @@ const AGENT_DEADLINE_HEADROOM_MS = 1000;
 
 /* --------------------------------------------------------------------- DO */
 
+/**
+ * WHO ADVISES A PLAYER HERE: the agent the person named, where its card says to send a message, and what
+ * its card said it answers. `records` / `reviews` are read off the card at appointment (`*.record`,
+ * `*.review`); absent on appointments made before the card room asked, which are treated as "send" —
+ * an agent that does not answer costs a fire-and-forget nothing.
+ */
+interface Adviser { agentName: string; endpoint: string; displayName: string; records?: boolean; reviews?: boolean }
+
 export class PokerTableDO extends DurableObject<Env> {
   private meta: TableMeta | null = null;
   /**
@@ -435,7 +445,7 @@ export class PokerTableDO extends DurableObject<Env> {
    * Per player rather than per table: an adviser is somebody's own, and two people at one table may
    * each bring their own without either seeing the other's. It holds no strategy — only where to ask.
    */
-  private advisers: Record<string, { agentName: string; endpoint: string; displayName: string }> = {};
+  private advisers: Record<string, Adviser> = {};
   private adapter: SettlementAdapter | null = null;
   /**
    * Turn calls to agent seats that are still on the wire, keyed `handNo:seat:deadline` (one turn
@@ -458,7 +468,7 @@ export class PokerTableDO extends DurableObject<Env> {
       // not ship throws HERE, on load, rather than dealing the wrong game to people already seated.
       if (this.meta) this.game = gameFor(this.meta.game);
       this.names = (kv.get('names') as Record<string, string> | undefined) ?? {};
-      this.advisers = (kv.get('advisers') as Record<string, { agentName: string; endpoint: string; displayName: string }> | undefined) ?? {};
+      this.advisers = (kv.get('advisers') as Record<string, Adviser> | undefined) ?? {};
       // Migration: a table created before phase 2 has `names` but no `players`. Everyone in it was a
       // human on a WebSocket, so the record is derivable; it is persisted on the next seat change.
       this.players = (kv.get('players') as Record<string, SeatRecord> | undefined) ?? migratePlayers(this.names);
@@ -576,7 +586,10 @@ export class PokerTableDO extends DurableObject<Env> {
         // A partner that cannot be reached falls back to the house coach rather than leaving somebody
         // mid-hand with nothing — and SAYS it fell back, because silently swapping whose advice this
         // is would be the one dishonest thing available here.
-        if (asked.ok) return json({ ...asked.advice, source: { agent: adviser.agentName, displayName: adviser.displayName } });
+        // WHOSE VOICE. The agent the table addressed is the adviser of record; when it consulted the
+        // person's coach service, the answer names that service and the screen says both — "Bob's
+        // coach, via alice.me". The table never learns where the coach is; it learns who spoke.
+        if (asked.ok) { const { source: coach, ...advice } = asked.advice; return json({ ...advice, source: { agent: adviser.agentName, displayName: adviser.displayName, ...(coach ? { coach } : {}) } }); }
         const house = this.game.advise?.(this.state, seat);
         if (!house) return json({ error: asked.error }, 502);
         return json({ ...house, source: 'house', note: `${adviser.displayName} could not be reached — ${asked.error}` });
@@ -585,6 +598,26 @@ export class PokerTableDO extends DurableObject<Env> {
       const advice = this.game.advise?.(this.state, seat);
       if (!advice) return json({ error: 'this game has no coach' }, 404);
       return json({ ...advice, source: 'house' });
+    }
+
+    /**
+     * HOW HAVE I BEEN PLAYING — asked of the person's own agent, in the person's own words, when they
+     * ask it. The agent forwards it to the coach they named, which reads the hands this table recorded
+     * to their vault; nothing here is sent by the table on its own, and a hand's end never triggers it.
+     * No adviser named ⇒ there is nobody to ask, and the house coach keeps no hands.
+     */
+    if (request.method === 'GET' && path === '/review') {
+      const seat = Number(url.searchParams.get('seat'));
+      if (!Number.isInteger(seat) || seat < 0) return json({ error: 'which seat?' }, 400);
+      const playerId = url.searchParams.get('player') ?? '';
+      const adviser = playerId ? this.advisers[playerId] : undefined;
+      if (!adviser) return json({ error: 'name your own agent as your adviser first — the house coach keeps no hands to review' }, 404);
+      if (adviser.reviews === false) return json({ error: `${adviser.displayName} does not review hands` }, 404);
+      const skill = this.game.id === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL;
+      const asked = await callReview(adviser.endpoint, { skill, tableId: this.meta?.tableId ?? '', seat, question: url.searchParams.get('q') ?? '' }, a2aReviewTimeoutMs(this.env), this.env);
+      if (!asked.ok) return json({ error: `${adviser.displayName} could not review — ${asked.error}` }, 502);
+      const { source: coach, ...review } = asked.output;
+      return json({ ...review, source: { agent: adviser.agentName, displayName: adviser.displayName, ...(coach ? { coach } : {}) } });
     }
 
     /**
@@ -602,13 +635,16 @@ export class PokerTableDO extends DurableObject<Env> {
 
     /** Name the agent that advises this player here, or drop it and go back to the house coach. */
     if (request.method === 'POST' && path === '/adviser') {
-      const body = (await request.json()) as { playerId?: string; agentName?: string; endpoint?: string; displayName?: string };
+      const body = (await request.json()) as { playerId?: string; agentName?: string; endpoint?: string; displayName?: string; records?: boolean; reviews?: boolean };
       const who = (body.playerId ?? '').trim();
       if (!who) return json({ error: 'which player?' }, 400);
       if (!body.agentName || !body.endpoint) {
         delete this.advisers[who];
       } else {
-        this.advisers[who] = { agentName: body.agentName, endpoint: body.endpoint, displayName: body.displayName ?? body.agentName };
+        // WHAT THE CARD SAID IT ANSWERS, kept beside the endpoint: a hand is recorded only to an agent
+        // that advertises `*.record` (a person's own agent), never to one that only advises (a house
+        // persona), and a review is offered only where `*.review` is advertised.
+        this.advisers[who] = { agentName: body.agentName, endpoint: body.endpoint, displayName: body.displayName ?? body.agentName, ...(typeof body.records === 'boolean' ? { records: body.records } : {}), ...(typeof body.reviews === 'boolean' ? { reviews: body.reviews } : {}) };
       }
       await this.ctx.storage.put('advisers', this.advisers);
       return json({ adviser: this.advisers[who] ?? null });
@@ -1674,10 +1710,10 @@ export class PokerTableDO extends DurableObject<Env> {
    * point is that this is the person's own adviser rather than the house's.
    */
   private async askAdviser(
-    adviser: { agentName: string; endpoint: string; displayName: string },
+    adviser: Adviser,
     seat: number,
     question?: string,
-  ): Promise<{ ok: true; advice: { say: string; because?: string; action?: unknown } } | { ok: false; error: string }> {
+  ): Promise<{ ok: true; advice: { say: string; because?: string; action?: unknown; source?: string } } | { ok: false; error: string }> {
     const state = this.state;
     if (!state) return { ok: false, error: 'this table has not dealt yet' };
     const at = this.snap(state);
@@ -1711,34 +1747,40 @@ export class PokerTableDO extends DurableObject<Env> {
   }
 
   /**
-   * Offer the finished round to each seat's own adviser, as that seat saw it.
+   * Hand the finished round to each seated person's OWN AGENT to record, as that seat saw it.
    *
    * An adviser asked only DURING a hand sees the moments somebody thought to ask about and never
    * learns how any of them turned out — enough to advise, not enough to say "you have done this
    * before". A pattern needs the ending as well as the decision, so this hands over the final view
-   * including its result.
+   * including its result, and the game's own counts of what everybody did.
    *
    * ONLY TO THE AGENT THAT PERSON NAMED, and only their own seat's view. One person's round is not
-   * reported to anybody else's adviser, and no adviser is told anything that seat could not see.
+   * reported to anybody else's agent, and no agent is told anything that seat could not see.
+   *
+   * A RECORD, NOT A REVIEW, AND NEVER TO A COACH. The person's agent puts the hand into the person's
+   * vault — a write, no model. The person's coach is a service their agent consults under their grant
+   * when they ask something; the table has no address for it and pings nobody at showdown. An adviser
+   * whose card does not advertise `*.record` (a house persona, which keeps nothing) is not sent one.
    *
    * The card room keeps no profile of how anybody plays and has nowhere to put one. What is worth
-   * remembering is the agent's business.
+   * keeping is the person's business.
    */
-  private reviewWithAdvisers(state: unknown): void {
+  private recordWithAdvisers(state: unknown): void {
     const advisers = Object.entries(this.advisers);
     if (advisers.length === 0) return;
     const at = this.snap(state);
-    const skill = this.game.id === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL;
+    const skill = this.game.id === 'canasta' ? CANASTA_RECORD_SKILL : POKER_RECORD_SKILL;
     for (const [playerId, adviser] of advisers) {
+      if (adviser.records === false) continue;
       const mine = at.seats.find((x) => x.playerId === playerId);
       const seat = mine?.seat;
       // Named an adviser and then stood up: there is no seat to report and nothing to say about one.
-      // SITTING OUT is the same for this purpose: the round was not dealt to them, and a review of a
+      // SITTING OUT is the same for this purpose: the round was not dealt to them, and a record of a
       // hand they were not in is a hand their agent never needed — one per hand, all night, when the
       // person had closed the tab and the bots played on.
       if (seat === undefined || mine?.status === 'sitting-out') continue;
       // THE ROUND IN COUNTS, when the game can count it — what each player did, keyed by the player id
-      // the seat's view shows — with the names the card room knows them by, so the agent remembers
+      // the seat's view shows — with the names the card room knows them by, so the record says
       // "Sharkbot" and not "agent:sharkbot.svc". Labels are the host's to add; counts are the game's.
       const observation = labelled(this.game.observeFor?.(state, seat) ?? null, (id) => this.players[id]?.name ?? this.names[id] ?? null);
       const input = {
@@ -1751,7 +1793,7 @@ export class PokerTableDO extends DurableObject<Env> {
         deadlineMs: a2aTimeoutMs(this.env),
         ...(observation ? { observation } : {}),
       };
-      const sent = callReview(adviser.endpoint, input, a2aTimeoutMs(this.env), this.env);
+      const sent = callRecord(adviser.endpoint, input, a2aTimeoutMs(this.env), this.env);
       // Kept alive past the response the table is about to send, without the table waiting for it.
       if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(sent);
       else void sent;
@@ -2204,7 +2246,7 @@ export class PokerTableDO extends DurableObject<Env> {
       // THE ROUND, TO EACH PERSON'S OWN ADVISER. Not awaited and not checked: a personal coach that
       // learns from a round is a thing happening on somebody else's server, and nothing at this table
       // is waiting on it. The round is over either way.
-      this.reviewWithAdvisers(state);
+      this.recordWithAdvisers(state);
       await this.ctx.storage.put('next-hand-at', now + NEXT_HAND_DELAY_MS);
     } else if (
       !this.snap(state).roundInProgress &&

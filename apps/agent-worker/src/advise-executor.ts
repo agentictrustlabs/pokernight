@@ -1,5 +1,6 @@
 /**
- * `canasta.advise`, `poker.advise` and the two `*.review` skills — the reference adviser.
+ * `canasta.advise` and `poker.advise` — the reference adviser. It advertises no `*.record` and no
+ * `*.review`, because it keeps nothing.
  *
  * WHY THESE LIVE IN AN AGENT AND NOT IN THE CARD ROOM. The card room's part is to ask the agent a
  * person named and to say whose answer it is showing; the reasoning is the agent's. This worker is an
@@ -10,11 +11,12 @@
  * without the other, and a table must never hand a turn to something that only meant to talk. Nothing
  * returned here is applied — the `action` in a reply is a suggestion the person may take or ignore.
  *
- * REVIEWING IS NEITHER. After a round the card room offers each seat's own adviser that round as that
- * seat saw it, so a coach can learn something. This one acknowledges and keeps nothing: a reference
- * implementation should show the SHAPE of the call, not pretend to a memory it does not have. A real
- * personal coach writes to its own vault here — see `canasta-memory` in the skills repo for what is
- * worth keeping and, just as important, what is not.
+ * RECORDING AND REVIEWING ARE A PERSON'S OWN AGENT'S. After a round the card room sends the seated
+ * person's own agent that round as the seat saw it, to keep in the person's vault (`*.record`); when
+ * the person asks how they have been playing, their agent forwards the question to the coach they
+ * named (`*.review`). A house persona has no vault of anybody's and no coach: it advertises neither
+ * skill, and a request that reaches it anyway is refused by name rather than acknowledged into a
+ * memory it does not have (the earlier "noted, kept nothing" reply pretended to a shape it never filled).
  */
 
 import { chooseCanastaAction } from '@pokernight/canasta-agent';
@@ -23,10 +25,8 @@ import { decide, readHand } from '@pokernight/agent-kit';
 import type { LegalActions, TableView } from '@pokernight/engine';
 import {
   CANASTA_ADVISE_SKILL,
-  CANASTA_REVIEW_SKILL,
   POKER_ACT_SKILL,
   POKER_ADVISE_SKILL,
-  POKER_REVIEW_SKILL,
 } from '@pokernight/protocol';
 import type { ExecutionContext, PartV1, StandardExecutor } from '@agenticprimitives/a2a/standard';
 import type { Persona } from './personas.js';
@@ -144,38 +144,31 @@ export function createPokerAdviseExecutor(persona: Persona): StandardExecutor {
 }
 
 /**
- * A finished round, acknowledged.
+ * A record or a review that reached a house persona — refused, by name.
  *
- * Keeps nothing, and says so rather than implying a memory it does not have. The shape is the point:
- * a real personal coach writes to its own vault at this moment, because this is the only time it
- * learns how a decision turned out.
+ * A house persona keeps no hands and coaches nobody: the card room records a finished round to the
+ * PERSON's own agent (which advertises `*.record`), and a review is the person's question to their own
+ * coach. Neither skill is on this card, so a table never sends one here; a caller that does anyway is
+ * told what this agent is rather than given a "noted" that kept nothing.
  */
-export function createReviewExecutor(persona: Persona, skill: string): StandardExecutor {
+export function createKeepsNothingExecutor(persona: Persona): StandardExecutor {
   return {
     async execute(ctx: ExecutionContext): Promise<void> {
-      await ctx.reply([
-        dataPart({
-          noted: true,
-          skill,
-          // Honest about being a reference: an agent that claimed to have remembered would be the
-          // one misleading thing in an otherwise exact example.
-          note: `${persona.displayName} saw the round. This reference adviser keeps no memory; a personal coach would write to its own vault here.`,
-        }),
-      ]);
+      await ctx.fail([{ text: `${persona.displayName} is a house persona: it keeps no hands and reviews nobody's. A finished hand is recorded to the seated person's own agent, and a review is that person's question to the coach they named.` }]);
     },
   };
 }
 
 export const ADVISE_SKILLS = [CANASTA_ADVISE_SKILL, POKER_ADVISE_SKILL] as const;
-export const REVIEW_SKILLS = [CANASTA_REVIEW_SKILL, POKER_REVIEW_SKILL] as const;
 
 /**
- * ONE SERVER, THREE SKILLS — routed by the skill the caller named.
+ * ONE SERVER, TWO SKILLS — routed by the skill the caller named.
  *
- * The A2A server takes a single executor, and this persona now answers three different questions:
- * take a turn, say something, remember something. They are separate skills precisely so a caller can
- * ask for one without the others, so the routing reads the SKILL ON THE REQUEST rather than sniffing
- * the payload — a request that means to ask for advice must never fall through into taking a turn.
+ * The A2A server takes a single executor, and this persona answers two different questions: take a
+ * turn, say something. They are separate skills precisely so a caller can ask for one without the
+ * other, so the routing reads the SKILL ON THE REQUEST rather than sniffing the payload — a request
+ * that means to ask for advice must never fall through into taking a turn. A record or a review named
+ * on the request goes to the refusal: neither is a house persona's to answer.
  *
  * An unnamed skill is treated as the act skill, which is what every existing table sends today.
  */
@@ -183,7 +176,7 @@ export function createRoutingExecutor(
   persona: Persona,
   act: StandardExecutor,
   advise: StandardExecutor,
-  review: StandardExecutor,
+  keepsNothing: StandardExecutor,
 ): StandardExecutor {
   return {
     async execute(ctx: ExecutionContext): Promise<void> {
@@ -197,7 +190,7 @@ export function createRoutingExecutor(
         }
       }
       if (named.endsWith('.advise')) return advise.execute(ctx);
-      if (named.endsWith('.review')) return review.execute(ctx);
+      if (named.endsWith('.review') || named.endsWith('.record')) return keepsNothing.execute(ctx);
       return act.execute(ctx);
     },
   };

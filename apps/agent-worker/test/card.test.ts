@@ -33,15 +33,16 @@ describe('agent card', () => {
         protocolBinding: 'JSONRPC',
         protocolVersion: '1.0',
       });
-      // THREE SKILLS, ALL FOR THE PERSONA'S OWN GAME: take a turn, give advice, be told how a round
-      // went. They are listed separately because a table reads this list to decide what it may ask —
+      // TWO SKILLS, BOTH FOR THE PERSONA'S OWN GAME: take a turn, give advice. No record and no review —
+      // a house persona keeps no hands. They are listed separately because a table reads this list to decide what it may ask —
       // so an agent that only advises is never handed a seat, and one that only plays is never named
       // as somebody's adviser. A poker persona and a canasta persona still cannot be handed each
       // other's anything, because every id here is its own game's.
       const game = gameOf(p);
       const skill = game === 'canasta' ? CANASTA_ACT_SKILL : POKER_ACT_SKILL;
       const ids = c.skills.map((x) => x.id);
-      expect(ids).toEqual([skill, `${game === 'canasta' ? 'canasta' : 'poker'}.advise`, `${game === 'canasta' ? 'canasta' : 'poker'}.review`]);
+      expect(ids).toEqual([skill, `${game === 'canasta' ? 'canasta' : 'poker'}.advise`]);
+      expect(ids.some((id) => id.endsWith('.record') || id.endsWith('.review'))).toBe(false);
       expect(ids.every((id) => id.startsWith(game === 'canasta' ? 'canasta.' : 'poker.'))).toBe(true);
       // The tables app reads agentKind off the first tag past the id and the game's own name.
       expect(c.skills[0]!.tags.slice(0, 3)).toEqual([skill, game, p.strategy]);

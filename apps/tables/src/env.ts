@@ -59,6 +59,7 @@ export interface Env {
   /** How long ADVICE may take. Longer than a turn call: a person's own agent at their Home reasons
    *  through a spot in 15–20 s, and advice is read by a person, not applied by a clock. */
   A2A_ADVICE_TIMEOUT_MS?: string;
+  A2A_REVIEW_TIMEOUT_MS?: string;
   /**
    * How long an agent's answer WAITS before it is applied, in ms. Default 1400; 0 disables.
    *
@@ -215,6 +216,17 @@ export const DEFAULT_A2A_ADVICE_TIMEOUT_MS = 35_000;
 export function a2aAdviceTimeoutMs(env: Env): number {
   const n = Number(env.A2A_ADVICE_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_A2A_ADVICE_TIMEOUT_MS;
+}
+
+/**
+ * The review budget. A review is the person's own question about their past hands, forwarded by their
+ * agent to their coach, which reads the recorded hands and writes a few paragraphs — a minute is the
+ * right order, and nothing at the table waits on it but the person who asked. Defaults to 75 s.
+ */
+export const DEFAULT_A2A_REVIEW_TIMEOUT_MS = 75_000;
+export function a2aReviewTimeoutMs(env: Env): number {
+  const n = Number(env.A2A_REVIEW_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_A2A_REVIEW_TIMEOUT_MS;
 }
 
 /** How long an agent's answer waits before it lands. `0` turns the pacing off entirely. */

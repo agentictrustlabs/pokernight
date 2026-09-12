@@ -834,20 +834,31 @@ export const POKER_ADVISE_SKILL = 'poker.advise';
 export const CANASTA_ADVISE_SKILL = 'canasta.advise';
 
 /**
- * THE ROUND, AFTERWARDS — offered to a person's own adviser so it can learn something.
+ * THE ROUND, AFTERWARDS — RECORDED to the person's own agent, so the person keeps it.
  *
  * An adviser asked only during a hand sees the moments somebody thought to ask about, and never
  * finds out how any of them turned out. That is enough to give advice and not enough to notice "you
  * have done this before": a pattern needs the ending as well as the decision.
  *
- * So when a round finishes, each seat's own adviser is offered that round AS THAT SEAT SAW IT — the
- * final view, including its result. Best effort and fire-and-forget: an adviser that is down, slow or
- * uninterested costs nothing, because nothing at the table is waiting on it.
+ * So when a round finishes, the seated PERSON'S OWN AGENT is sent that round AS THAT SEAT SAW IT — the
+ * final view, including its result, and the game's own COUNTS of what each player did. The agent puts
+ * it into the person's own vault (`cardroom.hand`) — a vault put, no model, which is why the skill is
+ * `*.record` and not `*.review`: nothing is asked, nothing is judged, and a coach that spent tokens at
+ * every showdown would be a bill, not coaching. Best effort and fire-and-forget: an agent that is
+ * down, slow or uninterested costs nothing, because nothing at the table is waiting on it.
  *
- * WHAT IS REMEMBERED IS THE AGENT'S BUSINESS, not the card room's. The card room keeps no profile of
+ * THE COACH IS NOT ON THIS HOP. A person's coach is a service their own agent consults under a grant
+ * (`docs/ARCHITECTURE-ADVISER.md`); the table never learns its endpoint and never pings it at a hand's
+ * end. A REVIEW is a different thing: the person asks, in their own words, how they have been playing
+ * (`*.review`, below), and their agent forwards that to the coach, which reads the recorded hands.
+ *
+ * WHAT IS REMEMBERED IS THE PERSON'S BUSINESS, not the card room's. The card room keeps no profile of
  * how anybody plays and has nowhere to put one — it reports a round to the one agent that person
- * named, and that agent decides what is worth keeping in its own memory.
+ * named, and that agent keeps it in that person's vault.
  */
+export const POKER_RECORD_SKILL = 'poker.record';
+export const CANASTA_RECORD_SKILL = 'canasta.record';
+/** A REVIEW OF PAST HANDS, asked for by the person in their own words. Forwarded by their agent to their coach. */
 export const POKER_REVIEW_SKILL = 'poker.review';
 export const CANASTA_REVIEW_SKILL = 'canasta.review';
 
@@ -855,30 +866,52 @@ export const CANASTA_REVIEW_SKILL = 'canasta.review';
  * THE ROUND, REPORTED: the final view as the seat saw it, and the game's own COUNTS of it.
  *
  * `observation` is `observeFor`'s answer — what each player did this round, counted, keyed by the
- * player id the view shows. Opaque to the host like the view; it is the half an adviser can add to
- * what it already remembers without reading the round twice, and it carries nothing the seat's view
+ * player id the view shows. Opaque to the host like the view; it is the half an agent can add to
+ * what it already keeps without reading the round twice, and it carries nothing the seat's view
  * does not already show.
  */
-export interface ReviewInput extends ActInput {
+export interface RecordInput extends ActInput {
   observation?: unknown;
 }
 
 /**
- * THE REVIEW, said in words as well as in data — the same two parts as an advice request, but the
- * words say the round is OVER. A review that read "advise seat 0 … answer with one JSON object" asked
- * a person's own agent for a move at a table where the hand had ended.
+ * THE RECORD, said in words as well as in data — the same two parts as an advice request, but the
+ * words say the round is OVER and nothing is asked. A record that read "advise seat 0 … answer with
+ * one JSON object" asked a person's own agent for a move at a table where the hand had ended.
  */
-export function encodeReviewParts(
-  input: ReviewInput,
+export function encodeRecordParts(
+  input: RecordInput,
 ): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
   const game = input.skill.split('.')[0] ?? 'the game';
   const counted = input.observation && typeof input.observation === 'object' ? Object.keys((input.observation as { subjects?: Record<string, unknown> }).subjects ?? {}).length : 0;
   const text = [
-    `${input.skill}: round ${input.handNo} at ${game} is over, as seat ${input.seat} saw it. Nothing is asked; remember what is worth remembering.`,
+    `${input.skill}: round ${input.handNo} at ${game} is over, as seat ${input.seat} saw it. Nothing is asked; record the hand.`,
     counted ? `The round's counts, per player, are in the data part (${counted} players).` : 'The data part carries the final view.',
   ].join('\n');
   const [data] = encodeActParts(input);
   return [{ kind: 'data', data: (data as { data: Record<string, unknown> }).data }, { kind: 'text', text }];
+}
+
+/** What the person asked about their past hands, in their own words — and which seat at which table is asking. */
+export interface ReviewInput {
+  skill: string;
+  tableId: string;
+  seat: number;
+  question: string;
+}
+
+/**
+ * THE REVIEW REQUEST: the person's question, as text and as data. It carries no hand — the coach reads
+ * the recorded ones — and it is sent only when the person asks, never by the table on its own.
+ */
+export function encodeReviewParts(
+  input: ReviewInput,
+): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const question = input.question.trim() || 'How have I been playing?';
+  return [
+    { kind: 'data', data: { skill: input.skill, input: { tableId: input.tableId, seat: input.seat, question } } },
+    { kind: 'text', text: `${input.skill}: ${question}` },
+  ];
 }
 
 /**
@@ -998,8 +1031,39 @@ export const AdviseOutputSchema = z.object({
   say: z.string().min(1).max(280),
   because: z.string().max(600).optional(),
   action: GamePayloadSchema.optional(),
+  /**
+   * WHO ACTUALLY SAID IT, when the person's agent consulted somebody else — their coach service, by
+   * name ("bob-coach.svc"). The agent the table addressed stays the adviser of record; this is the
+   * voice, and the screen says both ("Bob's coach, via alice.me"). Absent when the agent answered itself.
+   */
+  source: z.string().max(120).optional(),
 });
 export type AdviseOutput = z.infer<typeof AdviseOutputSchema>;
+
+/** A review is longer than a sentence with the clock running: a few short paragraphs, and one change. */
+export const ReviewOutputSchema = z.object({
+  say: z.string().min(1).max(4000),
+  because: z.string().max(1000).optional(),
+  source: z.string().max(120).optional(),
+});
+export type ReviewOutput = z.infer<typeof ReviewOutputSchema>;
+
+/** Pull a coach's review out of an A2A reply — the same search as advice, with the review's room. */
+export function decodeReviewReply(parts: unknown): ReviewOutput | { error: string } {
+  if (!Array.isArray(parts)) return { error: 'reply has no parts' };
+  for (const part of parts) {
+    if (!part || typeof part !== 'object') continue;
+    const p = part as { kind?: string; data?: unknown; text?: string };
+    let candidate: unknown = p.kind === 'data' ? p.data : undefined;
+    if (candidate === undefined && typeof p.text === 'string') {
+      try { candidate = JSON.parse(p.text); } catch { const said = p.text.trim(); if (said) return { say: said.slice(0, 4000) }; continue; }
+    }
+    if (!candidate || typeof candidate !== 'object') continue;
+    const parsed = ReviewOutputSchema.safeParse(candidate);
+    if (parsed.success) return parsed.data;
+  }
+  return { error: 'no review in the reply' };
+}
 
 /** Pull an adviser's answer out of an A2A reply. Same shape of search as `decodeActReply`. */
 export function decodeAdviseReply(parts: unknown): AdviseOutput | { error: string } {

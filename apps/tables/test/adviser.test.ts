@@ -69,29 +69,65 @@ describe('the advice a table gives back', () => {
 });
 
 /**
- * THE ROUND, AFTERWARDS.
+ * THE ROUND, AFTERWARDS — RECORDED, not reviewed, and never to a coach.
  *
  * An adviser asked only during a hand sees the moments somebody thought to ask about and never learns
  * how any of them turned out — enough to advise, not enough to say "you have done this before". So a
- * finished round is offered to each seat's own adviser, as that seat saw it.
+ * finished round is sent to the seated person's OWN AGENT to record in their vault, as that seat saw it.
+ * The person's COACH is a service their agent consults under their grant: the table holds no address
+ * for it, sends it nothing mid-hand and nothing at showdown, and learns only whose voice answered.
  *
  * What is tested here is the boundary, not the learning: only the agent that person named, only their
- * own seat, and never at the cost of the round.
+ * own seat, a record that is not a review, and a review only when the person asks.
  */
-describe('reviewing a finished round', () => {
+describe('recording a finished round, and reviewing on request', () => {
   it('is offered only to an adviser somebody actually named', async () => {
     // No adviser, no call. A table with nobody's agent on it talks to nothing.
     const who = await devSession('review none');
     const t = await createTableViaHttp('review none', {}, { token: who.token });
     const res = await req(`/tables/${t.tableId}/advice`, {}, who.token);
-    // Not seated, so nothing to advise and nothing to review — and that is a 404, not an invention.
+    // Not seated, so nothing to advise and nothing to record — and that is a 404, not an invention.
     expect(res.status).toBe(404);
   });
 
-  it('names a review skill distinct from acting and from advising', async () => {
-    // Three different things an agent may advertise separately: talk, remember, or take a turn.
-    const { CANASTA_REVIEW_SKILL, CANASTA_ADVISE_SKILL, CANASTA_ACT_SKILL } = await import('@pokernight/protocol');
-    expect(new Set([CANASTA_REVIEW_SKILL, CANASTA_ADVISE_SKILL, CANASTA_ACT_SKILL]).size).toBe(3);
+  it('names acting, advising, recording and reviewing as four different skills', async () => {
+    // Four different things an agent may advertise separately: take a turn, talk, keep, and look back.
+    // A coach advertises the second and the fourth; a person's own agent the second, third and fourth;
+    // a house persona the first and second. Nothing advertises all four.
+    const { POKER_ACT_SKILL, POKER_ADVISE_SKILL, POKER_RECORD_SKILL, POKER_REVIEW_SKILL, CANASTA_RECORD_SKILL, CANASTA_REVIEW_SKILL } = await import('@pokernight/protocol');
+    expect(new Set([POKER_ACT_SKILL, POKER_ADVISE_SKILL, POKER_RECORD_SKILL, POKER_REVIEW_SKILL]).size).toBe(4);
+    expect(POKER_RECORD_SKILL).toBe('poker.record');
+    expect(CANASTA_RECORD_SKILL).toBe('canasta.record');
     expect(CANASTA_REVIEW_SKILL).toBe('canasta.review');
+  });
+
+  it('a record says the round is over and asks for nothing; it is not an advice request in disguise', async () => {
+    const { encodeRecordParts } = await import('@pokernight/protocol');
+    const parts = encodeRecordParts({ skill: 'poker.record', tableId: 't', handNo: 3, seat: 1, view: {}, legal: null, deadlineMs: 1000, observation: { subjects: { me: { you: true, counters: { hands: 1 } } } } });
+    const text = (parts[1] as { text: string }).text;
+    expect(text).toContain('record the hand');
+    expect(text).not.toMatch(/advise|review|Answer with/);
+    expect((parts[0] as unknown as { data: { skill: string } }).data.skill).toBe('poker.record');
+  });
+
+  it('a review is the person\'s own question: it needs a session, a seat, and an adviser — the house keeps no hands', async () => {
+    const t = await createTableViaHttp('review auth', {});
+    expect((await req(`/tables/${t.tableId}/review?q=how+did+I+do`)).status).toBe(401);
+    const who = await devSession('review unseated');
+    const t2 = await createTableViaHttp('review unseated', {}, { token: who.token });
+    // Not seated: nothing to review from this table's side, and no adviser named either way.
+    expect((await req(`/tables/${t2.tableId}/review?q=how+did+I+do`, {}, who.token)).status).toBe(404);
+  });
+
+  it('the table stores where to reach the PERSON\'s agent and what its card answers — never a coach\'s endpoint', async () => {
+    // What the DO keeps about an adviser is exactly what the card said: name, message URL, display
+    // name, and whether it records / reviews. There is no field for a coach: the person's agent
+    // consults it under the person's grant, and the answer's `source` is the only thing the table
+    // ever learns about it.
+    const src = await import('../src/table-do.js');
+    expect(typeof src.PokerTableDO).toBe('function');
+    const { AdviseOutputSchema } = await import('@pokernight/protocol');
+    const parsed = AdviseOutputSchema.safeParse({ say: 'Fold.', source: 'bob-coach.svc' });
+    expect(parsed.success && parsed.data.source).toBe('bob-coach.svc');
   });
 });

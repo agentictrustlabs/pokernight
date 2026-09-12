@@ -650,9 +650,10 @@ export function Adviser({
             Your own agent
             <code>{own}</code>
             <span className="hint">
-              Answers with your style, from skills held at your Home. After each hand the card room sends it the
-              hand as you saw it, so it can remember. It has to advertise <code>{adviseSkillFor(game)}</code> on its
-              card — if it does not yet, the answer says so by name.
+              Answers with your style: it consults the coach you named at your Home, under a grant you signed, and
+              answers in the coach's name. After each hand the card room sends it the hand as you saw it, which it
+              records to YOUR vault — your coach reads it there. It has to advertise <code>{adviseSkillFor(game)}</code>{' '}
+              on its card — if it does not yet, the answer says so by name.
             </span>
           </button>
         </div>

@@ -1,7 +1,13 @@
 # My poker coach
 
-Status: aspirational, 2026-09-12. First of `docs/articles/`.
-What exists today is in `docs/HOLDEM-COACH.md`. This document is the product we are aiming at.
+Status: built, 2026-09-12 — the mid-hand consultation, the record, the review and the grant are live
+(`docs/ARCHITECTURE-ADVISER.md` is the mechanism with diagrams; `docs/HOLDEM-COACH.md` the engineer's
+notes). The study workspace and the Sunday letter (§7.2, §9) remain aspirational. First of `docs/articles/`.
+
+This supersedes an earlier draft in which the table called `bob-coach.svc` directly and pinged it at
+every showdown. It does neither. The table talks to **Alice's own agent** and nothing else; her agent
+consults the coach; a hand's end is a record into *her* vault with nobody's model running; a review
+happens when she asks. What follows is the arrangement as built.
 
 Alice sits down at a Texas Hold'em table. Somebody is at her shoulder who has watched her play for
 months, who knows she over-calls rivers out of position, who will not talk her into the line she
@@ -19,9 +25,11 @@ arrangement, and the reason a Hold'em table is a good place to see what Agentic 
 
 Alice does not learn the words *delegation*, *vault* or *playbook*. She learns four facts:
 
-1. **She named Bob to the app.** The card room puts his coaching service in the dialog — mid-hand
-   advice, whose sentence it is — the way it would put a house bot in an empty seat. She can
-   un-name him.
+1. **She named Bob at her Home, and her own agent to the app.** Her playbook says "for poker
+   advice, consult `bob-coach.svc`", and she signed a grant letting that service read her records.
+   The card room only ever talks to *her* agent; the screen still says whose sentence it is —
+   "bob-coach.svc, via alice.me". She can un-name him at her Home, and the table finds out at the
+   next hand because her agent starts saying "no coach is named".
 2. **Everything about how she plays stays with her.** Hands, questions, the notes she has taken
    on a regular across the table — in her vault, under her key.
 3. **Bob does not take a copy home.** His service is allowed to *look* at what she has pointed it
@@ -73,17 +81,20 @@ custodian key (his), its own host.
                     no hand bodies, no style text, no opponent notes
 ```
 
-Alice tells the **app** the public name — `bob-coach.svc`, or "Bob" if his card points at that
-service the way a person card already points at a treasury. The app fetches the card, demands
-`poker.advise`, and keeps `{ agentName, endpoint, displayName: "Bob" }` on her seat at this
-table. After that the browser is out of it: mid-hand, the table calls the service. Bob's
-`.me` is not on that hop.
+Alice tells the **app** one name — her own agent, `alice.me`. The app fetches the card, demands
+`poker.advise`, notes whether the card also advertises `poker.record` and `poker.review`, and keeps
+`{ agentName: 'alice.me', endpoint, displayName }` on her seat at this table. After that the
+browser is out of it: mid-hand, the table calls **her agent**. Her agent looks up the specialist
+its playbook names for `poker.advise` — `bob-coach.svc` — fetches the study grant she signed for
+it, and forwards the same question with the grant beside it. The table never learns the service's
+endpoint; Bob's `.me` is on no hop at all.
 
 The **table** (`PokerTableDO`) deals, clocks, settles. It is a host, not a memory. When a hand
-ends it offers Alice's agent that hand *as her seat saw it* so **she** can write the record.
-It may also ping `bob-coach.svc` with `poker.review` so the service knows there is a new row
-to *read* — not a row to copy. The table keeps the seed and the action log so the shuffle can
-be checked. Fairness, not coaching.
+ends it sends Alice's agent that hand *as her seat saw it*, with the counts of what everybody
+did, and her agent files it in **her** vault (`cardroom.hand`) — a write, no model, no tokens.
+Nobody pings the coach at showdown: the next time the coach reads her records is the next time
+her agent consults it. The table keeps the seed and the action log so the shuffle can be
+checked. Fairness, not coaching.
 
 A **study workspace** (`alice-holdem.workspace`) is optional. Use one if the arrangement needs
 standing — a season, a human teacher beside the service, a roster. Do not invent one just to
@@ -99,56 +110,75 @@ with the coach is how a host ends up with everybody's leaky notes.
 
 ## 3. The app includes Bob's service in the dialog
 
-Today the table can already ask a named adviser `poker.advise` and offer `poker.review` when the
-hand ends (`docs/HOLDEM-COACH.md`). The aspirational rule keeps that shape and makes the store
-of record the person:
+The table asks a named adviser `poker.advise` mid-hand, sends `poker.record` when the hand ends,
+and forwards `poker.review` when she asks (`docs/HOLDEM-COACH.md`). The adviser is always her own
+agent; the store of record is always her:
 
-**Alice names a public A2A agent. The table calls it. Reviews are written to Alice.**
+**Alice names her own agent. The table calls it. Her agent consults the coach. Records are hers.**
 
 ```
-  Alice tells the app:  bob-coach.svc   (Bob's coaching service)
-  app checks the card for poker.advise
-  stores { name, endpoint, shown as "Bob" }
+  Alice, at her Home:   playbook: poker.advise → bob-coach.svc
+                        study grant: alice.me → bob-coach.svc
+                          read cardroom.hand, .style, .read, .note · append .note
+  Alice tells the app:  alice.me
+  app checks the card for poker.advise (and notes poker.record, poker.review)
+  stores { alice.me, endpoint, records: true, reviews: true }
 
   mid-hand, Alice's turn
   ─────────────────────────────────────────────────────────
-  table  --poker.advise-->  bob-coach.svc
-            view as her seat saw it
-            her question, if she asked
-                               │
-                               reads alice.me vault UNDER HER GRANT
-                                 style, last Thursday, her reads
-                               reasons with Bob's playbooks
-                               returns { say, because, action? }
-                               writes a run pointer, not the hand
-  table  <-- { say, because, source: Bob / bob-coach.svc }
-  screen shows whose sentence it is
+  table  --poker.advise-->  alice.me
+            view as her seat saw it, the legal moves,
+            the read, the house baseline, her question
+                               │  no model. looks up the specialist,
+                               │  fetches her grant.
+                               alice.me  --the SAME payload + grant-->  bob-coach.svc
+                                              verifies the grant (from her, to me, scoped, live)
+                                              reads HER vault UNDER HER GRANT
+                                                style, the counts on these players, her reads, its notes
+                                              reasons with the craft + Bob's doctrine
+                                              returns { say, because, action? }
+                                              (rarely) appends ONE note to HER cardroom.note
+                               alice.me  <--  the coach's words
+  table  <-- { say, because, action?, source: bob-coach.svc }
+  screen shows: "bob-coach.svc, via alice.me"
+
+  no coach named / no grant / grant revoked / coach late
+  ─────────────────────────────────────────────────────────
+  alice.me refuses in one line; the house coach answers; the screen says why
 
   hand ends
   ─────────────────────────────────────────────────────────
-  table  --poker.review-->  alice.me
-                               writes cardroom.hand.review
-                                 view as THIS seat saw it
-                                 result, her questions, the line she took
+  table  --poker.record-->  alice.me
+                               writes cardroom.hand: the view as THIS seat saw it,
+                               the result, the counts folded into running totals
+                               no model. the coach is not on this hop.
 
-  table  --poker.review-->  bob-coach.svc     (optional ping)
-                               no body to keep
-                               a signal that a new row exists
-                               to read under the same grant
+  Alice asks: "how have I been playing?"
+  ─────────────────────────────────────────────────────────
+  table  --poker.review-->  alice.me  --question + grant-->  bob-coach.svc
+                                                              reads her recorded hands
+                                                              sample size, what happened, the leak
+                                                              with its count, ONE change
+                                                              appends ONE note to HER cardroom.note
+  table  <-- the review, source: bob-coach.svc
 ```
 
-The card room still **never holds a profile of how Alice plays.** Naming Bob is a pointer on
-her seat, not an insert into a house table. If she has named nobody, the review is still
-written — to her. A coach she hires later can be shown last month, because last month is hers.
+The card room still **never holds a profile of how Alice plays.** Naming her agent is a pointer
+on her seat, not an insert into a house table. If she has named no coach, the record is still
+written — to her, by her agent. A coach she hires later can be shown last month, because last
+month is hers.
 
 **The coaching service is never handed a turn.** `poker.act` seats an agent. `poker.advise`
 asks one. An agent that only meant to talk is refused a chair; an agent that only meant to
-play is refused as a coach. Bob's person agent does not have to advertise either. The service
-does. The table matches the card; the playbook is not the card (ADR-0053).
+play is refused as a coach. Bob's person agent advertises neither. Alice's agent advertises
+`poker.advise`, `poker.record` and `poker.review` — and answers none of them with a model.
+The service advertises `poker.advise` and `poker.review`. The table matches the card; the
+playbook is not the card (ADR-0053).
 
-**The app is a switchboard, not a deputy.** It must not fetch Alice's vault and forward it.
-The service presents *her* grant at *her* vault. The mid-hand view travels in the A2A
-message because that is what the seat already sees; history does not.
+**The app is a switchboard, not a deputy — and so is her agent.** Neither fetches Alice's vault
+and forwards it. Her agent forwards the *question* with the *grant*; the service presents that
+grant at *her* vault and reads there. The mid-hand view travels in the A2A message because
+that is what the seat already sees; history does not.
 
 Money is a third skill and a third grant. The buy-in mandate (`poker-buyin`) moves Sheqels
 to the house under caveats Alice signed. The coaching grant does not spend. Mixing them is
@@ -201,17 +231,20 @@ So `bob-coach.svc` is allowed, under Alice's grant, to:
 
 - **Read** the record types the caveat names, for as long as the grant is live.
 - **Compute** — run the table-read, the memory doctrine, the solver prior, an LLM overlay.
-- **Reply** with `{ say, because, action? }` and a provenance note (which playbook digest, which
-  record ids it looked at).
-- **Write to its own vault** only: `{ principal: alice.me, grant: 0x…, run: …, at }`. Pointers.
+- **Reply** with `{ say, because, action? }`, in its own name, through her agent.
+- **Append one note** to *her* `cardroom.note` — the one write the grant allows: short, dated,
+  checkable against a hand. It is hers; firing the coach leaves it in her cabinet, not his.
+- **Write to its own vault** only pointers, if anything: `{ principal: alice.me, grant: 0x…, at }`.
   Not the view. Not the because. Not the style text.
 
 It is **refused**:
 
-- A write of `cardroom.hand.review` into the service's namespace, or into `bob.me`. That would
-  be a second store of record — and a copy Bob could keep after she fires him.
-- A write back into Alice's vault unless the grant explicitly allows a narrow append (for
-  example `cardroom.advice.given`, so she can see later what she was told). Default is read.
+- A write of `cardroom.hand`, `cardroom.style`, `cardroom.read` or `cardroom.note` into the
+  service's own vault, or into `bob.me`. The vault refuses these record types on a service
+  principal outright. That would be a second store of record — and a copy Bob could keep after
+  she fires him.
+- A grant that writes anything but `cardroom.note`, or reads outside `cardroom.*`. Her agent's
+  object refuses to store one; the coach's gate refuses to honour one.
 - Re-delegating the grant wider than it arrived — including from the service to Bob's person
   agent as a standing tour. Attenuation only.
 - Reading after revoke. Revocation is a transaction, not a token expiry. The next read fails at
@@ -271,13 +304,16 @@ On the card, executable, named:
 | Skill | Who answers | What it is |
 |---|---|---|
 | `poker.act` | a seat that plays | Apply a legal action. The table validates with the game. |
-| `poker.advise` | Bob's **service** | `{ say, because, action? }`. Applied by nobody. |
-| `poker.review` | Alice's person agent (write); the service (optional ping) | Receive a finished hand as that seat saw it. The write is hers. |
+| `poker.advise` | Alice's person agent (consults); Bob's **service** (answers) | `{ say, because, action?, source }`. Applied by nobody. |
+| `poker.record` | Alice's person agent | Receive a finished hand as that seat saw it, with the counts; put it in her vault. No model. |
+| `poker.review` | Alice's person agent (forwards); the service (answers) | Her own question about her past hands, answered from the hands on file. |
 
-Alice's agent advertises `poker.review`. `bob-coach.svc` advertises `poker.advise` (and may
-advertise `poker.review` so the ping is legal). Sharkbot advertises `poker.act`. `bob.me`
-advertises none of these unless Bob also wants to *play*. The table refuses the wrong job by
-reading this list, at seat-time and at name-your-coach time.
+Alice's agent advertises `poker.advise`, `poker.record` and `poker.review`. `bob-coach.svc`
+advertises `poker.advise` and `poker.review`. Sharkbot advertises `poker.act` and `poker.advise`
+(the rules coach, biased into a style) and neither record nor review — it keeps nothing.
+`bob.me` advertises none of these. The table refuses the wrong job by reading this list, at
+seat-time and at name-your-agent time, and records a hand only to an agent whose card says it
+keeps them.
 
 ### 7.2 What makes the advice *Bob's craft and Alice's style* — `SKILL.md` playbooks
 
@@ -289,21 +325,23 @@ is editing **Bob's service** playbook (or Alice's style), not redeploying `poker
 
 | Playbook | Job |
 |---|---|
-| `holdem-style` (hers; `canasta-style` is the worked example) | Standing preferences. Outranks the craft. Edited after nights. |
-| a receive-and-keep doctrine (`holdem-memory` / `canasta-memory` as the shape) | What is worth writing when `poker.review` arrives: questions in her words, decisions that went badly *and why*, the rule she has needed twice, the turn she finally got right. Not a log of every fold. Not a file on Marcus. |
+| `holdem-consult` | `cardroom.consult` | The whole of what her agent does at a table: consult the coach the playbook names, presenting her grant, and return its words in its name; put each finished hand in her vault; forward a review. *"You generate nothing."* |
+| her style — `cardroom.style`, a vault record, not a playbook | — | Standing preferences in her words: "raise or fold before the flop, never limp", "tell me the price first". Outranks the craft. Edited after nights, at her Home. |
 
 **On the coaching service (`bob-coach.svc`) — this is where the coaching skills live:**
 
 | Playbook | Capability | Job |
 |---|---|---|
-| `holdem-adviser` | craft (archetype) | Price first, then outs, position, what the board already beats. Seat boundary absolute. *Her* style outranks this. |
-| `holdem-table-read` | `cardroom.table.read` (R0) | A running read, never a bet. Refuses "what do they have" and "raise to sixty." |
-| `holdem-memory` | `cardroom.memory` | How to *use* her records without nagging: raise a pattern only when it changes this advice, once per evening, never mid-clock unless it decides the turn. |
-| (optional) `holdem-study` | between sessions | The Sunday letter: three spots from the week, one improvement named first. Still a read of *her* vault. |
+| `holdem-coach` (archetype) | craft | Who talks to whom, the seat boundary, the consultation, the review, her records and what may be done with them. |
+| `holdem-table-read`, `-preflop`, `-flop`, `-turn`, `-river` | `cardroom.table.read` (R0) and the streets | Price first, then outs, position, what the board already beats. A running read, never a bet. Refuses "what do they have" and "raise to sixty." |
+| `holdem-memory` | `cardroom.memory` | What each of her four records is, what every counter means, how much a rate is worth at each sample size, the order things outrank each other, and the one note it may write back. |
+| `holdem-review` | `cardroom.review` | How to review a session when she asks: sample size first, the decisions that mattered with the price, one leak with its count, one change, respected style. Never triggered by a hand ending. |
+| `coach-bob` | `cardroom.style` | Bob's own doctrine: price before player; raise or fold, never limp; a bet says something and the second bet says more; a right decision that lost is still right. Attached to Bob's service and to no other coach's. |
+| (aspirational) `holdem-study` | between sessions | The Sunday letter: three spots from the week, one improvement named first. Still a read of *her* vault. |
 
-Bob may wear a **style of coaching** on the service as well — tight, talkative, silent unless
-asked — the twin of Alice's style of *play*. His person agent does not need those files. The
-service is what the table asks.
+Bob's coaching style is a skill on the service — the twin of Alice's style of *play*, which is a
+record in her vault. His person agent needs none of these files. The service is what her agent
+consults.
 
 The three layers `holdem-adviser` already states, now with a place to put each:
 
@@ -337,19 +375,25 @@ hands.
 Alice is in the big blind with K♠ Q♠. Flop J♠ T♠ 2♣. She faces 20 into 80. She has asked, in
 the box, "am I getting the right price?" She named Bob last week.
 
-1. The table sends `poker.advise` to `bob-coach.svc` with the redacted view and her question.
-   The clock is running; this call is synchronous, the same A2A profile a bot turn uses.
-2. The service presents her grant. It reads last Thursday's river, her style line about
-   out-of-position rivers, and this view. It does not write any of that down.
+1. The table sends `poker.advise` to `alice.me` with the redacted view, the read, the house
+   baseline and her question. The clock is running; this call is synchronous, the same A2A
+   profile a bot turn uses. Her agent runs no model: it looks up `bob-coach.svc` in its playbook,
+   fetches her grant, and forwards the same payload with the grant beside it.
+2. The service verifies the grant and presents it at her vault. It reads last Thursday's river,
+   her style line about out-of-position rivers, its own note from the last review, and this
+   view. It copies none of it.
 3. The prior is the solver chart and `readHand` — facts: *Calling 20 into 80 needs this about
    20% of the time. You act last. You have a flush draw and an open-ender.* The overlay (an
    LLM, if the prior is thin; silence, if it is not) writes one sentence of plan. It does not
    invent that the button has ace-king.
-4. The screen shows the sentence and **Bob's** name. She calls, or she does not. The action on
-   the wire is hers.
-5. Showdown. The table offers `poker.review` to `alice.me`. She writes the hand. A ping may
-   reach the service so next Thursday the memory skill has an ending, which is the only way a
-   pattern is real.
+4. The screen shows the sentence and both names — *bob-coach.svc, via alice.me*. She calls, or
+   she does not. The action on the wire is hers.
+5. Showdown. The table sends `poker.record` to `alice.me`: the hand as her seat saw it and the
+   counts. Her agent files it in her vault. Nobody pings the service; next Thursday, when her
+   agent consults it, the record has an ending — which is the only way a pattern is real.
+6. Later, she presses *Review my hands*. Her agent forwards the question with the grant; the
+   service reads the hands on file, tells her the sample size, the two spots that cost the
+   most, one leak with its count, one change — and leaves one note in her cabinet.
 
 Pause still means everybody, including Bob's service. A grant that is live is not a licence
 to keep talking after she has stood the table still.
@@ -378,8 +422,9 @@ right now. Alice's vault is how last month survives a worker eviction, a Home mo
 Bob. Carry-the-vault-to-another-Home is the property the design promises; the article is
 honest that the ceremony is not yet a Tuesday demo.
 
-**Find is not use.** Publishing `poker.advise` on `bob-coach.svc` is how the app knows it may
-put Bob in the dialog. It is not how anyone opens a vault.
+**Find is not use.** Publishing `poker.advise` on `alice.me` is how the app knows it may ask her
+agent; publishing it on `bob-coach.svc` is how her agent knows the service answers. Neither is
+how anyone opens a vault — the grant is.
 
 **Two knowledge tiers.** Public: that Alice is seated, that a hand number advanced, that the
 seed will be revealed, that she is advised by Bob. Private: her cards, her questions, her
