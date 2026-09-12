@@ -3,7 +3,7 @@
  * raiser's first chance on the flop" are the engine's facts and not this test's idea of them.
  */
 import { describe, expect, it } from 'vitest';
-import { applyAction, createTable, sitDown, startHand, viewFor, type Action, type TableState } from '@pokernight/engine';
+import { applyAction, createTable, legalActions, sitDown, startHand, viewFor, type Action, type TableState } from '@pokernight/engine';
 import { observeRound } from '../src/observe.js';
 
 const seed = new Uint8Array(32).fill(7);
@@ -128,5 +128,41 @@ describe('facingWhat — what the price is for', () => {
     const next = s1.hand!.toAct!;
     const l1 = (await import('@pokernight/engine')).legalActions(s1, next);
     expect(facingWhat(viewFor(s1, next), next, l1.call ?? 0)).toBe(`a raise to 6 by seat ${first + 1}`);
+  });
+});
+
+describe('the line counters', () => {
+  it('counts a check-raise, a double barrel, river aggression and big bets', () => {
+    let s = dealt();
+    const first = s.hand!.toAct!;
+    // Open-raise, the next calls, the third folds → heads up to the flop.
+    s = play(s, [{ type: 'raise', amount: 6 }, { type: 'call' }, { type: 'fold' }]);
+    const raiser = first;
+    // Flop: whoever acts first checks; the raiser bets (small); the checker check-raises; raiser calls.
+    // Turn: first to act checks, raiser bets big (double barrel), checker calls. River: checker bets, raiser folds.
+    const pot = () => s.hand!.pots.reduce((a, p) => a + p.amount, 0);
+    while (s.hand && !s.hand.result) {
+      const seat = s.hand.toAct!; const st = s.hand.street; const facing = (legalActions(s, seat).call ?? 0) > 0;
+      const checkedAlready = s.hand.actions.some((a) => a.street === st && a.seat === seat && a.action.type === 'check');
+      let a: Action;
+      if (st === 'flop') a = seat === raiser ? (facing ? { type: 'call' } : { type: 'bet', amount: Math.max(2, Math.floor(pot() / 3)) }) : checkedAlready && facing ? { type: 'raise', amount: s.hand.currentBet * 3 } : { type: 'check' };
+      else if (st === 'turn') a = seat === raiser ? (facing ? { type: 'call' } : { type: 'bet', amount: pot() }) : facing ? { type: 'call' } : { type: 'check' };
+      else a = seat === raiser ? (facing ? { type: 'fold' } : { type: 'check' }) : facing ? { type: 'call' } : { type: 'bet', amount: Math.floor(pot() / 2) };
+      s = applyAction(s, seat, a).state;
+    }
+    const view = viewFor(s, 0);
+    const obs = observeRound(view, 0)!;
+    const bySeat = (seat: number) => obs.subjects[view.seats.find((x) => x.seat === seat)!.playerId]!.counters;
+    const other = s.hand!.actions.find((a) => a.street === 'flop' && a.action.type === 'raise')!.seat;
+    const r = bySeat(raiser); const o = bySeat(other);
+    expect(o.checkRaiseOpps).toBe(2); expect(o.checkRaise).toBe(1); // checked into a bet on the flop (raised) and the turn (called)
+    expect(o.donkOpps).toBe(2); expect(o.donk).toBe(1); // checked to the raiser on the flop, led the river
+    expect(r.donkOpps).toBe(0); // the raiser was never first to act into a prior aggressor
+    expect(r.cbet).toBe(1);
+    expect(r.doubleBarrelOpps).toBe(1); expect(r.doubleBarrel).toBe(1);
+    expect(r.bigBetOpps).toBe(2); expect(r.bigBet).toBe(1); // a third-pot flop bet and a pot-sized turn bet
+    expect(o.riverAgg).toBe(1); expect(o.riverAggOpps).toBe(1);
+    expect(r.riverAggOpps).toBe(1); expect(r.riverAgg).toBe(0);
+    expect(r.foldToBet).toBe(1);
   });
 });

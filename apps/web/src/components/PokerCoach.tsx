@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession, ClientCommand, HandResult, Street, TableEvent, TableView } from '../lib/types';
-import { api, type CoachAdvice } from '../lib/api';
+import { api, ApiError, type CoachAdvice } from '../lib/api';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { newAlerts } from '../lib/alerts';
 import type { FormatContext } from '../lib/format';
@@ -394,6 +394,11 @@ export function PokerCoach({
             </ol>
           ) : null}
 
+          {/* A QUESTION IN YOUR OWN WORDS, to your own agent — the one voice here that remembers how you
+              and the others have been playing. "How am I playing?" is one press because it is the
+              question a learner most needs answered and least knows to ask. Costs its tokens; said so. */}
+          {adviser && session ? <AskYourAgent tableId={tableId} session={session} adviser={adviser} onAnswer={(a) => { setSaid((cur) => remember(cur, a, handNo)); if (a.because) say(firstSentence(a.because)); }} /> : null}
+
           <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={setAdviser} />
 
           <WhoIsWhoPanel
@@ -419,5 +424,82 @@ export function PokerCoach({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * THE QUESTION BOX. Only for a named adviser: the house coach is a rule, and a rule has nothing to say
+ * about "how am I playing" — it keeps no memory. Your own agent does (the card room sends it every
+ * finished hand as you saw it), so the answer names your numbers and one thing to change.
+ */
+function AskYourAgent({
+  tableId,
+  session,
+  adviser,
+  onAnswer,
+}: {
+  tableId: string;
+  session: AppSession;
+  adviser: { agentName: string; displayName: string };
+  onAnswer: (advice: CoachAdvice) => void;
+}) {
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [answer, setAnswer] = useState<CoachAdvice | null>(null);
+  const ask = async (question: string) => {
+    if (busy || !question.trim()) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const a = await api.askAdviser(tableId, question.trim(), session.token);
+      setAnswer(a);
+      onAnswer(a);
+      setQ('');
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : `${adviser.displayName} could not be reached.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="coach-ask"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void ask(q);
+      }}
+    >
+      <div className="coach-ask-row">
+        <input
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={`Ask ${adviser.displayName} anything about this table`}
+          aria-label={`Ask ${adviser.displayName}`}
+          autoComplete="off"
+          disabled={busy}
+        />
+        <button type="submit" disabled={busy || !q.trim()}>
+          {busy ? 'Asking…' : 'Ask'}
+        </button>
+      </div>
+      <div className="coach-ask-presets">
+        <button type="button" className="link-button" disabled={busy} onClick={() => void ask('How am I playing? Name my two biggest leaks from what you remember, and one thing to change next hand.')}>
+          How am I playing?
+        </button>
+        <button type="button" className="link-button" disabled={busy} onClick={() => void ask('How do the other players at this table play? What have you noticed about each of them?')}>
+          How do they play?
+        </button>
+        <span className="hint">Uses {adviser.displayName}’s tokens.</span>
+      </div>
+      {err ? <div className="form-error">{err}</div> : null}
+      {answer ? (
+        <div className="coach-ask-answer">
+          <p className="coach-say">{answer.say}</p>
+          {answer.because ? <p className="coach-why">{answer.because}</p> : null}
+        </div>
+      ) : null}
+    </form>
   );
 }

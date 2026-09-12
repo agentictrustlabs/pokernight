@@ -336,6 +336,13 @@ export const api = {
    */
   advice: (tableId: string, token: string) =>
     request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice`, {}, token),
+  /**
+   * A QUESTION IN YOUR OWN WORDS, to the agent advising you. Carried by the card room untouched, and
+   * always answered by that agent rather than the house — it is the one thing only it can answer in
+   * your style. A language-model agent spends its tokens on it, which is why the panel says so first.
+   */
+  askAdviser: (tableId: string, question: string, token: string) =>
+    request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice?q=${encodeURIComponent(question)}`, {}, token),
   /** Name the agent that advises YOU at this table. The card room checks it advertises the skill. */
   /** Your own agent by NAME, reverse-resolved from the address your Home asserted. `agentName` is null
    *  when the chain has no primary name for it — which is a fact to show, not a field to guess at. */

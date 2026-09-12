@@ -4855,3 +4855,36 @@ a.button.primary:hover {
 .practice-panel.held {
   border-color: var(--brass);
 }
+
+/* THE QUESTION BOX in the hold'em coach: one row for your words, two presets for the questions a
+   learner most needs and least knows to ask. */
+.coach-ask {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.4rem 0;
+}
+.coach-ask-row {
+  display: flex;
+  gap: 0.35rem;
+}
+.coach-ask-row input {
+  flex: 1;
+  min-width: 0;
+}
+.coach-ask-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+}
+.coach-ask-presets .hint {
+  margin: 0;
+}
+.coach-ask-answer {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  background: var(--felt-soft);
+}

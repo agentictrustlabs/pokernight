@@ -46,6 +46,21 @@ export interface SeatCounters {
   /** Showed cards at showdown; won the pot at showdown. */
   showdowns: number;
   showdownWins: number;
+  /** Checked, was bet into, and raised — the check-raise, per chance to. */
+  checkRaiseOpps: number;
+  checkRaise: number;
+  /** First to act, led into the previous street's aggressor (the "donk" bet), per chance to. */
+  donkOpps: number;
+  donk: number;
+  /** Bet the flop and then bet the turn too, per flop bet that saw a turn. */
+  doubleBarrelOpps: number;
+  doubleBarrel: number;
+  /** Bet or raised on the river, per river decision taken. */
+  riverAggOpps: number;
+  riverAgg: number;
+  /** Bets of three-quarters of the pot or more, per bet sized — how big they bet when they bet. */
+  bigBetOpps: number;
+  bigBet: number;
   /** Won chips this hand (by showdown or by everybody folding). */
   won: number;
   /** Net chips, this hand — the one counter that is a sum, not a count. */
@@ -62,7 +77,7 @@ export interface RoundObservation {
 const AGGRESSIVE = new Set(['bet', 'raise', 'all-in']);
 
 function empty(): SeatCounters {
-  return { hands: 1, vpip: 0, pfr: 0, threeBetOpps: 0, threeBet: 0, aggressive: 0, passive: 0, foldToBetOpps: 0, foldToBet: 0, cbetOpps: 0, cbet: 0, sawFlop: 0, showdowns: 0, showdownWins: 0, won: 0, netChips: 0 };
+  return { hands: 1, vpip: 0, pfr: 0, threeBetOpps: 0, threeBet: 0, aggressive: 0, passive: 0, foldToBetOpps: 0, foldToBet: 0, cbetOpps: 0, cbet: 0, sawFlop: 0, checkRaiseOpps: 0, checkRaise: 0, donkOpps: 0, donk: 0, doubleBarrelOpps: 0, doubleBarrel: 0, riverAggOpps: 0, riverAgg: 0, bigBetOpps: 0, bigBet: 0, showdowns: 0, showdownWins: 0, won: 0, netChips: 0 };
 }
 
 /**
@@ -92,14 +107,27 @@ export function observeRound(view: TableView, seat: number): RoundObservation | 
   let lastPreRaiser: number | null = null;
   let flopBetSeen = false;
   const foldedBeforeFlop = new Set<number>();
+  // Per street: who has checked, who was the last aggressor, whether anybody has bet yet, and the pot
+  // as the street opened — the facts a check-raise, a donk bet and a bet's size are read against.
+  let checked = new Set<number>();
+  let streetAggressor: number | null = null;
+  let prevAggressor: number | null = null;
+  let streetBetSeen = false;
+  const flopBettors = new Set<number>();
+  const totalIn = new Map<number, number>();
+  const potNow = () => [...totalIn.values()].reduce((a, b) => a + b, 0);
 
   const enter = (st: Street) => {
     street = st;
     streetBet = new Map();
     high = 0;
+    checked = new Set();
+    prevAggressor = streetAggressor;
+    streetAggressor = null;
+    streetBetSeen = false;
     if (st === 'preflop') {
-      if (hand.smallBlindSeat !== null) streetBet.set(hand.smallBlindSeat, Math.floor(bb / 2));
-      if (hand.bigBlindSeat !== null) streetBet.set(hand.bigBlindSeat, bb);
+      if (hand.smallBlindSeat !== null) { streetBet.set(hand.smallBlindSeat, Math.floor(bb / 2)); totalIn.set(hand.smallBlindSeat, Math.floor(bb / 2)); }
+      if (hand.bigBlindSeat !== null) { streetBet.set(hand.bigBlindSeat, bb); totalIn.set(hand.bigBlindSeat, bb); }
       high = bb;
     }
   };
@@ -125,10 +153,17 @@ export function observeRound(view: TableView, seat: number): RoundObservation | 
       c.foldToBetOpps += 1;
       if (type === 'fold') c.foldToBet += 1;
     }
+    // A CHECK-RAISE: checked this street, now facing a bet. A DONK: out of position, first to act with the
+    // street unbet, against somebody who had the initiative last street. A RIVER: any decision there.
+    if (facing && checked.has(a.seat) && street !== 'preflop') { c.checkRaiseOpps += 1; if (type === 'raise' || (type === 'all-in' && mine + a.amount > high)) c.checkRaise += 1; }
+    if (street !== 'preflop' && !streetBetSeen && !facing && checked.size === 0 && prevAggressor !== null && prevAggressor !== a.seat && (type === 'bet' || type === 'check' || type === 'all-in')) { c.donkOpps += 1; if (type !== 'check') c.donk += 1; }
+    if (street === 'river' && (type === 'bet' || type === 'raise' || type === 'check' || type === 'call' || type === 'fold' || type === 'all-in')) { c.riverAggOpps += 1; if (type === 'bet' || type === 'raise' || (type === 'all-in' && mine + a.amount > high)) c.riverAgg += 1; }
+    if (street === 'turn' && !streetBetSeen && flopBettors.has(a.seat) && (type === 'bet' || type === 'check' || type === 'all-in')) { c.doubleBarrelOpps += 1; if (type !== 'check') c.doubleBarrel += 1; }
     if (type === 'fold') {
       if (street === 'preflop') foldedBeforeFlop.add(a.seat);
       continue;
     }
+    if (type === 'check') { checked.add(a.seat); continue; }
     if (type === 'call') {
       c.passive += 1;
       if (street === 'preflop') c.vpip = 1;
@@ -141,8 +176,15 @@ export function observeRound(view: TableView, seat: number): RoundObservation | 
         if (isRaise) { c.pfr = 1; raisesPre += 1; lastPreRaiser = a.seat; }
       }
       if (street === 'flop' && isRaise) flopBetSeen = true;
+      if (isRaise) {
+        streetAggressor = a.seat;
+        // How big, when it is a bet into an unbet street: the size as a share of the pot it was bet into.
+        if (street !== 'preflop' && !streetBetSeen) { const pot = potNow(); if (pot > 0) { c.bigBetOpps += 1; if (a.amount / pot >= 0.75) c.bigBet += 1; } if (street === 'flop') flopBettors.add(a.seat); }
+        if (street !== 'preflop') streetBetSeen = true;
+      }
     }
     streetBet.set(a.seat, mine + a.amount);
+    totalIn.set(a.seat, (totalIn.get(a.seat) ?? 0) + a.amount);
     if (mine + a.amount > high) high = mine + a.amount;
   }
 
