@@ -430,6 +430,36 @@ export async function completeCharterCeremony(env: Env, req: HomeAuthRequest, no
   };
 }
 
+/** The template that HIRES A COACH at the person's Home: names the coach service as the specialist for
+ *  `poker.advise` / `poker.review` in the person's playbook, and signs the study grant that lets the service
+ *  read the person's card-room records. Both are custodial acts only the Home can do. */
+export const COACH_TEMPLATE = 'coach-hire';
+
+export interface HomeCoachResult {
+  identity: HomeIdentity;
+  /** The coach service the Home bound, by name, and its address. */
+  coach: { name: string; agent?: string; grantHash?: string };
+}
+
+/**
+ * Finish a `coach-hire` ceremony the person ran at their Home. Same shape as the charter: the browser does
+ * the front half, the Worker exchanges the code, the identity is checked against the session. What the Home
+ * hands back on the `coach` field of its `/token` answer is the evidence the arrangement was made; a
+ * ceremony that comes back without it is a failure, not a partial success — the person's agent would keep
+ * refusing every question and the house would keep answering, and nobody would know why.
+ */
+export async function completeCoachCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<HomeCoachResult> {
+  if (!isAllowedHomeOrigin(env, req.authOrigin)) {
+    throw new HomeAuthError(`home origin "${req.authOrigin}" is not a trusted issuer for this deployment`);
+  }
+  if (!req.nonce) throw new HomeAuthError('id_token nonce does not match the authorisation request');
+  const token = await exchangeAtHome(env, req);
+  const identity = await verifyHomeIdToken(env, req.authOrigin, token.idToken, req.nonce, now);
+  const coach = (token as { coach?: { name?: string; agent?: string; grantHash?: string } }).coach;
+  if (!coach?.name) throw new HomeAuthError('your Home completed the ceremony but named no coach, so there is nothing to record');
+  return { identity, coach: { name: coach.name, ...(coach.agent ? { agent: coach.agent.toLowerCase() } : {}), ...(coach.grantHash ? { grantHash: coach.grantHash } : {}) } };
+}
+
 export async function completeMandateCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<HomeMandateResult> {
   if (!isAllowedHomeOrigin(env, req.authOrigin)) {
     throw new HomeAuthError(`home origin "${req.authOrigin}" is not a trusted issuer for this deployment`);

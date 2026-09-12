@@ -135,6 +135,9 @@ tag = "v3"
 new_sqlite_classes = ["ClubDO", "ClubIndexDO"]
 
 [env.faithnet.vars]
+# Coach SERVICES for hire (each a Smart Agent somebody custodies, advertising poker.advise). The hiring is
+# a ceremony at the person's Home; HOME_COACH_TEMPLATE names it once the Home supports it (unset ⇒ not offered).
+COACH_SERVICES = "bob-coach.svc"
 CHAIN_ID = "34348"
 # rpc.faithnet.io requires a chain-rpc-gateway app token (RPC_TOKEN, a secret). The browser-safe a2a
 # relay below needs none and is what scripts/provision-house.mts uses; swap once RPC_TOKEN is set.

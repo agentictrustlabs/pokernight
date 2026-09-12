@@ -23,6 +23,8 @@ import { Table } from '../components/Table';
 import { drawsGame } from '../lib/games';
 import { Toast } from '../components/Toast';
 import { PokerCoach } from '../components/PokerCoach';
+import { CoachDesk } from '../components/CoachDesk';
+import { whoIsWho } from '../lib/whoIsWho';
 import type { CoachStatus } from '../lib/api';
 import { PracticePanel } from '../components/PracticePanel';
 import { costsTokens, type AgentListing } from '../lib/api';
@@ -92,6 +94,8 @@ export function TablePage({
   const [paused, setPaused] = useState(false);
   /** What the coach is doing — shown on the BOARD beside the turn clock, not only in the side panel. */
   const [coachStatus, setCoachStatus] = useState<CoachStatus | null>(null);
+  /** The arrangement the coach panel reports, for the desk beside it. */
+  const [arrangement, setArrangement] = useState<{ adviser: { agentName: string; displayName: string } | null; coach: string | null; setAdviser: (a: { agentName: string; displayName: string } | null) => void; setWaiting: (w: { what: 'advice' | 'review'; who: string } | null) => void } | null>(null);
   /** The pace the table reported, or null until it has. */
   const [paceMs, setPaceMs] = useState<number | null>(null);
   const [holdErr, setHoldErr] = useState<string | null>(null);
@@ -360,10 +364,28 @@ export function TablePage({
                me" explains and leaves the move to you, at every table, until you choose otherwise. */
             startOn="watch"
             mine={mine}
-            onHold={setHeld}
             onStatus={setCoachStatus}
+            onArrangement={setArrangement}
             send={send}
           />
+          {/* THE DESK: who coaches you, hire one, who's who, and the review over the last N days — the
+              arrangement, kept out of the mid-hand panel. */}
+          {arrangement ? (
+            <CoachDesk
+              tableId={tableId}
+              session={session}
+              config={config}
+              adviser={arrangement.adviser}
+              coach={arrangement.coach}
+              roster={whoIsWho(state.view?.seats ?? [], ctx.seatName, (playerId) => state.players[playerId], mySeat, arrangement.adviser, arrangement.coach)}
+              mine={mine}
+              paused={paused}
+              myTurn={mySeat != null && state.view?.hand?.toAct === mySeat && !state.view?.hand?.result}
+              onHold={setHeld}
+              onAdviserChanged={arrangement.setAdviser}
+              onWaiting={arrangement.setWaiting}
+            />
+          ) : null}
           {mine && session ? (
             <>
               {holdErr ? <div className="form-error">{holdErr}</div> : null}

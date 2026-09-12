@@ -289,6 +289,31 @@ export async function callRecord(base: string, input: RecordInput, timeoutMs: nu
   }
 }
 
+/**
+ * The same record, for a queue that RETRIES: a backfill of past hands goes through the table's outbox,
+ * which needs to know whether the send landed. Live records stay fire-and-forget (`callRecord`).
+ */
+export async function sendRecord(base: string, input: RecordInput, timeoutMs: number, env?: Env): Promise<{ ok: true } | { ok: false; error: string }> {
+  const url = a2aUrl(base, A2A_JSONRPC_PATH);
+  const raw = JSON.stringify({
+    jsonrpc: '2.0',
+    id: `${input.tableId}:${input.handNo}:${input.seat}:record`,
+    method: A2A_SEND_MESSAGE,
+    params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeRecordParts(input) } },
+  });
+  const authorization = env ? await houseAuthorization(env, url, A2A_SEND_MESSAGE, raw) : null;
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', ...(authorization ? { authorization } : {}) }, body: raw, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    return { ok: false, error: `${input.skill} call to ${url} failed: ${errText(e)}` };
+  }
+  if (!res.ok) return { ok: false, error: `${input.skill} call to ${url} returned ${res.status}` };
+  const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+  if (payload?.error) return { ok: false, error: `${input.skill}: ${payload.error.message ?? 'refused'}` };
+  return { ok: true };
+}
+
 export type ReviewResult = { ok: true; output: ReviewOutput } | { ok: false; error: string };
 
 /**

@@ -58,6 +58,7 @@ import {
   CANASTA_RECORD_SKILL,
   CANASTA_REVIEW_SKILL,
   POKER_ADVISE_SKILL,
+  agentNameToHost,
   POKER_RECORD_SKILL,
   POKER_REVIEW_SKILL,
   SetScheduleRequestSchema,
@@ -67,10 +68,10 @@ import {
   type SignOutResult,
   type TableSummary,
 } from '@pokernight/protocol';
-import { agentKindFromCard, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
+import { agentKindFromCard, callReview, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
 import { looksLikeAgentName, nameOfAgent } from './naming.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
-import { a2aTimeoutMs, allowedOrigins, isDevAuth, siteOrigin, type Env } from './env.js';
+import { a2aReviewTimeoutMs, a2aTimeoutMs, allowedOrigins, isDevAuth, siteOrigin, type Env } from './env.js';
 import { OPERATOR_HEADER, checkOperator } from './operator.js';
 import {
   BUY_IN_TEMPLATE,
@@ -79,6 +80,7 @@ import {
   HomeAuthError,
   cleanProfileName,
   completeCharterCeremony,
+  completeCoachCeremony,
   completeDemoSignIn,
   completeHomeSignIn,
   completeMandateCeremony,
@@ -104,7 +106,7 @@ import type { SeatAgentBody } from './table-do.js';
 import { CLUB_ID_RE, belongs, clubStub, memberIdOf, resolveInvitee, standingAt } from './clubs.js';
 import { mailInvite } from './invite-mail.js';
 import { gameFor } from './games.js';
-import { ensurePracticeTable } from './practice.js';
+import { ensurePracticeTable, practiceTableId } from './practice.js';
 import { feedPlayer, feedToken } from './feed-token.js';
 import type { AddMemberRequest, ClaimInviteRequest, CreateInviteRequest, InitClubRequest } from './club-do.js';
 
@@ -158,6 +160,8 @@ app.get('/auth/config', (c) => {
        *  link carries at the Home so a person can see WHY that agent exists in their list. */
       clubTemplate: CLUB_TEMPLATE,
       clubPurpose: CLUB_PURPOSE,
+      /** …and the one that hires a coach (a specialist in the playbook + a study grant), when the Home has it. */
+      coachTemplate: (c.env.HOME_COACH_TEMPLATE ?? '').trim() || null,
       /**
        * The spending ceiling signing in will ALSO ask the player to approve, or null where this
        * deployment cannot ask for one.
@@ -378,6 +382,31 @@ const SIGN_OUT_SWEEP_LIMIT = 100;
  * The index is a projection and may be briefly behind. A club missing from it means a seat that is
  * not stood up now; it is stood up by the operator seat-clear, which is what that gate is for.
  */
+/** Every table this person could have sat at: the pickup lobby's, and each of their clubs'. */
+async function tablesAround(env: Env, playerId: string, log = 'sweep'): Promise<string[]> {
+  const lobbies: (string | undefined)[] = [undefined];
+  try {
+    const res = await env.CLUB_INDEX.get(env.CLUB_INDEX.idFromName(playerId)).fetch('https://index/list');
+    if (res.ok) {
+      const body = (await res.json()) as { clubs?: { clubId: string }[] };
+      for (const c of body.clubs ?? []) lobbies.push(c.clubId);
+    }
+  } catch (e) {
+    console.error(`${log}: could not list clubs`, e);
+  }
+  const tableIds: string[] = [];
+  for (const which of lobbies) {
+    try {
+      const res = await lobby(env, which).fetch('https://lobby/ids');
+      if (!res.ok) continue;
+      tableIds.push(...(((await res.json()) as { tableIds?: string[] }).tableIds ?? []));
+    } catch (e) {
+      console.error(`${log}: could not list tables`, e);
+    }
+  }
+  return tableIds;
+}
+
 async function standUpEverywhere(env: Env, playerId: string): Promise<{ stoodUp: SeatStoodUp[]; failed: SeatStandUpFailure[] }> {
   const stoodUp: SeatStoodUp[] = [];
   const failed: SeatStandUpFailure[] = [];
@@ -1311,6 +1340,121 @@ app.get('/me/agent', async (c) => {
   return c.json({ address, agentName: resolved ?? asserted, asserted: home?.agentName ?? null });
 });
 
+/**
+ * YOUR OWN AGENT'S CARD, for the two acts below that are not about any one table. The session's address,
+ * reverse-resolved to a name, fetched as a card, checked for the skill the act needs — the same three steps
+ * naming an adviser at a table runs, without the table.
+ */
+async function myAgentCard(c: Context<{ Bindings: Env }>, skill: string): Promise<{ ok: true; agentName: string; endpoint: string; displayName: string } | { ok: false; status: number; error: string }> {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return { ok: false, status: 401, error: 'unauthenticated' };
+  const home = 'address' in session ? (session as { address?: string; agentName?: string }) : null;
+  const address = home?.address ?? null;
+  const agentName = (address ? await nameOfAgent(c.env, address) : null) ?? (home?.agentName && looksLikeAgentName(home.agentName) ? home.agentName : null);
+  if (!agentName) return { ok: false, status: 404, error: 'this card room could not find a name for your agent — sign in through your Home' };
+  let base: string;
+  try { base = resolveAgentBase(c.env, agentName); } catch (e) { return { ok: false, status: 400, error: e instanceof Error ? e.message : String(e) }; }
+  const card = await fetchAgentCard(base, a2aTimeoutMs(c.env));
+  if (!card.ok) return { ok: false, status: 400, error: card.error };
+  if (!hasActSkill(card.card, skill)) return { ok: false, status: 400, error: `${agentName} does not advertise the ${skill} skill` };
+  return { ok: true, agentName, endpoint: messageUrlFromCard(card.card, base), displayName: card.card.name ?? agentName };
+}
+
+/**
+ * HOW HAVE I BEEN PLAYING, OVER THE LAST N DAYS — not about any one table. Your own question, to your own
+ * agent, which forwards it to the coach you hired with your study grant; the coach reads the hands the card
+ * room recorded to your vault over that span (seven days unless you say) and answers in its own name. The
+ * card room carries the question and shows the answer; it holds no hands of yours and reads none.
+ */
+app.get('/me/review', async (c) => {
+  const me = await myAgentCard(c, POKER_REVIEW_SKILL);
+  if (!me.ok) return c.json({ error: me.error }, me.status as 400);
+  const days = Math.min(30, Math.max(1, Number(c.req.query('days') ?? 7) || 7));
+  const q = (c.req.query('q') ?? '').trim();
+  const asked = await callReview(me.endpoint, { skill: POKER_REVIEW_SKILL, tableId: '', seat: -1, question: q || `How have I been playing over the last ${days} days? Name my two biggest leaks from my recorded hands, with the count behind each, and one thing to change next session.`, days }, a2aReviewTimeoutMs(c.env), c.env);
+  if (!asked.ok) return c.json({ error: `${me.displayName} could not review — ${asked.error}` }, 502);
+  const { source: coach, ...review } = asked.output;
+  return c.json({ ...review, days, source: { agent: me.agentName, displayName: me.displayName, ...(coach ? { coach } : {}) } });
+});
+
+/**
+ * GIVE YOUR COACH YOUR PAST HANDS. Every hand you were dealt in the last N days, at every table this card
+ * room can find you at — your practice table, the pickup lobby's, your clubs' — sent to YOUR OWN AGENT as
+ * `poker.record`, one per hand, through each table's outbox (retried, never lost, never awaited here). Your
+ * agent files them in your vault by the day they were played; the coach you hired reads them there under
+ * your grant. The card room sends and forgets: it keeps no copy of yours and the coach gets nothing from it.
+ */
+app.post('/me/hands/backfill', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const me = await myAgentCard(c, POKER_RECORD_SKILL);
+  if (!me.ok) return c.json({ error: me.error }, me.status as 400);
+  const days = Math.min(30, Math.max(1, Number(c.req.query('days') ?? 7) || 7));
+  const since = Date.now() - days * 86_400_000;
+  const ids = new Set<string>([await practiceTableId(session.playerId, 'poker'), ...(await tablesAround(c.env, session.playerId, 'backfill'))]);
+  const tables: Array<{ tableId: string; found: number; queued: number }> = [];
+  for (const tableId of [...ids].slice(0, 40)) {
+    try {
+      const res = await table(c.env, tableId).fetch('https://table/record-backfill', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: session.playerId, endpoint: me.endpoint, since }) });
+      if (!res.ok) continue;
+      const r = (await res.json()) as { found?: number; queued?: number };
+      if (r.found) tables.push({ tableId, found: r.found ?? 0, queued: r.queued ?? 0 });
+    } catch (e) {
+      console.error('backfill: table refused', tableId, e);
+    }
+  }
+  const queued = tables.reduce((n, t) => n + t.queued, 0);
+  const found = tables.reduce((n, t) => n + t.found, 0);
+  return c.json({ ok: true, days, agent: me.agentName, tables: tables.length, found, queued, note: queued ? `${queued} hand${queued === 1 ? '' : 's'} on the way to ${me.agentName}; ask for a review in a minute or two.` : found ? 'those hands were already sent.' : `no hands of yours in the last ${days} days at the tables this card room knows.` });
+});
+
+/**
+ * COACHES FOR HIRE — the coaching SERVICES this card room knows, each read from its card. A coach is a
+ * service somebody custodies (`bob-coach.svc`), never a person; the card room lists it, and the hiring is
+ * done at the person's own Home (the specialist in their playbook, the study grant they sign). Nothing here
+ * grants anything.
+ */
+app.get('/coaches', async (c) => {
+  const names = (c.env.COACH_SERVICES ?? '').split(',').map((s) => s.trim().toLowerCase()).filter((s) => /\.svc$/.test(s));
+  const coaches = await Promise.all(names.map(async (agentName) => {
+    try {
+      // A coach is an ESTATE service (`bob-coach.svc` at `bob-coach-svc.<zone>`), not a house persona: the
+      // house base — where `resolveAgentBase` sends a bare `.svc` — serves only the house's own bots.
+      const zone = (c.env.AGENT_CARD_ZONE ?? '').trim();
+      const base = zone ? `${zone === 'localhost' || zone.endsWith('.localhost') ? 'http' : 'https'}://${agentNameToHost(agentName, zone)}` : resolveAgentBase(c.env, agentName);
+      const card = await fetchAgentCard(base, a2aTimeoutMs(c.env));
+      if (!card.ok || !hasActSkill(card.card, POKER_ADVISE_SKILL)) return null;
+      const listed = (card.card.skills ?? []).filter((s): s is NonNullable<typeof s> => s != null);
+      const skills = listed.map((s) => s.id);
+      const advise = listed.find((s) => s.id === POKER_ADVISE_SKILL);
+      return { agentName, displayName: card.card.name ?? agentName, description: advise?.description ?? card.card.description ?? '', skills, reviews: skills.includes(POKER_REVIEW_SKILL) };
+    } catch { return null; }
+  }));
+  return c.json({ coaches: coaches.filter((x): x is NonNullable<typeof x> => x !== null), hireable: !!(c.env.HOME_COACH_TEMPLATE ?? '').trim() });
+});
+
+/**
+ * THE RETURN LEG OF HIRING A COACH. The person ran the `coach-hire` ceremony at their Home; the Worker
+ * exchanges the code, checks the identity is this session's, and records nothing — the arrangement lives
+ * in the person's playbook and their grant, at their Home. The answer is for the screen.
+ */
+app.post('/me/coach', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const parsed = HomeAuthRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  let result;
+  try {
+    result = await completeCoachCeremony(c.env, parsed.data);
+  } catch (e) {
+    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
+    console.error('coach-hire', e);
+    return c.json({ error: 'the coach could not be hired' }, 401);
+  }
+  if (homePlayerId(result.identity.address) !== session.playerId) return c.json({ error: 'that ceremony was run by somebody else' }, 403);
+  return c.json({ ok: true, coach: result.coach });
+});
+
 /** Whose advice you are getting at this table — yours to ask about, and nobody else's. */
 app.get('/tables/:id/adviser', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
@@ -1343,7 +1487,8 @@ app.get('/tables/:id/review', async (c) => {
   return passthrough(
     await table(c.env, tableId).fetch(
       `https://table/review?seat=${mine.seat}&player=${encodeURIComponent(session.playerId)}` +
-        (c.req.query('q') ? `&q=${encodeURIComponent(c.req.query('q') as string)}` : ''),
+        (c.req.query('q') ? `&q=${encodeURIComponent(c.req.query('q') as string)}` : '') +
+        (c.req.query('days') ? `&days=${encodeURIComponent(c.req.query('days') as string)}` : ''),
     ),
   );
 });

@@ -44,6 +44,8 @@ export interface AuthConfig {
      *  a deployment whose Home is not registered for it — the client then offers no charter. */
     clubTemplate?: string;
     clubPurpose?: string;
+    /** The Home's coach-hire template, when this deployment's Home has one. Null ⇒ hiring is not offered. */
+    coachTemplate?: string | null;
     /**
      * The spending ceiling SIGNING IN also asks the player to approve, or null/absent where this
      * deployment cannot ask for one (local dev, a half-configured deployment).
@@ -148,6 +150,8 @@ export function forgetHomeSession(store: StorageLike | null = sessionStore()): v
 /** Which club the charter now returning is for. The Home carries no app state of ours, so the club
  *  id has to survive the round trip on this origin, next to the stash it belongs with. */
 export const CHARTER_CLUB_KEY = 'pokernight.home.charter.club';
+export const COACH_STASH_KEY = 'pokernight.home.coach';
+export const COACH_NAME_KEY = 'pokernight.home.coach.name';
 
 /** The slice of `Storage` we use, so the stash round trip is testable without a DOM. */
 export interface StorageLike {
@@ -611,6 +615,75 @@ export async function startClubCharter(
 }
 
 /** Which club the charter callback belongs to, consumed once. */
+/* ------------------------------------------------------------ hiring a coach */
+
+/** The template that hires a coach at the person's Home: a specialist in their playbook and a study grant. */
+export const COACH_TEMPLATE = 'coach-hire';
+
+/**
+ * Send the person to their Home to HIRE A COACH.
+ *
+ * Same ceremony shape as the club charter, template changed, one extra parameter: `coach`, the coaching
+ * service's typed name. The Home does the two custodial acts the card room cannot — writes the specialist
+ * line into the person's playbook and has them sign the study grant that lets the service read their
+ * card-room records — and hands back what it bound on the token exchange, which the Worker runs. The coach
+ * name is stashed beside the PKCE stash because the Home carries no state of ours.
+ */
+export async function startCoachHire(config: AuthConfig, coach: string, store: StorageLike | null = sessionStore()): Promise<string> {
+  if (!config.home.clientId || !config.home.origin) throw new Error('This deployment has no Home configured.');
+  if (!config.home.coachTemplate) throw new Error('Your Home does not offer coach hiring yet.');
+  if (!isAllowedHomeOrigin(config.home.zone, config.home.origin)) {
+    throw new Error(`Refusing to send you to ${config.home.origin}: it is not a trusted Home for this site.`);
+  }
+  const client = homeClient(config);
+  const pkce = await generatePkce();
+  const stash: ConnectStash = { name: '', state: randomB64url(16), authOrigin: config.home.origin, codeVerifier: pkce.verifier, nonce: randomB64url(16) };
+  if (!writeStash(store, stash, COACH_STASH_KEY)) {
+    throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the coach cannot be hired.');
+  }
+  try {
+    store?.setItem(COACH_NAME_KEY, coach);
+  } catch {
+    throw new Error('This browser will not let the site remember which coach you are hiring, so the return trip could not be matched.');
+  }
+  const url = new URL(client.buildAuthorizeUrl({ authOrigin: stash.authOrigin, state: stash.state, nonce: stash.nonce, codeChallenge: pkce.challenge, agentName: '', template: config.home.coachTemplate }));
+  url.searchParams.set('coach', coach);
+  // Arrive already signed in, exactly as the club charter does (a demo persona has no credential to present).
+  const home = readHomeSession(store);
+  if (home) url.hash = `session=${encodeURIComponent(home)}`;
+  else url.searchParams.set('prompt', 'select_account');
+  return url.toString();
+}
+
+export function takeCoachName(store: StorageLike | null = sessionStore()): string | null {
+  try {
+    const v = store?.getItem(COACH_NAME_KEY) ?? null;
+    store?.removeItem(COACH_NAME_KEY);
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+/** Consume a return leg belonging to the COACH-HIRE ceremony, told apart by its own `state`. */
+export function takeCoachCallback(store: StorageLike | null = sessionStore()): CallbackOutcome {
+  if (callbackConsumed) return { status: 'none' };
+  const cb = parseCallback(location.href);
+  if (!cb || cb.kind === 'error') return { status: 'none' };
+  const stash = readStash(store, COACH_STASH_KEY);
+  if (!stash || stash.state !== cb.state) return { status: 'none' };
+  const outcome = consumeCallback(location.href, store, COACH_STASH_KEY);
+  if (outcome.status === 'none') return outcome;
+  callbackConsumed = true;
+  clearStash(store, COACH_STASH_KEY);
+  try {
+    history.replaceState(null, '', stripAuthParams(location.href));
+  } catch {
+    /* an unwritable history is not a reason to fail the hire */
+  }
+  return outcome;
+}
+
 export function takeCharterClub(store: StorageLike | null = sessionStore()): string | null {
   try {
     const v = store?.getItem(CHARTER_CLUB_KEY) ?? null;

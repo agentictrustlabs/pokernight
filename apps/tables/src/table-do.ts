@@ -61,6 +61,7 @@ import {
   type ClientCommand,
   type PlayerInfo,
   type ActInput,
+  type RecordInput,
   type ActOutput,
   type SeatCleared,
   type SeatClearRefusal,
@@ -72,7 +73,7 @@ import {
   type TableEvent,
   type TableSummary,
 } from '@pokernight/protocol';
-import { a2aTimeoutMs, callAct, callAdvise, callRecord, callReview, resolveAgentBase } from './a2a.js';
+import { a2aTimeoutMs, callAct, callAdvise, callRecord, callReview, resolveAgentBase, sendRecord } from './a2a.js';
 import { a2aAdviceTimeoutMs, a2aReviewTimeoutMs } from './env.js';
 import { readSessionRecord } from './auth.js';
 import { agentPaceMs, seatIdleMs } from './env.js';
@@ -621,7 +622,8 @@ export class PokerTableDO extends DurableObject<Env> {
       if (!adviser) return json({ error: 'name your own agent as your adviser first — the house coach keeps no hands to review' }, 404);
       if (adviser.reviews === false) return json({ error: `${adviser.displayName} does not review hands` }, 404);
       const skill = this.game.id === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL;
-      const asked = await callReview(adviser.endpoint, { skill, tableId: this.meta?.tableId ?? '', seat, question: url.searchParams.get('q') ?? '' }, a2aReviewTimeoutMs(this.env), this.env);
+      const days = Math.min(30, Math.max(1, Number(url.searchParams.get('days') ?? 7) || 7));
+      const asked = await callReview(adviser.endpoint, { skill, tableId: this.meta?.tableId ?? '', seat, question: url.searchParams.get('q') ?? '', days }, a2aReviewTimeoutMs(this.env), this.env);
       if (!asked.ok) return json({ error: `${adviser.displayName} could not review — ${asked.error}` }, 502);
       const { source: coach, ...review } = asked.output;
       return json({ ...review, source: { agent: adviser.agentName, displayName: adviser.displayName, ...(coach ? { coach } : {}) } });
@@ -729,6 +731,43 @@ export class PokerTableDO extends DurableObject<Env> {
     }
     if (request.method === 'GET' && path === '/ledger') {
       return json(this.ledgerFor(url.searchParams.get('playerId')));
+    }
+    /**
+     * YOUR PAST HANDS AT THIS TABLE, TO YOUR OWN AGENT — the record a coach hired later needs, sent the way a
+     * live one is (`poker.record`, signed as the house), one per hand, through the table's outbox so a slow
+     * Home or a hiccup retries rather than loses a hand. The caller says which player and where their agent
+     * answers; the table finds the hands that player was DEALT (a seat held from a buy-in to a cash-out, and
+     * listed in the hand's `hand-started`) and builds each as THAT SEAT saw it — its own hole cards, the board,
+     * every action, the result, and nothing another seat held unless it was shown at showdown.
+     *
+     * No counts (`observeFor` needs the state the hand ran in, which is not kept); the coach reads the hand.
+     */
+    if (request.method === 'POST' && path === '/record-backfill') {
+      const body = (await request.json().catch(() => null)) as { playerId?: string; endpoint?: string; since?: number; limit?: number } | null;
+      const playerId = (body?.playerId ?? '').trim();
+      const endpoint = (body?.endpoint ?? '').trim();
+      if (!playerId || !endpoint) return json({ error: 'playerId and endpoint required' }, 400);
+      const since = Number(body?.since ?? 0) || 0;
+      const limit = Math.min(500, Math.max(1, Number(body?.limit ?? 300) || 300));
+      const hands = this.pastHandsFor(playerId, since, limit);
+      const skill = this.game.id === 'canasta' ? CANASTA_RECORD_SKILL : POKER_RECORD_SKILL;
+      let queued = 0;
+      for (const h of hands) {
+        const id = `record:${playerId}:${h.handNo}:${h.seat}`;
+        // Once is enough for a hand that landed or is still on its way; one the outbox GAVE UP on (the
+        // person's vault refused it for a while, say) is asked for again.
+        const exists = this.ctx.storage.sql.exec<{ done_at: number | null; attempts: number }>('SELECT done_at, attempts FROM outbox WHERE id = ?', id).toArray()[0];
+        if (exists && !(exists.done_at !== null && exists.attempts >= MAX_OUTBOX_ATTEMPTS)) continue;
+        if (exists) this.ctx.storage.sql.exec('DELETE FROM outbox WHERE id = ?', id);
+        const input: RecordInput = { skill, tableId: this.meta?.tableId ?? '', handNo: h.handNo, seat: h.seat, view: h.view, legal: null, deadlineMs: a2aTimeoutMs(this.env), endedAt: h.endedAt };
+        this.ctx.storage.sql.exec(
+          'INSERT INTO outbox (id, kind, payload_json, attempts, next_at, done_at) VALUES (?, ?, ?, 0, ?, NULL)',
+          id, 'recordHand', JSON.stringify({ endpoint, input }), Date.now() + queued * 250,
+        );
+        queued += 1;
+      }
+      await this.scheduleAlarm();
+      return json({ ok: true, found: hands.length, queued });
     }
     if (request.method === 'GET' && path.startsWith('/hand/')) {
       const n = Number(path.slice('/hand/'.length));
@@ -1016,6 +1055,46 @@ export class PokerTableDO extends DurableObject<Env> {
       ...(meta.paceMs === undefined ? {} : { paceMs: meta.paceMs }),
       ...(meta.pausedAt === undefined ? {} : { paused: true }),
     };
+  }
+
+  /**
+   * The hands `playerId` was dealt at this table since `since`, each as that seat saw it. A seat is held
+   * from the buy-in that took it to the cash-out that left it (the ledger says so, with hand numbers), and a
+   * hand counts when its `hand-started` lists that seat. Events are the seat's own: another seat's hole
+   * cards are dropped unless the result shows them.
+   */
+  private pastHandsFor(playerId: string, since: number, limit: number): Array<{ handNo: number; seat: number; endedAt: number; view: unknown }> {
+    const rows = this.ctx.storage.sql
+      .exec<{ seat: number; kind: string; hand_no: number | null; at: number }>('SELECT seat, kind, hand_no, at FROM ledger WHERE player_id = ? ORDER BY at', playerId)
+      .toArray();
+    // Intervals [from, to] of hand numbers per seat: a buy-in opens one, a cash-out closes it.
+    const open = new Map<number, number>();
+    const spans: Array<{ seat: number; from: number; to: number }> = [];
+    for (const r of rows) {
+      if (r.kind === 'buy-in') { if (!open.has(r.seat)) open.set(r.seat, r.hand_no ?? 0); }
+      else if (r.kind === 'cash-out') { const from = open.get(r.seat); if (from !== undefined) { spans.push({ seat: r.seat, from, to: r.hand_no ?? Number.MAX_SAFE_INTEGER }); open.delete(r.seat); } }
+    }
+    for (const [seat, from] of open) spans.push({ seat, from, to: Number.MAX_SAFE_INTEGER });
+    if (spans.length === 0) return [];
+    const hands = this.ctx.storage.sql
+      .exec<HandRow>('SELECT * FROM hands WHERE ended_at IS NOT NULL AND ended_at >= ? ORDER BY hand_no DESC LIMIT ?', since, limit)
+      .toArray();
+    const out: Array<{ handNo: number; seat: number; endedAt: number; view: unknown }> = [];
+    for (const row of hands) {
+      const span = spans.find((sp) => row.hand_no >= sp.from && row.hand_no <= sp.to);
+      if (!span) continue;
+      const events = this.ctx.storage.sql
+        .exec<{ json: string }>('SELECT json FROM events WHERE hand_no = ? ORDER BY idx', row.hand_no)
+        .toArray()
+        .map((r) => JSON.parse(r.json) as Record<string, unknown>);
+      const started = events.find((e) => e.type === 'hand-started') as { seats?: number[] } | undefined;
+      if (!started?.seats?.includes(span.seat)) continue;
+      // THE SEAT BOUNDARY, kept for a hand already over: only this seat's private events survive.
+      const mine = events.filter((e) => e.private !== true || e.seat === span.seat);
+      const result = row.result_json ? (JSON.parse(row.result_json) as unknown) : null;
+      out.push({ handNo: row.hand_no, seat: span.seat, endedAt: row.ended_at ?? row.started_at, view: { kind: 'history', handNo: row.hand_no, seat: span.seat, startedAt: row.started_at, endedAt: row.ended_at, events: mine, result } });
+    }
+    return out.reverse();
   }
 
   private handRecord(handNo: number): Response {
@@ -1824,6 +1903,8 @@ export class PokerTableDO extends DurableObject<Env> {
         legal: this.game.legalFor(state, seat),
         deadlineMs: a2aTimeoutMs(this.env),
         ...(observation ? { observation } : {}),
+        // The hand's own clock, so a record filed in a day's cabinet lands in the right day.
+        endedAt: Date.now(),
       };
       const sent = callRecord(adviser.endpoint, input, a2aTimeoutMs(this.env), this.env);
       // Kept alive past the response the table is about to send, without the table waiting for it.
@@ -2160,6 +2241,14 @@ export class PokerTableDO extends DurableObject<Env> {
 
   private async runOutboxOp(row: OutboxRow): Promise<void> {
     switch (row.kind) {
+      case 'recordHand': {
+        // A past hand to the person's own agent (`/record-backfill`). Retried like a settlement; never a
+        // model, never the coach — the person's agent files it, and their coach reads it at the next review.
+        const p = JSON.parse(row.payload_json) as { endpoint: string; input: RecordInput };
+        const r = await sendRecord(p.endpoint, p.input, a2aTimeoutMs(this.env), this.env);
+        if (!r.ok) throw new Error(r.error);
+        return;
+      }
       case 'settleCashOut': {
         const p = JSON.parse(row.payload_json) as CashOutPayload;
         const receipt = await this.settlement().settleCashOut({

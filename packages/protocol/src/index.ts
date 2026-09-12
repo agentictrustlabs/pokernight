@@ -872,6 +872,8 @@ export const CANASTA_REVIEW_SKILL = 'canasta.review';
  */
 export interface RecordInput extends ActInput {
   observation?: unknown;
+  /** When the hand ENDED (ms). A hand recorded later — a backfill of past sessions — keeps its own date. */
+  endedAt?: number;
 }
 
 /**
@@ -895,9 +897,12 @@ export function encodeRecordParts(
 /** What the person asked about their past hands, in their own words — and which seat at which table is asking. */
 export interface ReviewInput {
   skill: string;
+  /** Empty when the review is not about one table — a person's own question about the last N days. */
   tableId: string;
   seat: number;
   question: string;
+  /** How far back: the last N days of recorded hands. The coach defaults to seven. */
+  days?: number;
 }
 
 /**
@@ -909,8 +914,8 @@ export function encodeReviewParts(
 ): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
   const question = input.question.trim() || 'How have I been playing?';
   return [
-    { kind: 'data', data: { skill: input.skill, input: { tableId: input.tableId, seat: input.seat, question } } },
-    { kind: 'text', text: `${input.skill}: ${question}` },
+    { kind: 'data', data: { skill: input.skill, input: { tableId: input.tableId, seat: input.seat, question, ...(input.days ? { days: input.days } : {}) } } },
+    { kind: 'text', text: `${input.skill}: ${question}${input.days ? ` (the last ${input.days} days)` : ''}` },
   ];
 }
 

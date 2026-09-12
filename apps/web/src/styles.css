@@ -4215,6 +4215,19 @@ a.button.primary:hover {
   .coach-waiting-dot { animation: none; }
 }
 
+/* THE DESK — the arrangement, beside the coach: who advises, hire, who's who, the review. Quieter than
+   the coach panel on purpose: nothing here is on a clock. */
+.panel.desk { display: grid; gap: 0.6rem; }
+.desk-who { margin: 0; font-size: 0.9rem; }
+.desk-who .hint { display: block; margin-top: 0.2rem; }
+.desk-h2 { margin-top: 0.4rem; }
+.desk-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.desk-days { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
+.desk-days select { font: inherit; padding: 0.2rem 0.35rem; }
+.desk-sent { color: var(--ink); }
+.desk-hire summary, .desk-who-is-who summary, .coach-earlier summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--ink-soft); }
+.desk-hire > *:not(summary), .desk-who-is-who > *:not(summary), .coach-earlier > *:not(summary) { margin-top: 0.4rem; }
+
 /* The coach's state ON THE BOARD, under the turn title. */
 .act-coach {
   display: flex;

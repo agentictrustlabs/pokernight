@@ -54,6 +54,9 @@ export interface CoachStatus {
   say?: string;
 }
 
+/** A coaching SERVICE for hire, as its card describes it. */
+export interface CoachListing { agentName: string; displayName: string; description: string; skills: string[]; reviews: boolean }
+
 /** A review of your past hands — a few short paragraphs, and one thing to change. */
 export interface CoachReview {
   say: string;
@@ -380,6 +383,22 @@ export const api = {
    */
   reviewHands: (tableId: string, question: string, token: string) =>
     request<CoachReview>(`/tables/${encodeURIComponent(tableId)}/review?q=${encodeURIComponent(question)}`, {}, token),
+  /**
+   * HOW HAVE I BEEN PLAYING OVER THE LAST N DAYS — not about any one table. Your own agent forwards it to the
+   * coach you hired; the coach reads the hands recorded to your vault over that span (seven days unless you
+   * say) and answers in its own name.
+   */
+  reviewDays: (days: number, question: string, token: string) =>
+    request<CoachReview & { days: number }>(`/me/review?days=${days}${question ? `&q=${encodeURIComponent(question)}` : ''}`, {}, token),
+  /** SEND MY PAST HANDS to my own agent, so a coach hired later can read them: every hand I was dealt in the
+   *  last N days, at every table this card room can find me at, one record per hand, retried, never awaited. */
+  backfillHands: (days: number, token: string) =>
+    request<{ ok: true; days: number; agent: string; tables: number; found: number; queued: number; note: string }>(`/me/hands/backfill?days=${days}`, { method: 'POST' }, token),
+  /** The coaching services this card room offers for hire, each read from its card. */
+  coaches: () => request<{ coaches: CoachListing[]; hireable: boolean }>('/coaches'),
+  /** The return leg of hiring a coach at your Home. */
+  homeCoach: (body: HomeAuthBody, token: string) =>
+    request<{ ok: true; coach: { name: string; agent?: string; grantHash?: string } }>('/me/coach', { method: 'POST', body: JSON.stringify(body) }, token),
   /** Name the agent that advises YOU at this table. The card room checks it advertises the skill. */
   /** Your own agent by NAME, reverse-resolved from the address your Home asserted. `agentName` is null
    *  when the chain has no primary name for it — which is a fact to show, not a field to guess at. */

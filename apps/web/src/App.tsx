@@ -6,6 +6,8 @@ import {
   forgetHomeSession,
   startHomeSignIn,
   takeCharterCallback,
+  takeCoachCallback,
+  takeCoachName,
   takeCharterClub,
   takeHomeCallback,
   takeMandateCallback,
@@ -214,6 +216,35 @@ export function App() {
         if (back) goTo(back);
       })
       .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'Could not record the buy-in authorisation.'))
+      .finally(() => setBusy(false));
+  }, []);
+
+  /**
+   * The return leg of HIRING A COACH. Fourth ceremony on the same redirect URI, told apart by its own
+   * `state`. The Worker exchanges the code and checks the identity; nothing is recorded here — the
+   * arrangement lives in the person's playbook and their grant, at their Home. What is said is for them.
+   */
+  useEffect(() => {
+    const outcome = takeCoachCallback();
+    if (outcome.status !== 'signed-in') {
+      if (outcome.status === 'error') setError(outcome.message);
+      return;
+    }
+    const coachName = takeCoachName();
+    const current = sessionRef.current;
+    if (!current) {
+      setError('Your Home hired the coach, but this browser is no longer signed in — sign in and it will be there.');
+      return;
+    }
+    setBusy(true);
+    api
+      .homeCoach({ code: outcome.code, codeVerifier: outcome.codeVerifier, authOrigin: outcome.authOrigin, nonce: outcome.nonce, state: outcome.state }, current.token)
+      .then((r) => {
+        setNotice(`${r.coach.name} is your coach now — name your own agent as your adviser at a table and it will consult ${r.coach.name}.`);
+        const back = takeReturn();
+        if (back) goTo(back);
+      })
+      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : `Could not finish hiring ${coachName ?? 'the coach'}.`))
       .finally(() => setBusy(false));
   }, []);
 

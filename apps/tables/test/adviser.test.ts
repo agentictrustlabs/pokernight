@@ -131,3 +131,37 @@ describe('recording a finished round, and reviewing on request', () => {
     expect(parsed.success && parsed.data.source).toBe('bob-coach.svc');
   });
 });
+
+/**
+ * THE DESK'S TWO ASKS THAT ARE NOT ABOUT ONE TABLE: a review over the last N days, and the backfill of
+ * past hands to the person's own agent. Both go through the person's agent card — which a dev session
+ * has none of — and the backfill goes through each table's outbox, which a table with no hands leaves empty.
+ */
+describe('a review over days, and sending past hands', () => {
+  it('needs a session with an agent behind it, and says so by name', async () => {
+    expect((await req('/me/review?days=7')).status).toBe(401);
+    expect((await req('/me/hands/backfill?days=7', { method: 'POST' })).status).toBe(401);
+    const who = await devSession('desk dev');
+    const r = await req('/me/review?days=7', {}, who.token);
+    expect(r.status).toBe(404); // a dev session is a name with no agent behind it
+    expect(((await r.json()) as { error: string }).error).toMatch(/could not find a name for your agent/);
+  });
+
+  it('lists coaches for hire from the deployment\'s own list, each read from its card, and says whether hiring is on', async () => {
+    const r = await req('/coaches');
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { coaches: unknown[]; hireable: boolean };
+    expect(Array.isArray(body.coaches)).toBe(true);
+    expect(typeof body.hireable).toBe('boolean');
+  });
+
+  it('a table with no hands of yours queues nothing for your agent', async () => {
+    const who = await devSession('backfill none');
+    const t = await createTableViaHttp('backfill none', {}, { token: who.token });
+    const { env } = await import('cloudflare:test');
+    const stub = env.TABLES.get(env.TABLES.idFromName(t.tableId));
+    const res = await stub.fetch('https://table/record-backfill', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: who.playerId, endpoint: 'https://nobody.test/api/a2a', since: 0 }) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, found: 0, queued: 0 });
+  });
+});

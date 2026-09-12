@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession, ClientCommand, HandResult, Street, TableEvent, TableView } from '../lib/types';
-import { api, ApiError, type CoachAdvice, type CoachReview, type CoachStatus } from '../lib/api';
+import { api, ApiError, type CoachAdvice, type CoachStatus } from '../lib/api';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { newAlerts } from '../lib/alerts';
 import type { FormatContext } from '../lib/format';
 import { actionWords, handEndLines, playable, pokerAlerts, pokerFeedLines, spokenAction, spokenPokerLine } from '../lib/pokerWords';
 import { announce, canSpeak, hush, primeVoices, say } from '../lib/speech';
-import { Adviser, type CoachMode } from './Coach';
-import { WhoIsWhoPanel } from './WhoIsWho';
-import { whoIsWho } from '../lib/whoIsWho';
+import type { CoachMode } from './Coach';
 import type { PlayerInfo } from '../lib/types';
 
 /**
@@ -64,8 +62,8 @@ export function PokerCoach({
   paused = false,
   startOn = 'off',
   mine = false,
-  onHold,
   onStatus,
+  onArrangement,
   send,
 }: {
   tableId: string;
@@ -94,10 +92,10 @@ export function PokerCoach({
   startOn?: CoachMode;
   /** This is the viewer's OWN practice table — the one place a review may hold the table while it runs. */
   mine?: boolean;
-  /** Hold or release the table (a practice table's owner only). A review holds it for as long as it takes. */
-  onHold?: (held: boolean) => void;
   /** What the coach is doing, for the BOARD to show beside the turn clock. */
   onStatus?: (s: CoachStatus) => void;
+  /** Who advises here and which coach answered — for the desk beside this panel, which owns the arrangement. */
+  onArrangement?: (a: { adviser: { agentName: string; displayName: string } | null; coach: string | null; setAdviser: (a: { agentName: string; displayName: string } | null) => void; setWaiting: (w: { what: 'advice' | 'review'; who: string } | null) => void }) => void;
   send: (c: ClientCommand) => void;
 }) {
   const [mode, setMode] = useState<CoachMode>(startOn);
@@ -149,6 +147,12 @@ export function PokerCoach({
     return () => clearInterval(t);
   }, [waiting]);
   const voiceName = adviser ? (coach ? `${coach}, via ${adviser.displayName}` : adviser.displayName) : 'the house coach';
+  // THE DESK BESIDE THIS PANEL owns the arrangement (who advises, hire a coach, the review); it is told who
+  // advises here and which coach answered, and given the two setters it needs — so this panel stays about the hand.
+  useEffect(() => {
+    onArrangement?.({ adviser, coach, setAdviser, setWaiting: (w) => setWaiting(w ? { ...w, since: Date.now() } : null) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adviser, coach]);
   useEffect(() => {
     if (!session) return;
     let alive = true;
@@ -488,15 +492,18 @@ export function PokerCoach({
           {/* THE ROLLING LIST. Newest first, each line carrying whose advice it was — the house coach
               and somebody's own agent are not the same voice. */}
           {said.length > 0 ? (
-            <ol className="coach-said-list">
-              {said.map((r) => (
-                <li key={r.id}>
-                  <span className="rec-say">{r.say}</span>
-                  {r.because ? <span className="rec-why">{r.because}</span> : null}
-                  <span className="rec-from">{whoSaid(r.from)}</span>
-                </li>
-              ))}
-            </ol>
+            <details className="coach-earlier">
+              <summary>Earlier advice ({said.length})</summary>
+              <ol className="coach-said-list">
+                {said.map((r) => (
+                  <li key={r.id}>
+                    <span className="rec-say">{r.say}</span>
+                    {r.because ? <span className="rec-why">{r.because}</span> : null}
+                    <span className="rec-from">{whoSaid(r.from)}</span>
+                  </li>
+                ))}
+              </ol>
+            </details>
           ) : null}
 
           {/* A QUESTION IN YOUR OWN WORDS, to your own agent — the one voice here that remembers how you
@@ -508,28 +515,10 @@ export function PokerCoach({
               session={session}
               adviser={adviser}
               coach={coach}
-              myTurn={myTurn}
-              mine={mine}
-              paused={paused}
-              onHold={onHold}
               onWaiting={(w) => setWaiting(w ? { ...w, since: Date.now() } : null)}
               onAnswer={(a) => { noteVoice(a); setSaid((cur) => remember(cur, a, handNo)); if (a.because) say(firstSentence(a.because)); }}
-              onReview={noteVoice}
             />
           ) : null}
-
-          <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={setAdviser} />
-
-          <WhoIsWhoPanel
-            roster={whoIsWho(
-              view?.seats ?? [],
-              ctx.seatName,
-              (playerId) => players[playerId],
-              viewerSeat,
-              adviser,
-              coach,
-            )}
-          />
 
           {/* No `aria-live`: it is a running commentary, and a screen reader announcing every line of
               it would talk over the one thing that matters — whose turn it is. Always rendered, even
@@ -551,72 +540,32 @@ export function PokerCoach({
  * THE QUESTION BOX. Only for a named adviser: the house coach is a rule, and a rule has nothing to say
  * about "how am I playing" — it keeps no memory. Your own agent does: the card room records every
  * finished hand, as you saw it, to YOUR vault, and the coach you named reads them there under a grant
- * you signed. A question mid-hand goes the same way as advice (your agent consults the coach); "how
- * have I been playing" is a REVIEW — your question, forwarded, answered from the recorded hands in a
- * few short paragraphs. Both spend the coach's tokens, never your agent's, and the panel says so.
+ * you signed. A question mid-hand goes the same way as advice (your agent consults the coach). The
+ * REVIEW over past hands lives on the desk beside this panel. Spends the coach's tokens, never your
+ * agent's, and the panel says so.
  */
 function AskYourAgent({
   tableId,
   session,
   adviser,
   coach,
-  myTurn,
-  mine,
-  paused,
-  onHold,
   onWaiting,
   onAnswer,
-  onReview,
 }: {
   tableId: string;
   session: AppSession;
   adviser: { agentName: string; displayName: string };
   /** The coaching service your agent consults, once an answer has named it. */
   coach: string | null;
-  myTurn: boolean;
-  mine: boolean;
-  paused: boolean;
-  onHold?: (held: boolean) => void;
   /** Say what is being waited for, loudly, in the panel above. */
   onWaiting: (w: { what: 'advice' | 'review'; who: string } | null) => void;
   onAnswer: (advice: CoachAdvice) => void;
-  onReview: (review: CoachReview) => void;
 }) {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [answer, setAnswer] = useState<CoachAdvice | null>(null);
-  const [review, setReview] = useState<CoachReview | null>(null);
   const voice = coach ? `${coach}, via ${adviser.displayName}` : adviser.displayName;
-  /**
-   * A REVIEW TAKES A WHILE, AND THE CLOCK DOES NOT KNOW. At your own practice table the table is HELD
-   * for the review (the same pause the round curtain uses) and released after — a person reading a
-   * review of their play must not be folded by the turn clock while they read it. Anywhere else the
-   * table cannot be held for one person, so a review is refused while it is your turn: ask between
-   * hands.
-   */
-  const askReview = async (question: string) => {
-    if (busy) return;
-    if (myTurn && !mine) { setErr('A review takes a while and it is your turn — ask between hands.'); return; }
-    setBusy(true);
-    setErr(null);
-    const heldForReview = mine && !paused && !!onHold;
-    if (heldForReview) onHold!(true);
-    onWaiting({ what: 'review', who: voice });
-    try {
-      const r = await api.reviewHands(tableId, question, session.token);
-      setReview(r);
-      onReview(r);
-      setQ('');
-    } catch (e) {
-      setErr(e instanceof ApiError ? e.message : `${adviser.displayName} could not review your hands.`);
-    } finally {
-      onWaiting(null);
-      setBusy(false);
-      // Released only if THIS review held it: a table the person paused themselves stays paused.
-      if (heldForReview) onHold!(false);
-    }
-  };
   const ask = async (question: string) => {
     if (busy || !question.trim()) return;
     setBusy(true);
@@ -657,11 +606,6 @@ function AskYourAgent({
         </button>
       </div>
       <div className="coach-ask-presets">
-        {/* A REVIEW, not a question mid-hand: it reads the hands recorded to your vault, so it is asked
-            of the coach in its own time, and it takes a minute rather than a sentence. */}
-        <button type="button" className="link-button" disabled={busy} title={mine ? 'Holds the table while the coach reads your recorded hands.' : 'Ask between hands — it takes a while.'} onClick={() => void askReview('How have I been playing? Name my two biggest leaks from my recorded hands, with the count behind each, and one thing to change next session.')}>
-          Review my hands{mine ? ' (holds the table)' : ''}
-        </button>
         <button type="button" className="link-button" disabled={busy} onClick={() => void ask('How do the other players at this table play? What have you noticed about each of them?')}>
           How do they play?
         </button>
@@ -675,14 +619,7 @@ function AskYourAgent({
           <p className="hint">— {voice}</p>
         </div>
       ) : null}
-      {review ? (
-        <div className="coach-ask-answer coach-review">
-          {/* A review is paragraphs: the coach writes them with line breaks, and they are kept. */}
-          <p className="coach-say" style={{ whiteSpace: 'pre-line' }}>{review.say}</p>
-          {review.because ? <p className="coach-why">Next session: {review.because}</p> : null}
-          <p className="hint">— {review.source?.coach ? `${review.source.coach}, via ${review.source.displayName}` : review.source?.displayName ?? adviser.displayName}, from your recorded hands</p>
-        </div>
-      ) : null}
+
     </form>
   );
 }
