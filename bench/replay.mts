@@ -127,18 +127,22 @@ export function* postflopSpots(file = 'pokerbench/postflop_10k_test_set_game_sce
     const seats: Seat[] = [OOP, IP].map((seat) => ({ seat, stack: 100 * CHIPS, streetBet: 0, totalBet: 0, folded: false, allIn: false }));
     const bySeat = (name: string) => (name === oopName ? seats[OOP]! : seats[IP]!);
     let cur = 0;
+    // THE PREFLOP LINE GOES INTO THE RECORD, not only into the stacks. A live view carries every preflop
+    // action, and the chart's "who had the initiative on the flop" reads them; a bench view that carried
+    // none said "nobody" for every flop spot, and the chart was built and scored on a feature a live table
+    // never produces. Same shape the engine records: raise TO, call, all-in, with the chips moved.
+    const actions: Array<{ seat: number; street: 'preflop' | 'flop' | 'turn' | 'river'; action: Action; amount: number }> = [];
     for (let j = 0; j + 1 < pre.length; j += 2) {
       const sd = bySeat(pre[j]!); const act = pre[j + 1]!;
-      const put = (to: number) => { const add = Math.min(to - sd.streetBet, sd.stack); sd.stack -= add; sd.streetBet += add; sd.totalBet += add; };
-      if (act === 'call') put(cur);
-      else if (/^[\d.]+bb$/.test(act)) { const to = Math.round(parseFloat(act) * CHIPS); put(to); cur = Math.max(cur, to); }
-      else if (act === 'allin') { put(sd.streetBet + sd.stack); sd.allIn = true; cur = Math.max(cur, sd.streetBet); }
+      const put = (to: number) => { const add = Math.min(to - sd.streetBet, sd.stack); sd.stack -= add; sd.streetBet += add; sd.totalBet += add; return add; };
+      if (act === 'call') actions.push({ seat: sd.seat, street: 'preflop', action: { type: 'call' }, amount: put(cur) });
+      else if (/^[\d.]+bb$/.test(act)) { const to = Math.round(parseFloat(act) * CHIPS); const add = put(to); cur = Math.max(cur, to); actions.push({ seat: sd.seat, street: 'preflop', action: { type: 'raise', amount: to }, amount: add }); }
+      else if (act === 'allin') { const add = put(sd.streetBet + sd.stack); sd.allIn = true; cur = Math.max(cur, sd.streetBet); actions.push({ seat: sd.seat, street: 'preflop', action: { type: 'all-in' }, amount: add }); }
     }
     for (const sd of seats) sd.streetBet = 0;
     const board: Card[] = [];
     const flop = r.board_flop ?? '';
     for (let j = 0; j + 1 < flop.length; j += 2) board.push(card(flop.slice(j, j + 2)));
-    const actions: Array<{ seat: number; street: 'flop' | 'turn' | 'river'; action: Action; amount: number }> = [];
     let street: 'flop' | 'turn' | 'river' = 'flop';
     let currentBet = 0;
     const tokens = (r.postflop_action ?? '').split('/').filter(Boolean);

@@ -79,7 +79,7 @@ const pokerWithCoach: HostedGame = {
     const legal = pokerLegalFor(s, seat);
     // The ENVELOPE is filler and is never read: `decide` reasons from `view` and `legal` alone. A
     // coach holds the state rather than a turn request, so there is no request to quote here.
-    const { action, note } = decide({
+    const { action, note, mix } = decide({
       skill: POKER_ACT_SKILL,
       tableId: '',
       handNo: hand.handNo,
@@ -95,7 +95,11 @@ const pokerWithCoach: HostedGame = {
     // dozens of spots — so anything with a real choice in it still goes to whoever they named.
     const m = /^chart \w+ (\S+): (\d+) spots, (\d+)% agree$/.exec(note ?? '');
     const certain = m && Number(m[3]) >= 100 && Number(m[2]) >= 50 ? { because: `the solver saw this spot ${m[2]} times and never disagreed` } : undefined;
-    return { action, say, because, ...(certain ? { certain } : {}) };
+    // THE OTHER LINE, said as well as carried: "the solver also bets here 38% of the time" is a true
+    // thing about the spot that a fixed recommendation hides, and it is the opening a person's own
+    // agent uses when it remembers how the player across the table plays.
+    const other = mix ? { action: mix.action, share: mix.share, say: `The solver also ${verbOf(mix.action)} here ${mix.share}% of the time.` } : undefined;
+    return { action, say, because: other ? `${because} ${other.say}` : because, ...(certain ? { certain } : {}), ...(other ? { mix: other } : {}) };
   },
   // The same facts as fields, for an adviser that reasons rather than looks up: the price, the outs,
   // position, the money behind, what the cards have made. Handed these, a model at somebody's Home
@@ -115,6 +119,20 @@ const pokerWithCoach: HostedGame = {
     return observeRound(pokerViewFor(s, seat), seat);
   },
 };
+
+/** "bets", "checks", "raises to 24" — a move as a verb, for one sentence about the other line. */
+function verbOf(action: unknown): string {
+  const a = action as { type?: string; amount?: number };
+  switch (a?.type) {
+    case 'bet': return `bets ${a.amount}`;
+    case 'raise': return `raises to ${a.amount}`;
+    case 'call': return 'calls';
+    case 'check': return 'checks';
+    case 'fold': return 'folds';
+    case 'all-in': return 'goes all in';
+    default: return 'takes another line';
+  }
+}
 
 // ONE LINE PER GAME. Each brings its own engine and its own adapter; neither knows the other.
 const registry = createGameRegistry([pokerWithCoach, canastaWithCoach]);

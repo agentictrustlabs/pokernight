@@ -5,3 +5,8 @@ PokerBench test and train sets go here, fetched from Hugging Face (`RZ412/PokerB
       curl -sL -o bench/pokerbench/$f "https://huggingface.co/datasets/RZ412/PokerBench/resolve/main/$f"; done
 
 Then `pnpm bench:preflop` and `pnpm bench:postflop` score the house coach; `pnpm bench:chart` rebuilds both charts.
+
+Scores (2026-09-11): preflop 91.2% action / 74% size; postflop 80.5% action (bet 58%, raise 70%,
+check 92%, call 78%, fold 84%). Class must match before size is scored, so the size figure is bounded
+by the class figure; within matched classes, bet sizes are within 25% of the solver's 95% of the time
+and raises 85%.

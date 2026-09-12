@@ -279,7 +279,16 @@ function decidePostflop(input: PokerActInput, evaluate: Evaluator | undefined, r
 /**
  * Decide an action for the viewer. Always legal per `input.legal`.
  */
-export function decide(input: PokerActInput, opts: DecideOptions = {}): PokerActOutput {
+/**
+ * What `decide` returns: the wire's output, and — when the solver's chart answered and would also take
+ * another line often enough to say so — the OTHER LINE and its share. A coach can say "the solver
+ * splits here"; an adviser with a memory of the player across the table can take the side it favours.
+ */
+export interface Decision extends PokerActOutput {
+  mix?: { action: Action; share: number };
+}
+
+export function decide(input: PokerActInput, opts: DecideOptions = {}): Decision {
   const rng = opts.rng ?? Math.random;
   const { view, legal } = input;
   const hole = myHoleCards(view);
@@ -287,6 +296,7 @@ export function decide(input: PokerActInput, opts: DecideOptions = {}): PokerAct
 
   let desired: Action;
   let note: string;
+  let mix: Decision['mix'];
   try {
     if (!view.hand || st === null || st === 'showdown' || hole.length !== 2) {
       desired = fallback(legal, view);
@@ -306,6 +316,7 @@ export function decide(input: PokerActInput, opts: DecideOptions = {}): PokerAct
       const chart = postflopChartDecision(view, legal);
       if (chart) {
         desired = chart.action;
+        mix = chart.mix;
         note = `chart post ${chart.key}: ${chart.spots} spots, ${chart.agree}% agree`;
       } else ({ action: desired, note } = decidePostflop(input, opts.evaluate, rng));
     } else {
@@ -321,7 +332,7 @@ export function decide(input: PokerActInput, opts: DecideOptions = {}): PokerAct
   if (action.type !== desired.type || ('amount' in desired && 'amount' in action && desired.amount !== action.amount)) {
     note += ` -> ${describe(action)}`;
   }
-  return { action, note: note.slice(0, 280) };
+  return { action, note: note.slice(0, 280), ...(mix && mix.action.type !== action.type ? { mix } : {}) };
 }
 
 function describe(a: Action): string {

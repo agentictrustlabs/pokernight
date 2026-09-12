@@ -228,6 +228,13 @@ export interface Advice {
    * THIS decision, asking it would cost seconds and tokens to hear the same move back.
    */
   certain?: { because: string };
+  /**
+   * THE OTHER LINE. Set when the strategy would also take a different move often enough to say so —
+   * a solver that bets this spot 38% of the time and checks it 62% — with that share. Advice that
+   * pretends a mixed spot is a fixed one teaches a certainty the game does not have; and an adviser
+   * that knows the player across the table has, here, a reason to choose.
+   */
+  mix?: { action: unknown; share: number; say: string };
 }
 
 /**

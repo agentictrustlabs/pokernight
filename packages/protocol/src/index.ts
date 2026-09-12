@@ -938,7 +938,7 @@ export interface AdviseInput extends ActInput {
    * sent alongside, a person's own agent starts from a correct floor and adds their style — and the
    * style skill says it outranks the craft, so this is the intended shape. Never applied by anybody.
    */
-  baseline?: { say: string; because?: string; action?: unknown };
+  baseline?: { say: string; because?: string; action?: unknown; /** The strategy's OTHER line and its share, when the spot is mixed. */ mix?: { action: unknown; share: number } };
 }
 
 /**

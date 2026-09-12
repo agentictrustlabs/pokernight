@@ -12,7 +12,7 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { postflopKey } from '../packages/agent-kit/src/postflop-chart.ts';
+import { postflopKeys, BET_FRACTIONS, RAISE_MULTIPLES, VERBS, nearest } from '../packages/agent-kit/src/postflop-chart.ts';
 import { potTotal } from '../packages/agent-kit/src/view.ts';
 import { postflopSpots } from './replay.mts';
 
@@ -26,34 +26,45 @@ const tab = new Map<string, Tally>();
 let n = 0; let unkeyed = 0;
 for (const spot of postflopSpots('pokerbench/postflop_500k_train_set_game_scenario_information.csv', LIMIT)) {
   n++;
-  const key = postflopKey(spot.view, spot.legal);
-  if (!key) { unkeyed++; continue; }
+  const keys = postflopKeys(spot.view, spot.legal);
+  if (!keys) { unkeyed++; continue; }
   const label = spot.want.split(' ')[0]!.toLowerCase() as keyof Omit<Tally, 'f' | 'x'>;
-  const t = tab.get(key) ?? { bet: 0, raise: 0, call: 0, check: 0, fold: 0, f: [], x: [] };
-  if (!(label in t)) continue;
-  t[label] += 1;
-  if (spot.wantSize != null) {
-    const pot = potTotal(spot.view);
-    const cur = spot.view.hand!.currentBet;
-    if (label === 'bet' && pot > 0) t.f.push(spot.wantSize / pot);
-    if (label === 'raise' && cur > 0) t.x.push(spot.wantSize / cur);
+  // EVERY LEVEL AT ONCE: the exact spot and its three coarser cousins each learn from this decision, so a
+  // live spot the benchmark never saw exactly is answered from the ones most like it.
+  for (const key of keys) {
+    const t = tab.get(key) ?? { bet: 0, raise: 0, call: 0, check: 0, fold: 0, f: [], x: [] };
+    if (!(label in t)) continue;
+    t[label] += 1;
+    if (spot.wantSize != null) {
+      const pot = potTotal(spot.view);
+      const cur = spot.view.hand!.currentBet;
+      if (label === 'bet' && pot > 0) t.f.push(nearest(spot.wantSize / pot, BET_FRACTIONS));
+      if (label === 'raise' && cur > 0) t.x.push(nearest(spot.wantSize / cur, RAISE_MULTIPLES));
+    }
+    tab.set(key, t);
   }
-  tab.set(key, t);
   if (n % 100000 === 0) console.error(`  ${n} spots · ${tab.size} keys`);
 }
-const median = (a: number[]) => { const s = [...a].sort((p, q) => p - q); return s.length ? Math.round(s[Math.floor(s.length / 2)]! * 100) / 100 : undefined; };
+// THE MOST COMMON SIZE, not the median: a solver's sizes are bimodal (a third of the pot or the whole of it),
+// and the median of a bimodal set is a size it never uses. Sizes were snapped to the solver's own menu above.
+const mode = (a: number[]) => { if (!a.length) return undefined; const c = new Map<number, number>(); for (const v of a) c.set(v, (c.get(v) ?? 0) + 1); return [...c.entries()].sort((p, q) => q[1] - p[1] || p[0] - q[0])[0]![0]; };
+// THE COUNTS THEMSELVES, not a verdict: the chart combines a spot's own counts with its coarser cousins'
+// at lookup (`postflopChartDecision`), and a verdict cannot be combined. Order is `VERBS`.
 const keys: Record<string, unknown> = {};
+let pruned = 0;
 for (const [k, t] of tab) {
-  const best = (['bet', 'raise', 'call', 'check', 'fold'] as const).reduce((a, b) => (t[b] > t[a] ? b : a));
-  const total = t.bet + t.raise + t.call + t.check + t.fold;
-  const f = median(t.f); const x = median(t.x);
-  keys[k] = { a: best, n: total, p: Math.round((100 * t[best]) / total), ...(f !== undefined ? { f } : {}), ...(x !== undefined ? { x } : {}) };
+  const c = VERBS.map((v) => t[v]);
+  // A single decision is not evidence anybody should lean on, and it is weight in every Worker that bundles it.
+  if (c.reduce((a, b) => a + b, 0) < 2) { pruned++; continue; }
+  const f = mode(t.f); const x = mode(t.x);
+  // Compact: the five counts, then the bet fraction and raise multiple where known (null otherwise).
+  keys[k] = x !== undefined ? [...c, f ?? null, x] : f !== undefined ? [...c, f] : c;
 }
 const out = {
   _source: 'RZ412/PokerBench postflop_500k_train_set (solver decisions); built by bench/build-postflop-chart.mts',
-  _key: 'street|ip/oop|facing|initiative|made|draw|texture|spr  →  a: majority action, n: spots, p: % agreeing, f: median bet as fraction of pot, x: median raise-to as multiple of the bet faced',
+  _key: 'street|ip/oop|facing|pre.line|made|draw|texture|spr, with * where a level dropped a feature  (tokens shortened by postflop-chart.ts `short`)  →  [bet, raise, call, check, fold counts, most common bet as fraction of pot, most common raise-to as multiple of the bet faced]',
   keys,
 };
 const dest = resolve(HERE, '../packages/agent-kit/src/postflop-chart.json');
 writeFileSync(dest, JSON.stringify(out));
-console.log(`${n} spots (${unkeyed} unkeyed) · ${tab.size} keys · ${(readFileSync(dest).length / 1024).toFixed(0)} KB → ${dest}`);
+console.log(`${n} spots (${unkeyed} unkeyed) · ${tab.size} keys (${pruned} single-spot keys pruned) · ${(readFileSync(dest).length / 1024).toFixed(0)} KB → ${dest}`);

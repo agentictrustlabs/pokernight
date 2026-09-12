@@ -246,8 +246,9 @@ describe('decide scenarios', () => {
     const out = decide(makeInput(call), opts);
     expect(out.action).toEqual({ type: 'call' });
     // The solver's chart answers this spot now (the rules did, saying "draw"); either way the DECISION
-    // is a call at that price, and the note says which stood behind it.
-    expect(out.note).toMatch(/draw|chart post .*\|fd\|/);
+    // is a call at that price, and the note says which stood behind it. The chart's key is its short
+    // spelling: `f` for a flush draw in the draw slot, or `*` where a coarser level answered.
+    expect(out.note).toMatch(/draw|chart post .*\|(f|\*)\|/);
 
     const overbet = makeView({
       ...base,
@@ -261,7 +262,10 @@ describe('decide scenarios', () => {
     expect(decide(makeInput(overbet), opts).action).toEqual({ type: 'fold' });
   });
 
-  it('top pair bets for value when checked to', () => {
+  it('top pair bets for value when checked to — as the preflop raiser', () => {
+    // WHO RAISED BEFORE THE FLOP is in the key. The raiser bets this flop with top pair four times in
+    // five; the CALLER, checked to by the raiser, checks it back two times in three (the solver's line,
+    // not the folklore's) — so the record carries the raise, the way a live view always does.
     const view = makeView({
       button: 0,
       viewer: 0,
@@ -272,12 +276,22 @@ describe('decide scenarios', () => {
         { seat: 0, stack: 200, hole: ['Ks', 'Qs'] },
         { seat: 2, stack: 200 },
       ],
+      actions: [
+        { seat: 0, street: 'preflop', action: { type: 'raise', amount: 6 }, amount: 6 },
+        { seat: 2, street: 'preflop', action: { type: 'call' }, amount: 4 },
+        { seat: 2, street: 'flop', action: { type: 'check' }, amount: 0 },
+      ],
     });
     const out = decide(makeInput(view), opts);
     expect(out.action.type).toBe('bet');
-    // Sized by the solver's median for this spot rather than the rules' fixed 65% — a real bet, within
-    // the bounds the table gave, not a number the test dictated.
+    // Sized by the solver's most common size for this spot rather than the rules' fixed 65% — a real bet,
+    // within the bounds the table gave, not a number the test dictated.
     if (out.action.type === 'bet') { expect(out.action.amount).toBeGreaterThanOrEqual(6); expect(out.action.amount).toBeLessThanOrEqual(20); }
+    // The same spot as the caller: the chart checks, and says the solver also bets it — a mixed spot,
+    // carried as one rather than flattened into a certainty.
+    const asCaller = decide(makeInput(makeView({ button: 0, viewer: 0, street: 'flop', board: ['Kc', '7h', '2d'], potAmount: 20, seats: [{ seat: 0, stack: 200, hole: ['Ks', 'Qs'] }, { seat: 2, stack: 200 }] })), opts);
+    expect(asCaller.action.type).toBe('check');
+    expect(asCaller.mix?.action.type).toBe('bet');
   });
 
   it('air folds to a bet and checks when free', () => {
@@ -298,7 +312,10 @@ describe('decide scenarios', () => {
     expect(decide(makeInput(mk(0, 0)), { ...opts, rng: () => 0.99 }).action).toEqual({ type: 'check' });
   });
 
-  it('shoves with top pair or better when SPR < 1', () => {
+  it('calls a small bet with top pair when short — the solver keeps the bluffs in, it does not shove', () => {
+    // The rules used to shove any top pair under one stack-to-pot; PokerBench's solver CALLS a third-pot
+    // bet in position every time it was asked (53 spots), letting a bluffing hand keep bluffing.
+    // The chart answers and the rules are the floor, so the test says what the solver says.
     const view = makeView({
       button: 0,
       viewer: 0,
@@ -311,7 +328,7 @@ describe('decide scenarios', () => {
         { seat: 2, stack: 300, streetBet: 30 },
       ],
     });
-    expect(decide(makeInput(view), opts).action).toEqual({ type: 'all-in' });
+    expect(decide(makeInput(view), opts).action).toEqual({ type: 'call' });
   });
 
   it('a set raises a bet for value', () => {

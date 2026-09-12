@@ -201,7 +201,21 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   rates ("foldToBet 80% of 5"); `holdem-table-read` teaches what the numbers mean. A new vault record
   type is four registrations (ontology tbox + binding, the two grant-scope lists, the DO allowlist) and a
   grant re-issue per agent (`scripts/reissue-interactions-grants.mts alice`), the same as every one
-  before it. A cold ask is ~12–15 s door to door: the playbook's vault read (~3.5 s), the model
+  before it. **A MIXED SPOT IS CARRIED AS ONE**: the postflop chart keeps the solver's runner-up
+  (`Decision.mix`, `Advice.mix`, `baseline.mix` on the wire), the house words say "the solver also
+  bets here 32% of the time", and the person's agent is told the memory is what picks a side — proven
+  live: top pair checked to as the caller, baseline check 68/32, "The Rock folds to bets" → bet.
+- **THE POSTFLOP CHART IS COUNTS AT FOUR LEVELS, SMOOTHED AT LOOKUP.** `postflopKeys` returns the
+  spot's feature vector and three coarser cousins (dropping the money behind, the board, the draw); the
+  builder tallies every level; `postflopChartDecision` adds each level's counts to the coarser level's
+  distribution scaled to `PRIOR_WEIGHT` spots. Features: street, position, what is faced and how big,
+  the preflop pot (who raised, three-bet or not) and the line (initiative, barrels), the made hand
+  finely (kicker, top two, top set, nut straight/flush, overcards for air), the draw, the texture and
+  what the last card did, SPR. Tokens are stored in `short` form; the JSON is 3.2 MB (580 KB gzipped)
+  and rides in both Workers. PokerBench postflop 54.5% (rules) → 73.1% (one level) → 80.5%. The bench
+  replay carries the PREFLOP actions into the view now, because the chart reads who raised — a bench
+  view without them scored a feature no live table produces. Some old scenario tests said what the
+  folklore says (shove top pair under one SPR); they now say what the solver says (call a small bet). A cold ask is ~12–15 s door to door: the playbook's vault read (~3.5 s), the model
   (~5.5 s) and the edge (~2.5 s); the standing and catalog reads now start beside the playbook's.
 - Wrangler: one `wrangler.toml` per app, `[env.faithnet]` per deployment universe, bindings repeated per env,
   migration tags never renamed. Worker names `pokernight-<app>-<env>`.

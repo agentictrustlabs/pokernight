@@ -1677,7 +1677,7 @@ export class PokerTableDO extends DurableObject<Env> {
         // arithmetic a language model would otherwise get wrong; the baseline is the rules coach's
         // answer, sent as an observation the person's agent may start from and depart from.
         ...(read != null ? { read } : {}),
-        ...(baseline ? { baseline: { say: baseline.say, because: baseline.because, action: baseline.action } } : {}),
+        ...(baseline ? { baseline: { say: baseline.say, because: baseline.because, action: baseline.action, ...(baseline.mix ? { mix: { action: baseline.mix.action, share: baseline.mix.share } } : {}) } } : {}),
       },
       a2aAdviceTimeoutMs(this.env),
       this.env,
