@@ -92,6 +92,15 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   touchscreen and cannot be driven by an ordinary mouse press even where it does, so a card game
   built on it works for some people and silently does nothing for others. Drop targets are marked
   `data-drop="…"` and resolved with `elementFromPoint` on release.
+- **A TABLE DEALS WHILE SOMEBODY IS WATCHING.** Agent seats have no socket, so a practice table whose
+  owner closed the tab kept three house bots playing each other all night — an alarm every few seconds,
+  a hand a minute, and a `*.review` of every hand to whatever agent the owner had named, at their Home.
+  The alarm's next-deal branch now starts a hand only when `getWebSockets()` has an open socket
+  (spectators count); `scheduleAlarm` leaves `next-hand-at` out of its candidates when nobody is
+  connected, so the DO goes quiet instead of re-arming; the next socket to open (`wakeForWatcher`)
+  re-times a stale next deal to now + the ordinary delay and sets the alarm again. A hand in progress
+  still finishes (turns time out). And a review goes only to an adviser whose person was DEALT the
+  round — a seat sitting out was not, so nothing is sent for it.
 - **A PAUSE HOLDS FOR EVERYBODY, including whoever pressed it.** Holding only the clock and the
   agents left human moves going through, so anything still playing that seat kept the whole table
   moving and a pause took a minute to look like one. `act` is refused with code `paused`, the coach
@@ -211,8 +220,11 @@ currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticpr
   distribution scaled to `PRIOR_WEIGHT` spots. Features: street, position, what is faced and how big,
   the preflop pot (who raised, three-bet or not) and the line (initiative, barrels), the made hand
   finely (kicker, top two, top set, nut straight/flush, overcards for air), the draw, the texture and
-  what the last card did, SPR. Tokens are stored in `short` form; the JSON is 3.2 MB (580 KB gzipped)
-  and rides in both Workers. PokerBench postflop 54.5% (rules) → 73.1% (one level) → 80.5%. The bench
+  what the last card did, SPR. Tokens are stored in `short` form, ONE LINE PER KEY IN ONE STRING
+  (`postflop-chart.data.ts`, generated, 3.2 MB / 580 KB gzipped; lookup is `indexOf`) — never a JSON
+  object: a hundred thousand keys as an object, imported as `.json`, cost a test isolate two hundred
+  megabytes of heap and workerd died of it. `pnpm test`'s summary lines are what to read: a grep for
+  "failed" alone let that crash pass as green for an hour. PokerBench postflop 54.5% (rules) → 73.1% (one level) → 80.5%. The bench
   replay carries the PREFLOP actions into the view now, because the chart reads who raised — a bench
   view without them scored a feature no live table produces. Some old scenario tests said what the
   folklore says (shove top pair under one SPR); they now say what the solver says (call a small bet). A cold ask is ~12–15 s door to door: the playbook's vault read (~3.5 s), the model

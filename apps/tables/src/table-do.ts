@@ -1029,6 +1029,8 @@ export class PokerTableDO extends DurableObject<Env> {
     // and the turn clock remains the answer to somebody who reconnects and then wanders off again.
     if (playerId) void this.serial(() => this.sitInOnReconnect(playerId));
     this.ctx.acceptWebSocket(server, playerId ? [playerId] : []);
+    // The table may have stopped dealing for want of anybody watching; this socket is somebody.
+    void this.serial(() => this.wakeForWatcher());
     server.serializeAttachment(attachment);
     const state = this.state;
     const welcome: ServerMessage = {
@@ -1171,6 +1173,29 @@ export class PokerTableDO extends DurableObject<Env> {
       if (ws.readyState === WS_OPEN) return true;
     }
     return false;
+  }
+
+  /**
+   * A TABLE DEALS WHILE SOMEBODY IS WATCHING. Agent seats have no socket, so a table left with three
+   * house bots and nobody else dealt hands forever: an alarm every few seconds, a hand every minute,
+   * and — for anybody seated there who had named their own agent — a review of every one of those
+   * hands sent to that agent at their Home, all night, with nobody at the table. Spectators count:
+   * somebody watching bots play is somebody the hands are for.
+   */
+  private anybodyWatching(): boolean {
+    return this.ctx.getWebSockets().some((ws) => ws.readyState === WS_OPEN);
+  }
+
+  /**
+   * Somebody arrived. A next deal that fell due while nobody was here starts from NOW plus the
+   * ordinary delay, never from the moment it was scheduled — the same cap a resumed pause applies —
+   * and the alarm that stopped when the last socket closed is set again.
+   */
+  private async wakeForWatcher(): Promise<void> {
+    const nextAt = await this.ctx.storage.get<number>('next-hand-at');
+    const now = Date.now();
+    if (nextAt !== undefined && nextAt < now) await this.ctx.storage.put('next-hand-at', now + HAND_START_DELAY_MS);
+    await this.scheduleAlarm();
   }
 
   override async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
@@ -1705,9 +1730,13 @@ export class PokerTableDO extends DurableObject<Env> {
     const at = this.snap(state);
     const skill = this.game.id === 'canasta' ? CANASTA_REVIEW_SKILL : POKER_REVIEW_SKILL;
     for (const [playerId, adviser] of advisers) {
-      const seat = at.seats.find((x) => x.playerId === playerId)?.seat;
+      const mine = at.seats.find((x) => x.playerId === playerId);
+      const seat = mine?.seat;
       // Named an adviser and then stood up: there is no seat to report and nothing to say about one.
-      if (seat === undefined) continue;
+      // SITTING OUT is the same for this purpose: the round was not dealt to them, and a review of a
+      // hand they were not in is a hand their agent never needed — one per hand, all night, when the
+      // person had closed the tab and the bots played on.
+      if (seat === undefined || mine?.status === 'sitting-out') continue;
       // THE ROUND IN COUNTS, when the game can count it — what each player did, keyed by the player id
       // the seat's view shows — with the names the card room knows them by, so the agent remembers
       // "Sharkbot" and not "agent:sharkbot.svc". Labels are the host's to add; counts are the game's.
@@ -1912,12 +1941,16 @@ export class PokerTableDO extends DurableObject<Env> {
         } else if (!at.roundInProgress) {
           const nextAt = await this.ctx.storage.get<number>('next-hand-at');
           if (nextAt !== undefined && now >= nextAt) {
-            await this.ctx.storage.delete('next-hand-at');
             // Between hands is where a busted AGENT seat is dealt with, because it is the only
             // moment its stack is final and no hand is riding on it. Returns the state to start
             // from, which may differ from `state` if any agent was rebought or stood up.
             const settled = await this.settleBustedAgents(state, seatsBefore);
-            if (this.game.canStart(settled)) await this.startNewHand(settled, seatMap(this.snap(settled)));
+            // THE DEAL ITSELF WAITS FOR SOMEBODY WATCHING. `next-hand-at` is left pending rather than
+            // deleted, and no alarm is set for it (`scheduleAlarm`): the next socket to open wakes it.
+            if (this.anybodyWatching()) {
+              await this.ctx.storage.delete('next-hand-at');
+              if (this.game.canStart(settled)) await this.startNewHand(settled, seatMap(this.snap(settled)));
+            }
           }
         }
       }
@@ -2010,7 +2043,9 @@ export class PokerTableDO extends DurableObject<Env> {
     const at = this.state ? this.snap() : null;
     if (at && at.deadline !== null && at.toAct !== null) candidates.push(at.deadline);
     const nextHandAt = await this.ctx.storage.get<number>('next-hand-at');
-    if (nextHandAt !== undefined) candidates.push(nextHandAt);
+    // With nobody watching, the next deal waits for a socket rather than for a clock — an alarm set
+    // for it would fire, find nobody, and set itself again, forever.
+    if (nextHandAt !== undefined && this.anybodyWatching()) candidates.push(nextHandAt);
     const outbox = this.ctx.storage.sql
       .exec<{ next_at: number | null }>('SELECT MIN(next_at) AS next_at FROM outbox WHERE done_at IS NULL')
       .toArray()[0];

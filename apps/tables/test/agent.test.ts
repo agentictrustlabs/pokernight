@@ -79,6 +79,9 @@ function stubAct(pick: (legal: LegalActions, input: { handNo: number; seat: numb
   if (delayMs > 0) interceptor.delay(delayMs);
 }
 
+/** Longer than the between-hands delay, so 'still hand 1' means the deal waited rather than had not come due. */
+const NEXT_HAND_WAIT_MS = 4000;
+
 const checkOrCall = (legal: LegalActions): unknown =>
   legal.check ? { type: 'check' } : legal.call !== null ? { type: 'call' } : { type: 'fold' };
 
@@ -296,6 +299,43 @@ describe('A2A agent seats', () => {
     await unseatAgent(tableId, token, 1);
     human.close();
   }, 40_000);
+
+  it.skipIf(!engineReady)('deals only while somebody is watching: two bots alone stop between hands, and resume when a socket opens', async () => {
+    // Two agents, seated by a person who then closes the tab. Without this rule the bots played each
+    // other forever — an alarm every few seconds, a hand a minute, a review of each to any adviser
+    // the person had named, all night.
+    stubCard();
+    stubAct(checkOrCall);
+    const table = await createTableViaHttp('bots-alone', { minBuyIn: 40, maxBuyIn: 200, actionTimeoutMs: 2000 });
+    const session = await devSession(`Owner${Math.floor(Math.random() * 1e6)}`);
+    const human = await TestClient.connect(table.tableId, session.token);
+    await human.waitFor((m) => m.type === 'welcome');
+    expect((await seatAgent(table.tableId, session.token, { seat: 1, buyIn: 100, agentName: 'sharkbot.svc', endpoint: agentOrigin })).status).toBe(201);
+    expect((await seatAgent(table.tableId, session.token, { seat: 2, buyIn: 100, agentName: 'rock.svc', endpoint: agentOrigin })).status).toBe(201);
+    // Hand 1 is dealt while the person watches.
+    await human.waitFor((m) => m.type === 'event' && m.event.type === 'hand-started', 8000);
+    human.close();
+    // The hand in progress finishes (the bots are paced, so give it a while); the next one is NOT
+    // dealt with nobody watching — the deal is left pending and no alarm is set to keep checking.
+    const stub = env.TABLES.get(env.TABLES.idFromName(table.tableId));
+    const look = () => runInDurableObject(stub, async (_i: PokerTableDO, state) => {
+      const st = (await state.storage.get<{ handNo: number; hand: { result?: unknown } | null }>('state'))!;
+      return { handNo: st.handNo, over: !st.hand || st.hand.result !== undefined, pending: await state.storage.get<number>('next-hand-at'), alarm: await state.storage.getAlarm() };
+    });
+    let seen = await look();
+    for (let i = 0; i < 40 && !(seen.over && seen.pending !== undefined); i++) { await new Promise((r) => setTimeout(r, 500)); seen = await look(); }
+    expect(seen.over).toBe(true);
+    expect(seen.pending).toBeDefined(); // waiting for a watcher, not for a clock
+    // Well past the ordinary delay: still hand 1, and the alarm has let go.
+    await new Promise((r) => setTimeout(r, NEXT_HAND_WAIT_MS));
+    seen = await look();
+    expect(seen.handNo).toBe(1);
+    expect(seen.alarm).toBeNull();
+    // Somebody comes back — a spectator will do — and the next hand is dealt.
+    const watcher = await TestClient.connect(table.tableId);
+    await watcher.waitFor((m) => m.type === 'event' && m.event.type === 'hand-started', 8000);
+    watcher.close();
+  }, 30_000);
 
   it('refuses a caller-supplied endpoint outside a dev-auth deployment (SSRF guard)', () => {
     // resolveAgentBase is the gate: in production the agent name must resolve inside AGENT_CARD_ZONE,

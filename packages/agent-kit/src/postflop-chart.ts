@@ -28,17 +28,31 @@
  */
 
 import type { Action, Card, LegalActions, Street, TableView } from '@pokernight/engine';
-import chart from './postflop-chart.json' with { type: 'json' };
+import chartText from './postflop-chart.data.js';
 import { postflopStrength, type MadeHand } from './strength.js';
 import { aggressorOnStreet, inPosition, myHoleCards, potTotal, raisesOnStreet } from './view.js';
 
 type Verb = 'bet' | 'raise' | 'call' | 'check' | 'fold';
 export const VERBS: readonly Verb[] = ['bet', 'raise', 'call', 'check', 'fold'];
 /** One key's tally: solver decisions by verb, in `VERBS` order, then the most common bet fraction and raise multiple. */
-type Row = [number, number, number, number, number, (number | null)?, (number | null)?];
 interface Entry { c: [number, number, number, number, number]; f?: number; x?: number }
-const ROWS = (chart as unknown as { keys: Record<string, Row> }).keys;
-const entry = (k: string): Entry | undefined => { const r = ROWS[k]; if (!r) return undefined; const f = r[5]; const x = r[6]; return { c: [r[0], r[1], r[2], r[3], r[4]], ...(typeof f === 'number' ? { f } : {}), ...(typeof x === 'number' ? { x } : {}) }; };
+/**
+ * THE CHART IS ONE STRING, one line per key, sorted — never an object. As an object of a hundred thousand
+ * keys it was tens of megabytes of property slots in every isolate that loaded it, and the tables Worker's
+ * test isolates ran out of heap. As a string it is three megabytes of characters; a lookup is `indexOf`
+ * on `\n<key>\t`, which V8 does in well under a millisecond, and a decision needs four.
+ */
+const TEXT = `\n${chartText}\n`;
+const entry = (k: string): Entry | undefined => {
+  const at = TEXT.indexOf(`\n${k}\t`);
+  if (at < 0) return undefined;
+  const from = at + k.length + 2;
+  const line = TEXT.slice(from, TEXT.indexOf('\n', from));
+  const [b, r, c, ch, f, bf, rx] = line.split(' ');
+  const num = (v: string | undefined) => (v === undefined || v === '-' ? undefined : Number(v));
+  const bet = num(bf); const raise = num(rx);
+  return { c: [Number(b), Number(r), Number(c), Number(ch), Number(f)], ...(bet !== undefined ? { f: bet } : {}), ...(raise !== undefined ? { x: raise } : {}) };
+};
 /** Spots the finest level found must have behind it before the chart outranks the rules at all. Two: a
  *  single decision is pruned at build time, and the coarser levels weigh in on anything this thin. */
 const MIN_SPOTS = 2;
