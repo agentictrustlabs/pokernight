@@ -63,6 +63,8 @@ export function PokerCoach({
   players,
   paused = false,
   startOn = 'off',
+  mine = false,
+  onHold,
   send,
 }: {
   tableId: string;
@@ -89,6 +91,10 @@ export function PokerCoach({
   /** The table is holding. Nothing is said and nothing is played until it starts again. */
   paused?: boolean;
   startOn?: CoachMode;
+  /** This is the viewer's OWN practice table — the one place a review may hold the table while it runs. */
+  mine?: boolean;
+  /** Hold or release the table (a practice table's owner only). A review holds it for as long as it takes. */
+  onHold?: (held: boolean) => void;
   send: (c: ClientCommand) => void;
 }) {
   const [mode, setMode] = useState<CoachMode>(startOn);
@@ -125,6 +131,21 @@ export function PokerCoach({
     const src = a?.source;
     if (src && src !== 'house' && src.coach) setCoach(src.coach);
   };
+  /**
+   * WHAT IS BEING WAITED FOR, SAID LOUDLY. A consultation goes table → your agent → your coach → back,
+   * ten to eighteen seconds; a review reads your recorded hands and takes up to a minute. A panel that
+   * showed "Asking…" in a button while the clock ran gave nobody a reason to wait — "it just dropped me
+   * out" was a person timed out of a hand while a review ran. So the wait is a banner with a stopwatch,
+   * and it says whose tokens are burning and what the table is doing meanwhile.
+   */
+  const [waiting, setWaiting] = useState<{ what: 'advice' | 'review'; who: string; since: number } | null>(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [waiting]);
+  const voiceName = adviser ? (coach ? `${coach}, via ${adviser.displayName}` : adviser.displayName) : 'the house coach';
   useEffect(() => {
     if (!session) return;
     let alive = true;
@@ -209,8 +230,12 @@ export function PokerCoach({
     if (!session || !myTurn || mode === 'off' || paused) return;
     const key = `${handNo}:${street ?? ''}`;
     asked.current = key;
+    // The house answers in a blink; a named adviser is a trip to your Home and your coach. Only that is
+    // worth a stopwatch.
+    if (adviser) setWaiting({ what: 'advice', who: voiceName, since: Date.now() });
     try {
       const a = await api.advice(tableId, session.token);
+      setWaiting(null);
       setMissed(0);
       // The world moves while the coach thinks. An answer about a decision that has passed is worse
       // than no answer, because in `play` mode it would be PLAYED.
@@ -247,10 +272,11 @@ export function PokerCoach({
       // A MISS IS NOT AN ENDING. The card room answers 404 for the moment before it agrees it is this
       // seat's turn, which happens on most turns because the view learns first. Counting the miss is
       // what makes it retry instead of going quiet for the rest of the hand.
+      setWaiting(null);
       setAdvice(null);
       setMissed((n) => n + 1);
     }
-  }, [handNo, mode, myTurn, paused, send, session, street, tableId]);
+  }, [adviser, handNo, mode, myTurn, paused, send, session, street, tableId, voiceName]);
 
   // A new decision is a new question: forget the old answer and let the heartbeat ask.
   useEffect(() => {
@@ -343,6 +369,22 @@ export function PokerCoach({
         </p>
       ) : (
         <>
+          {waiting ? (
+            <div className={`coach-waiting ${waiting.what}`} role="status" aria-live="polite">
+              <span className="coach-waiting-dot" aria-hidden="true" />
+              <div>
+                <strong>
+                  {waiting.what === 'review' ? `Reviewing your recorded hands with ${waiting.who}…` : `Asking ${waiting.who}…`}
+                </strong>
+                <span className="coach-waiting-clock">{Math.max(0, Math.round((now - waiting.since) / 1000))} s</span>
+                <span className="hint">
+                  {waiting.what === 'review'
+                    ? `A review reads every hand on file and takes up to a minute.${mine ? ' The table is held while you wait.' : ' The table keeps going — your seat is still on the clock.'}`
+                    : 'Your agent is consulting your coach. Ten to twenty seconds, then the move is yours.'}
+                </span>
+              </div>
+            </div>
+          ) : null}
           <p className="coach-now">
             {paused
               ? 'Paused. Nothing moves until you carry on.'
@@ -408,7 +450,21 @@ export function PokerCoach({
           {/* A QUESTION IN YOUR OWN WORDS, to your own agent — the one voice here that remembers how you
               and the others have been playing. "How am I playing?" is one press because it is the
               question a learner most needs answered and least knows to ask. Costs its tokens; said so. */}
-          {adviser && session ? <AskYourAgent tableId={tableId} session={session} adviser={adviser} coach={coach} onAnswer={(a) => { noteVoice(a); setSaid((cur) => remember(cur, a, handNo)); if (a.because) say(firstSentence(a.because)); }} onReview={noteVoice} /> : null}
+          {adviser && session ? (
+            <AskYourAgent
+              tableId={tableId}
+              session={session}
+              adviser={adviser}
+              coach={coach}
+              myTurn={myTurn}
+              mine={mine}
+              paused={paused}
+              onHold={onHold}
+              onWaiting={(w) => setWaiting(w ? { ...w, since: Date.now() } : null)}
+              onAnswer={(a) => { noteVoice(a); setSaid((cur) => remember(cur, a, handNo)); if (a.because) say(firstSentence(a.because)); }}
+              onReview={noteVoice}
+            />
+          ) : null}
 
           <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={setAdviser} />
 
@@ -452,6 +508,11 @@ function AskYourAgent({
   session,
   adviser,
   coach,
+  myTurn,
+  mine,
+  paused,
+  onHold,
+  onWaiting,
   onAnswer,
   onReview,
 }: {
@@ -460,6 +521,12 @@ function AskYourAgent({
   adviser: { agentName: string; displayName: string };
   /** The coaching service your agent consults, once an answer has named it. */
   coach: string | null;
+  myTurn: boolean;
+  mine: boolean;
+  paused: boolean;
+  onHold?: (held: boolean) => void;
+  /** Say what is being waited for, loudly, in the panel above. */
+  onWaiting: (w: { what: 'advice' | 'review'; who: string } | null) => void;
   onAnswer: (advice: CoachAdvice) => void;
   onReview: (review: CoachReview) => void;
 }) {
@@ -469,10 +536,21 @@ function AskYourAgent({
   const [answer, setAnswer] = useState<CoachAdvice | null>(null);
   const [review, setReview] = useState<CoachReview | null>(null);
   const voice = coach ? `${coach}, via ${adviser.displayName}` : adviser.displayName;
+  /**
+   * A REVIEW TAKES A WHILE, AND THE CLOCK DOES NOT KNOW. At your own practice table the table is HELD
+   * for the review (the same pause the round curtain uses) and released after — a person reading a
+   * review of their play must not be folded by the turn clock while they read it. Anywhere else the
+   * table cannot be held for one person, so a review is refused while it is your turn: ask between
+   * hands.
+   */
   const askReview = async (question: string) => {
     if (busy) return;
+    if (myTurn && !mine) { setErr('A review takes a while and it is your turn — ask between hands.'); return; }
     setBusy(true);
     setErr(null);
+    const heldForReview = mine && !paused && !!onHold;
+    if (heldForReview) onHold!(true);
+    onWaiting({ what: 'review', who: voice });
     try {
       const r = await api.reviewHands(tableId, question, session.token);
       setReview(r);
@@ -481,13 +559,17 @@ function AskYourAgent({
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : `${adviser.displayName} could not review your hands.`);
     } finally {
+      onWaiting(null);
       setBusy(false);
+      // Released only if THIS review held it: a table the person paused themselves stays paused.
+      if (heldForReview) onHold!(false);
     }
   };
   const ask = async (question: string) => {
     if (busy || !question.trim()) return;
     setBusy(true);
     setErr(null);
+    onWaiting({ what: 'advice', who: voice });
     try {
       const a = await api.askAdviser(tableId, question.trim(), session.token);
       setAnswer(a);
@@ -496,6 +578,7 @@ function AskYourAgent({
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : `${adviser.displayName} could not be reached.`);
     } finally {
+      onWaiting(null);
       setBusy(false);
     }
   };
@@ -524,8 +607,8 @@ function AskYourAgent({
       <div className="coach-ask-presets">
         {/* A REVIEW, not a question mid-hand: it reads the hands recorded to your vault, so it is asked
             of the coach in its own time, and it takes a minute rather than a sentence. */}
-        <button type="button" className="link-button" disabled={busy} onClick={() => void askReview('How have I been playing? Name my two biggest leaks from my recorded hands, with the count behind each, and one thing to change next session.')}>
-          Review my hands
+        <button type="button" className="link-button" disabled={busy} title={mine ? 'Holds the table while the coach reads your recorded hands.' : 'Ask between hands — it takes a while.'} onClick={() => void askReview('How have I been playing? Name my two biggest leaks from my recorded hands, with the count behind each, and one thing to change next session.')}>
+          Review my hands{mine ? ' (holds the table)' : ''}
         </button>
         <button type="button" className="link-button" disabled={busy} onClick={() => void ask('How do the other players at this table play? What have you noticed about each of them?')}>
           How do they play?

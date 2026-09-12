@@ -4171,6 +4171,49 @@ a.button.primary:hover {
   color: #fff;
 }
 
+/* THE WAIT, SAID LOUDLY. A consultation is a trip to your Home and your coach and back; a review is a
+   minute. A button that said "Asking…" was missed while the turn clock folded the person. */
+.coach-waiting {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--focus);
+  background: var(--felt-soft);
+}
+.coach-waiting strong {
+  display: block;
+  font-size: 0.95rem;
+}
+.coach-waiting .hint {
+  display: block;
+  margin-top: 0.15rem;
+}
+.coach-waiting-clock {
+  display: inline-block;
+  margin-top: 0.15rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.coach-waiting-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: 0.25rem;
+  border-radius: 50%;
+  background: var(--focus);
+  animation: coach-pulse 1.1s ease-in-out infinite;
+}
+@keyframes coach-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-waiting-dot { animation: none; }
+}
+
 /* What is happening RIGHT NOW — the answer to "it sits for a while and does nothing". */
 .coach-now {
   margin: 0;

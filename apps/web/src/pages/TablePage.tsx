@@ -356,6 +356,8 @@ export function TablePage({
                came to learn it, the other hid the coach from the person who came to play it. "Tell
                me" explains and leaves the move to you, at every table, until you choose otherwise. */
             startOn="watch"
+            mine={mine}
+            onHold={setHeld}
             send={send}
           />
           {mine && session ? (
