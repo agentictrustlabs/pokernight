@@ -322,6 +322,43 @@ export async function sendRecord(base: string, input: RecordInput, timeoutMs: nu
   return { ok: true };
 }
 
+export interface CoachStatusOutput { coach: string | null; hasGrant?: boolean; asked: { at: string; answer: 'hired' | 'later' | 'no' } | null }
+
+/**
+ * Ask the person's own agent WHO COACHES THEM and whether they have been asked (`poker.coach`), and — when
+ * `answered` is given — have it write the answer down in the person's vault. Signed as the house like every
+ * other ask; the agent answers from its playbook and its person's record, and consults nobody.
+ */
+export async function callCoachStatus(base: string, input: { skill: string; answered?: 'hired' | 'later' | 'no' }, timeoutMs: number, deployment?: Env): Promise<{ ok: true; output: CoachStatusOutput } | { ok: false; error: string }> {
+  const url = a2aUrl(base, A2A_JSONRPC_PATH);
+  const raw = JSON.stringify({
+    jsonrpc: '2.0', id: `coach:${Date.now()}`, method: A2A_SEND_MESSAGE,
+    params: { message: { messageId: crypto.randomUUID(), role: 'user', parts: [
+      { kind: 'data', data: { skill: input.skill, input: { ...(input.answered ? { answered: input.answered } : {}) } } },
+      { kind: 'text', text: input.answered ? `${input.skill}: the person answered "${input.answered}" to the coach question.` : `${input.skill}: who coaches this person, and have they been asked?` },
+    ] } },
+  });
+  const authorization = deployment ? await houseAuthorization(deployment, url, A2A_SEND_MESSAGE, raw) : null;
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', ...(authorization ? { authorization } : {}) }, body: raw, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    return { ok: false, error: `${input.skill} call to ${url} failed: ${errText(e)}` };
+  }
+  if (!res.ok) return { ok: false, error: `${input.skill} call to ${url} returned ${res.status}` };
+  const payload = (await res.json().catch(() => null)) as { error?: { message?: string }; result?: { task?: { status?: { state?: string } } } } | null;
+  if (payload?.error) return { ok: false, error: `${input.skill}: ${payload.error.message ?? 'refused'}` };
+  const parts = replyParts(payload?.result);
+  const text = parts.map((p) => (p as { text?: string })?.text ?? '').join(' ').trim();
+  if (/REJECTED|FAILED|CANCELED/i.test(String(payload?.result?.task?.status?.state ?? ''))) return { ok: false, error: text || 'refused' };
+  try {
+    const j = JSON.parse(text) as Partial<CoachStatusOutput>;
+    return { ok: true, output: { coach: typeof j.coach === 'string' ? j.coach : null, ...(typeof j.hasGrant === 'boolean' ? { hasGrant: j.hasGrant } : {}), asked: j.asked && typeof j.asked === 'object' ? j.asked : null } };
+  } catch {
+    return { ok: false, error: `${input.skill} reply was not the answer shape` };
+  }
+}
+
 export type ReviewResult = { ok: true; output: ReviewOutput } | { ok: false; error: string };
 
 /**

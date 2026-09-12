@@ -860,6 +860,10 @@ export const POKER_RECORD_SKILL = 'poker.record';
 export const CANASTA_RECORD_SKILL = 'canasta.record';
 /** A REVIEW OF PAST HANDS, asked for by the person in their own words. Forwarded by their agent to their coach. */
 export const POKER_REVIEW_SKILL = 'poker.review';
+/** WHO COACHES YOU, AND HAVE YOU BEEN ASKED — the card room's question of a person's agent on arrival, so a
+ *  coach can be offered to somebody without one, once. Answered from the playbook and the person's own
+ *  preferences; with an `answered` in the input, the answer is written down. No model, no coach on the hop. */
+export const POKER_COACH_SKILL = 'poker.coach';
 export const CANASTA_REVIEW_SKILL = 'canasta.review';
 
 /**

@@ -4228,6 +4228,13 @@ a.button.primary:hover {
 .desk-hire summary, .desk-who-is-who summary, .coach-earlier summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--ink-soft); }
 .desk-hire > *:not(summary), .desk-who-is-who > *:not(summary), .coach-earlier > *:not(summary) { margin-top: 0.4rem; }
 
+/* THE COACH QUESTION — a sheet over the page, once. */
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: grid; place-items: center; z-index: 50; padding: 1rem; }
+.sheet { background: var(--paper); color: var(--ink); border-radius: var(--radius); box-shadow: var(--shadow); max-width: 34rem; width: 100%; padding: 1.1rem 1.25rem; display: grid; gap: 0.7rem; }
+.sheet h2 { margin: 0; }
+.sheet p { margin: 0; line-height: 1.45; }
+.sheet-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
 /* THE LOG, folded at the very bottom of the side. */
 details.log-panel > summary { cursor: pointer; list-style: none; }
 details.log-panel > summary::-webkit-details-marker { display: none; }

@@ -58,6 +58,7 @@ import {
   CANASTA_RECORD_SKILL,
   CANASTA_REVIEW_SKILL,
   POKER_ADVISE_SKILL,
+  POKER_COACH_SKILL,
   agentNameToHost,
   POKER_RECORD_SKILL,
   POKER_REVIEW_SKILL,
@@ -68,7 +69,7 @@ import {
   type SignOutResult,
   type TableSummary,
 } from '@pokernight/protocol';
-import { agentKindFromCard, callReview, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
+import { agentKindFromCard, callCoachStatus, callReview, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
 import { looksLikeAgentName, nameOfAgent } from './naming.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aReviewTimeoutMs, a2aTimeoutMs, allowedOrigins, isDevAuth, siteOrigin, type Env } from './env.js';
@@ -1453,6 +1454,31 @@ app.post('/me/coach', async (c) => {
   }
   if (homePlayerId(result.identity.address) !== session.playerId) return c.json({ error: 'that ceremony was run by somebody else' }, 403);
   return c.json({ ok: true, coach: result.coach });
+});
+
+/**
+ * DO YOU HAVE A COACH, AND HAVE YOU BEEN ASKED — read from your own agent, which answers from your playbook
+ * and your own preferences record. The card room keeps nothing: the "asked once" lives in your vault, so a
+ * different browser or a different card room deployment does not ask again.
+ */
+app.get('/me/coach', async (c) => {
+  const me = await myAgentCard(c, POKER_COACH_SKILL);
+  if (!me.ok) return c.json({ error: me.error, coach: null, asked: null, agent: null }, me.status as 400);
+  const r = await callCoachStatus(me.endpoint, { skill: POKER_COACH_SKILL }, a2aTimeoutMs(c.env), c.env);
+  if (!r.ok) return c.json({ error: r.error, coach: null, asked: null, agent: me.agentName }, 502);
+  return c.json({ ...r.output, agent: me.agentName });
+});
+
+/** You answered the coach question — hired, later, or no. Written to your vault by your own agent; asked once. */
+app.post('/me/coach/asked', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { answer?: unknown } | null;
+  const answer = body?.answer === 'hired' || body?.answer === 'later' || body?.answer === 'no' ? body.answer : null;
+  if (!answer) return c.json({ error: 'answer must be hired, later or no' }, 400);
+  const me = await myAgentCard(c, POKER_COACH_SKILL);
+  if (!me.ok) return c.json({ error: me.error }, me.status as 400);
+  const r = await callCoachStatus(me.endpoint, { skill: POKER_COACH_SKILL, answered: answer }, a2aTimeoutMs(c.env), c.env);
+  if (!r.ok) return c.json({ error: r.error }, 502);
+  return c.json({ ...r.output, agent: me.agentName });
 });
 
 /** Whose advice you are getting at this table — yours to ask about, and nobody else's. */

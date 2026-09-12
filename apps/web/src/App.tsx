@@ -22,6 +22,7 @@ import { PRODUCT_NAME } from './lib/brand';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
 import { NewBuild } from './components/NewBuild';
+import { CoachQuestion } from './components/CoachQuestion';
 import { Identity } from './components/Identity';
 import { JoinPage } from './pages/JoinPage';
 import { TableRoute } from './pages/TableRoute';
