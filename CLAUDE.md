@@ -199,7 +199,7 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   A message goes WHERE THE CARD SAYS (`messageUrlFromCard`): a Home agent answers at the estate's edge
   (`edge…/api/a2a/<name>`) and refuses its own host with `gateway_assertion_required`. Proven live:
   `pnpm ask:as-house alice-me.faithnet.ai "…"` — Alice's agent answered through her playbook.
-  A PERSON'S AGENT ADVISES THROUGH THE HOME'S `playbook.answer` TOOL (branch `playbook-answer` in
+  A PERSON'S AGENT ADVISES THROUGH THE HOME'S `playbook.answer` TOOL (`master` in
   `~/agenticprimitives`, deployed to `demo-a2a-faithnet` 2026-09-11): the Home's harness is a tool
   planner, and that is the one tool that answers a question of judgement over material the message
   carried, listed only for a skill the agent's `atl:capabilities` advertises. The advice request
