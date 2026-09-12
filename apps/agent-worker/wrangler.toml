@@ -7,9 +7,10 @@
 # `pokernight-agent-worker` instead of updating the live one.
 #
 # Secrets (NEVER in [vars]; see .dev.vars.example):
-#   ANTHROPIC_API_KEY — for the `claude` personas.
-#                       `wrangler secret put ANTHROPIC_API_KEY --env <env>`
-#                       Absent is fine: those personas log once and play the rules baseline.
+#   ANTHROPIC_API_KEY — for the `claude` strategy, which NO persona uses. The deployed Worker carries
+#                       no such secret BY DECISION (deleted 2026-09-12): the house spends no tokens, and
+#                       the only model in the card room is a connected person's own agent at their Home.
+#                       Absent is fine by construction: a `claude` persona logs once and plays the rules.
 name = "pokernight-agent-worker"
 main = "src/index.ts"
 compatibility_date = "2026-05-19"
