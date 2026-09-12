@@ -743,7 +743,9 @@ export class PokerTableDO extends DurableObject<Env> {
      * No counts (`observeFor` needs the state the hand ran in, which is not kept); the coach reads the hand.
      */
     if (request.method === 'POST' && path === '/record-backfill') {
-      const body = (await request.json().catch(() => null)) as { playerId?: string; endpoint?: string; since?: number; limit?: number } | null;
+      // `again` re-sends hands the outbox already marked sent — for the day a send was taken as landed when it was
+      // not; the person's agent records a hand once whatever is sent twice.
+      const body = (await request.json().catch(() => null)) as { playerId?: string; endpoint?: string; since?: number; limit?: number; again?: boolean } | null;
       const playerId = (body?.playerId ?? '').trim();
       const endpoint = (body?.endpoint ?? '').trim();
       if (!playerId || !endpoint) return json({ error: 'playerId and endpoint required' }, 400);
@@ -757,7 +759,7 @@ export class PokerTableDO extends DurableObject<Env> {
         // Once is enough for a hand that landed or is still on its way; one the outbox GAVE UP on (the
         // person's vault refused it for a while, say) is asked for again.
         const exists = this.ctx.storage.sql.exec<{ done_at: number | null; attempts: number }>('SELECT done_at, attempts FROM outbox WHERE id = ?', id).toArray()[0];
-        if (exists && !(exists.done_at !== null && exists.attempts >= MAX_OUTBOX_ATTEMPTS)) continue;
+        if (exists && !(exists.done_at !== null && (exists.attempts >= MAX_OUTBOX_ATTEMPTS || body?.again === true))) continue;
         if (exists) this.ctx.storage.sql.exec('DELETE FROM outbox WHERE id = ?', id);
         const input: RecordInput = { skill, tableId: this.meta?.tableId ?? '', handNo: h.handNo, seat: h.seat, view: h.view, legal: null, deadlineMs: a2aTimeoutMs(this.env), endedAt: h.endedAt };
         this.ctx.storage.sql.exec(
@@ -2069,9 +2071,15 @@ export class PokerTableDO extends DurableObject<Env> {
   override async alarm(): Promise<void> {
     await this.serial(async () => {
       const now = Date.now();
-      // A PAUSED TABLE DOES NOT TICK. Nothing times out and nothing deals, and the alarm simply
-      // comes round again — resuming is what puts the deadlines back and restarts the clock.
-      if (this.paused) return this.scheduleAlarm();
+      // A PAUSED TABLE DOES NOT TICK. Nothing times out and nothing deals — resuming is what puts the
+      // deadlines back and restarts the clock. THE OUTBOX STILL DRAINS: a cash-out settlement or a hand
+      // record queued before the pause is somebody else's money or record, and a table held overnight
+      // used to hold those too (and, with the turn clock's past deadline still a candidate, re-armed
+      // itself every few milliseconds all night — seen live 2026-09-12).
+      if (this.paused) {
+        await this.drainOutbox(now);
+        return this.scheduleAlarm();
+      }
       const state = this.state;
       if (state) {
         const seatsBefore = seatMap(this.snap(state));
@@ -2196,11 +2204,13 @@ export class PokerTableDO extends DurableObject<Env> {
   private async scheduleAlarm(): Promise<void> {
     const candidates: number[] = [];
     const at = this.state ? this.snap() : null;
-    if (at && at.deadline !== null && at.toAct !== null) candidates.push(at.deadline);
+    // A held table's clocks are not candidates: the deadline is an instant that has usually passed, and an
+    // alarm set for it fires at once, finds the table held, and sets itself again — a tight loop.
+    if (!this.paused && at && at.deadline !== null && at.toAct !== null) candidates.push(at.deadline);
     const nextHandAt = await this.ctx.storage.get<number>('next-hand-at');
     // With nobody watching, the next deal waits for a socket rather than for a clock — an alarm set
     // for it would fire, find nobody, and set itself again, forever.
-    if (nextHandAt !== undefined && this.anybodyAttending()) candidates.push(nextHandAt);
+    if (!this.paused && nextHandAt !== undefined && this.anybodyAttending()) candidates.push(nextHandAt);
     const outbox = this.ctx.storage.sql
       .exec<{ next_at: number | null }>('SELECT MIN(next_at) AS next_at FROM outbox WHERE done_at IS NULL')
       .toArray()[0];

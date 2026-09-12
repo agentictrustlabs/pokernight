@@ -309,8 +309,16 @@ export async function sendRecord(base: string, input: RecordInput, timeoutMs: nu
     return { ok: false, error: `${input.skill} call to ${url} failed: ${errText(e)}` };
   }
   if (!res.ok) return { ok: false, error: `${input.skill} call to ${url} returned ${res.status}` };
-  const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+  const payload = (await res.json().catch(() => null)) as { error?: { message?: string }; result?: { task?: { status?: { state?: string } } } } | null;
   if (payload?.error) return { ok: false, error: `${input.skill}: ${payload.error.message ?? 'refused'}` };
+  // A REFUSAL IS A COMPLETED TASK, not a transport error: the person's agent answers "the hand could not be
+  // recorded: record_scope_denied" as a rejected task with HTTP 200. Taken as success, the outbox marked
+  // twenty-four hands sent that never landed (2026-09-12). The task's state, and the words, decide.
+  const state = String(payload?.result?.task?.status?.state ?? '');
+  const text = replyParts(payload?.result).map((p) => (p as { text?: string })?.text ?? '').join(' ');
+  if (/REJECTED|FAILED|CANCELED/i.test(state) || /could not be recorded|does not advertise|refused/i.test(text)) {
+    return { ok: false, error: `${input.skill}: ${text.slice(0, 200) || state || 'refused'}` };
+  }
   return { ok: true };
 }
 

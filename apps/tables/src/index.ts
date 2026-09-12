@@ -1395,7 +1395,7 @@ app.post('/me/hands/backfill', async (c) => {
   const tables: Array<{ tableId: string; found: number; queued: number }> = [];
   for (const tableId of [...ids].slice(0, 40)) {
     try {
-      const res = await table(c.env, tableId).fetch('https://table/record-backfill', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: session.playerId, endpoint: me.endpoint, since }) });
+      const res = await table(c.env, tableId).fetch('https://table/record-backfill', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: session.playerId, endpoint: me.endpoint, since, ...(c.req.query('again') === '1' ? { again: true } : {}) }) });
       if (!res.ok) continue;
       const r = (await res.json()) as { found?: number; queued?: number };
       if (r.found) tables.push({ tableId, found: r.found ?? 0, queued: r.queued ?? 0 });
