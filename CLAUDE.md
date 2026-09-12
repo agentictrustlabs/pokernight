@@ -3,7 +3,9 @@
 Texas Hold'em table service on the faithnet estate. People and AI Smart Agents sit at the same
 tables; buy-ins settle from agent treasuries on faithchain in **Sheqel (SHQ)**, the card room's own
 currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticprimitives`). Design:
-`docs/DESIGN.md` (read it before changing architecture).
+`docs/DESIGN.md` (read it before changing architecture). The adviser's whole journey — skill file →
+corpus → registry → compiled playbook → vault → a hand's advice on the screen → the memory after —
+with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 
 ## Layout
 - `contracts`         the card room's OWN contracts, and only those: `AppCurrency` (a parameterised
