@@ -163,6 +163,8 @@ export function PokerCoach({
   const [feed, setFeed] = useState<Said[]>([]);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [missed, setMissed] = useState(0);
+  /** The page is not being looked at (`document.visibilityState`). No adviser is asked while so. */
+  const [hidden, setHidden] = useState(false);
   const asked = useRef<string>('');
   const seen = useRef(0);
   const nextId = useRef(0);
@@ -304,10 +306,42 @@ export function PokerCoach({
    * of them, because playing a move is what clears the advice.
    */
   useEffect(() => {
-    if (mode === 'off' || paused || !myTurn || advice || countdown != null || missed > RETRIES) return;
+    if (mode === 'off' || paused || !myTurn || advice || countdown != null || missed > RETRIES || hidden) return;
     const h = setTimeout(() => void ask(), missed === 0 ? FIRST_ASK_MS : RETRY_MS);
     return () => clearTimeout(h);
-  }, [advice, ask, countdown, missed, mode, myTurn, paused]);
+  }, [advice, ask, countdown, missed, mode, myTurn, paused, hidden]);
+
+  /**
+   * NOBODY IS LOOKING, SO NOBODY IS ASKED. A tab in the background, a phone in a pocket, a window
+   * behind another: the turn still comes round, and a coach that asked a person's named adviser for
+   * every one of them spent that person's coach's tokens on advice nobody read. The heartbeat waits
+   * while the page is hidden and asks the moment it is seen again — the clock is the card room's,
+   * and it is still running, which is the honest cost of walking away.
+   */
+  useEffect(() => {
+    const onVis = () => setHidden(document.visibilityState === 'hidden');
+    onVis();
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  /**
+   * SAT OUT FOR NOT ANSWERING ⇒ THE COACH SWITCHES ITSELF OFF. Two turns timed out in a row is the
+   * card room's own verdict that the person has gone, and a named adviser kept being consulted on
+   * every turn until then. Switched off — not merely paused — so that a person who comes back finds
+   * it off and presses "Tell me" on purpose; the panel says why. The house coach costs nothing, but
+   * the rule is the same for it: a coach talking to an empty chair is noise.
+   */
+  const sitOutReason = viewerSeat != null ? players[(view?.seats ?? []).find((x) => x.seat === viewerSeat)?.playerId ?? '']?.sitOutReason : undefined;
+  const [switchedOff, setSwitchedOff] = useState<string | null>(null);
+  useEffect(() => {
+    if (sitOutReason !== 'timeouts' || mode === 'off') return;
+    chosen.current = true;
+    setMode('off');
+    hush();
+    setSwitchedOff(adviser ? `You were sat out for not answering, so the coach is off — ${voiceName} is not asked while you are away. Press "Tell me" to switch it back on.` : 'You were sat out for not answering, so the coach is off. Press "Tell me" to switch it back on.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sitOutReason]);
 
   /** PAUSE MEANS NOW: a voice partway through a sentence keeps talking otherwise, and from a chair
    *  that is not a pause, it is a request that gets around to being honoured. */
@@ -363,6 +397,7 @@ export function PokerCoach({
               primeVoices();
               chosen.current = true;
               setMode(m);
+              if (m !== 'off') setSwitchedOff(null);
               if (m === 'off') hush();
             }}
           >
@@ -372,10 +407,14 @@ export function PokerCoach({
       </div>
 
       {mode === 'off' ? (
-        <p className="hint">
-          New to hold’em? It will say what everyone at the table is doing, name your move, and — the part nobody tells
-          you — what a call costs against what it can win.
-        </p>
+        switchedOff ? (
+          <p className="hint coach-off-why" role="status">{switchedOff}</p>
+        ) : (
+          <p className="hint">
+            New to hold’em? It will say what everyone at the table is doing, name your move, and — the part nobody tells
+            you — what a call costs against what it can win.
+          </p>
+        )
       ) : (
         <>
           {waiting ? (

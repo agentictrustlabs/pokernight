@@ -337,6 +337,40 @@ describe('A2A agent seats', () => {
     watcher.close();
   }, 30_000);
 
+  it.skipIf(!engineReady)('deals only while somebody is AT the table: an open tab whose person went away stops the bots, and a command starts them again', async () => {
+    // The watching rule stopped the all-night game when the tab closed. A tab left OPEN kept it going:
+    // a socket is not a person. With no human active in a seat and nothing pressed for ten minutes,
+    // the next deal waits — for a command, not for a clock.
+    stubCard();
+    stubAct(checkOrCall);
+    const table = await createTableViaHttp('bots-alone-open-tab', { minBuyIn: 40, maxBuyIn: 200, actionTimeoutMs: 2000 });
+    const session = await devSession(`Owner${Math.floor(Math.random() * 1e6)}`);
+    const human = await TestClient.connect(table.tableId, session.token);
+    await human.waitFor((m) => m.type === 'welcome');
+    expect((await seatAgent(table.tableId, session.token, { seat: 1, buyIn: 100, agentName: 'sharkbot.svc', endpoint: agentOrigin })).status).toBe(201);
+    expect((await seatAgent(table.tableId, session.token, { seat: 2, buyIn: 100, agentName: 'rock.svc', endpoint: agentOrigin })).status).toBe(201);
+    await human.waitFor((m) => m.type === 'event' && m.event.type === 'hand-started', 8000);
+    // The person walks away with the tab open: nothing pressed for longer than the attention window.
+    const stub = env.TABLES.get(env.TABLES.idFromName(table.tableId));
+    await runInDurableObject(stub, async (inst: PokerTableDO) => { (inst as unknown as { lastHumanInput: number }).lastHumanInput = Date.now() - 11 * 60 * 1000; });
+    const look = () => runInDurableObject(stub, async (_i: PokerTableDO, state) => {
+      const st = (await state.storage.get<{ handNo: number; hand: { result?: unknown } | null }>('state'))!;
+      return { handNo: st.handNo, over: !st.hand || st.hand.result !== undefined, pending: await state.storage.get<number>('next-hand-at'), alarm: await state.storage.getAlarm() };
+    });
+    let seen = await look();
+    for (let i = 0; i < 40 && !(seen.over && seen.pending !== undefined); i++) { await new Promise((r) => setTimeout(r, 500)); seen = await look(); }
+    expect(seen.over).toBe(true);
+    expect(seen.pending).toBeDefined();
+    await new Promise((r) => setTimeout(r, NEXT_HAND_WAIT_MS));
+    seen = await look();
+    expect(seen.handNo).toBe(1); // the socket is open and the bots are NOT playing for it
+    expect(seen.alarm).toBeNull();
+    // The person presses something — sitting down counts, so does anything else — and the deal resumes.
+    human.send({ type: 'join', seat: 0, buyIn: 100 });
+    await human.waitFor((m) => m.type === 'event' && m.event.type === 'hand-started', 8000);
+    human.close();
+  }, 30_000);
+
   it('refuses a caller-supplied endpoint outside a dev-auth deployment (SSRF guard)', () => {
     // resolveAgentBase is the gate: in production the agent name must resolve inside AGENT_CARD_ZONE,
     // so a session holder cannot make the table fetch an arbitrary host every turn.

@@ -94,15 +94,22 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   touchscreen and cannot be driven by an ordinary mouse press even where it does, so a card game
   built on it works for some people and silently does nothing for others. Drop targets are marked
   `data-drop="…"` and resolved with `elementFromPoint` on release.
-- **A TABLE DEALS WHILE SOMEBODY IS WATCHING.** Agent seats have no socket, so a practice table whose
-  owner closed the tab kept three house bots playing each other all night — an alarm every few seconds,
-  a hand a minute, and a `*.review` of every hand to whatever agent the owner had named, at their Home.
-  The alarm's next-deal branch now starts a hand only when `getWebSockets()` has an open socket
-  (spectators count); `scheduleAlarm` leaves `next-hand-at` out of its candidates when nobody is
-  connected, so the DO goes quiet instead of re-arming; the next socket to open (`wakeForWatcher`)
-  re-times a stale next deal to now + the ordinary delay and sets the alarm again. A hand in progress
-  still finishes (turns time out). And a review goes only to an adviser whose person was DEALT the
-  round — a seat sitting out was not, so nothing is sent for it.
+- **A TABLE DEALS WHILE SOMEBODY IS AT IT — an open socket is a tab, not a person.** Agent seats have
+  no socket, so a practice table whose owner closed the tab kept three house bots playing each other
+  all night — an alarm every few seconds, a hand a minute, and a record of every hand to whatever agent
+  the owner had named, at their Home. Then a tab left OPEN did the same. The alarm's next-deal branch
+  starts a hand only when `anybodyAttending()`: an open socket AND (a human seat that is not sitting
+  out, OR a socket opened / a command sent within `ATTENTION_MS`, ten minutes — pings do not count).
+  `scheduleAlarm` leaves `next-hand-at` out of its candidates otherwise, so the DO goes quiet instead
+  of re-arming; the next socket to open (`wakeForWatcher`) or the next command after idleness re-times
+  a stale next deal to now + the ordinary delay and sets the alarm again. A hand in progress still
+  finishes (turns time out; two in a row sit the person out, after which no human seat is active and
+  the bots stop within the window). A record goes only to an adviser whose person was DEALT the round.
+  **NOBODY LOOKING, NOBODY ASKED — and sat out means off.** The coach panels (`PokerCoach`, `Coach`)
+  do not ask an adviser while `document.visibilityState` is hidden, and switch themselves OFF when
+  the person's seat is sat out for timeouts, saying why; the person presses "Tell me" to turn it back
+  on. A named adviser costs its coach's tokens per question, and every one of these was a question
+  asked of an empty chair.
 - **A PAUSE HOLDS FOR EVERYBODY, including whoever pressed it.** Holding only the clock and the
   agents left human moves going through, so anything still playing that seat kept the whole table
   moving and a pause took a minute to look like one. `act` is refused with code `paused`, the coach

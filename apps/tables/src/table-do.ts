@@ -388,6 +388,13 @@ CREATE TABLE IF NOT EXISTS agent_calls (
 `;
 
 const HAND_START_DELAY_MS = 1500;
+/**
+ * How long after a person's last command a table keeps dealing with no person active in a seat. A tab
+ * left open on a table of house bots kept them playing each other all night — Worker requests every
+ * few seconds, a hand a minute — for a person who had walked away. Ten minutes is long enough to watch
+ * a few hands on purpose and short enough that "went to bed" costs nothing.
+ */
+const ATTENTION_MS = 10 * 60 * 1000;
 const NEXT_HAND_DELAY_MS = 3000;
 const OUTBOX_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000] as const;
 /**
@@ -1066,6 +1073,7 @@ export class PokerTableDO extends DurableObject<Env> {
     if (playerId) void this.serial(() => this.sitInOnReconnect(playerId));
     this.ctx.acceptWebSocket(server, playerId ? [playerId] : []);
     // The table may have stopped dealing for want of anybody watching; this socket is somebody.
+    this.lastHumanInput = Date.now(); // arriving counts, spectator or not — for `ATTENTION_MS`
     void this.serial(() => this.wakeForWatcher());
     server.serializeAttachment(attachment);
     const state = this.state;
@@ -1100,6 +1108,11 @@ export class PokerTableDO extends DurableObject<Env> {
     if (!att.playerId) return sendError(ws, 'unauthenticated', 'spectators cannot send commands');
     const playerId = att.playerId;
     const name = att.name ?? playerId;
+    // A person is here, on purpose. If the table had gone quiet for want of anybody attending, this is
+    // what wakes it: the next deal was left pending with no alarm, and a command is the signal.
+    const wasIdle = Date.now() - this.lastHumanInput >= ATTENTION_MS;
+    this.lastHumanInput = Date.now();
+    if (wasIdle) void this.serial(() => this.wakeForWatcher());
 
     await this.serial(async () => {
       try {
@@ -1220,6 +1233,25 @@ export class PokerTableDO extends DurableObject<Env> {
    */
   private anybodyWatching(): boolean {
     return this.ctx.getWebSockets().some((ws) => ws.readyState === WS_OPEN);
+  }
+
+  /** When somebody last did something here — opened a socket or sent a command. Pings do not count.
+   *  In memory only: an evicted object comes back because a socket opened, which sets it again. */
+  private lastHumanInput = 0;
+
+  /**
+   * A TABLE DEALS WHILE SOMEBODY IS AT IT — not merely while a socket is open. An open socket is a tab,
+   * and a tab is open all night; a person is a human seat that is not sitting out, or a command from a
+   * person within the last `ATTENTION_MS`. The alternative was a table of house bots dealt to a tab whose
+   * owner had been timed out and sat out hours ago: every turn a request to the agent worker, every hand
+   * an alarm, for nobody. Spectating on purpose still works — arriving or pressing anything restarts the
+   * clock — it just does not go on forever.
+   */
+  private anybodyAttending(): boolean {
+    if (!this.anybodyWatching()) return false;
+    const at = this.state ? this.snap() : null;
+    const humanActive = (at?.seats ?? []).some((x) => x.status === 'active' && !x.playerId.startsWith('agent:'));
+    return humanActive || Date.now() - this.lastHumanInput < ATTENTION_MS;
   }
 
   /**
@@ -1989,7 +2021,7 @@ export class PokerTableDO extends DurableObject<Env> {
             const settled = await this.settleBustedAgents(state, seatsBefore);
             // THE DEAL ITSELF WAITS FOR SOMEBODY WATCHING. `next-hand-at` is left pending rather than
             // deleted, and no alarm is set for it (`scheduleAlarm`): the next socket to open wakes it.
-            if (this.anybodyWatching()) {
+            if (this.anybodyAttending()) {
               await this.ctx.storage.delete('next-hand-at');
               if (this.game.canStart(settled)) await this.startNewHand(settled, seatMap(this.snap(settled)));
             }
@@ -2087,7 +2119,7 @@ export class PokerTableDO extends DurableObject<Env> {
     const nextHandAt = await this.ctx.storage.get<number>('next-hand-at');
     // With nobody watching, the next deal waits for a socket rather than for a clock — an alarm set
     // for it would fire, find nobody, and set itself again, forever.
-    if (nextHandAt !== undefined && this.anybodyWatching()) candidates.push(nextHandAt);
+    if (nextHandAt !== undefined && this.anybodyAttending()) candidates.push(nextHandAt);
     const outbox = this.ctx.storage.sql
       .exec<{ next_at: number | null }>('SELECT MIN(next_at) AS next_at FROM outbox WHERE done_at IS NULL')
       .toArray()[0];

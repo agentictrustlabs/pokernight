@@ -148,6 +148,7 @@ export function Coach({
   const [showVoice, setShowVoice] = useState(false);
   /** How many times the card room has said "not yet" for this turn. Drives the retry. */
   const [missed, setMissed] = useState(0);
+  const [hidden, setHidden] = useState(false);
   const asked = useRef<string>('');
   const seen = useRef(0);
   const nextId = useRef(0);
@@ -334,10 +335,31 @@ export function Coach({
    * no advice" instead is what catches it, because playing a move is what clears the advice.
    */
   useEffect(() => {
-    if (mode === 'off' || paused || !myTurn || advice || countdown != null || missed > RETRIES) return;
+    if (mode === 'off' || paused || !myTurn || advice || countdown != null || missed > RETRIES || hidden) return;
     const h = setTimeout(() => void ask(), missed === 0 ? FIRST_ASK_MS : RETRY_MS);
     return () => clearTimeout(h);
-  }, [advice, ask, countdown, missed, mode, myTurn, paused]);
+  }, [advice, ask, countdown, missed, mode, myTurn, paused, hidden]);
+
+  // NOBODY IS LOOKING, SO NOBODY IS ASKED — the same rule as the hold'em coach: a hidden page spends
+  // no adviser's tokens; the heartbeat asks the moment it is seen again.
+  useEffect(() => {
+    const onVis = () => setHidden(document.visibilityState === 'hidden');
+    onVis();
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  // SAT OUT FOR NOT ANSWERING ⇒ OFF, on purpose, until pressed again (the hold'em coach's rule).
+  const sitOutReason = viewerSeat != null ? players[(view?.seats ?? []).find((x) => x.seat === viewerSeat)?.playerId ?? '']?.sitOutReason : undefined;
+  const [switchedOff, setSwitchedOff] = useState<string | null>(null);
+  useEffect(() => {
+    if (sitOutReason !== 'timeouts' || mode === 'off') return;
+    chosen.current = true;
+    setMode('off');
+    hush();
+    setSwitchedOff(`You were sat out for not answering, so the coach is off${adviser ? ` — ${adviser.displayName} is not asked while you are away` : ''}. Press "Tell me" to switch it back on.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sitOutReason]);
 
   /**
    * PAUSE MEANS NOW.
@@ -403,6 +425,7 @@ export function Coach({
               primeVoices();
               chosen.current = true;
               setMode(m);
+              if (m !== 'off') setSwitchedOff(null);
               if (m === 'off') hush();
             }}
           >
@@ -412,10 +435,14 @@ export function Coach({
       </div>
 
       {mode === 'off' ? (
-        <p className="hint">
-          New to canasta? It will play your hand, say what everyone at the table is doing, and name the rule behind
-          each move.
-        </p>
+        switchedOff ? (
+          <p className="hint coach-off-why" role="status">{switchedOff}</p>
+        ) : (
+          <p className="hint">
+            New to canasta? It will play your hand, say what everyone at the table is doing, and name the rule behind
+            each move.
+          </p>
+        )
       ) : (
         <>
           {/* WHAT IS HAPPENING RIGHT NOW, always on screen — the answer to "it sits for a while". */}
