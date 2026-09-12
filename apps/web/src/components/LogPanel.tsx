@@ -27,10 +27,15 @@ function lineClass(ev: TableEvent): string {
 export function LogPanel({ log, ctx, canChat, onChat }: { log: TableEvent[]; ctx: FormatContext; canChat: boolean; onChat: (text: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [text, setText] = useState('');
+  // FOLDED AWAY BY DEFAULT, at the bottom of the side. The log is every event of every hand; it is
+  // where a dispute is settled and a chat is had, and not what a person looks at between decisions —
+  // it was crowding the coach and the money out of the first screen. The scroll-to-bottom runs only
+  // while it is open, so opening it lands on the latest line.
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [log]);
+    if (el && open) el.scrollTop = el.scrollHeight;
+  }, [log, open]);
 
   const send = () => {
     const t = text.trim().slice(0, 280);
@@ -40,8 +45,8 @@ export function LogPanel({ log, ctx, canChat, onChat }: { log: TableEvent[]; ctx
   };
 
   return (
-    <section className="panel log-panel" aria-label="Table log">
-      <h3>Log</h3>
+    <details className="panel log-panel" aria-label="Table log" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary><h3>Log &amp; chat{log.length ? <span className="hint"> · {log.length} line{log.length === 1 ? '' : 's'}</span> : null}</h3></summary>
       <div className="log" ref={ref} role="log">
         {log.length === 0 ? <div className="hint line">Waiting for the first hand.</div> : null}
         {log.map((ev, i) => {
@@ -74,6 +79,6 @@ export function LogPanel({ log, ctx, canChat, onChat }: { log: TableEvent[]; ctx
           Send
         </button>
       </form>
-    </section>
+    </details>
   );
 }

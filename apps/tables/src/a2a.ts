@@ -365,8 +365,13 @@ export async function callReview(base: string, input: ReviewInput, timeoutMs: nu
   }
   const parts = replyParts(env?.result);
   if (parts.length === 0) return { ok: false, error: `${input.skill} reply carried no message parts` };
-  // A refused task (the agent named no coach, or the grant is gone) says so in its text; that is the
-  // answer to show, not an error to hide.
+  // A REFUSED task (no coach named, the grant gone, the coach late) is an error with the agent's own words
+  // in it — not a review to print as if the coach had said it.
+  const state = String((env?.result as { task?: { status?: { state?: string } } } | undefined)?.task?.status?.state ?? '');
+  if (/REJECTED|FAILED|CANCELED/i.test(state)) {
+    const said = parts.map((p) => (p as { text?: string })?.text ?? '').join(' ').trim();
+    return { ok: false, error: said || state };
+  }
   const decoded = decodeReviewReply(parts);
   if ('error' in decoded) return { ok: false, error: decoded.error };
   return { ok: true, output: decoded };

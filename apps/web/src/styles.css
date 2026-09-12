@@ -4228,6 +4228,14 @@ a.button.primary:hover {
 .desk-hire summary, .desk-who-is-who summary, .coach-earlier summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--ink-soft); }
 .desk-hire > *:not(summary), .desk-who-is-who > *:not(summary), .coach-earlier > *:not(summary) { margin-top: 0.4rem; }
 
+/* THE LOG, folded at the very bottom of the side. */
+details.log-panel > summary { cursor: pointer; list-style: none; }
+details.log-panel > summary::-webkit-details-marker { display: none; }
+details.log-panel > summary h3 { display: inline; margin: 0; font-size: 0.9rem; }
+details.log-panel > summary::before { content: '▸ '; color: var(--ink-soft); }
+details.log-panel[open] > summary::before { content: '▾ '; }
+details.log-panel > .log { margin-top: 0.5rem; }
+
 /* The coach's state ON THE BOARD, under the turn title. */
 .act-coach {
   display: flex;
