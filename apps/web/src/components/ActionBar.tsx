@@ -1,3 +1,4 @@
+import type { CoachStatus } from '../lib/api';
 import { useEffect, useMemo, useState } from 'react';
 import type { Action, LegalActions, TableView } from '../lib/types';
 import type { TurnState } from '../lib/tableSocket';
@@ -28,13 +29,15 @@ export interface ActionBarProps {
   waitingOn?: string | null;
   /** This table's chip rate. Given, the pot and the amount being committed are also priced. */
   rate?: TableRate | null;
+  /** What the coach is doing right now — shown ON THE BOARD, beside the clock, while it is your turn. */
+  coach?: CoachStatus | null;
 }
 
 /**
  * Fold / check / call / bet with sizing. Always rendered — disabled off-turn, so
  * the page never jumps when the action comes round.
  */
-export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null }: ActionBarProps) {
+export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null, coach = null }: ActionBarProps) {
   const live = turn != null;
   const legal = turn?.legal ?? NOTHING_LEGAL;
   const range = legal.raise ?? legal.bet;
@@ -143,6 +146,26 @@ export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null }: Ac
           <kbd>F</kbd> fold <kbd>C</kbd> check/call <kbd>R</kbd> {kind} <kbd>A</kbd> all-in
         </span>
       </div>
+
+      {/* THE COACH, ON THE BOARD. "Looking at your hand…" lived in a side panel while the person watched
+          the clock here; now the same state sits under the turn title: a pulsing dot and a stopwatch
+          while the question is out, the sentence when it is back. Only while it is your turn — off-turn
+          the bar is idle and so is the coach. */}
+      {live && coach && coach.phase !== 'idle' ? (
+        <div className={`act-coach ${coach.phase}`} role="status" aria-live="polite">
+          <span className={`coach-waiting-dot${coach.phase === 'ready' ? ' still' : ''}`} aria-hidden="true" />
+          {coach.phase === 'thinking' ? (
+            <span>
+              <strong>Coach is looking at your hand</strong> — asking {coach.who}
+              <span className="coach-waiting-clock"> {Math.max(0, Math.round((now - coach.since) / 1000))} s</span>
+            </span>
+          ) : (
+            <span>
+              <strong>{coach.who} says:</strong> {coach.say ?? 'see the coach panel'}
+            </span>
+          )}
+        </div>
+      ) : null}
 
       {left != null ? (
         <div className={`clockbar${tone}`} aria-hidden="true">

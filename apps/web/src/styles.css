@@ -4210,9 +4210,26 @@ a.button.primary:hover {
   0%, 100% { opacity: 0.35; transform: scale(0.8); }
   50% { opacity: 1; transform: scale(1.15); }
 }
+.coach-waiting-dot.still { animation: none; opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .coach-waiting-dot { animation: none; }
 }
+
+/* The coach's state ON THE BOARD, under the turn title. */
+.act-coach {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0.15rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--focus);
+  background: var(--felt-soft);
+  font-size: 0.85rem;
+}
+.act-coach .coach-waiting-dot { margin-top: 0; flex: none; }
+.act-coach .coach-waiting-clock { font-size: 1rem; margin: 0; }
+.act-coach.ready { border-color: var(--rule); }
 
 /* What is happening RIGHT NOW — the answer to "it sits for a while and does nothing". */
 .coach-now {

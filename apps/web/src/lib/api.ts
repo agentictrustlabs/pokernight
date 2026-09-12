@@ -38,6 +38,22 @@ export interface CoachAdvice {
  */
 export interface AdviserVoice { agent: string; displayName: string; coach?: string }
 
+/**
+ * WHAT THE COACH IS DOING RIGHT NOW, for the board as well as the panel. "Looking at your hand" was a
+ * quiet line in a side panel while the turn clock ran on the board; the board is where the person is
+ * looking, so it shows the same state. `thinking` — the question is out (the house in a blink, a named
+ * adviser in ten to twenty seconds); `ready` — the answer is in the panel; `idle` — nothing in flight.
+ */
+export interface CoachStatus {
+  phase: 'thinking' | 'ready' | 'idle';
+  /** Whose voice: "the house coach", "alice.me", "bob-coach.svc, via alice.me". */
+  who: string;
+  /** When the question went out (ms), for a stopwatch. */
+  since: number;
+  /** For `ready`: the one sentence, so the board can show it without the panel. */
+  say?: string;
+}
+
 /** A review of your past hands — a few short paragraphs, and one thing to change. */
 export interface CoachReview {
   say: string;

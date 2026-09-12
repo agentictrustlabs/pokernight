@@ -23,6 +23,7 @@ import { Table } from '../components/Table';
 import { drawsGame } from '../lib/games';
 import { Toast } from '../components/Toast';
 import { PokerCoach } from '../components/PokerCoach';
+import type { CoachStatus } from '../lib/api';
 import { PracticePanel } from '../components/PracticePanel';
 import { costsTokens, type AgentListing } from '../lib/api';
 
@@ -89,6 +90,8 @@ export function TablePage({
   const [mine, setMine] = useState(false);
   /** The table is held — read from the table on arrival, then owned by this page's one door. */
   const [paused, setPaused] = useState(false);
+  /** What the coach is doing — shown on the BOARD beside the turn clock, not only in the side panel. */
+  const [coachStatus, setCoachStatus] = useState<CoachStatus | null>(null);
   /** The pace the table reported, or null until it has. */
   const [paceMs, setPaceMs] = useState<number | null>(null);
   const [holdErr, setHoldErr] = useState<string | null>(null);
@@ -323,7 +326,7 @@ export function TablePage({
             {/* THE HOLD IS SAID WHERE THE CARDS ARE, not only in the side column: a table that has
                 stopped moving and says nothing about it looks broken. */}
             {paused ? <div className="held-banner">Paused. Nothing moves until you carry on.</div> : null}
-            <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} assetSymbol={assetSymbol} treasury={treasury} />
+            <Table state={state} session={session} send={send} settlement={settlement} chipValue={chipValue} assetSymbol={assetSymbol} treasury={treasury} coach={coachStatus} />
           </div>
         ) : (
           <OtherGame game={state.game ?? ''} tableName={tableName} />
@@ -358,6 +361,7 @@ export function TablePage({
             startOn="watch"
             mine={mine}
             onHold={setHeld}
+            onStatus={setCoachStatus}
             send={send}
           />
           {mine && session ? (

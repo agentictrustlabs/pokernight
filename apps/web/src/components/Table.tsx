@@ -10,6 +10,7 @@ import { dealState, satOutAction, satOutHeadline, sitOutNotice, waitingToBeDealt
 import { useLeaveTable } from '../lib/useLeaveTable';
 import { useNow, usePrefersReducedMotion } from '../lib/hooks';
 import { ActionBar } from './ActionBar';
+import type { CoachStatus } from '../lib/api';
 import { StakeLink } from './StakeLink';
 import { Announcer } from './Announcer';
 import { Card, CardSlot } from './Card';
@@ -107,8 +108,11 @@ export function Table({
   chipValue = null,
   assetSymbol = null,
   treasury = null,
+  coach = null,
 }: {
   state: TableState;
+  /** What the coach is doing, shown beside the turn clock. */
+  coach?: CoachStatus | null;
   session: Session | null;
   send: (c: ClientCommand) => void;
   /** The table's settlement mode. A settled table refuses a seat until the money is in order. */
@@ -483,7 +487,7 @@ export function Table({
       ) : null}
 
       {view.viewerSeat != null ? (
-        <ActionBar turn={myTurn ? state.turn : null} view={view} now={now} onAct={act} waitingOn={waitingOn} rate={rate} />
+        <ActionBar turn={myTurn ? state.turn : null} view={view} now={now} onAct={act} waitingOn={waitingOn} rate={rate} coach={coach} />
       ) : null}
 
       {me ? (

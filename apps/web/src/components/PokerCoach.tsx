@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession, ClientCommand, HandResult, Street, TableEvent, TableView } from '../lib/types';
-import { api, ApiError, type CoachAdvice, type CoachReview } from '../lib/api';
+import { api, ApiError, type CoachAdvice, type CoachReview, type CoachStatus } from '../lib/api';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { newAlerts } from '../lib/alerts';
 import type { FormatContext } from '../lib/format';
@@ -65,6 +65,7 @@ export function PokerCoach({
   startOn = 'off',
   mine = false,
   onHold,
+  onStatus,
   send,
 }: {
   tableId: string;
@@ -95,6 +96,8 @@ export function PokerCoach({
   mine?: boolean;
   /** Hold or release the table (a practice table's owner only). A review holds it for as long as it takes. */
   onHold?: (held: boolean) => void;
+  /** What the coach is doing, for the BOARD to show beside the turn clock. */
+  onStatus?: (s: CoachStatus) => void;
   send: (c: ClientCommand) => void;
 }) {
   const [mode, setMode] = useState<CoachMode>(startOn);
@@ -230,12 +233,15 @@ export function PokerCoach({
     if (!session || !myTurn || mode === 'off' || paused) return;
     const key = `${handNo}:${street ?? ''}`;
     asked.current = key;
-    // The house answers in a blink; a named adviser is a trip to your Home and your coach. Only that is
-    // worth a stopwatch.
-    if (adviser) setWaiting({ what: 'advice', who: voiceName, since: Date.now() });
+    // THE QUESTION IS OUT, and the board says so too. The house answers in a blink; a named adviser is
+    // a trip to your Home and your coach — either way the person sees a stopwatch, not a quiet line.
+    const since = Date.now();
+    setWaiting({ what: 'advice', who: voiceName, since });
+    onStatus?.({ phase: 'thinking', who: voiceName, since });
     try {
       const a = await api.advice(tableId, session.token);
       setWaiting(null);
+      onStatus?.({ phase: 'ready', who: whoSaid(a.source ?? 'house'), since, say: a.say });
       setMissed(0);
       // The world moves while the coach thinks. An answer about a decision that has passed is worse
       // than no answer, because in `play` mode it would be PLAYED.
@@ -273,16 +279,19 @@ export function PokerCoach({
       // seat's turn, which happens on most turns because the view learns first. Counting the miss is
       // what makes it retry instead of going quiet for the rest of the hand.
       setWaiting(null);
+      onStatus?.({ phase: 'idle', who: voiceName, since });
       setAdvice(null);
       setMissed((n) => n + 1);
     }
-  }, [adviser, handNo, mode, myTurn, paused, send, session, street, tableId, voiceName]);
+  }, [adviser, handNo, mode, myTurn, onStatus, paused, send, session, street, tableId, voiceName]);
 
   // A new decision is a new question: forget the old answer and let the heartbeat ask.
   useEffect(() => {
     setAdvice(null);
     setCountdown(null);
     setMissed(0);
+    onStatus?.({ phase: 'idle', who: voiceName, since: Date.now() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, myTurn, handNo, street]);
 
   /**
@@ -374,13 +383,15 @@ export function PokerCoach({
               <span className="coach-waiting-dot" aria-hidden="true" />
               <div>
                 <strong>
-                  {waiting.what === 'review' ? `Reviewing your recorded hands with ${waiting.who}…` : `Asking ${waiting.who}…`}
+                  {waiting.what === 'review' ? `Reviewing your recorded hands with ${waiting.who}…` : `Looking at your hand — asking ${waiting.who}…`}
                 </strong>
                 <span className="coach-waiting-clock">{Math.max(0, Math.round((now - waiting.since) / 1000))} s</span>
                 <span className="hint">
                   {waiting.what === 'review'
                     ? `A review reads every hand on file and takes up to a minute.${mine ? ' The table is held while you wait.' : ' The table keeps going — your seat is still on the clock.'}`
-                    : 'Your agent is consulting your coach. Ten to twenty seconds, then the move is yours.'}
+                    : adviser
+                      ? 'Your agent is consulting your coach. Ten to twenty seconds, then the move is yours — the clock is running.'
+                      : 'The house coach answers in a moment.'}
                 </span>
               </div>
             </div>
@@ -397,7 +408,9 @@ export function PokerCoach({
                     : 'Your move.'
                   : missed > RETRIES
                     ? 'The card room is not answering. Play this one yourself, or switch me off and on.'
-                    : 'Your turn. Looking at your hand…'
+                    : waiting
+                      ? 'Your turn.'
+                      : 'Your turn. About to look at your hand…'
                 : mode === 'play'
                   ? 'Playing your hand. Waiting for the other players.'
                   : 'Waiting for the other players.'}
