@@ -4393,7 +4393,72 @@ details.log-panel > .log { margin-top: 0.5rem; }
    the page pads its bottom by the sheet's measured height (`--coach-sheet`, set by useCoachSheet). The
    top bar drops what a thumb does not need. Everything else stacks in one column as before. */
 @media (max-width: 899px) {
-  .page.table-page { padding-bottom: calc(var(--coach-sheet, 0px) + 0.75rem); }
+  /* THE HOLD'EM TABLE ON A PHONE: nothing to scroll for on your turn. The ACTION BAR is the bottom sheet —
+     fold, check, call, raise under the thumb — the coach is one strip above it (its sentence, its "why" and the
+     mark on the button it means are IN the bar), the status bar is one line, the felt is short, and the page
+     pads its bottom by both sheets so the seats and the hole cards stay above them. */
+  .page.table-page { padding-bottom: calc(var(--coach-sheet, 0px) + var(--action-sheet, 0px) + 0.75rem); }
+  .actions.panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 41;
+    margin: 0;
+    border-radius: 14px 14px 0 0;
+    border-bottom: 0;
+    box-shadow: 0 -8px 28px rgba(28, 36, 32, 0.18);
+    padding: 0.5rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    gap: 0.4rem;
+  }
+  .actions .act-head { font-size: 0.85rem; }
+  .actions .buttons { flex-wrap: nowrap; }
+  .actions .buttons button { flex: 1 1 0; min-width: 0; padding: 0.55rem 0.3rem; font-size: 0.9rem; white-space: nowrap; }
+  .actions .buttons button .num { font-size: 0.8rem; }
+  .sizing { grid-template-columns: minmax(0, 1fr); gap: 0.3rem; }
+  .sizing input[type='number'] { display: none; }
+  .sizing .quick { gap: 0.3rem; }
+  .sizing .quick .small { padding: 0.2rem 0.45rem; font-size: 0.75rem; }
+  .actions:not(.live) .sizing { display: none; }
+  .act-coach { font-size: 0.85rem; }
+  .act-why { display: block; font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.2rem; }
+  .act-why-toggle { margin-left: 0.4rem; font-size: 0.8rem; padding: 0; }
+  .actions .buttons button.advised { outline: 3px solid var(--brass); outline-offset: 1px; }
+  /* The coach's strip: on top of the action bar, one row, the four modes only when the switch is tapped. */
+  .panel.coach.compact {
+    bottom: var(--action-sheet, 0px);
+    max-height: none;
+    overflow: visible;
+    border-radius: 0;
+    box-shadow: none;
+    border-top: 1px solid var(--rule);
+    padding: 0.35rem 0.75rem;
+    gap: 0.3rem;
+    z-index: 40;
+  }
+  .panel.coach.compact.on { border-top: 2px solid var(--focus); }
+  .coach-strip { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; }
+  .coach-mode-chip { flex: 0 0 auto; font-size: 0.8rem; padding: 0.25rem 0.6rem; border-radius: 999px; font-weight: 600; }
+  .panel.coach.compact .coach-who { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+  .panel.coach.compact .coach-modes { display: flex; flex-wrap: wrap; }
+  .panel.coach.compact .coach-ask-now { width: 100%; }
+  /* The status bar: hand, street, pot, in hand — one line; blinds and the seed go. */
+  .statusbar { gap: 0.6rem; padding: 0.35rem 0.6rem; font-size: 0.8rem; flex-wrap: nowrap; overflow: hidden; }
+  .statusbar .blinds, .statusbar .seed { display: none; }
+  .table-page .felt { min-height: 140px; padding: 0.4rem 0.4rem; }
+  /* YOUR OWN SEAT FIRST, then the felt, then the others: the hole cards and the stack are what the person plays
+     from, and they sit right under the status line, above the board — never under the sheets. The seats grid
+     dissolves (`display: contents`) so the seats and the felt are one wrapped row the order can arrange. */
+  .table-page .arena { gap: 0.5rem; margin: 0.5rem 0; flex-direction: row; flex-wrap: wrap; align-items: stretch; }
+  .table-page .seats { display: contents; }
+  .table-page .seat { flex: 1 1 45%; order: 1; }
+  .table-page .seat.you { order: -1; flex-basis: 100%; }
+  .table-page .felt { order: 0; flex-basis: 100%; }
+  .table-page .seat.empty { display: none; }
+  .sizing { grid-template-columns: minmax(0, 1fr) auto; }
+  .sizing .quick { grid-column: auto; }
+  .sizing .quick .small:first-child, .sizing .quick .small:nth-last-child(2), .range-hint { display: none; }
+  .panel.coach.compact .coach-off-why { font-size: 0.75rem; margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .panel.coach {
     position: fixed;
     left: 0;

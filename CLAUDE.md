@@ -160,10 +160,13 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   Canasta's barrier is the RULES, so its coach says which moves exist; hold'em's is the PRICE, so
   its coach keeps saying what a call costs against what it can win. `Adviser` is the one shared
   piece, because naming your own agent is a fact about you rather than about a game.
-  **ON A PHONE THE COACH IS A SHEET** (`lib/useCoachSheet.ts`, `@media (max-width: 899px)`): both coach
-  cards pin to the bottom of the screen above the buttons, the page pads its bottom by the sheet's measured
-  height (`--coach-sheet`), the reason folds behind "Why?" so the sentence and the move fit, the canasta
-  felt puts the three other seats in one row of small plates, and the top bar drops the badges. Walk it
+  **ON A PHONE, HOLD'EM IS PLAYED WITHOUT SCROLLING** (2026-09-13; `@media (max-width: 899px)`): the ACTION
+  BAR is the bottom sheet (`useActionSheet` → `--action-sheet`), the coach is one strip above it (mode chip +
+  whose voice; the four modes appear when the chip is tapped), and the coach's sentence, its "Why?" and the
+  mark on the button it means live IN the action bar (`CoachStatus.because/action` → `.advised`). Your own
+  seat is drawn ABOVE the felt (`.seats { display: contents }` and flex order), the status bar is one line,
+  and the page pads its bottom by both sheets. A spectator (no seat) still gets the coach card as a sheet
+  (`useCoachSheet` → `--coach-sheet`); the canasta felt puts the three other seats in one row of small plates. Walk it
   with the scratch `mobile-walk.cjs` (iPhone 13 viewport, plays a few turns, screenshots each). A COACH'S
   MOVE IS CHECKED BEFORE A BUTTON IS DRAWN: `askAdviser` parses and applies the adviser's `action` against
   the current state and drops it (words kept, a clause added) when the game would refuse it — a

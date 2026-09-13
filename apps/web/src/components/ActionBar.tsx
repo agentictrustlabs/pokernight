@@ -1,5 +1,6 @@
 import type { CoachStatus } from '../lib/api';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useActionSheet } from '../lib/useCoachSheet';
 import type { Action, LegalActions, TableView } from '../lib/types';
 import type { TurnState } from '../lib/tableSocket';
 import { fmtChips, potOdds, secondsLeft } from '../lib/format';
@@ -59,6 +60,11 @@ export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null, coac
   };
 
   const [amount, setAmount] = useState(range?.min ?? 0);
+  // THE REASON, folded: on a phone the board is what is on screen, so the coach's "why" opens here.
+  const [why, setWhy] = useState(false);
+  useEffect(() => { setWhy(false); }, [turn?.handNo, turn?.seat, coach?.since]);
+  const sheetRef = useRef<HTMLElement | null>(null);
+  useActionSheet(sheetRef);
   const [text, setText] = useState(String(range?.min ?? 0));
   useEffect(() => {
     const v = range?.min ?? 0;
@@ -133,8 +139,10 @@ export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null, coac
         : 'Not your turn'
       : 'No hand running';
 
+  const advised = live && coach?.phase === 'ready' && coach.action && typeof coach.action === 'object' ? (coach.action as { type?: string }).type : undefined;
+  const mark = (types: string[]) => (advised && types.includes(advised) ? ' advised' : '');
   return (
-    <section className={`actions panel${live ? ' live' : ''}`} aria-label="Your action">
+    <section ref={sheetRef} className={`actions panel${live ? ' live' : ''}`} aria-label="Your action">
       <div className="act-head">
         <strong className="act-title">
           {live ? 'Your turn' : idleTitle}
@@ -162,6 +170,9 @@ export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null, coac
           ) : (
             <span>
               <strong>{coach.who} says:</strong> {coach.say ?? 'see the coach panel'}
+              {coach.because ? (
+                why ? <span className="act-why"> {coach.because}</span> : <button type="button" className="link-button act-why-toggle" onClick={() => setWhy(true)}>Why?</button>
+              ) : null}
             </span>
           )}
         </div>
@@ -178,11 +189,11 @@ export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null, coac
       )}
 
       <div className="buttons">
-        <button className="danger" disabled={!canFold} onClick={() => onAct({ type: 'fold' })}>
+        <button className={`danger${mark(['fold'])}`} disabled={!canFold} onClick={() => onAct({ type: 'fold' })}>
           Fold
         </button>
         <button
-          className="primary"
+          className={`primary${mark(['check', 'call'])}`}
           disabled={!canCheck && !canCall}
           onClick={() => onAct(canCheck ? { type: 'check' } : { type: 'call' })}
         >
@@ -194,10 +205,10 @@ export function ActionBar({ turn, view, now, onAct, waitingOn, rate = null, coac
             'Check'
           )}
         </button>
-        <button className="primary" disabled={!canRaise} onClick={() => onAct({ type: kind, amount })}>
+        <button className={`primary${mark(['raise', 'bet'])}`} disabled={!canRaise} onClick={() => onAct({ type: kind, amount })}>
           {kind === 'raise' ? 'Raise to' : 'Bet'} <span className="num">{canRaise ? fmtChips(amount) : '—'}</span>
         </button>
-        <button disabled={!canAllIn} onClick={() => onAct({ type: 'all-in' })}>
+        <button className={mark(['all-in']).trim() || undefined} disabled={!canAllIn} onClick={() => onAct({ type: 'all-in' })}>
           All-in <span className="num">{canAllIn ? fmtChips(legal.allIn) : '—'}</span>
         </button>
       </div>

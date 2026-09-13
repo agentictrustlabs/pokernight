@@ -49,6 +49,10 @@ export interface CoachStatus {
   since: number;
   /** For `ready`: the one sentence, so the board can show it without the panel. */
   say?: string;
+  /** For `ready`: the reason, folded behind "Why?" on the board — a phone shows the board, not the panel. */
+  because?: string;
+  /** For `ready`: the move it named, so the board can mark the button that makes it. */
+  action?: unknown;
 }
 
 /** A coaching SERVICE for hire, as its card describes it. */

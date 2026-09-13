@@ -137,6 +137,7 @@ export function PokerCoach({
   const sheetRef = useRef<HTMLElement | null>(null);
   useCoachSheet(sheetRef);
   const phone = usePhone();
+  const [picking, setPicking] = useState(false);
   const [showWhy, setShowWhy] = useState(false);
   useEffect(() => {
     if (!chosen.current) setMode(startOn);
@@ -298,7 +299,7 @@ export function PokerCoach({
     try {
       const a = await api.advice(tableId, session.token);
       setWaiting(null);
-      onStatus?.({ phase: 'ready', who: whoSaid(a.source ?? 'house'), since, say: a.say });
+      onStatus?.({ phase: 'ready', who: whoSaid(a.source ?? 'house'), since, say: a.say, ...(a.because ? { because: a.because } : {}), ...(a.action ? { action: a.action } : {}) });
       setMissed(0);
       // The world moves while the coach thinks. An answer about a decision that has passed is worse
       // than no answer, because in `play` mode it would be PLAYED.
@@ -434,43 +435,71 @@ export function PokerCoach({
 
   if (!session) return null;
 
+  const MODES = [
+    ['off', 'Don’t ask'],
+    ['ask', 'Ask on demand'],
+    ['watch', 'Ask every turn'],
+    ['play', 'Play for me'],
+  ] as const;
+  const modeLabel = MODES.find(([m]) => m === mode)?.[1] ?? mode;
+  const modeButtons = (
+    <div className="coach-modes" role="group" aria-label="Coach">
+      {MODES.map(([m, label]) => (
+        <button
+          key={m}
+          type="button"
+          className={`coach-mode${mode === m ? ' on' : ''}`}
+          aria-pressed={mode === m}
+          onClick={() => {
+            // Switching it on is a real gesture, which is the moment a browser will let the voice
+            // list load. Asking here means the first line is not the one that goes unheard.
+            primeVoices();
+            chosen.current = true;
+            setMode(m);
+            setPicking(false);
+            if (m !== 'off') setSwitchedOff(null);
+            if (m === 'off') hush();
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  const whoLine = adviser ? (coach ? <><strong>{coach}</strong> via {adviser.displayName} · its tokens, never yours mid-hand</> : <><strong>{adviser.displayName}</strong> · no coach hired — the house answers</>) : <><strong>the house coach</strong> · one strategy for everybody, free</>;
+
+  /* ON A PHONE, SEATED, THE COACH IS ONE STRIP. The action bar is the bottom sheet there — fold, check, call,
+     raise in a thumb's reach — and the coach's sentence, its "why" and the mark on the button it means all sit
+     IN that bar (`ActionBar`). What is left for this card is the switch: which mode, whose voice, one row above
+     the bar, and the four modes only when the switch is tapped. The card that used to sit here covered the
+     seats, the hole cards and the buttons, and the person scrolled to play. */
+  if (phone && viewerSeat != null) {
+    return (
+      <section ref={sheetRef} className={`panel coach compact${mode !== 'off' ? ' on' : ''}`}>
+        <div className="coach-strip">
+          <button type="button" className="coach-mode-chip" onClick={() => setPicking((p) => !p)} aria-expanded={picking} title="Change what the coach does">
+            Coach · {modeLabel} ▾
+          </button>
+          <span className="coach-who">{whoLine}</span>
+        </div>
+        {picking ? modeButtons : null}
+        {mode === 'ask' && myTurn && !advice && !waiting && !paused && countdown == null ? (
+          <button type="button" className="primary coach-ask-now" onClick={() => void ask()}>Ask {voiceName}</button>
+        ) : null}
+        {switchedOff ? <p className="hint coach-off-why" role="status">{switchedOff}</p> : null}
+        {advice && !playable(advice.action) && myTurn ? <p className="hint">{whoSaid(advice.source ?? 'house')} did not name a move here — play this one yourself.</p> : null}
+      </section>
+    );
+  }
+
   return (
     <section ref={sheetRef} className={`panel coach${mode !== 'off' ? ' on' : ''}`}>
       <div className="coach-head">
         <h2>Coach</h2>
-        <div className="coach-modes" role="group" aria-label="Coach">
-        {(
-          [
-            ['off', 'Don’t ask'],
-            ['ask', 'Ask on demand'],
-            ['watch', 'Ask every turn'],
-            ['play', 'Play for me'],
-          ] as const
-        ).map(([m, label]) => (
-          <button
-            key={m}
-            type="button"
-            className={`coach-mode${mode === m ? ' on' : ''}`}
-            aria-pressed={mode === m}
-            onClick={() => {
-              // Switching it on is a real gesture, which is the moment a browser will let the voice
-              // list load. Asking here means the first line is not the one that goes unheard.
-              primeVoices();
-              chosen.current = true;
-              setMode(m);
-              if (m !== 'off') setSwitchedOff(null);
-              if (m === 'off') hush();
-            }}
-          >
-            {label}
-          </button>
-        ))}
-        </div>
+        {modeButtons}
       </div>
       {/* WHOSE VOICE, in one muted line — and where to change it. The panel used to say it three times. */}
-      <p className="coach-who">
-        {adviser ? (coach ? <><strong>{coach}</strong> via {adviser.displayName} · its tokens, never yours mid-hand</> : <><strong>{adviser.displayName}</strong> · no coach hired — the house answers</>) : <><strong>the house coach</strong> · one strategy for everybody, free</>}
-      </p>
+      <p className="coach-who">{whoLine}</p>
 
       {mode === 'off' ? (
         switchedOff ? (

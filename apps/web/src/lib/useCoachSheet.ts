@@ -43,3 +43,29 @@ export function usePhone(): boolean {
   }, []);
   return phone;
 }
+
+/**
+ * ON A PHONE THE ACTION BAR IS THE BOTTOM SHEET. Fold, check, call, raise are what a thumb needs in reach on
+ * every turn; a page that put them under the felt and the seats meant scrolling to play. Under `PHONE_QUERY`
+ * the CSS pins `.actions.panel` to the bottom and the coach's strip above it; this publishes the bar's
+ * height as `--action-sheet` so the coach sits on top of it and the page pads for both.
+ */
+export function useActionSheet(ref: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE_QUERY);
+    const root = document.documentElement;
+    let ro: ResizeObserver | null = null;
+    const apply = () => {
+      ro?.disconnect(); ro = null;
+      if (!mq.matches || !ref.current) { root.style.setProperty('--action-sheet', '0px'); return; }
+      const el = ref.current;
+      const set = () => root.style.setProperty('--action-sheet', `${Math.ceil(el.getBoundingClientRect().height)}px`);
+      set();
+      ro = new ResizeObserver(set);
+      ro.observe(el);
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => { mq.removeEventListener('change', apply); ro?.disconnect(); root.style.setProperty('--action-sheet', '0px'); };
+  }, [ref]);
+}
