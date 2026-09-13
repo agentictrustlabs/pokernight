@@ -1838,7 +1838,7 @@ export class PokerTableDO extends DurableObject<Env> {
     if (!state) return { ok: false, error: 'this table has not dealt yet' };
     const at = this.snap(state);
     const skill = this.game.id === 'canasta' ? CANASTA_ADVISE_SKILL : POKER_ADVISE_SKILL;
-    const read = this.game.readFor?.(state, seat) ?? null;
+    const read = this.labelRead(this.game.readFor?.(state, seat) ?? null, at.seats);
     const baseline = this.game.advise?.(state, seat) ?? null;
     const res = await callAdvise(
       adviser.endpoint,
@@ -1880,6 +1880,27 @@ export class PokerTableDO extends DurableObject<Env> {
       }
     }
     return { ok: true, advice };
+  }
+
+  /**
+   * NAMES ON THE READ. A game's read knows seats; the host knows who sits in them. "Your partner (Pile Hawk)
+   * has 5 cards" is a sentence a coach can repeat; "seat 2 has 5" is one it gets wrong — the screen numbers
+   * seats from 1, the engine from 0, and a model picks whichever it read last. Seats are named by the table's
+   * own labels and numbered as the screen numbers them.
+   */
+  private labelRead(read: unknown, seats: Array<{ seat: number; playerId: string }>): unknown {
+    if (!read || typeof read !== 'object') return read;
+    const r = read as Record<string, unknown>;
+    const name = (n: number) => { const id = seats.find((x) => x.seat === n)?.playerId; return id ? (this.players[id]?.name ?? this.names[id] ?? null) : null; };
+    const label = (x: unknown) => (x && typeof x === 'object' && typeof (x as { seat?: unknown }).seat === 'number'
+      ? { ...(x as Record<string, unknown>), name: name((x as { seat: number }).seat), seatOnScreen: (x as { seat: number }).seat + 1 }
+      : x);
+    return {
+      ...r,
+      ...(r.you ? { you: label(r.you) } : {}),
+      ...(r.partner ? { partner: label(r.partner) } : {}),
+      ...(Array.isArray(r.opponents) ? { opponents: r.opponents.map(label) } : {}),
+    };
   }
 
   /**

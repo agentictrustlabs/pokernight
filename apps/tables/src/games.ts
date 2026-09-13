@@ -11,7 +11,7 @@
  */
 
 import { decide, handRead, observeRound, readHand } from '@pokernight/agent-kit';
-import { canastaGame, legalFor as canastaLegalFor, viewFor as canastaViewFor, type CanastaState } from '@pokernight/canasta';
+import { canastaGame, cardValue, isBlackThree, isRedThree, isWild, legalFor as canastaLegalFor, rankOf, viewFor as canastaViewFor, type CanastaState } from '@pokernight/canasta';
 import { chooseCanastaAction, explainMove } from '@pokernight/canasta-agent';
 import {
   legalActions as pokerLegalFor,
@@ -48,6 +48,55 @@ const canastaWithCoach: HostedGame = {
     const { action } = chooseCanastaAction(view, canastaLegalFor(s, seat), seat);
     const { say, because } = explainMove(view, seat, action);
     return { action, say, because };
+  },
+  // THE SPOT AS DATA (cn:TableRead), for an adviser that reasons rather than looks up. Everything a language
+  // model would otherwise have to work out from the raw view — and got wrong: a coach read the seats list and
+  // called an opponent's eleven cards "your partner's". Who the partner IS, by seat and (once the host labels
+  // it) by name; each opponent's count; the phase, said as what the seat may still do; the pile and what the
+  // hand holds of its top rank; the hand by rank with what is meldable; the safe and the dangerous discards.
+  // From the seat's own view and legal moves only, so it discloses nothing the seat cannot see.
+  readFor(state: unknown, seat: number): unknown {
+    const s = state as CanastaState;
+    if (!s.round) return null;
+    const view = canastaViewFor(s, seat);
+    const legal = canastaLegalFor(s, seat);
+    const team = (seat % 2) as 0 | 1;
+    const other = (1 - team) as 0 | 1;
+    const partnerSeat = (seat + 2) % 4;
+    const at = (n: number) => view.seats.find((x) => x.seat === n);
+    const hand = view.hand ?? [];
+    const byRank: Record<string, number> = {};
+    for (const c of hand) { if (isWild(c) || isRedThree(c) || isBlackThree(c)) continue; byRank[rankOf(c)] = (byRank[rankOf(c)] ?? 0) + 1; }
+    const wilds = hand.filter(isWild).length;
+    const blackThrees = hand.filter(isBlackThree).length;
+    const top = view.pileTop;
+    const topRank = top && !isWild(top) && !isBlackThree(top) && !isRedThree(top) ? rankOf(top) : null;
+    const ourMelds = view.melds[team].map((m) => ({ rank: m.rank, size: m.cards.length, canasta: m.canasta, natural: m.natural }));
+    const theirMelds = view.melds[other].map((m) => ({ rank: m.rank, size: m.cards.length, canasta: m.canasta, natural: m.natural }));
+    const ourRanks = new Set(ourMelds.map((m) => m.rank));
+    const theirRanks = new Set(theirMelds.map((m) => m.rank));
+    const opponents = view.seats.filter((x) => x.team !== team).map((x) => ({ seat: x.seat, cards: x.cards, sittingOut: x.status === 'sitting-out' }));
+    const partner = at(partnerSeat);
+    const meldable = Object.keys(byRank).filter((r) => ourRanks.has(r as never));
+    const pairs = Object.entries(byRank).filter(([, n]) => n >= 2).map(([r]) => r);
+    const unsafeDiscards = hand.filter((c) => !isWild(c) && !isBlackThree(c) && theirRanks.has(rankOf(c) as never));
+    const safeDiscards = hand.filter((c) => !isWild(c) && !isBlackThree(c) && !isRedThree(c) && !theirRanks.has(rankOf(c) as never) && !ourRanks.has(rankOf(c) as never) && (byRank[rankOf(c)] ?? 0) === 1);
+    return {
+      phase: view.phase,
+      whatYouMayDoNow: view.phase === 'draw'
+        ? `You have NOT drawn yet: draw from the stock${legal.canTakePile ? ', or take the pile' : ' (the pile cannot be taken)'}. No meld or discard until you have.`
+        : 'You HAVE drawn this turn: meld what you can, then discard ONE card to end the turn. Drawing or taking the pile is not available now.',
+      you: { seat, side: team, cards: hand.length, handValue: hand.reduce((n, c) => n + cardValue(c), 0), wilds, blackThrees, byRank, meldableOntoOurMelds: meldable, pairsInHand: pairs },
+      partner: partner ? { seat: partnerSeat, cards: partner.cards, sittingOut: partner.status === 'sitting-out' } : null,
+      opponents,
+      pile: { top, size: view.pileSize, frozen: view.frozen, blockedByBlackThree: !!top && isBlackThree(top), canTake: legal.canTakePile, whyNot: legal.takePileReason, naturalsOfTopInHand: topRank ? (byRank[topRank] ?? 0) : 0 },
+      stock: view.stock,
+      ourSide: { opened: ourMelds.length > 0, needToOpen: legal.minimumMeld, melds: ourMelds, canastas: ourMelds.filter((m) => m.canasta).length, redThrees: view.redThrees[team], score: view.scores[team] },
+      theirSide: { opened: theirMelds.length > 0, melds: theirMelds, canastas: theirMelds.filter((m) => m.canasta).length, redThrees: view.redThrees[other], score: view.scores[other] },
+      canGoOut: legal.canGoOut,
+      discards: { safe: safeDiscards, feedTheirMelds: unsafeDiscards },
+      target: view.target,
+    };
   },
   // THE FINISHED ROUND AS COUNTS, for the person's own agent to remember — from the seat's own final view,
   // so nothing the seat could not see is counted. Canasta's counts are about SIDES as much as seats: two

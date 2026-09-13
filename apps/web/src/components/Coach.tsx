@@ -325,7 +325,7 @@ export function Coach({
           // The turn moved on while we were reading it out. That is ordinary — but DROPPING THE
           // MOVE here is what left the table sitting until the clock ran out, because nothing else
           // was ever going to try again. The heartbeat below picks it up instead.
-          if (asked.current !== key) return;
+          if (asked.current !== key || !a.action) return;
           send({ type: 'act', handNo: roundNo, action: a.action, auto: true } as ClientCommand);
           // Played. Whatever comes next is a new question, and until it is answered the heartbeat
           // is what keeps this seat from going quiet.
@@ -516,7 +516,12 @@ export function Coach({
               ) : (
                 <p className="coach-why">{advice.because}</p>
               )}
-              {mode === 'watch' ? (
+              {/* NO BUTTON WITHOUT A MOVE BEHIND IT — the hold'em card's rule. A coach may answer in words and
+                  no move (or the table dropped a move the game would refuse); a button that sent nothing sat
+                  there while the clock ran, and pressing it once got "illegal-action". */}
+              {!advice.action ? (
+                <p className="hint">{whoSaid(advice.source ?? 'house')} did not name a move here — play this one yourself.</p>
+              ) : mode === 'watch' ? (
                 <button
                   type="button"
                   className="primary"
