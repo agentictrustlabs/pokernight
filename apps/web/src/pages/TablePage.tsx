@@ -9,9 +9,6 @@ import { tableRate } from '../lib/money';
 import { stakeStage } from '../lib/stake';
 import { TableSocket, dismissError, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
 import { Identity } from '../components/Identity';
-import { LogPanel } from '../components/LogPanel';
-import { MoneyPanel } from '../components/MoneyPanel';
-import { StartPanel } from '../components/StartPanel';
 import { SettlementTag } from '../components/SettlementTag';
 import { PRODUCT_NAME } from '../lib/brand';
 import { clubHash } from '../lib/routes';
@@ -22,11 +19,10 @@ import { OtherGame } from '../components/OtherGame';
 import { Table } from '../components/Table';
 import { drawsGame } from '../lib/games';
 import { Toast } from '../components/Toast';
-import { PokerCoach } from '../components/PokerCoach';
-import { CoachDesk } from '../components/CoachDesk';
+import { PokerCoach, type Arrangement } from '../components/PokerCoach';
+import { TableSide } from '../components/TableSide';
 import { whoIsWho } from '../lib/whoIsWho';
 import type { CoachStatus } from '../lib/api';
-import { PracticePanel } from '../components/PracticePanel';
 import { costsTokens, type AgentListing } from '../lib/api';
 
 /**
@@ -95,7 +91,7 @@ export function TablePage({
   /** What the coach is doing — shown on the BOARD beside the turn clock, not only in the side panel. */
   const [coachStatus, setCoachStatus] = useState<CoachStatus | null>(null);
   /** The arrangement the coach panel reports, for the desk beside it. */
-  const [arrangement, setArrangement] = useState<{ adviser: { agentName: string; displayName: string } | null; coach: string | null; setAdviser: (a: { agentName: string; displayName: string } | null) => void; setWaiting: (w: { what: 'advice' | 'review'; who: string } | null) => void } | null>(null);
+  const [arrangement, setArrangement] = useState<Arrangement | null>(null);
   /** The pace the table reported, or null until it has. */
   const [paceMs, setPaceMs] = useState<number | null>(null);
   const [holdErr, setHoldErr] = useState<string | null>(null);
@@ -368,43 +364,32 @@ export function TablePage({
             onArrangement={setArrangement}
             send={send}
           />
-          {/* THE DESK: who coaches you, hire one, who's who, and the review over the last N days — the
-              arrangement, kept out of the mid-hand panel. */}
-          {arrangement ? (
-            <CoachDesk
-              tableId={tableId}
-              session={session}
-              config={config}
-              adviser={arrangement.adviser}
-              coach={arrangement.coach}
-              roster={whoIsWho(state.view?.seats ?? [], ctx.seatName, (playerId) => state.players[playerId], mySeat, arrangement.adviser, arrangement.coach)}
-              mine={mine}
-              paused={paused}
-              myTurn={mySeat != null && state.view?.hand?.toAct === mySeat && !state.view?.hand?.result}
-              onHold={setHeld}
-              onAdviserChanged={arrangement.setAdviser}
-              onWaiting={arrangement.setWaiting}
-            />
-          ) : null}
-          {mine && session ? (
-            <>
-              {holdErr ? <div className="form-error">{holdErr}</div> : null}
-              <PracticePanel tableId={tableId} session={session} game="poker" paused={paused} onHold={setHeld} paceMs={paceMs} />
-            </>
-          ) : null}
-          {/* A player who is not ready to sit sees the ONE action that fixes that, above the money
-              summary — not a refusal pointing at a panel somewhere else. */}
-          {settles && session && !ready ? <StartPanel session={session} config={config} treasury={treasury} onChanged={loadTreasury} /> : null}
-          <MoneyPanel
+          {/* EVERYTHING ELSE, in one panel of tabs: what is being said, ask and review, people and
+              coaches, the table and the money. The coach card above stays about the hand. */}
+          <TableSide
             tableId={tableId}
+            session={session}
+            config={config}
+            arrangement={arrangement}
+            roster={whoIsWho(state.view?.seats ?? [], ctx.seatName, (playerId) => state.players[playerId], mySeat, arrangement?.adviser ?? null, arrangement?.coach ?? null)}
+            mine={mine}
+            paused={paused}
+            myTurn={mySeat != null && state.view?.hand?.toAct === mySeat && !state.view?.hand?.result}
+            onHold={setHeld}
+            holdErr={holdErr}
+            paceMs={paceMs}
+            settles={settles}
+            ready={ready}
+            treasury={treasury}
+            onTreasuryChanged={loadTreasury}
             settlement={settlement}
             chipValue={chipValue}
             assetSymbol={assetSymbol}
-            session={session}
-            treasury={treasury}
-            onChanged={loadTreasury}
+            log={state.log}
+            ctx={ctx}
+            canChat={session != null}
+            onChat={(text) => send({ type: 'chat', text })}
           />
-          <LogPanel log={state.log} ctx={ctx} canChat={session != null} onChat={(text) => send({ type: 'chat', text })} />
         </aside>
         ) : null}
       </div>

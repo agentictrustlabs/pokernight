@@ -1,18 +1,17 @@
 /**
- * THE COACH DESK — everything about WHO coaches you and HOW YOU HAVE BEEN PLAYING, in one panel,
- * away from the mid-hand coach.
+ * THE ARRANGEMENT AND THE REVIEW — two sections the side panel's tabs mount, away from the mid-hand coach.
  *
- * The coach panel used to hold all of it: the mode switch, the wait, the advice, the question box,
- * the adviser picker, the who's-who roster, the feed, and the review — "a lot of stuff is going on
- * there". Mid-hand a person needs exactly three things from that panel: what to do, why, and how
- * long the coach is taking. Everything else is about the ARRANGEMENT, not the hand, and it lives
- * here, in three sections a person opens on purpose:
+ * The coach card used to hold all of it: the mode switch, the wait, the advice, the question box, the
+ * adviser picker, the who's-who roster, the feed, and the review — "a lot of stuff is going on there",
+ * and then, laid out one under the other, "it is just a running list of stuff". Mid-hand a person needs
+ * exactly three things from that card: what to do, why, and how long the coach is taking. Everything
+ * else is about the ARRANGEMENT or the PAST, and it lives here, behind a tab a person opens on purpose:
  *
- *   YOUR COACH   who advises you here (the house, your own agent, the coach it consults), hire a
- *                coach — a ceremony at your Home — and who else is at the table.
- *   REVIEW       how you have been playing over the last N days (seven unless you say), from the
- *                hands recorded to your vault; and "send my past hands", so a coach hired today can
- *                read the sessions before it.
+ *   CoachSection   who advises you here (the house, your own agent, the coach it consults), how to
+ *                  hire or change a coach — a ceremony at your Home.
+ *   ReviewSection  how you have been playing over the last N days (seven unless you say), from the
+ *                  hands recorded to your vault; and "send my past hands", so a coach hired today can
+ *                  read the sessions before it.
  *
  * Nothing here is asked on a clock, and nothing here spends anybody's tokens until pressed.
  */
@@ -21,47 +20,33 @@ import type { AppSession } from '../lib/types';
 import { api, ApiError, type CoachListing, type CoachReview } from '../lib/api';
 import { startCoachHire, type AuthConfig } from '../lib/home';
 import { Adviser } from './Coach';
-import { WhoIsWhoPanel } from './WhoIsWho';
-import type { WhoIsWho as Roster } from '../lib/whoIsWho';
 
 const DAY_CHOICES = [1, 3, 7, 14, 30] as const;
 
-export function CoachDesk({
+type AdviserRef = { agentName: string; displayName: string } | null;
+
+/** The voice a table hears, in words: "bob-coach.svc, via nathan.me", or the adviser alone, or nothing. */
+export const voiceOf = (adviser: AdviserRef, coach: string | null): string | null =>
+  adviser ? (coach ? `${coach}, via ${adviser.displayName}` : adviser.displayName) : null;
+
+export function CoachSection({
   tableId,
   session,
   config,
   adviser,
   coach,
-  roster,
-  mine = false,
-  paused = false,
-  myTurn = false,
-  onHold,
   onAdviserChanged,
-  onWaiting,
 }: {
   tableId: string;
   session: AppSession | null;
   config: AuthConfig | null;
-  adviser: { agentName: string; displayName: string } | null;
+  adviser: AdviserRef;
   /** The coach service the adviser last answered through, when one has. */
   coach: string | null;
-  roster: Roster;
-  /** This is the viewer's OWN practice table — the one place a review may hold the table while it runs. */
-  mine?: boolean;
-  paused?: boolean;
-  myTurn?: boolean;
-  /** Hold or release the table (a practice table's owner only). */
-  onHold?: (held: boolean) => void;
-  onAdviserChanged: (a: { agentName: string; displayName: string } | null) => void;
-  /** Tell the coach panel a review is running, so the wait is shown loudly there too. */
-  onWaiting?: (w: { what: 'review'; who: string } | null) => void;
+  onAdviserChanged: (a: AdviserRef) => void;
 }) {
-  const [days, setDays] = useState<number>(7);
-  const [busy, setBusy] = useState<'review' | 'backfill' | 'hire' | null>(null);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [review, setReview] = useState<(CoachReview & { days: number }) | null>(null);
-  const [sent, setSent] = useState<string | null>(null);
   const [coaches, setCoaches] = useState<CoachListing[]>([]);
   const [hireable, setHireable] = useState(false);
   useEffect(() => {
@@ -69,8 +54,95 @@ export function CoachDesk({
     api.coaches().then((r) => { if (alive) { setCoaches(r.coaches); setHireable(r.hireable); } }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  const hire = async (name: string) => {
+    if (!config || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      location.assign(await startCoachHire(config, name));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not start the hiring at your Home.');
+      setBusy(false);
+    }
+  };
+  const homeCoaches = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/coaches?game=poker` : null;
 
-  const voice = adviser ? (coach ? `${coach}, via ${adviser.displayName}` : adviser.displayName) : null;
+  return (
+    <div className="side-section coach-section">
+      {/* THE CHAIN, DRAWN: the table asks your agent; your agent consults the coach. One row per link, so
+          "who is answering me?" is read off the picture rather than worked out from two names matching. */}
+      <ol className="voice-chain" aria-label="Who advises you here">
+        <li><span className="voice-role">table asks</span><strong>{adviser ? adviser.displayName : 'the house coach'}</strong><span className="hint">{adviser ? 'your own agent, at your Home' : 'one strategy, the same for everybody, free'}</span></li>
+        {adviser ? (
+          <li className={coach ? '' : 'missing'}>
+            <span className="voice-role">it consults</span>
+            <strong>{coach ?? 'no coach yet'}</strong>
+            <span className="hint">{coach ? 'reads your recorded hands under a grant you signed · its tokens' : 'until you hire one, your agent says so and the house answers'}</span>
+          </li>
+        ) : null}
+      </ol>
+
+      {session ? <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={onAdviserChanged} /> : null}
+
+      <div className="side-sub">
+        <h3>{coach ? 'Change your coach' : 'Hire a coach'}</h3>
+        <p className="hint">
+          A coach is a service somebody runs. Hiring one happens at your Home, under Settings → Coaches: it names the coach
+          in your agent's playbook and you sign a grant that lets the coach read the hands recorded to your vault — and
+          nothing else. You can fire it there any time.
+        </p>
+        {coaches.length > 0 ? (
+          <ul className="adviser-offers">
+            {coaches.map((c) => (
+              <li key={c.agentName}>
+                <div className="adviser-offer">
+                  <strong>{c.displayName}</strong>{c.displayName !== c.agentName ? <> <code>{c.agentName}</code></> : null}
+                  <span className="who-tag agent">language model · its own tokens</span>
+                  {c.description && c.description !== 'poker.advise' ? <span className="hint">{c.description}</span> : null}
+                  {hireable && config ? <button type="button" className="link-button" disabled={busy} onClick={() => void hire(c.agentName)}>Hire from here</button> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {homeCoaches ? (
+          <a className="button primary" href={homeCoaches} target="_blank" rel="noreferrer">
+            {coach ? 'Manage coaches at my Home' : 'Choose a coach at my Home'}
+          </a>
+        ) : null}
+        {err ? <div className="form-error">{err}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+export function ReviewSection({
+  session,
+  adviser,
+  coach,
+  mine = false,
+  paused = false,
+  myTurn = false,
+  onHold,
+  onWaiting,
+}: {
+  session: AppSession | null;
+  adviser: AdviserRef;
+  coach: string | null;
+  /** This is the viewer's OWN practice table — the one place a review may hold the table while it runs. */
+  mine?: boolean;
+  paused?: boolean;
+  myTurn?: boolean;
+  /** Hold or release the table (a practice table's owner only). */
+  onHold?: (held: boolean) => void;
+  /** Tell the coach card a review is running, so the wait is shown loudly there too. */
+  onWaiting?: (w: { what: 'review'; who: string } | null) => void;
+}) {
+  const [days, setDays] = useState<number>(7);
+  const [busy, setBusy] = useState<'review' | 'backfill' | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [review, setReview] = useState<(CoachReview & { days: number }) | null>(null);
+  const [sent, setSent] = useState<string | null>(null);
+  const voice = voiceOf(adviser, coach);
 
   /**
    * A REVIEW TAKES A WHILE, AND THE CLOCK DOES NOT KNOW. At your own practice table the table is HELD for the
@@ -107,73 +179,13 @@ export function CoachDesk({
       setBusy(null);
     }
   };
-  const hire = async (name: string) => {
-    if (!config || busy) return;
-    setBusy('hire'); setErr(null);
-    try {
-      location.assign(await startCoachHire(config, name));
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not start the hiring at your Home.');
-      setBusy(null);
-    }
-  };
 
   return (
-    <section className="panel desk">
-      <h2>Your coach</h2>
-      <p className="desk-who">
-        {voice ? (
-          <>
-            Advised by <strong>{voice}</strong>
-            {coach ? <span className="hint"> — your agent consults the coach you hired; the coach reads your recorded hands under a grant you signed.</span> : <span className="hint"> — no coach hired yet: your agent will say so and the house will answer.</span>}
-          </>
-        ) : (
-          <>Advised by <strong>the house coach</strong><span className="hint"> — one strategy, the same for everybody, free.</span></>
-        )}
-      </p>
-
-      {session ? <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={onAdviserChanged} /> : null}
-
-      <details className="desk-hire">
-        <summary>{coach ? 'Change your coach' : 'Hire a coach'}</summary>
-        <p className="hint">
-          A coach is a service somebody runs. Hiring one happens at your Home, under Settings → Coaches: it names the coach
-          in your agent's playbook and you sign a grant that lets the coach read the hands recorded to your vault — and
-          nothing else. You can fire it there any time. Its tokens, not yours.
-        </p>
-        {coaches.length > 0 ? (
-          <ul className="adviser-offers">
-            {coaches.map((c) => (
-              <li key={c.agentName}>
-                <div className="adviser-offer">
-                  <strong>{c.displayName}</strong> <code>{c.agentName}</code>
-                  <span className="who-tag agent">language model · its own tokens</span>
-                  {c.description && c.description !== 'poker.advise' ? <span className="hint">{c.description}</span> : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {config?.home.origin ? (
-          <a className="button primary" href={`${config.home.origin.replace(/\/$/, '')}/coaches?game=poker`} target="_blank" rel="noreferrer">
-            {coach ? 'Manage coaches at my Home' : 'Choose a coach at my Home'}
-          </a>
-        ) : null}
-        {hireable && config ? (
-          <p className="hint">Or hire straight from here: {coaches.map((c) => <button key={c.agentName} type="button" className="link-button" disabled={busy != null} onClick={() => void hire(c.agentName)}>{c.displayName}</button>)}</p>
-        ) : null}
-      </details>
-
-      <details className="desk-who-is-who">
-        <summary>Who’s who at this table</summary>
-        <WhoIsWhoPanel roster={roster} />
-      </details>
-
-      <h2 className="desk-h2">Review</h2>
+    <div className="side-section review-section">
+      <h3>How have I been playing?</h3>
       <p className="hint">
-        How have you been playing? Your agent asks the coach you hired; the coach reads the hands the card room
-        recorded to your vault — every table, not just this one — and answers with the count behind each leak
-        and one thing to change.
+        Your agent asks the coach you hired; the coach reads the hands the card room recorded to your vault — every
+        table, not just this one — and answers with the count behind each leak and one thing to change.
       </p>
       <div className="desk-row">
         <label className="desk-days">
@@ -185,12 +197,8 @@ export function CoachDesk({
         <button type="button" className="primary" disabled={!session || !adviser || busy != null} onClick={() => void ask()} title={adviser ? undefined : 'Name your own agent as your adviser first'}>
           {busy === 'review' ? 'Reviewing…' : `Review my hands${mine ? ' (holds the table)' : ''}`}
         </button>
-        <button type="button" className="link-button" disabled={!session || !adviser || busy != null} onClick={() => void backfill()} title="Every hand you were dealt in that span, at every table here, sent to your own agent to keep — so a coach hired today can read them.">
-          {busy === 'backfill' ? 'Sending…' : 'Send my past hands to my agent'}
-        </button>
       </div>
-      {!adviser ? <p className="hint">Name your own agent above first — the house coach keeps no hands.</p> : null}
-      {sent ? <p className="hint desk-sent" role="status">{sent}</p> : null}
+      {!adviser ? <p className="hint">Name your own agent under People first — the house coach keeps no hands.</p> : null}
       {err ? <div className="form-error">{err}</div> : null}
       {review ? (
         <div className="coach-ask-answer coach-review">
@@ -199,6 +207,14 @@ export function CoachDesk({
           <p className="hint">— {review.source?.coach ? `${review.source.coach}, via ${review.source.displayName}` : review.source?.displayName ?? adviser?.displayName}, from your recorded hands of the last {review.days} day{review.days === 1 ? '' : 's'}</p>
         </div>
       ) : null}
-    </section>
+      <details className="side-more">
+        <summary>A coach hired today has not seen yesterday</summary>
+        <p className="hint">Every hand you were dealt in that span, at every table here, sent to your own agent to keep — so the coach can read the sessions before it was hired.</p>
+        <button type="button" disabled={!session || !adviser || busy != null} onClick={() => void backfill()}>
+          {busy === 'backfill' ? 'Sending…' : `Send my last ${days === 1 ? 'day' : `${days} days`} of hands to my agent`}
+        </button>
+        {sent ? <p className="hint desk-sent" role="status">{sent}</p> : null}
+      </details>
+    </div>
   );
 }

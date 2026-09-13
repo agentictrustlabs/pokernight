@@ -147,6 +147,13 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   Canasta's barrier is the RULES, so its coach says which moves exist; hold'em's is the PRICE, so
   its coach keeps saying what a call costs against what it can win. `Adviser` is the one shared
   piece, because naming your own agent is a fact about you rather than about a game.
+  **THE HOLD'EM SIDE IS TWO THINGS: the coach card and one panel of tabs.** `PokerCoach` is about THE
+  HAND — mode, wait, advice, move, whose voice in one line — and hands everything else up
+  (`Arrangement`: adviser, coach, feed, earlier advice, the ask callback). `components/TableSide.tsx`
+  is the rest, sorted by what a person came for: Talk (commentary, chat, the full log folded), Ask
+  (question, earlier advice, the N-day review), People (the voice chain, name your agent, hire a coach,
+  who's who), Table (practice hold/restart/pace, money). Seven panels one under the other was "just a
+  running list of stuff"; a panel mounted inside a tab is flattened by `.side-section > .panel`.
 - **AN AGENT SEAT IS ASKED IN ITS OWN GAME'S SKILL.** `poker.act` and `canasta.act` are different
   skill ids, the table asks for its game's by name, and it refuses to seat an agent whose card does
   not advertise it. The A2A turn request (`ActInput`) carries `view`, `legal` and `action` opaquely,

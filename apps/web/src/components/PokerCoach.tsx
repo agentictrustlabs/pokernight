@@ -36,7 +36,7 @@ const RETRY_MS = 1200;
 const FIRST_ASK_MS = 700;
 const RETRIES = 20;
 
-interface Said {
+export interface Said {
   id: number;
   text: string;
 }
@@ -45,6 +45,28 @@ interface Said {
 function firstSentence(text: string): string {
   const m = /^[^.!?]*[.!?]/.exec(text.trim());
   return (m ? m[0] : text).trim();
+}
+
+/**
+ * WHAT THE COACH CARD HANDS TO THE PANELS BESIDE IT. The card itself is about the hand — the mode, the wait,
+ * the advice, the move. Everything else it knows (who advises, which coach answered, the running commentary,
+ * the earlier advice, the question box's callbacks) is rendered by `TableSide`'s tabs, so the column reads as
+ * ONE thing to look at and a place to go for the rest.
+ */
+export interface Arrangement {
+  adviser: { agentName: string; displayName: string } | null;
+  coach: string | null;
+  setAdviser: (a: { agentName: string; displayName: string } | null) => void;
+  setWaiting: (w: { what: 'advice' | 'review'; who: string } | null) => void;
+  /** The running commentary — one line per turn, what the voice says. */
+  feed: Said[];
+  /** Earlier advice this session, newest first, each with whose voice it was. */
+  said: Recommendation[];
+  /** A question box's answer arrives: remembered, spoken. */
+  askAnswer: (a: CoachAdvice) => void;
+  /** The mode, so the panels can say why the commentary is quiet. */
+  mode: CoachMode;
+  speaks: boolean;
 }
 
 export function PokerCoach({
@@ -94,8 +116,8 @@ export function PokerCoach({
   mine?: boolean;
   /** What the coach is doing, for the BOARD to show beside the turn clock. */
   onStatus?: (s: CoachStatus) => void;
-  /** Who advises here and which coach answered — for the desk beside this panel, which owns the arrangement. */
-  onArrangement?: (a: { adviser: { agentName: string; displayName: string } | null; coach: string | null; setAdviser: (a: { agentName: string; displayName: string } | null) => void; setWaiting: (w: { what: 'advice' | 'review'; who: string } | null) => void }) => void;
+  /** Who advises here and which coach answered — for the side panel under this card, which owns the arrangement. */
+  onArrangement?: (a: Arrangement) => void;
   send: (c: ClientCommand) => void;
 }) {
   const [mode, setMode] = useState<CoachMode>(startOn);
@@ -147,12 +169,6 @@ export function PokerCoach({
     return () => clearInterval(t);
   }, [waiting]);
   const voiceName = adviser ? (coach ? `${coach}, via ${adviser.displayName}` : adviser.displayName) : 'the house coach';
-  // THE DESK BESIDE THIS PANEL owns the arrangement (who advises, hire a coach, the review); it is told who
-  // advises here and which coach answered, and given the two setters it needs — so this panel stays about the hand.
-  useEffect(() => {
-    onArrangement?.({ adviser, coach, setAdviser, setWaiting: (w) => setWaiting(w ? { ...w, since: Date.now() } : null) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adviser, coach]);
   useEffect(() => {
     if (!session) return;
     let alive = true;
@@ -162,7 +178,7 @@ export function PokerCoach({
         if (!alive) return;
         if (r.adviser) {
           setAdviser(r.adviser);
-          // WHICH COACH, known before the first answer: the desk says "no coach hired yet" until told otherwise.
+          // WHICH COACH, known before the first answer: the People tab says "no coach hired yet" until told otherwise.
           if (session.via !== 'dev') api.coachStatus(session.token).then((st) => { if (alive && st.coach) setCoach(st.coach); }).catch(() => {});
           return;
         }
@@ -190,7 +206,6 @@ export function PokerCoach({
   const asked = useRef<string>('');
   const seen = useRef(0);
   const nextId = useRef(0);
-  const feedRef = useRef<HTMLUListElement | null>(null);
   const toldAbout = useRef(new Set<string>());
   const speaks = canSpeak();
 
@@ -207,6 +222,16 @@ export function PokerCoach({
    * is already the record, and a coach that described the same events in different words would make a
    * player check whether the two agreed.
    */
+  // THE PANELS BESIDE THIS CARD own the arrangement and the commentary (who advises, hire a coach, the review); it is told who
+  // advises here and which coach answered, and given the two setters it needs — so this panel stays about the hand.
+  useEffect(() => {
+    onArrangement?.({
+      adviser, coach, setAdviser, mode, speaks, feed, said,
+      setWaiting: (w) => setWaiting(w ? { ...w, since: Date.now() } : null),
+      askAnswer: (a) => { noteVoice(a); setSaid((cur) => remember(cur, a, handNo)); if (a.because) say(firstSentence(a.because)); },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adviser, coach, mode, speaks, feed, said, handNo]);
   useEffect(() => {
     if (mode === 'off') return;
     const fresh = Math.min(Math.max(0, logSeq - seen.current), log.length);
@@ -386,21 +411,13 @@ export function PokerCoach({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  // Keep the newest line in view inside the feed's own box, never by moving the page.
-  useEffect(() => {
-    const box = feedRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
-  }, [feed]);
-
   if (!session) return null;
 
   return (
     <section className={`panel coach${mode !== 'off' ? ' on' : ''}`}>
-      <h2>
-        {mode === 'play' ? 'Playing your hand' : mode === 'watch' ? 'Telling you what to do' : 'Teach me'}
-        {mode !== 'off' ? <span className="coach-live">on</span> : null}
-      </h2>
-      <div className="coach-modes" role="group" aria-label="Coach">
+      <div className="coach-head">
+        <h2>Coach</h2>
+        <div className="coach-modes" role="group" aria-label="Coach">
         {(
           [
             ['off', 'Off'],
@@ -426,7 +443,12 @@ export function PokerCoach({
             {label}
           </button>
         ))}
+        </div>
       </div>
+      {/* WHOSE VOICE, in one muted line — and where to change it. The panel used to say it three times. */}
+      <p className="coach-who">
+        {adviser ? (coach ? <><strong>{coach}</strong> via {adviser.displayName} · its tokens, never yours mid-hand</> : <><strong>{adviser.displayName}</strong> · no coach hired — the house answers</>) : <><strong>the house coach</strong> · one strategy for everybody, free</>}
+      </p>
 
       {mode === 'off' ? (
         switchedOff ? (
@@ -507,47 +529,6 @@ export function PokerCoach({
             </div>
           ) : null}
 
-          {/* THE ROLLING LIST. Newest first, each line carrying whose advice it was — the house coach
-              and somebody's own agent are not the same voice. */}
-          {said.length > 0 ? (
-            <details className="coach-earlier">
-              <summary>Earlier advice ({said.length})</summary>
-              <ol className="coach-said-list">
-                {said.map((r) => (
-                  <li key={r.id}>
-                    <span className="rec-say">{r.say}</span>
-                    {r.because ? <span className="rec-why">{r.because}</span> : null}
-                    <span className="rec-from">{whoSaid(r.from)}</span>
-                  </li>
-                ))}
-              </ol>
-            </details>
-          ) : null}
-
-          {/* A QUESTION IN YOUR OWN WORDS, to your own agent — the one voice here that remembers how you
-              and the others have been playing. "How am I playing?" is one press because it is the
-              question a learner most needs answered and least knows to ask. Costs its tokens; said so. */}
-          {adviser && session ? (
-            <AskYourAgent
-              tableId={tableId}
-              session={session}
-              adviser={adviser}
-              coach={coach}
-              onWaiting={(w) => setWaiting(w ? { ...w, since: Date.now() } : null)}
-              onAnswer={(a) => { noteVoice(a); setSaid((cur) => remember(cur, a, handNo)); if (a.because) say(firstSentence(a.because)); }}
-            />
-          ) : null}
-
-          {/* No `aria-live`: it is a running commentary, and a screen reader announcing every line of
-              it would talk over the one thing that matters — whose turn it is. Always rendered, even
-              empty, so the panel has one height whether the table is quiet or busy. */}
-          <ul className="coach-feed" ref={feedRef}>
-            {feed.map((l) => (
-              <li key={l.id}>{l.text}</li>
-            ))}
-          </ul>
-
-          {!speaks ? <p className="hint">This browser has no voice, so the coach is writing rather than talking.</p> : null}
         </>
       )}
     </section>
@@ -559,10 +540,10 @@ export function PokerCoach({
  * about "how am I playing" — it keeps no memory. Your own agent does: the card room records every
  * finished hand, as you saw it, to YOUR vault, and the coach you named reads them there under a grant
  * you signed. A question mid-hand goes the same way as advice (your agent consults the coach). The
- * REVIEW over past hands lives on the desk beside this panel. Spends the coach's tokens, never your
+ * REVIEW over past hands lives on the Ask tab under the coach card. Spends the coach's tokens, never your
  * agent's, and the panel says so.
  */
-function AskYourAgent({
+export function AskYourAgent({
   tableId,
   session,
   adviser,

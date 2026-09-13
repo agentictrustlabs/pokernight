@@ -758,9 +758,21 @@ label > select {
     flex: 1 1 0;
     margin: 0;
   }
+  /* The coach card takes its own height; the side panel takes the rest and scrolls its open tab inside,
+     so the column is as tall as the board and never taller. */
   .side {
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
+  }
+  .side-panel {
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+  }
+  .side-pane {
+    overflow-y: auto;
+    min-height: 0;
+    /* Room for the focus ring and the scrollbar without clipping the panel's edge. */
+    padding: 0 0.15rem 0.15rem 0;
   }
   .log-panel {
     display: flex;
@@ -4153,23 +4165,47 @@ a.button.primary:hover {
   border-radius: 999px;
   padding: 0.05rem 0.4rem;
 }
-.coach-modes {
+/* THE HEAD IS ONE ROW: the word "Coach" and a segmented control. A heading that changed with the mode
+   ("Telling you what to do") and three loose buttons under it took four lines to say one thing. */
+.coach-head {
   display: flex;
-  gap: 0.3rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.coach-head h2 { margin: 0; }
+.coach-modes {
+  display: inline-flex;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
 }
 .coach-mode {
-  flex: 1 1 0;
   font-size: 0.78rem;
-  padding: 0.3rem 0.4rem;
-  /* A button is one line tall whatever the panel around it is doing. */
-  height: 2rem;
-  align-self: start;
+  padding: 0.25rem 0.7rem;
+  height: 1.75rem;
+  line-height: 1;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
 }
+.coach-mode:hover:not(:disabled) { color: var(--ink); }
 .coach-mode.on {
   background: var(--focus);
-  border-color: var(--focus);
   color: #fff;
+  font-weight: 600;
 }
+/* Whose voice, once, in one muted line under the head. */
+.coach-who {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+.coach-who strong { color: var(--ink); font-weight: 600; }
 
 /* THE WAIT, SAID LOUDLY. A consultation is a trip to your Home and your coach and back; a review is a
    minute. A button that said "Asking…" was missed while the turn clock folded the person. */
@@ -4222,7 +4258,7 @@ a.button.primary:hover {
 .desk-who .hint { display: block; margin-top: 0.2rem; }
 .desk-h2 { margin-top: 0.4rem; }
 .desk-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-.desk-days { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
+.desk-days { display: inline-flex; flex-direction: row; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
 .desk-days select { font: inherit; padding: 0.2rem 0.35rem; }
 .desk-sent { color: var(--ink); }
 .desk-hire summary, .desk-who-is-who summary, .coach-earlier summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--ink-soft); }
@@ -4242,6 +4278,90 @@ details.log-panel > summary h3 { display: inline; margin: 0; font-size: 0.9rem; 
 details.log-panel > summary::before { content: '▸ '; color: var(--ink-soft); }
 details.log-panel[open] > summary::before { content: '▾ '; }
 details.log-panel > .log { margin-top: 0.5rem; }
+
+/* THE SIDE PANEL — four rooms under the coach card, one open at a time. */
+.side-panel {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  align-content: start;
+}
+.side-tabs {
+  display: flex;
+  gap: 0.15rem;
+  border-bottom: 1px solid var(--rule);
+  margin: 0 -1rem;
+  padding: 0 0.6rem;
+}
+.side-tab {
+  position: relative;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  padding: 0.45rem 0.65rem 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink-soft);
+}
+.side-tab:hover:not(:disabled) { color: var(--ink); border-color: transparent; }
+.side-tab.on { color: var(--ink); border-bottom-color: var(--focus); }
+.side-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.side-dot {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.2rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--brass);
+}
+.side-pane { min-width: 0; }
+.side-section { display: grid; gap: 0.7rem; align-content: start; }
+/* A panel mounted inside a tab is a section of this one, not a card in a card. */
+.side-section > .panel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.side-section > .panel + .panel { border-top: 1px solid var(--rule); padding-top: 0.7rem; }
+.side-section h3, .side-sub h3 { margin: 0; font-size: 0.85rem; }
+.side-sub { display: grid; gap: 0.5rem; border-top: 1px solid var(--rule); padding-top: 0.7rem; }
+.side-more > summary { cursor: pointer; font-size: 0.82rem; font-weight: 600; color: var(--ink-soft); }
+.side-more > summary:hover { color: var(--ink); }
+.side-more > *:not(summary) { margin-top: 0.5rem; }
+.side-more .log { height: 260px; }
+.talk-section .coach-feed { height: 11rem; }
+.talk-section .chatbox { margin-top: 0; }
+/* The chain of voices: table → your agent → its coach, one row per link. */
+.voice-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.voice-chain li {
+  display: grid;
+  grid-template-columns: 5.2rem 1fr;
+  column-gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+.voice-chain li .hint { grid-column: 2; margin: 0; font-size: 0.75rem; }
+.voice-chain li.missing strong { color: var(--warn); }
+.voice-role {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.coach-earlier-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.coach-earlier-list li { display: grid; gap: 0.15rem; font-size: 0.85rem; }
+.coach-earlier-list .coach-say, .coach-earlier-list .coach-why { margin: 0; }
 
 /* The coach's state ON THE BOARD, under the turn title. */
 .act-coach {
