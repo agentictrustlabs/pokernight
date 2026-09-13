@@ -158,7 +158,20 @@ export function PokerCoach({
     let alive = true;
     api
       .getAdviser(tableId, session.token)
-      .then((r) => alive && setAdviser(r.adviser))
+      .then(async (r) => {
+        if (!alive) return;
+        if (r.adviser) { setAdviser(r.adviser); return; }
+        // YOUR OWN AGENT IS THE ADVISER BY DEFAULT WHEN IT HAS A COACH. A person whose Home has bound a coach to
+        // their agent arrived at a table still "advised by the house coach" and had to find the picker; the
+        // whole point of hiring was not to. Appointed once here — a person who then chooses the house keeps
+        // that choice at this table (the cleared mark), and a dev session has no agent to appoint.
+        if (session.via === 'dev') return;
+        try { if (sessionStorage.getItem(`pokernight.adviser.cleared:${tableId}`)) return; } catch { /* appoint anyway */ }
+        const st = await api.coachStatus(session.token).catch(() => null);
+        if (!alive || !st?.agent || !st.coach || st.advertises === false) return;
+        const named = await api.setAdviser(tableId, st.agent, session.token).catch(() => null);
+        if (alive && named?.adviser) setAdviser(named.adviser);
+      })
       .catch(() => {});
     return () => {
       alive = false;

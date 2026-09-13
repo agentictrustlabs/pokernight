@@ -134,29 +134,35 @@ export function CoachDesk({
 
       {session ? <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={onAdviserChanged} /> : null}
 
-      {coaches.length > 0 ? (
-        <details className="desk-hire">
-          <summary>Hire a coach</summary>
-          <p className="hint">
-            A coach is a service somebody runs. Hiring one happens at your Home: it names the coach in your agent's
-            playbook and you sign a grant that lets the coach read the hands recorded to your vault — and nothing else.
-            You can fire it there any time. Its tokens, not yours.
-          </p>
+      <details className="desk-hire">
+        <summary>{coach ? 'Change your coach' : 'Hire a coach'}</summary>
+        <p className="hint">
+          A coach is a service somebody runs. Hiring one happens at your Home, under Settings → Coaches: it names the coach
+          in your agent's playbook and you sign a grant that lets the coach read the hands recorded to your vault — and
+          nothing else. You can fire it there any time. Its tokens, not yours.
+        </p>
+        {coaches.length > 0 ? (
           <ul className="adviser-offers">
             {coaches.map((c) => (
               <li key={c.agentName}>
-                <button type="button" disabled={busy != null || !hireable || !config} onClick={() => void hire(c.agentName)} title={hireable ? `Hire ${c.displayName} at your Home` : 'Your Home does not offer coach hiring yet'}>
-                  {c.displayName}
-                  <code>{c.agentName}</code>
+                <div className="adviser-offer">
+                  <strong>{c.displayName}</strong> <code>{c.agentName}</code>
                   <span className="who-tag agent">language model · its own tokens</span>
-                  <span className="hint">{c.description}</span>
-                </button>
+                  {c.description && c.description !== 'poker.advise' ? <span className="hint">{c.description}</span> : null}
+                </div>
               </li>
             ))}
           </ul>
-          {!hireable ? <p className="hint">Hiring from here is not switched on at this Home yet — a coach can still be bound at your Home.</p> : null}
-        </details>
-      ) : null}
+        ) : null}
+        {config?.home.origin ? (
+          <a className="button primary" href={`${config.home.origin.replace(/\/$/, '')}/coaches?game=poker`} target="_blank" rel="noreferrer">
+            {coach ? 'Manage coaches at my Home' : 'Choose a coach at my Home'}
+          </a>
+        ) : null}
+        {hireable && config ? (
+          <p className="hint">Or hire straight from here: {coaches.map((c) => <button key={c.agentName} type="button" className="link-button" disabled={busy != null} onClick={() => void hire(c.agentName)}>{c.displayName}</button>)}</p>
+        ) : null}
+      </details>
 
       <details className="desk-who-is-who">
         <summary>Who’s who at this table</summary>

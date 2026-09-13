@@ -720,6 +720,8 @@ export function Adviser({
             setErr(null);
             try {
               await api.clearAdviser(tableId, session.token);
+              // The person chose the house here: the coach panel must not re-appoint their agent on reload.
+              try { sessionStorage.setItem(`pokernight.adviser.cleared:${tableId}`, '1'); } catch { /* fine */ }
               onChanged(null);
             } catch (e) {
               setErr(e instanceof ApiError ? e.message : 'That could not be changed.');
