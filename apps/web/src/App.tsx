@@ -4,6 +4,7 @@ import { ApiError, api, loadSession, saveSession, setUnauthorizedHandler } from 
 import { SESSION_KEY } from './lib/ssoLogout';
 import {
   forgetHomeSession,
+  askToChooseNextTime,
   startHomeSignIn,
   takeCharterCallback,
   takeCoachCallback,
@@ -129,6 +130,8 @@ export function App() {
     // Home, held only to hand ceremonies off, and keeping it past a sign-out would be keeping the
     // more powerful of the two credentials after being told to let go of the lesser one.
     forgetHomeSession();
+    // And the next sign-in asks the Home WHO, rather than recognising the person who just left.
+    if (reason === 'user') askToChooseNextTime();
     setSession(outcome.session);
     setNotice(outcome.notice);
     setError(null);

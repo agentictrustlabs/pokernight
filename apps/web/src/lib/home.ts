@@ -149,6 +149,33 @@ export function forgetHomeSession(store: StorageLike | null = sessionStore()): v
     /* nothing to do about a store that will not forget */
   }
 }
+
+/**
+ * SIGNING OUT HERE MEANS CHOOSING NEXT TIME. The Home keeps its own session in its own cookie, so a person
+ * who signed out of the card room and pressed "sign in" was recognised at once and offered one tap as the
+ * same person — "it tries to bring me back in as david.me who I just signed out as". A sign-out is a
+ * request to be somebody else, or nobody; so the NEXT sign-in asks the Home for the account chooser
+ * (`prompt=select_account`), once. A person who simply came back (no sign-out) still gets one tap.
+ */
+export const CHOOSE_NEXT_KEY = 'pokernight.home.choose';
+
+export function askToChooseNextTime(store: StorageLike | null = sessionStore()): void {
+  try {
+    store?.setItem(CHOOSE_NEXT_KEY, '1');
+  } catch {
+    /* then the Home recognises them, which is only the old behaviour */
+  }
+}
+
+export function takeChooseNextTime(store: StorageLike | null = sessionStore()): boolean {
+  try {
+    const v = store?.getItem(CHOOSE_NEXT_KEY) === '1';
+    store?.removeItem(CHOOSE_NEXT_KEY);
+    return v;
+  } catch {
+    return false;
+  }
+}
 /** Which club the charter now returning is for. The Home carries no app state of ours, so the club
  *  id has to survive the round trip on this origin, next to the stash it belongs with. */
 export const CHARTER_CLUB_KEY = 'pokernight.home.charter.club';
@@ -445,6 +472,8 @@ export async function startHomeSignIn(
   // The per-charge amount asked for. The Home caps it at whatever it has registered for this client,
   // so this can only ever ask for less than the ceiling the player is shown — never more.
   if (/^\d+$/.test(offer.maxPerBuyIn)) url.searchParams.set('pay_amount', offer.maxPerBuyIn);
+  // After a sign-out, the chooser — see `askToChooseNextTime`.
+  if (takeChooseNextTime(store)) url.searchParams.set('prompt', 'select_account');
   return url.toString();
 }
 
