@@ -5,6 +5,7 @@
  * camera and shared screen on a <video>. The card table underneath keeps dealing.
  */
 import { useEffect, useRef, useState } from 'react';
+import { useDraggable } from '../../lib/useDraggable';
 import { RealtimeKitProvider, useRealtimeKitSelector } from '@cloudflare/realtimekit-react';
 import { useClubHuddle } from './ClubHuddleProvider';
 import type { HuddleScope } from '../../lib/huddle';
@@ -40,19 +41,30 @@ function Face({ p, mine, speaking }: { p: Tracked; mine?: boolean; speaking: boo
   const [on, setOn] = useState(!!p.videoEnabled);
   useEffect(() => {
     const el = ref.current;
+    // PLAY IS ASKED FOR MORE THAN ONCE. Firefox in particular will attach a stream to a <video> that is not
+    // yet visible and then sit on the first frame — black — until something calls play() again; a remote
+    // track also arrives MUTED (no frames yet) and unmutes when the first frame lands. So play() is asked at
+    // attach, when the metadata loads, when the track unmutes, and when the element is shown.
+    const kick = () => { if (el && el.srcObject) void el.play().catch(() => undefined); };
     const attach = (track?: MediaStreamTrack, enabled?: boolean) => {
       setOn(!!enabled && !!track);
       if (!el) return;
-      if (enabled && track) { el.srcObject = new MediaStream([track]); void el.play().catch(() => undefined); } else el.srcObject = null;
+      if (enabled && track) {
+        el.srcObject = new MediaStream([track]);
+        track.addEventListener('unmute', kick);
+        kick();
+      } else el.srcObject = null;
     };
     attach(p.videoTrack, p.videoEnabled);
+    el?.addEventListener('loadedmetadata', kick);
     const onVideo = (payload: unknown) => { const x = payload as { videoEnabled: boolean; videoTrack: MediaStreamTrack }; attach(x.videoTrack, x.videoEnabled); };
     p.on('videoUpdate', onVideo);
-    return () => { p.off('videoUpdate', onVideo); if (el) el.srcObject = null; };
+    return () => { p.off('videoUpdate', onVideo); el?.removeEventListener('loadedmetadata', kick); if (el) el.srcObject = null; };
   }, [p]);
+  useEffect(() => { if (on && ref.current?.srcObject) void ref.current.play().catch(() => undefined); }, [on]);
   return (
     <figure className={`huddle-face${speaking ? ' speaking' : ''}${mine ? ' mine' : ''}${on ? ' video' : ''}`} title={mine ? `${p.name} (you)` : p.name}>
-      <video ref={ref} autoPlay playsInline muted hidden={!on} />
+      <video ref={ref} autoPlay playsInline muted style={on ? undefined : { display: 'none' }} />
       {!on ? <span className="huddle-initial" aria-hidden="true">{(p.name || '?').slice(0, 1).toUpperCase()}</span> : null}
       <figcaption>{mine ? 'you' : p.name}</figcaption>
     </figure>
@@ -110,6 +122,10 @@ function Media({ open }: { open: boolean }) {
 export function ClubHuddleDock() {
   const h = useClubHuddle();
   const [open, setOpen] = useState(false);
+  // THE DOCK CAN BE PICKED UP: detached, it is a floating window dragged by its title bar, left where the
+  // person put it (remembered per browser); docked, it sits in the corner as before. Either way the call
+  // underneath is the same one — nothing reconnects when the window moves.
+  const drag = useDraggable('pokernight.huddle.position');
   if (!h.current || !h.meeting) {
     return h.error ? <div className="huddle-dock huddle-dock-error" role="status">{h.error} <button type="button" className="link-button" onClick={h.dismissError}>dismiss</button></div> : null;
   }
@@ -117,14 +133,21 @@ export function ClubHuddleDock() {
   const canEnd = c.role === 'host';
   return (
     <RealtimeKitProvider value={h.meeting}>
-      <div className={`huddle-dock${open ? ' open' : ''}`} role="region" aria-label="Club huddle">
-        <div className="huddle-dock-row">
-          <button type="button" className="huddle-title" onClick={() => setOpen((o) => !o)} title={open ? 'Fold' : 'Expand'}>
+      <div
+        ref={drag.ref}
+        className={`huddle-dock${open ? ' open' : ''}${drag.floating ? ' floating' : ''}`}
+        style={drag.position ? { left: drag.position.x, top: drag.position.y } : undefined}
+        role="region"
+        aria-label="Club huddle"
+      >
+        <div className="huddle-dock-row huddle-handle" onPointerDown={drag.onHandlePointerDown} title="Drag to move">
+          <button type="button" className="huddle-title" onClick={() => { if (!drag.dragged()) setOpen((o) => !o); }} title={open ? 'Fold' : 'Expand'}>
             <span className="huddle-live" aria-hidden="true" />
             <span>Huddle · {c.scopeName}</span>
             <span className="hint"> · {c.run.roster.filter((r) => r.joined).length} here</span>
           </button>
           <div className="huddle-controls">
+            <button type="button" className="huddle-btn quiet" onClick={() => (drag.floating ? drag.dock() : drag.detach())} title={drag.floating ? 'Put it back in the corner' : 'Float it — then drag it anywhere by its title'}>{drag.floating ? 'Dock' : 'Float'}</button>
             <button type="button" className={`huddle-btn${h.micOn ? ' on' : ''}`} onClick={() => void h.toggleMic()} aria-pressed={h.micOn} title={h.micOn ? 'Mute' : 'Unmute'}>{h.micOn ? 'Mic on' : 'Mic off'}</button>
             <button type="button" className={`huddle-btn${h.camOn ? ' on' : ''}`} onClick={() => void h.toggleCam()} aria-pressed={h.camOn} title={h.camOn ? 'Camera off' : 'Camera on'}>{h.camOn ? 'Camera on' : 'Camera off'}</button>
             <button type="button" className={`huddle-btn${h.screenOn ? ' on' : ''}`} onClick={() => void h.toggleScreen()} aria-pressed={h.screenOn} title={h.screenOn ? 'Stop sharing' : 'Share your screen'}>Screen</button>

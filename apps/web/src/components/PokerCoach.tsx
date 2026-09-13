@@ -361,7 +361,8 @@ export function PokerCoach({
    * of them, because playing a move is what clears the advice.
    */
   useEffect(() => {
-    if (mode === 'off' || paused || !myTurn || advice || countdown != null || missed > RETRIES || hidden) return;
+    // ON DEMAND asks nothing by itself: the person presses "Ask" when they want a word, and only then.
+    if (mode === 'off' || mode === 'ask' || paused || !myTurn || advice || countdown != null || missed > RETRIES || hidden) return;
     const h = setTimeout(() => void ask(), missed === 0 ? FIRST_ASK_MS : RETRY_MS);
     return () => clearTimeout(h);
   }, [advice, ask, countdown, missed, mode, myTurn, paused, hidden]);
@@ -394,7 +395,7 @@ export function PokerCoach({
     chosen.current = true;
     setMode('off');
     hush();
-    setSwitchedOff(adviser ? `You were sat out for not answering, so the coach is off — ${voiceName} is not asked while you are away. Press "Tell me" to switch it back on.` : 'You were sat out for not answering, so the coach is off. Press "Tell me" to switch it back on.');
+    setSwitchedOff(adviser ? `You were sat out for not answering, so the coach is off — ${voiceName} is not asked while you are away. Press "Ask every turn" to switch it back on.` : 'You were sat out for not answering, so the coach is off. Press "Ask every turn" to switch it back on.');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sitOutReason]);
   // NOBODY HAS TOUCHED THE PAGE FOR TEN MINUTES ⇒ OFF, whichever mode. In play-for-me the coach would
@@ -406,7 +407,7 @@ export function PokerCoach({
     chosen.current = true;
     setMode('off');
     hush();
-    setSwitchedOff(`Nobody has touched the table for ten minutes, so the coach is off${adviser ? ` — ${voiceName} is not asked while you are away` : ''}. Press "Tell me" to switch it back on.`);
+    setSwitchedOff(`Nobody has touched the table for ten minutes, so the coach is off${adviser ? ` — ${voiceName} is not asked while you are away` : ''}. Press "Ask every turn" to switch it back on.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idle]);
 
@@ -440,8 +441,9 @@ export function PokerCoach({
         <div className="coach-modes" role="group" aria-label="Coach">
         {(
           [
-            ['off', 'Off'],
-            ['watch', 'Tell me'],
+            ['off', 'Don’t ask'],
+            ['ask', 'Ask on demand'],
+            ['watch', 'Ask every turn'],
             ['play', 'Play for me'],
           ] as const
         ).map(([m, label]) => (
@@ -506,18 +508,27 @@ export function PokerCoach({
               ? `Playing in ${countdown}…`
               : myTurn
                 ? advice
-                  ? mode === 'watch'
+                  ? mode === 'watch' || mode === 'ask'
                     ? 'Your move — press below when you are ready.'
                     : 'Your move.'
                   : missed > RETRIES
                     ? 'The card room is not answering. Play this one yourself, or switch me off and on.'
                     : waiting
                       ? 'Your turn.'
-                      : 'Your turn. About to look at your hand…'
+                      : mode === 'ask'
+                        ? 'Your turn. Ask if you want a word.'
+                        : 'Your turn. About to look at your hand…'
                 : mode === 'play'
                   ? 'Playing your hand. Waiting for the other players.'
                   : 'Waiting for the other players.'}
           </p>
+          {/* ON DEMAND: the one press that asks. Nothing is asked until it is pressed, and a named adviser's
+              coach spends its tokens only on the turns the person wanted a word about. */}
+          {mode === 'ask' && myTurn && !advice && !waiting && !paused && countdown == null ? (
+            <button type="button" className="primary coach-ask-now" onClick={() => void ask()}>
+              Ask {voiceName}
+            </button>
+          ) : null}
 
           {advice ? (
             <div className="coach-said">
@@ -538,7 +549,7 @@ export function PokerCoach({
                 <p className="hint">
                   {whoSaid(advice.source ?? 'house')} did not name a move here — play this one yourself.
                 </p>
-              ) : mode === 'watch' ? (
+              ) : mode === 'watch' || mode === 'ask' ? (
                 // THE BUTTON NAMES THE MOVE, not "do that". At a poker table the difference between
                 // calling 8 and raising to 24 is the whole decision, and a button that hid which one
                 // it was about to make would be asking for blind consent.

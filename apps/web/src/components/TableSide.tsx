@@ -144,7 +144,7 @@ export function TableSide({
             {/* THE COMMENTARY. One line per turn, what the voice said — the same words the browser spoke, for
                 whoever missed them or has no voice to hear. */}
             {arrangement?.mode === 'off' ? (
-              <p className="hint">The coach is off. Switch it to “Tell me” above and it will say what everyone at the table is doing.</p>
+              <p className="hint">The coach is quiet. Switch it to “Ask every turn” above and it will say what everyone at the table is doing; “Ask on demand” gives you a word only when you press Ask.</p>
             ) : feed.length === 0 ? (
               <p className="hint">Nothing said yet — the commentary starts with the first deal.</p>
             ) : (

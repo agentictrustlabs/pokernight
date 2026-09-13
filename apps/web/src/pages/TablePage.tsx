@@ -380,11 +380,11 @@ export function TablePage({
             ctx={ctx}
             players={state.players}
             paused={paused}
-            /* EVERY TABLE OPENS IN "TELL ME". It used to be "play for me" at a practice table and off
-               anywhere else, and both were wrong the same way: one played the hand for the person who
-               came to learn it, the other hid the coach from the person who came to play it. "Tell
-               me" explains and leaves the move to you, at every table, until you choose otherwise. */
-            startOn="watch"
+            /* A PLAY-MONEY TABLE OPENS IN "ASK EVERY TURN": it explains and leaves the move to you until you
+               choose otherwise. A MONEY TABLE OPENS QUIET — "don't ask" — because a coach that spoke up on
+               every turn of a settled game was a running commentary nobody asked for, and a named adviser's
+               tokens spent on a game the person came to play themselves; "ask on demand" is one press away. */
+            startOn={settles ? 'off' : 'watch'}
             mine={mine}
             onStatus={setCoachStatus}
             onArrangement={setArrangement}

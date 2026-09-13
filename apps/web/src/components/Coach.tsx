@@ -29,7 +29,9 @@ import type { PlayerInfo } from '../lib/types';
  *
  * Three settings: off, tell me (it explains, you press), play for me (it plays and talks).
  */
-export type CoachMode = 'off' | 'watch' | 'play';
+/** off: says nothing and asks nobody · ask: a word only when you press Ask · watch: a word every turn, the move
+ *  yours · play: plays the hand for you. A MONEY table opens in `off`; everything else in `watch`. */
+export type CoachMode = 'off' | 'ask' | 'watch' | 'play';
 
 /** The first sentence of a longer explanation — what there is time to say between two moves. */
 function firstSentence(text: string): string {
@@ -369,7 +371,8 @@ export function Coach({
    * no advice" instead is what catches it, because playing a move is what clears the advice.
    */
   useEffect(() => {
-    if (mode === 'off' || paused || !myTurn || advice || countdown != null || missed > RETRIES || hidden) return;
+    // ON DEMAND asks nothing by itself: the person presses "Ask" when they want a word, and only then.
+    if (mode === 'off' || mode === 'ask' || paused || !myTurn || advice || countdown != null || missed > RETRIES || hidden) return;
     const h = setTimeout(() => void ask(), missed === 0 ? FIRST_ASK_MS : RETRY_MS);
     return () => clearTimeout(h);
   }, [advice, ask, countdown, missed, mode, myTurn, paused, hidden]);
@@ -391,7 +394,7 @@ export function Coach({
     chosen.current = true;
     setMode('off');
     hush();
-    setSwitchedOff(`You were sat out for not answering, so the coach is off${adviser ? ` — ${adviser.displayName} is not asked while you are away` : ''}. Press "Tell me" to switch it back on.`);
+    setSwitchedOff(`You were sat out for not answering, so the coach is off${adviser ? ` — ${adviser.displayName} is not asked while you are away` : ''}. Press "Ask every turn" to switch it back on.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sitOutReason]);
   // NOBODY HAS TOUCHED THE PAGE FOR TEN MINUTES ⇒ OFF, whichever mode. In play-for-me the coach would
@@ -402,7 +405,7 @@ export function Coach({
     chosen.current = true;
     setMode('off');
     hush();
-    setSwitchedOff(`Nobody has touched the table for ten minutes, so the coach is off${adviser ? ` — ${adviser.displayName} is not asked while you are away` : ''}. Press "Tell me" to switch it back on.`);
+    setSwitchedOff(`Nobody has touched the table for ten minutes, so the coach is off${adviser ? ` — ${adviser.displayName} is not asked while you are away` : ''}. Press "Ask every turn" to switch it back on.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idle]);
 
@@ -446,8 +449,9 @@ export function Coach({
         <div className="coach-modes" role="group" aria-label="Coach">
         {(
           [
-            ['off', 'Off'],
-            ['watch', 'Tell me'],
+            ['off', 'Don’t ask'],
+            ['ask', 'Ask on demand'],
+            ['watch', 'Ask every turn'],
             ['play', 'Play for me'],
           ] as const
         ).map(([m, label]) => (
@@ -495,16 +499,25 @@ export function Coach({
               ? `Playing in ${countdown}…`
               : myTurn
                 ? advice
-                  ? mode === 'watch'
+                  ? mode === 'watch' || mode === 'ask'
                     ? 'Your move — press below when you are ready.'
                     : 'Your move.'
                   : missed > RETRIES
                     ? 'The card room is not answering. Play this one yourself, or switch me off and on.'
-                    : 'Your turn. Looking at your hand…'
+                    : mode === 'ask'
+                      ? 'Your turn. Ask if you want a word.'
+                      : 'Your turn. Looking at your hand…'
                 : mode === 'play'
                   ? 'Playing your hand. Waiting for the other players.'
                   : 'Waiting for the other players.'}
           </p>
+          {/* ON DEMAND: the one press that asks. Nothing is asked until it is pressed, and a named adviser's
+              coach spends its tokens only on the turns the person wanted a word about. */}
+          {mode === 'ask' && myTurn && !advice && !paused && countdown == null ? (
+            <button type="button" className="primary coach-ask-now" onClick={() => void ask()}>
+              Ask {adviser ? adviser.displayName : 'the house coach'}
+            </button>
+          ) : null}
 
           {advice ? (
             <div className="coach-said">
@@ -521,7 +534,7 @@ export function Coach({
                   there while the clock ran, and pressing it once got "illegal-action". */}
               {!advice.action ? (
                 <p className="hint">{whoSaid(advice.source ?? 'house')} did not name a move here — play this one yourself.</p>
-              ) : mode === 'watch' ? (
+              ) : mode === 'watch' || mode === 'ask' ? (
                 <button
                   type="button"
                   className="primary"

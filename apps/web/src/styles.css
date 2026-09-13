@@ -5258,9 +5258,17 @@ details.log-panel > .log { margin-top: 0.5rem; }
 .huddle-start.running { border-color: var(--live-on); color: var(--felt-deep); font-weight: 600; }
 .huddle-start.compact { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 .club-huddle-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+/* Picked up: the dock becomes a window at the place it was dragged to, held by its title bar. */
+.huddle-dock.floating { right: auto; bottom: auto; }
+.huddle-handle { cursor: grab; touch-action: none; user-select: none; }
+.huddle-dock.floating .huddle-handle { cursor: move; }
+.huddle-btn.quiet { color: var(--ink-soft); }
 @media (max-width: 899px) {
   .huddle-dock { top: auto; bottom: calc(var(--coach-sheet, 0px) + 0.5rem); right: 0.5rem; left: 0.5rem; width: auto; }
+  .huddle-dock.floating { bottom: auto; right: auto; width: min(30rem, calc(100vw - 1rem)); }
 }
+.coach-modes { flex-wrap: wrap; }
+.coach-ask-now { justify-self: start; }
 
 /* A ceremony's word to somebody signed in: one line under the top bar, dismissable. */
 .app-banner {

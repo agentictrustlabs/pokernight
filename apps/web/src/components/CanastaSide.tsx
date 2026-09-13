@@ -109,7 +109,7 @@ export function CanastaSide({
         {tab === 'talk' ? (
           <div className="side-section talk-section">
             {arrangement?.mode === 'off' ? (
-              <p className="hint">The coach is off. Switch it to “Tell me” above and it will say what everyone at the table is doing.</p>
+              <p className="hint">The coach is quiet. Switch it to “Ask every turn” above and it will say what everyone at the table is doing; “Ask on demand” gives you a word only when you press Ask.</p>
             ) : feed.length === 0 ? (
               <p className="hint">Nothing said yet — the commentary starts with the first deal.</p>
             ) : (

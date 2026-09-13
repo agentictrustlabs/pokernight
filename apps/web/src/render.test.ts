@@ -695,9 +695,9 @@ describe('the door into a club, for somebody who has been invited', () => {
     expect(html).not.toContain('Join at your Home');
   });
 
-  it('offers the join to somebody signed in, while it looks whether they already belong', () => {
+  it('offers the join to somebody signed in at once, while it looks whether they already belong', () => {
     const html = page({ token: 't', playerId: `home:0x${'cd'.repeat(20)}`, name: 'Barb', via: 'home' });
-    expect(html).toContain('Looking…');
+    expect(html).toContain('Join at your Home');
   });
 });
 

@@ -24,6 +24,9 @@ export function JoinPage({ clubId, session, auth, onLogin }: { clubId: string; s
   /** The invitation itself, read off their own inbox — the club's name and who asked, when the Home can say. */
   const [invitation, setInvitation] = useState<{ name: string; fromName?: string } | null>(null);
 
+  // TWO QUESTIONS, ASKED TOGETHER: are they already in (then the club's page), and what does the invitation
+  // say (the club's name, who asked). Each is a trip to the Home of a couple of seconds; one after the other
+  // was the door taking five seconds to say who was knocking.
   useEffect(() => {
     if (!session) return;
     let alive = true;
@@ -31,6 +34,10 @@ export function JoinPage({ clubId, session, auth, onLogin }: { clubId: string; s
       .getClub(clubId, session.token)
       .then(() => alive && setState('member'))
       .catch(() => alive && setState('stranger'));
+    api
+      .listInvitations(session.token)
+      .then((r) => { const i = r.invitations.find((x) => x.clubId === clubId); if (alive && i) setInvitation({ name: i.name, ...(i.fromName ? { fromName: i.fromName } : {}) }); })
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -39,16 +46,6 @@ export function JoinPage({ clubId, session, auth, onLogin }: { clubId: string; s
   useEffect(() => {
     if (state === 'member') location.hash = clubHash(clubId);
   }, [state, clubId]);
-
-  useEffect(() => {
-    if (!session || state !== 'stranger') return;
-    let alive = true;
-    api
-      .listInvitations(session.token)
-      .then((r) => { const i = r.invitations.find((x) => x.clubId === clubId); if (alive && i) setInvitation({ name: i.name, ...(i.fromName ? { fromName: i.fromName } : {}) }); })
-      .catch(() => undefined);
-    return () => { alive = false; };
-  }, [session, state, clubId]);
 
   return (
     <div className="stack">
@@ -64,8 +61,6 @@ export function JoinPage({ clubId, session, auth, onLogin }: { clubId: string; s
             <p className="hint">Sign in first — as the Home the invitation was sent to.</p>
             <SignInPage auth={auth} onLogin={(s) => { rememberReturn(location.hash); onLogin(s); }} />
           </>
-        ) : state === 'checking' ? (
-          <p className="hint">Looking…</p>
         ) : state === 'member' ? (
           <p className="hint">You are already a member — opening the club.</p>
         ) : (
