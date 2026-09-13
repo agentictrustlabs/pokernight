@@ -713,7 +713,15 @@ export function startMembershipInvite(
   return startMembershipLeg(
     config,
     MEMBER_INVITE_TEMPLATE,
-    { grant_org: club.agent, member, org_base: club.name, ...(config.home.clubPurpose ? { org_purpose: config.home.clubPurpose } : {}) },
+    {
+      grant_org: club.agent,
+      member,
+      org_base: club.name,
+      ...(config.home.clubPurpose ? { org_purpose: config.home.clubPurpose } : {}),
+      // WHERE THEY PICK IT UP. The host's agent tells the member at their Home, and the message carries
+      // this club's page — the Home accepts only a link on this app's own origin.
+      app_link: `${location.origin}/#/clubs/${encodeURIComponent(club.clubId)}`,
+    },
     { clubId: club.clubId, leg: 'invite', member },
     store,
   );
