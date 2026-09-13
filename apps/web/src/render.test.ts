@@ -392,9 +392,10 @@ describe('landing and sign-in surfaces', () => {
     expect(html).toContain('never a condition of playing');
     expect(html).toContain('guest, not a fundraising screen');
     expect(html).toContain('giving buys no advantage');
-    // The promise a stranger is actually reading for: what they get, and in WHICH money — the card
-    // room's own coin, named by the card room rather than assumed to be SHQ.
-    expect(html).toContain('10,000 SHQ to play with');
+    // The promise a stranger is actually reading for: what they get. The pitch says "play money" and
+    // never names the coin; the symbol appears once, on the limit the Home is about to show.
+    expect(html).toContain('10,000 in play money');
+    expect(html).not.toContain('SHQ to play with');
     expect(html).toContain('How a night works');
     // The panel is ON the page, not linked away to — and its button says both things it does,
     // because pressing it approves a spending ceiling as well as signing in.

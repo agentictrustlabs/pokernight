@@ -35,9 +35,8 @@ const POLL_MS = 15000;
  */
 export function Landing({ auth, onLogin, session = null }: { auth: AuthState; onLogin: (s: AppSession) => void; session?: AppSession | null }) {
   const live = useLiveLobby();
-  // The card room's currency, as the card room states it (`GET /auth/config`). `SHQ` is the
-  // fallback for a deployment that names none.
-  const money = (auth.config?.home.buyIn?.symbol ?? '').trim() || 'SHQ';
+  // The pitch below says "play money" and never names the coin: the symbol is a detail the sign-in
+  // panel states once, in the limit the Home is about to show, and the money page explains in full.
   return (
     <main className="landing">
       <Hero live={live} />
@@ -51,27 +50,23 @@ export function Landing({ auth, onLogin, session = null }: { auth: AuthState; on
           <h2 className="section-title">{session ? 'What you are playing with' : 'Take a seat'}</h2>
           <div className="signin-split">
             <div className="signin-pitch">
-              <h2>{session ? 'What the money here is.' : 'There is no account to create.'}</h2>
+              <h2>{session ? 'What you are playing with.' : 'There is no account to create.'}</h2>
               {session ? (
-                <p>
-                  You have <strong>{money}</strong> of your own to play with, and a seat is one press away.
-                </p>
+                <p>You have play money of your own, and a seat is one press away.</p>
               ) : (
                 <p>
-                  Sign in with a phone number, an email address or a social account. We set you up with{' '}
-                  <strong>10,000 {money} to play with</strong>, and you are at a table.
+                  Sign in with a phone number, an email address or a social account. You start with{' '}
+                  <strong>10,000 in play money</strong> and a seat at a table.
                 </p>
               )}
               <p>
-                It is <strong>test money</strong> — {money}, this card room&rsquo;s own chips, worth nothing anywhere else — and nothing here
-                is a wager. What is real is that the money is <strong>yours</strong>: a buy-in comes out of your own account and a cash-out
-                goes straight back into it, the moment it happens. Nobody keeps a tab, and there is nothing to settle up at the end of the
-                night.
+                It is <strong>play money</strong>, worth nothing outside this room, and nothing here is a wager. But it is{' '}
+                <strong>yours</strong>: a buy-in comes out of your own account, and a cash-out goes straight back the moment it happens.
+                Nobody keeps a tab. There is nothing to settle up at the end of the night.
               </p>
               <p>
-                Chips and giving are <strong>separate</strong>. Losing a hand does not owe anyone anything, giving buys no advantage at the
-                table and no place in the standings, and a club never holds a penny of anyone&rsquo;s donation. When a mission is hosting,
-                giving goes to them, and it is a decision you make on your own.
+                Chips and giving are <strong>separate</strong>. Losing a hand costs nobody anything, and giving buys no advantage at the
+                table. When a mission is hosting, giving goes to them — and it is always your own choice.
               </p>
             </div>
             {session ? (
@@ -91,10 +86,8 @@ export function Landing({ auth, onLogin, session = null }: { auth: AuthState; on
         </section>
       </div>
       <footer className="landing-foot">
-        <span>{brandLine()} · test money, and giving that is always your own choice</span>
-        <span className="hint">
-          Every deal is committed before the cards come out and revealed after, so any hand can be checked once it is over.
-        </span>
+        <span>{brandLine()} · play money, and giving that is always your own choice</span>
+        <span className="hint">Every deal is committed before the cards come out and revealed after, so any hand can be checked.</span>
       </footer>
     </main>
   );

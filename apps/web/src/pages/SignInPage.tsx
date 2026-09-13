@@ -16,7 +16,7 @@ export function SignInPage({ auth, onLogin }: { auth: AuthState; onLogin: (s: Ap
         <SignInPanel auth={auth} onLogin={onLogin} />
       </div>
       <p className="hint signin-away">
-        Not sure what this is? <a href="#/">Read the front page</a> — it lists the tables that are running right now.
+        New here? <a href="#/">The front page</a> explains the room and shows which tables are running.
       </p>
     </div>
   );

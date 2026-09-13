@@ -87,16 +87,15 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
               />
             </label>
             <p className="hint" id="signin-name-hint">
-              A first name or a full name — it is what other players see at the table, and what this room calls you.
-              Leave it blank if you would rather not: you will play as &ldquo;Seat 4&rdquo;.
+              This is the name other players see at the table. Leave it blank and you will play as &ldquo;Seat 4&rdquo;.
             </p>
             <BuyInConsent buyIn={config.home.buyIn ?? null} />
             <button className="primary big" type="button" onClick={() => auth.signInWithHome(name)} disabled={busy}>
               {busy ? 'Signing in…' : config.home.buyIn ? 'Sign in and set tonight’s limit' : 'Sign in to play'}
             </button>
             <p className="hint">
-              Your phone number, an email address or a social account — whichever you like, at your Home
-              {homeHost ? ` (${homeHost})` : ''}. There is no password to set here, and no key ever leaves your side.
+              Use a phone number, an email address or a social account at your Home{homeHost ? ` (${homeHost})` : ''}. No
+              password to set, nothing to install.
             </p>
           </div>
 
@@ -126,13 +125,11 @@ function BuyInConsent({ buyIn }: { buyIn: NonNullable<AuthConfig['home']['buyIn'
   return (
     <div className="signin-consent">
       <p>
-        <strong>Signing in also sets your limit for tonight.</strong> At your Home you will approve this card room taking up
-        to <strong>{per}</strong> from your money for one buy-in, up to <strong>{all}</strong> in all, across at
-        most {buyIn.maxBuyIns} buy-ins, for the next {hours} hours.
+        <strong>Signing in also sets your limit for tonight.</strong> Your Home will ask you to approve a ceiling for this
+        room: up to {per} per buy-in, {all} in all, at most {buyIn.maxBuyIns} buy-ins, for the next {hours} hours.
       </p>
       <p className="hint">
-        Nothing is taken until you sit down at a table and buy in — this is a ceiling, not a payment. Your Home shows you the
-        same figures and signs it, and you can undo it there whenever you like.
+        Nothing is taken until you sit down at a table and buy in. You can undo the limit at your Home at any time.
       </p>
     </div>
   );
@@ -157,8 +154,8 @@ function DemoUsers({ auth, homeHost }: { auth: AuthState; homeHost: string | nul
     <details className="signin-demo">
       <summary>Try it as someone else</summary>
       <p className="hint">
-        {homeHost ?? 'The Home'} lends these accounts to anyone who asks, so you can look around without signing in. They are real, and
-        they are shared by everyone who visits — so treat anything you do with one as public.
+        {homeHost ?? 'The Home'} lends these accounts to anyone, so you can look around without signing in. They are shared by
+        everyone who visits — treat anything you do with one as public.
       </p>
       {auth.demoError ? (
         <div className="form-error" role="alert">
