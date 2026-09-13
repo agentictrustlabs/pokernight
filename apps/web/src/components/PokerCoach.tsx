@@ -160,7 +160,12 @@ export function PokerCoach({
       .getAdviser(tableId, session.token)
       .then(async (r) => {
         if (!alive) return;
-        if (r.adviser) { setAdviser(r.adviser); return; }
+        if (r.adviser) {
+          setAdviser(r.adviser);
+          // WHICH COACH, known before the first answer: the desk says "no coach hired yet" until told otherwise.
+          if (session.via !== 'dev') api.coachStatus(session.token).then((st) => { if (alive && st.coach) setCoach(st.coach); }).catch(() => {});
+          return;
+        }
         // YOUR OWN AGENT IS THE ADVISER BY DEFAULT WHEN IT HAS A COACH. A person whose Home has bound a coach to
         // their agent arrived at a table still "advised by the house coach" and had to find the picker; the
         // whole point of hiring was not to. Appointed once here — a person who then chooses the house keeps
@@ -170,7 +175,7 @@ export function PokerCoach({
         const st = await api.coachStatus(session.token).catch(() => null);
         if (!alive || !st?.agent || !st.coach || st.advertises === false) return;
         const named = await api.setAdviser(tableId, st.agent, session.token).catch(() => null);
-        if (alive && named?.adviser) setAdviser(named.adviser);
+        if (alive && named?.adviser) { setAdviser(named.adviser); setCoach(st.coach); }
       })
       .catch(() => {});
     return () => {

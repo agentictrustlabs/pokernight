@@ -70,7 +70,7 @@ import {
   type TableSummary,
 } from '@pokernight/protocol';
 import { agentKindFromCard, callCoachStatus, callReview, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
-import { looksLikeAgentName, nameOfAgent } from './naming.js';
+import { addressOfAgent, advertisedOnChain, looksLikeAgentName, nameOfAgent } from './naming.js';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aReviewTimeoutMs, a2aTimeoutMs, allowedOrigins, isDevAuth, siteOrigin, type Env } from './env.js';
 import { OPERATOR_HEADER, checkOperator } from './operator.js';
@@ -1357,7 +1357,10 @@ async function myAgentCard(c: Context<{ Bindings: Env }>, skill: string): Promis
   try { base = resolveAgentBase(c.env, agentName); } catch (e) { return { ok: false, status: 400, error: e instanceof Error ? e.message : String(e) }; }
   const card = await fetchAgentCard(base, a2aTimeoutMs(c.env));
   if (!card.ok) return { ok: false, status: 400, error: card.error };
-  if (!hasActSkill(card.card, skill)) return { ok: false, status: 400, error: `${agentName} does not advertise the ${skill} skill` };
+  // The served card OR the chain: a released card is a snapshot, and the agent answers what its profile says.
+  if (!hasActSkill(card.card, skill) && !(address && (await advertisedOnChain(c.env, address)).includes(skill))) {
+    return { ok: false, status: 400, error: `${agentName} does not advertise the ${skill} skill` };
+  }
   return { ok: true, agentName, endpoint: messageUrlFromCard(card.card, base), displayName: card.card.name ?? agentName };
 }
 
@@ -1556,9 +1559,13 @@ app.post('/tables/:id/adviser', async (c) => {
   }
   const card = await fetchAgentCard(base, a2aTimeoutMs(c.env));
   if (!card.ok) return c.json({ error: card.error }, 400);
+  // WHAT THE AGENT ANSWERS: its served card, OR its on-chain profile — a released card is a snapshot, and a
+  // person whose Home just put the card room's skills on their agent would otherwise be refused by name.
+  const onChain = looksLikeAgentName(agentName) ? await advertisedOnChain(c.env, (await addressOfAgent(c.env, agentName)) ?? '') : [];
+  const advertisesHere = (id: string) => hasActSkill(card.card, id) || onChain.includes(id);
   // Refused here rather than at the first question, so nobody discovers mid-hand that their adviser
   // cannot answer.
-  if (!hasActSkill(card.card, skill)) {
+  if (!advertisesHere(skill)) {
     return c.json({ error: `${agentName} does not advertise the ${skill} skill` }, 400);
   }
 
@@ -1571,7 +1578,7 @@ app.post('/tables/:id/adviser', async (c) => {
       // WHAT ELSE THE CARD ANSWERS, read once here: a hand is RECORDED to an agent that advertises
       // `*.record` (a person's own agent, which keeps it in their vault) and never to one that only
       // advises; a REVIEW is offered where `*.review` is. Neither is required to advise.
-      body: JSON.stringify({ playerId: session.playerId, agentName, endpoint: messageUrlFromCard(card.card, base), displayName: card.card.name ?? agentName, records: hasActSkill(card.card, recordSkill), reviews: hasActSkill(card.card, reviewSkill) }),
+      body: JSON.stringify({ playerId: session.playerId, agentName, endpoint: messageUrlFromCard(card.card, base), displayName: card.card.name ?? agentName, records: advertisesHere(recordSkill), reviews: advertisesHere(reviewSkill) }),
     }),
   );
 });

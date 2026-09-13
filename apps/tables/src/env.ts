@@ -60,6 +60,8 @@ export interface Env {
    *  through a spot in 15–20 s, and advice is read by a person, not applied by a clock. */
   A2A_ADVICE_TIMEOUT_MS?: string;
   A2A_REVIEW_TIMEOUT_MS?: string;
+  /** The estate's AgentProfileResolver — where `atl:capabilities` (what an agent answers) is read from. */
+  AGENT_PROFILE_RESOLVER?: string;
   /** Coach SERVICES this card room offers for hire, by typed name (`bob-coach.svc,…`). Each must advertise
    *  `poker.advise`; the hiring itself happens at the person's Home. */
   COACH_SERVICES?: string;

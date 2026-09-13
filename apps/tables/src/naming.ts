@@ -15,6 +15,7 @@
  * in a package, and a deployment with no registry configured says so rather than guessing.
  */
 
+import { createPublicClient, http, keccak256, toBytes } from 'viem';
 import { AgentNamingClient, isValidAgentName, normalizeAgentName } from '@agenticprimitives/agent-naming';
 import type { Env } from './env.js';
 import { chainId, rpcUrl } from './treasury.js';
@@ -97,6 +98,48 @@ export async function nameOfAgent(env: Env, address: string): Promise<string | n
   try {
     const name = await client.reverseResolve(address as `0x${string}`);
     return name && looksLikeAgentName(name) ? normalizeAgentName(name) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * WHAT AN AGENT ANSWERS, FROM THE CHAIN — `atl:capabilities` on its profile, the record the Home's own
+ * harness reads to decide which skills an agent answers. A RELEASED card is a snapshot: a person whose Home
+ * just put the card room's skills on their agent still serves the card they released last month, and the
+ * card room refused to name them "because the card does not advertise poker.coach" — the agent would have
+ * answered it. The skills an agent advertises are the union of its served card and this record. Empty
+ * when the chain cannot be read or the resolver is not configured; never a guess.
+ */
+export async function advertisedOnChain(env: Env, address: string): Promise<string[]> {
+  const resolver = (env.AGENT_PROFILE_RESOLVER ?? '').trim();
+  if (!env.RPC_URL || !/^0x[0-9a-fA-F]{40}$/.test(resolver) || !/^0x[0-9a-fA-F]{40}$/.test(address)) return [];
+  try {
+    const client = createPublicClient({ transport: http(rpcUrl(env)) });
+    const raw = (await client.readContract({
+      address: resolver as `0x${string}`,
+      abi: [{ type: 'function', name: 'getStringProperty', stateMutability: 'view', inputs: [{ type: 'address' }, { type: 'bytes32' }], outputs: [{ type: 'string' }] }] as const,
+      functionName: 'getStringProperty',
+      args: [address as `0x${string}`, keccak256(toBytes('atl:capabilities'))],
+    })) as string;
+    return raw.split(',').map((x) => x.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** A typed name → its Smart Agent, through the registry. Null when it does not resolve. */
+export async function addressOfAgent(env: Env, name: string): Promise<string | null> {
+  if (!namingConfigured(env)) return null;
+  const client = new AgentNamingClient({
+    rpcUrl: rpcUrl(env),
+    chainId: chainId(env),
+    registry: env.AGENT_NAME_REGISTRY as `0x${string}`,
+    universalResolver: env.AGENT_NAME_UNIVERSAL_RESOLVER as `0x${string}`,
+  });
+  try {
+    const a = await client.resolveName(name);
+    return a ? a.toLowerCase() : null;
   } catch {
     return null;
   }
