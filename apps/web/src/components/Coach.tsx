@@ -4,12 +4,11 @@ import type { CanastaTableEvent, CanastaView } from '../lib/canasta';
 import { ApiError, advertises, api, costsTokens, type AgentListing, type CoachAdvice } from '../lib/api';
 import { adviseSkillFor } from '../lib/games';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
+import { useUserIdle } from '../lib/useUserIdle';
 import { alertsFor, newAlerts } from '../lib/alerts';
 import { commentaryFor, spokenLine } from '../lib/commentary';
 import { roundOpening, scoreLines } from '../lib/scoreWords';
 import { announce, canSpeak, hush, primeVoices, rate, say, setRate, setVoiceName, voiceName, voices } from '../lib/speech';
-import { WhoIsWhoPanel } from './WhoIsWho';
-import { whoIsWho } from '../lib/whoIsWho';
 import type { PlayerInfo } from '../lib/types';
 
 /**
@@ -56,9 +55,23 @@ const FIRST_ASK_MS = 900;
 /** Generous: a turn clock is tens of seconds, and each try costs one small request. */
 const RETRIES = 20;
 
-interface Said {
+export interface Said {
   id: number;
   text: string;
+}
+
+/**
+ * WHAT THE CANASTA COACH CARD HANDS TO THE PANEL BESIDE IT — the same shape as hold'em's `Arrangement`. The
+ * card itself is about the turn: the mode, what is happening now, the advice, the move. Who advises, the
+ * running commentary, the earlier advice and the voice settings are rendered by `CanastaSide`'s tabs.
+ */
+export interface CanastaArrangement {
+  adviser: { agentName: string; displayName: string } | null;
+  setAdviser: (a: { agentName: string; displayName: string } | null) => void;
+  feed: Said[];
+  said: Recommendation[];
+  mode: CoachMode;
+  speaks: boolean;
 }
 
 export function Coach({
@@ -77,6 +90,7 @@ export function Coach({
   players,
   startOn = 'off',
   send,
+  onArrangement,
 }: {
   tableId: string;
   session: AppSession | null;
@@ -100,6 +114,8 @@ export function Coach({
   /** What it starts as. `play` at a practice table, where coaching is the reason to be there. */
   startOn?: CoachMode;
   send: (c: ClientCommand) => void;
+  /** Told who advises, what has been said and how the coach is set, so the panel beside can show the rest. */
+  onArrangement?: (a: CanastaArrangement) => void;
 }) {
   const [mode, setMode] = useState<CoachMode>(startOn);
   /**
@@ -158,14 +174,12 @@ export function Coach({
   const [feed, setFeed] = useState<Said[]>([]);
   /** Seconds left before it plays, so the pause is legible rather than a hang. */
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [showVoice, setShowVoice] = useState(false);
   /** How many times the card room has said "not yet" for this turn. Drives the retry. */
   const [missed, setMissed] = useState(0);
   const [hidden, setHidden] = useState(false);
   const asked = useRef<string>('');
   const seen = useRef(0);
   const nextId = useRef(0);
-  const feedRef = useRef<HTMLUListElement | null>(null);
   /** The scoreboard as it stands, for the line that opens a round. Kept in a ref so reading it does
    *  not make the narration effect re-run and replay the log. */
   const viewOf = useRef<{ scores: Record<number, number>; target: number } | null>(null);
@@ -305,7 +319,7 @@ export function Coach({
           // MOVE here is what left the table sitting until the clock ran out, because nothing else
           // was ever going to try again. The heartbeat below picks it up instead.
           if (asked.current !== key) return;
-          send({ type: 'act', handNo: roundNo, action: a.action } as ClientCommand);
+          send({ type: 'act', handNo: roundNo, action: a.action, auto: true } as ClientCommand);
           // Played. Whatever comes next is a new question, and until it is answered the heartbeat
           // is what keeps this seat from going quiet.
           setAdvice(null);
@@ -373,6 +387,17 @@ export function Coach({
     setSwitchedOff(`You were sat out for not answering, so the coach is off${adviser ? ` — ${adviser.displayName} is not asked while you are away` : ''}. Press "Tell me" to switch it back on.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sitOutReason]);
+  // NOBODY HAS TOUCHED THE PAGE FOR TEN MINUTES ⇒ OFF, whichever mode. In play-for-me the coach would
+  // otherwise keep acting for an empty chair — and asking the person's agent, and its coach, every turn.
+  const idle = useUserIdle();
+  useEffect(() => {
+    if (!idle || mode === 'off') return;
+    chosen.current = true;
+    setMode('off');
+    hush();
+    setSwitchedOff(`Nobody has touched the table for ten minutes, so the coach is off${adviser ? ` — ${adviser.displayName} is not asked while you are away` : ''}. Press "Tell me" to switch it back on.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idle]);
 
   /**
    * PAUSE MEANS NOW.
@@ -400,26 +425,18 @@ export function Coach({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  // Keep the newest line in view inside the feed's own box, never by moving the page.
   useEffect(() => {
-    const box = feedRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
-  }, [feed]);
-
-  const list = useMemo(() => (speaks ? voices() : []), [speaks, showVoice]);
+    onArrangement?.({ adviser, setAdviser, feed, said, mode, speaks });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adviser, feed, said, mode, speaks]);
 
   if (!session) return null;
 
   return (
     <section className={`panel coach${mode !== 'off' ? ' on' : ''}`}>
-      {/* The heading SAYS which mode it is in. "Is it in a state of playing for me?" is a question
-          nobody should have to ask of a control they just pressed, and a highlighted button was not
-          answering it. */}
-      <h2>
-        {mode === 'play' ? 'Playing your hand' : mode === 'watch' ? 'Telling you what to do' : 'Teach me'}
-        {mode !== 'off' ? <span className="coach-live">on</span> : null}
-      </h2>
-      <div className="coach-modes" role="group" aria-label="Coach">
+      <div className="coach-head">
+        <h2>Coach</h2>
+        <div className="coach-modes" role="group" aria-label="Coach">
         {(
           [
             ['off', 'Off'],
@@ -445,7 +462,12 @@ export function Coach({
             {label}
           </button>
         ))}
+        </div>
       </div>
+      {/* WHOSE VOICE, in one muted line. The People tab says the rest. */}
+      <p className="coach-who">
+        {adviser ? <><strong>{adviser.displayName}</strong> · its coach's tokens, never yours on a turn</> : <><strong>the house coach</strong> · one strategy for everybody, free</>}
+      </p>
 
       {mode === 'off' ? (
         switchedOff ? (
@@ -493,88 +515,34 @@ export function Coach({
             </div>
           ) : null}
 
-          {/* THE ROLLING LIST. Newest first, each line carrying whose advice it was — the house's coach
-              and somebody's own agent are not the same voice, and an entry that lost its source would
-              be the app quietly passing one off as the other. */}
-          {said.length > 0 ? (
-            <ol className="coach-said-list">
-              {said.map((r) => (
-                <li key={r.id}>
-                  <span className="rec-say">{r.say}</span>
-                  {r.because ? <span className="rec-why">{r.because}</span> : null}
-                  <span className="rec-from">{whoSaid(r.from)}</span>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-
-          <Adviser tableId={tableId} session={session} game="canasta" adviser={adviser} onChanged={setAdviser} />
-
-          <WhoIsWhoPanel
-            roster={whoIsWho(
-              view?.seats ?? [],
-              nameOf,
-              (playerId) => players[playerId],
-              viewerSeat,
-              adviser,
-            )}
-          />
-
-          {/* No `aria-live` on the feed: it is a running commentary, and a screen reader announcing
-              every line of it would talk over the one thing that matters — whose turn it is. */}
-          {/* Always rendered, even empty, so the panel has one height whether the table is quiet
-              or busy. A feed that appeared with the first line moved everything beneath it. */}
-          <ul className="coach-feed" ref={feedRef}>
-            {feed.map((l) => (
-              <li key={l.id}>{l.text}</li>
-            ))}
-          </ul>
-
-          {speaks ? (
-            <details className="coach-voice" open={showVoice} onToggle={(e) => setShowVoice(e.currentTarget.open)}>
-              <summary>Voice &amp; speed</summary>
-              <label>
-                Which voice
-                <select
-                  value={voiceName()}
-                  onChange={(e) => {
-                    setVoiceName(e.target.value);
-                    say('This is the voice I will use.');
-                  }}
-                >
-                  <option value="">Best this browser has</option>
-                  {list.map((v) => (
-                    <option key={v.name} value={v.name}>
-                      {v.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Speed
-                <input
-                  type="range"
-                  min={0.6}
-                  max={1.2}
-                  step={0.05}
-                  defaultValue={rate()}
-                  onChange={(e) => {
-                    setRate(Number(e.target.value));
-                    say('Speaking at this speed.');
-                  }}
-                />
-              </label>
-              <p className="hint">
-                Browsers ship one flat default voice and better ones behind it. If this one is hard to follow, try
-                another — the list is whatever your browser has.
-              </p>
-            </details>
-          ) : (
-            <p className="hint">This browser has no voice, so the coach is writing rather than talking.</p>
-          )}
         </>
       )}
     </section>
+  );
+}
+
+/** VOICE & SPEED — which browser voice reads the coach's words, and how fast. Mounted on the side panel's Table tab. */
+export function VoiceSettings() {
+  const [open, setOpen] = useState(false);
+  const speaks = canSpeak();
+  const list = useMemo(() => (speaks && open ? voices() : []), [speaks, open]);
+  if (!speaks) return <p className="hint">This browser has no voice, so the coach is writing rather than talking.</p>;
+  return (
+    <details className="coach-voice" open={open} onToggle={(e) => { primeVoices(); setOpen(e.currentTarget.open); }}>
+      <summary>Voice &amp; speed</summary>
+      <label>
+        Which voice
+        <select value={voiceName()} onChange={(e) => { setVoiceName(e.target.value); say('This is the voice I will use.'); }}>
+          <option value="">Best this browser has</option>
+          {list.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+        </select>
+      </label>
+      <label>
+        Speed
+        <input type="range" min={0.6} max={1.2} step={0.05} defaultValue={rate()} onChange={(e) => { setRate(Number(e.target.value)); say('Speaking at this speed.'); }} />
+      </label>
+      <p className="hint">Browsers ship one flat default voice and better ones behind it. If this one is hard to follow, try another — the list is whatever your browser has.</p>
+    </details>
   );
 }
 

@@ -760,13 +760,18 @@ label > select {
   }
   /* The coach card takes its own height; the side panel takes the rest and scrolls its open tab inside,
      so the column is as tall as the board and never taller. */
-  .side {
-    grid-template-rows: auto minmax(0, 1fr);
+  /* `aside.side` outranks the base `.side{display:grid}` declared later in the file — a bare `.side` here
+     lost to it and the column stayed a grid that shared its spare height across every row. */
+  aside.side {
+    display: flex;
+    flex-direction: column;
     min-height: 0;
   }
-  .side-panel {
-    grid-template-rows: auto minmax(0, 1fr);
+  aside.side > * { flex: 0 0 auto; }
+  aside.side > .side-panel {
+    flex: 1 1 0;
     min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .side-pane {
     overflow-y: auto;
@@ -4362,6 +4367,25 @@ details.log-panel > .log { margin-top: 0.5rem; }
 .coach-earlier-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .coach-earlier-list li { display: grid; gap: 0.15rem; font-size: 0.85rem; }
 .coach-earlier-list .coach-say, .coach-earlier-list .coach-why { margin: 0; }
+
+/* THE SEAT BAR — one always-visible line at a canasta table: which seat, whose side, sit back in, LEAVE. */
+.seat-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+.seat-bar.out { border-color: var(--warn); }
+.seat-bar-who { flex: 1 1 auto; min-width: 0; }
+.seat-bar-leave { border-color: var(--danger); color: var(--danger); background: transparent; }
+.seat-bar-leave:hover:not(:disabled) { background: var(--danger); color: #fff; border-color: var(--danger); }
+/* The canasta log is its own panel with a folded log inside; on the Talk tab it is a section like any other. */
+.side-section > .panel.log-panel > details > summary { cursor: pointer; font-size: 0.82rem; font-weight: 600; color: var(--ink-soft); }
 
 /* The coach's state ON THE BOARD, under the turn title. */
 .act-coach {

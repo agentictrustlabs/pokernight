@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSession, ClientCommand, HandResult, Street, TableEvent, TableView } from '../lib/types';
 import { api, ApiError, type CoachAdvice, type CoachStatus } from '../lib/api';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
+import { useUserIdle } from '../lib/useUserIdle';
 import { newAlerts } from '../lib/alerts';
 import type { FormatContext } from '../lib/format';
 import { actionWords, handEndLines, playable, pokerAlerts, pokerFeedLines, spokenAction, spokenPokerLine } from '../lib/pokerWords';
@@ -319,7 +320,7 @@ export function PokerCoach({
           if (asked.current !== key) return;
           // Same rule as the button: nothing is sent for advice that named no move. Sending an empty
           // action burned the turn silently, which is the worst of both — no move and no explanation.
-          if (playable(a.action)) send({ type: 'act', handNo, action: a.action } as ClientCommand);
+          if (playable(a.action)) send({ type: 'act', handNo, action: a.action, auto: true } as ClientCommand);
           setAdvice(null);
         }, READ_MS);
       }
@@ -389,6 +390,18 @@ export function PokerCoach({
     setSwitchedOff(adviser ? `You were sat out for not answering, so the coach is off — ${voiceName} is not asked while you are away. Press "Tell me" to switch it back on.` : 'You were sat out for not answering, so the coach is off. Press "Tell me" to switch it back on.');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sitOutReason]);
+  // NOBODY HAS TOUCHED THE PAGE FOR TEN MINUTES ⇒ OFF, whichever mode. In play-for-me the coach would
+  // otherwise keep acting for an empty chair — the seat stays active, the table keeps dealing, and every
+  // turn asks the person's agent and its coach. The table stops counting those moves too (`auto`).
+  const idle = useUserIdle();
+  useEffect(() => {
+    if (!idle || mode === 'off') return;
+    chosen.current = true;
+    setMode('off');
+    hush();
+    setSwitchedOff(`Nobody has touched the table for ten minutes, so the coach is off${adviser ? ` — ${voiceName} is not asked while you are away` : ''}. Press "Tell me" to switch it back on.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idle]);
 
   /** PAUSE MEANS NOW: a voice partway through a sentence keeps talking otherwise, and from a chair
    *  that is not a pause, it is a request that gets around to being honoured. */

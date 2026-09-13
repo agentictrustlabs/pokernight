@@ -608,7 +608,10 @@ export const ClientCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sit-in') }),
   z.object({ type: z.literal('add-chips'), amount: z.number().int().positive() }),
   // The ACTION is the game's, and only the game can tell a legal one from a malformed one.
-  z.object({ type: z.literal('act'), handNo: z.number().int(), action: GamePayloadSchema }),
+  /** `auto` marks a move the client's coach made FOR the person (play-for-me). The table applies it like any
+   *  other, but it is not a sign anybody is at the table — a coach playing an empty chair all night is exactly
+   *  what the attention gate exists to stop. */
+  z.object({ type: z.literal('act'), handNo: z.number().int(), action: GamePayloadSchema, auto: z.boolean().optional() }),
   z.object({ type: z.literal('chat'), text: z.string().min(1).max(280) }),
   z.object({ type: z.literal('ping') }),
 ]);

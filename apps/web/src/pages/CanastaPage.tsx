@@ -20,13 +20,14 @@ import { clubHash } from '../lib/routes';
 import { fillOutcome, seatsToFill, type FillPlan } from '../lib/fillSeats';
 import { CanastaTable } from '../components/CanastaTable';
 import { CanastaLog } from '../components/CanastaLog';
-import { Coach } from '../components/Coach';
+import { Coach, type CanastaArrangement } from '../components/Coach';
+import { CanastaSide } from '../components/CanastaSide';
+import { whoIsWho } from '../lib/whoIsWho';
 import { SoundToggle } from '../components/SoundToggle';
 import { canastaCue } from '../lib/cues';
 import { useCues } from '../lib/useCues';
 import { Toast } from '../components/Toast';
 import { PracticePanel } from '../components/PracticePanel';
-import { CanastaCoachDesk } from '../components/CoachDesk';
 import { CoachQuestion } from '../components/CoachQuestion';
 import type { AuthConfig } from '../lib/home';
 import { PileReveal } from '../components/PileReveal';
@@ -144,6 +145,16 @@ export function CanastaPage({
    */
   /** Why pausing or dealing again did not happen. Both used to fail in silence. */
   const [tableErr, setTableErr] = useState<string | null>(null);
+  /** What the coach card handed up — who advises, the commentary, the earlier advice — for the side panel. */
+  const [arrangement, setArrangement] = useState<CanastaArrangement | null>(null);
+  /** The coach service the person's agent consults for canasta, when one is hired — read once. */
+  const [coachName, setCoachName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!session || session.via === 'dev') return;
+    let alive = true;
+    api.coachStatus(session.token, 'canasta').then((r) => { if (alive) setCoachName(r.coach); }).catch(() => {});
+    return () => { alive = false; };
+  }, [session]);
   /** Whether the table is holding. Nothing moves while it is — clock, agents and next round alike. */
   const [paused, setPaused] = useState(false);
   const setUp = useRef(false);
@@ -351,7 +362,8 @@ export function CanastaPage({
         <aside className="side">
           {/* Canasta is four-handed and partnered, so a seat is a choice of SIDE as well as a
               chair. The picker says which, because sitting down opposite your partner is the whole
-              structure of the game and is not recoverable once the cards are out. */}
+              structure of the game and is not recoverable once the cards are out. FIRST while you
+              are standing: it is the one thing to do. */}
           {session && mySeat == null ? (
             <section className="panel can-sit">
               <h2>Take a seat</h2>
@@ -377,9 +389,24 @@ export function CanastaPage({
               {empty.length === 0 ? <p className="hint">Every seat is taken.</p> : null}
             </section>
           ) : null}
-          {/* THE COACH SITS ABOVE EVERYTHING ELSE while it is on, because when it is on it is the
-              reason the person is at this table. Only offered to somebody actually holding a seat:
-              there is nothing to advise a spectator about. */}
+          {/* THE SEAT BAR: one line that is always on screen — which seat, whose side, sit back in if you
+              were sat out, and LEAVE. "It is hard to find anything in the right pane" started with the
+              leave button, three panels down. */}
+          {mySeat != null ? (
+            <div className={`seat-bar${mySitOut ? ' out' : ''}`} role="group" aria-label="Your seat">
+              <span className="seat-bar-who">
+                <strong>Seat {mySeat + 1}</strong> · with seat {((mySeat + 2) % 4) + 1}
+                {mySitOut ? <span className="hint"> · sitting out{state.players[state.playerId ?? '']?.sitOutReason === 'disconnected' ? ' — your connection dropped' : ''}</span> : null}
+              </span>
+              {mySitOut ? <button type="button" className="primary" onClick={() => send({ type: 'sit-in' })}>Sit back in</button> : null}
+              <button type="button" className="seat-bar-leave" disabled={leaving} onClick={leave}>
+                {leaving ? 'Leaving…' : 'Leave the table'}
+              </button>
+            </div>
+          ) : null}
+          {/* THE COACH IS ABOUT THE TURN. Only offered to somebody actually holding a seat: there is
+              nothing to advise a spectator about. Everything else it used to carry — the adviser picker,
+              who's who, the commentary, the voice settings — is on the panel of tabs under it. */}
           {mySeat != null ? (
             <Coach
               tableId={tableId}
@@ -400,60 +427,50 @@ export function CanastaPage({
                  otherwise. */
               startOn="watch"
               send={send}
+              onArrangement={setArrangement}
             />
           ) : null}
-          {/* THE DESK: which coach your agent consults for canasta, hire or change one at your Home, and the
-              review over the last N days of recorded rounds — kept out of the turn-by-turn panel. */}
-          {mySeat != null && session ? (
-            <CanastaCoachDesk tableId={tableId} session={session} config={config} mine={mine} paused={paused} myTurn={state.view?.toAct === mySeat && !state.view?.result} onHold={setHeld} />
-          ) : null}
-          {/* FILLING THE EMPTY SEATS is what makes canasta playable at all.
-              Poker deals to two, so a person with one friend has a game. Canasta needs exactly four,
-              so without somebody to sit in the other chairs a person alone cannot play — which is
-              why every canasta site worth using offers this and why it is not a nicety here. */}
-          {session && empty.length > 0 ? (
-            <FillSeats tableId={tableId} session={session} empty={empty} mySeat={mySeat} />
-          ) : null}
-          {mine && session ? (
-            <>
-              {tableErr ? <div className="form-error">{tableErr}</div> : null}
-              <PracticePanel tableId={tableId} session={session} game="canasta" paused={paused} onHold={setHeld} paceMs={paceKnown ? pace : null} />
-            </>
-          ) : null}
-          {mySeat != null ? (
-            <section className="panel can-seated">
-              <h2>Your seat</h2>
-              <p className="hint">
-                Seat {mySeat + 1}, playing with seat {((mySeat + 2) % 4) + 1}.
-              </p>
-              {/* A PLAYER MUST ALWAYS HAVE A WAY BACK IN. A dropped connection sits a seat out, which
-                  is right — a vanished player should not hold up three others — but a table that
-                  offers no way to undo it leaves somebody sat at a game they cannot rejoin. That is
-                  exactly what happened here, and the reason is on screen rather than in a log. */}
-              {mySitOut ? (
-                <>
-                  <p className="hint">
-                    You are sitting out, so the next round deals without you.
-                    {state.players[state.playerId ?? '']?.sitOutReason === 'disconnected'
-                      ? ' Your connection dropped and the table carried on.'
-                      : ''}
-                  </p>
-                  <button type="button" className="primary" onClick={() => send({ type: 'sit-in' })}>
-                    Sit back in
-                  </button>
-                </>
-              ) : null}
-              <button type="button" disabled={leaving} onClick={leave}>
-                {leaving ? 'Leaving…' : 'Leave the table'}
-              </button>
-            </section>
-          ) : null}
-          <CanastaLog
-            log={state.log}
-            nameOf={nameOf}
-            live={state.view?.toAct != null && !state.view.result}
-            canChat={session != null}
-            onChat={(text) => send({ type: 'chat', text })}
+          <CanastaSide
+            tableId={tableId}
+            session={session}
+            config={config}
+            arrangement={arrangement}
+            roster={whoIsWho(state.view?.seats ?? [], nameOf, (playerId) => state.players[playerId], mySeat, arrangement?.adviser ?? null, coachName)}
+            mine={mine}
+            paused={paused}
+            myTurn={state.view?.toAct === mySeat && !state.view?.result}
+            onHold={setHeld}
+            tableErr={tableErr}
+            paceMs={paceKnown ? pace : null}
+            coach={coachName}
+            log={
+              <CanastaLog
+                log={state.log}
+                nameOf={nameOf}
+                live={state.view?.toAct != null && !state.view.result}
+                canChat={session != null}
+                onChat={(text) => send({ type: 'chat', text })}
+              />
+            }
+            seat={
+              mySeat != null ? (
+                <div className="side-sub">
+                  <h3>Your seat</h3>
+                  <p className="hint">Seat {mySeat + 1}, playing with seat {((mySeat + 2) % 4) + 1}.{mySitOut ? ' You are sitting out, so the next round deals without you.' : ''}</p>
+                  <div className="desk-row">
+                    {mySitOut ? <button type="button" className="primary" onClick={() => send({ type: 'sit-in' })}>Sit back in</button> : null}
+                    <button type="button" disabled={leaving} onClick={leave}>{leaving ? 'Leaving…' : 'Leave the table'}</button>
+                  </div>
+                </div>
+              ) : (
+                <p className="hint">You are watching. Take a seat above to play.</p>
+              )
+            }
+            fillSeats={
+              /* FILLING THE EMPTY SEATS is what makes canasta playable at all. Poker deals to two, so a
+                 person with one friend has a game. Canasta needs exactly four. */
+              session && empty.length > 0 ? <FillSeats tableId={tableId} session={session} empty={empty} mySeat={mySeat} /> : null
+            }
           />
         </aside>
       </div>

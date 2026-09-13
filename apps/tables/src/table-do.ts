@@ -1191,9 +1191,15 @@ export class PokerTableDO extends DurableObject<Env> {
     const name = att.name ?? playerId;
     // A person is here, on purpose. If the table had gone quiet for want of anybody attending, this is
     // what wakes it: the next deal was left pending with no alarm, and a command is the signal.
-    const wasIdle = Date.now() - this.lastHumanInput >= ATTENTION_MS;
-    this.lastHumanInput = Date.now();
-    if (wasIdle) void this.serial(() => this.wakeForWatcher());
+    // A MOVE THE COACH MADE FOR THEM (`act` with `auto`) is not a person: in play-for-me mode the client
+    // acts every turn whether or not anybody is looking, and counting it kept a table of bots — and a
+    // language-model coach — going all night for a tab left open on a second monitor.
+    const auto = cmd.type === 'act' && cmd.auto === true;
+    if (!auto) {
+      const wasIdle = Date.now() - this.lastHumanInput >= ATTENTION_MS;
+      this.lastHumanInput = Date.now();
+      if (wasIdle) void this.serial(() => this.wakeForWatcher());
+    }
 
     await this.serial(async () => {
       try {
@@ -1330,9 +1336,10 @@ export class PokerTableDO extends DurableObject<Env> {
    */
   private anybodyAttending(): boolean {
     if (!this.anybodyWatching()) return false;
-    const at = this.state ? this.snap() : null;
-    const humanActive = (at?.seats ?? []).some((x) => x.status === 'active' && !x.playerId.startsWith('agent:'));
-    return humanActive || Date.now() - this.lastHumanInput < ATTENTION_MS;
+    // A person at the table sends SOMETHING within ten minutes — a move, a chat line, sitting in — or the
+    // clock sits them out. An active human seat with no input for that long is a seat the coach is playing
+    // (`act` with `auto` does not count) or a seat about to be sat out; neither is a reason to keep dealing.
+    return Date.now() - this.lastHumanInput < ATTENTION_MS;
   }
 
   /**

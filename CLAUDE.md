@@ -105,6 +105,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   a stale next deal to now + the ordinary delay and sets the alarm again. A hand in progress still
   finishes (turns time out; two in a row sit the person out, after which no human seat is active and
   the bots stop within the window). A record goes only to an adviser whose person was DEALT the round.
+  **A COACH PLAYING FOR SOMEBODY IS NOT SOMEBODY** (2026-09-13). In play-for-me mode the client acts every
+  turn, so the seat stayed active, the table kept dealing, and every turn consulted a language-model coach
+  for a tab left open on a second monitor. An `act` the coach sends carries `auto: true`; the table does not
+  count it as attention, and `anybodyAttending()` is now a person's own input within `ATTENTION_MS` (a seated
+  human sends something every turn or the clock sits them out) — `test/attention.test.ts`. Both coach
+  panels also switch OFF after ten minutes without a pointer, key, wheel or touch (`useUserIdle`), saying why.
   **NOBODY LOOKING, NOBODY ASKED — and sat out means off.** The coach panels (`PokerCoach`, `Coach`)
   do not ask an adviser while `document.visibilityState` is hidden, and switch themselves OFF when
   the person's seat is sat out for timeouts, saying why; the person presses "Tell me" to turn it back
@@ -147,6 +153,10 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   Canasta's barrier is the RULES, so its coach says which moves exist; hold'em's is the PRICE, so
   its coach keeps saying what a call costs against what it can win. `Adviser` is the one shared
   piece, because naming your own agent is a fact about you rather than about a game.
+  **THE CANASTA SIDE IS THE SAME SHAPE** (`components/CanastaSide.tsx`), plus a SEAT BAR above the coach
+  card that is always on screen: which seat, whose side, sit back in, and LEAVE — the leave button used to
+  be three panels down. The canasta coach card hands up `CanastaArrangement`; `VoiceSettings` is exported
+  from `Coach.tsx` and lives on the Table tab.
   **THE HOLD'EM SIDE IS TWO THINGS: the coach card and one panel of tabs.** `PokerCoach` is about THE
   HAND — mode, wait, advice, move, whose voice in one line — and hands everything else up
   (`Arrangement`: adviser, coach, feed, earlier advice, the ask callback). `components/TableSide.tsx`
