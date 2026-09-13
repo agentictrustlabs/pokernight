@@ -13,7 +13,7 @@
 import { useEffect, useState } from 'react';
 import type { AppSession } from '../lib/types';
 import { api } from '../lib/api';
-import type { AuthConfig } from '../lib/home';
+import { readHomeSession, type AuthConfig } from '../lib/home';
 
 /** Where "asked" lives for an agent that cannot yet keep it: this browser, keyed by the agent. */
 const ASKED_KEY = (agent: string) => `pokernight.coach.asked:${agent.toLowerCase()}`;
@@ -21,12 +21,28 @@ const ASKED_KEY = (agent: string) => `pokernight.coach.asked:${agent.toLowerCase
 export function CoachQuestion({ session, config }: { session: AppSession | null; config: AuthConfig | null }) {
   const [show, setShow] = useState<{ agent: string; advertises: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [settingUp, setSettingUp] = useState<string | null>(null);
   useEffect(() => {
     // A dev session is a name and nothing behind it; a demo or Home session has an agent to ask.
     if (!session || session.via === 'dev') return;
     let alive = true;
-    api
-      .coachStatus(session.token)
+    // THE APP'S DEFAULTS FIRST — everybody who connects from here gets the card room's skills and its default
+    // coach. A person who signed in through the Home's own pages had them applied in the connect ceremony;
+    // a demo person came through a server-side sign-in and did not, so the Home is asked to finish it now,
+    // with the Home session this browser carries. Idempotent at the Home; bounded here; never fatal.
+    const home = readHomeSession();
+    const defaults = home && config?.home.origin
+      ? (async () => {
+          setSettingUp('Setting up your coach at your Home…');
+          try {
+            const r = await fetch(`${config.home.origin.replace(/\/$/, '')}/connect/cardroom-defaults`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${home}` }, body: JSON.stringify({ client_id: config.home.clientId || 'pokernight' }), signal: AbortSignal.timeout(60_000) });
+            const b = (await r.json().catch(() => ({}))) as { ok?: boolean; applied?: string[]; needsSignature?: boolean };
+            if (b.ok && b.applied?.length) { setSettingUp(`Your agent now has the card room's skills and a coach — ${b.applied.join(', ')} set up at your Home.`); setTimeout(() => setSettingUp(null), 9000); }
+            else setSettingUp(null);
+          } catch { setSettingUp(null); }
+        })()
+      : Promise.resolve();
+    defaults.then(() => api.coachStatus(session.token))
       .then((r) => {
         if (!alive || !r.agent || r.coach !== null || r.asked !== null) return;
         // An agent WITHOUT the card-room skills cannot keep the answer in its person's vault yet, so the
@@ -41,6 +57,9 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
       alive = false;
     };
   }, [session]);
+  if (settingUp && !show) {
+    return <div className="toast" role="status"><div>{settingUp}</div></div>;
+  }
   if (!session || !show) return null;
 
   const answer = async (a: 'hired' | 'later' | 'no') => {
