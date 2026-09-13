@@ -11,6 +11,7 @@
  *   POST /auth/signout                  → SignOutResult (auth required; stands the player up from every
  *                                       seat they hold, then drops the server-side session record)
  *   GET  /clubs                         → the clubs this person is in, from their Home (auth required)
+ *   GET  /clubs/invitations             → the clubs they were invited to and have not joined (auth required)
  *   POST /clubs/charter {code…}         → the workspace-create ceremony's return leg: {clubId, idToken}
  *   POST /clubs/:clubId/found {name}    → the first act as the club: its profile (host only)
  *   GET  /admin/signer-address?identity= · POST /admin/service-wire {wire}   (the Home's wire ceremony)
@@ -101,7 +102,7 @@ import {
 } from './routes-treasury.js';
 import type { SessionRecord } from './session-do.js';
 import type { SeatAgentBody } from './table-do.js';
-import { CLUB_ID_RE, CLUB_WIRE_SKILLS, belongs, clubDelegateAddress, clubViewFor, knownPeople, myClubs, nightsOf, readClub, scheduleFrom, standingAt, storeClubWire, writeClubRecord } from './clubs.js';
+import { CLUB_ID_RE, CLUB_WIRE_SKILLS, belongs, clubDelegateAddress, clubViewFor, knownPeople, myClubs, myInvitations, nightsOf, readClub, scheduleFrom, standingAt, storeClubWire, writeClubRecord } from './clubs.js';
 import { resolveAgentName } from './naming.js';
 import { gameFor } from './games.js';
 import { ensurePracticeTable, practiceTableId } from './practice.js';
@@ -548,6 +549,16 @@ app.get('/clubs', async (c) => {
   if (!agent) return c.json({ clubs: [] });
   const clubs = await myClubs(c.env, agent);
   return c.json({ clubs: clubs ?? [] });
+});
+
+/** The clubs this person has been invited to and not joined: the host's agent told them at their Home, and the
+ *  rail says so here too, with the door. */
+app.get('/clubs/invitations', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const agent = agentOf(session);
+  if (!agent) return c.json({ invitations: [] });
+  return c.json({ invitations: (await myInvitations(c.env, agent)) ?? [] });
 });
 
 /**

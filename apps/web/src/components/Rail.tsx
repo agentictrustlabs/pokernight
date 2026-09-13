@@ -1,6 +1,6 @@
 import { clubHeading, clubRail, yourRail, type NavItem } from '../lib/nav';
 import { ABOUT_HASH, type Route } from '../lib/routes';
-import type { ClubListing } from '../lib/api';
+import type { ClubInvitation, ClubListing } from '../lib/api';
 
 /**
  * The left rail: three verbs that are yours wherever you are, then the clubs you are in, by name.
@@ -16,9 +16,13 @@ import type { ClubListing } from '../lib/api';
  * There is no rail at a TABLE. A table is not a child of anything in here, and a person holding cards
  * has one thing to do.
  */
-export function Rail({ r, clubs }: { r: Route; clubs: readonly ClubListing[] | null }) {
+export function Rail({ r, clubs, invitations = [] }: { r: Route; clubs: readonly ClubListing[] | null; invitations?: readonly ClubInvitation[] }) {
   const mine = yourRail(r);
   const club = clubRail(clubs, r);
+  // INVITED, NOT YET IN. The host's agent told them at their Home; the same invitation, read off their own
+  // inbox, is offered here as the door — because "how does Bob know he has an invite" must be answerable
+  // from the card room, not only from a message somewhere else. A club they have since joined drops out.
+  const invited = invitations.filter((i) => !(clubs ?? []).some((c) => c.clubId === i.clubId));
   return (
     <nav className="sidenav" aria-label="Where to go">
       <ul className="sidenav-group">
@@ -45,9 +49,11 @@ export function Rail({ r, clubs }: { r: Route; clubs: readonly ClubListing[] | n
                 </a>
               </li>
             </ul>
-            {/* An invitation is a link in somebody's mail. There is nothing to press here, and a
-                button that led to "paste your invitation" would be a worse version of opening it. */}
-            <p className="sidenav-quiet">Been invited to one? Open the link you were sent.</p>
+            {invited.length === 0 ? (
+              // An invitation is a message from the host's agent at their Home; when none has reached
+              // them, there is nothing to press here.
+              <p className="sidenav-quiet">Been invited to one? Open the link you were sent.</p>
+            ) : null}
           </>
         ) : (
           <>
@@ -63,6 +69,21 @@ export function Rail({ r, clubs }: { r: Route; clubs: readonly ClubListing[] | n
             </a>
           </>
         )}
+        {invited.length > 0 ? (
+          <>
+            <h2 className="sidenav-heading">{invited.length === 1 ? 'Invited' : 'Invitations'}</h2>
+            <ul className="sidenav-group">
+              {invited.map((i) => (
+                <li key={i.clubId}>
+                  <a className={r.page === 'join' && r.clubId === i.clubId ? 'sidenav-row on' : 'sidenav-row'} href={`#/join/${encodeURIComponent(i.clubId)}`}>
+                    <span className="sidenav-label">{i.name}</span>
+                    <span className="sidenav-sub">{i.fromName ? `${i.fromName} invited you — join at your Home` : 'join at your Home'}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </div>
 
       {/* Last, quiet, and always there. The product explanation used to be unreachable the moment

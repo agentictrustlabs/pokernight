@@ -99,6 +99,15 @@ export function advertises(agent: AgentListing, skill: string): boolean {
 }
 
 export type { ClubListing };
+
+/** A club somebody has been invited to and has not joined yet. */
+export interface ClubInvitation {
+  clubId: string;
+  name: string;
+  from?: string;
+  fromName?: string;
+  invitedAt?: string;
+}
 import { SESSION_KEY } from './ssoLogout';
 import type { AppSession } from './types';
 import type { AuthConfig } from './home';
@@ -272,6 +281,9 @@ export const api = {
 
   /** The clubs this person is in — their own links at their Home. Never a list of clubs to browse. */
   listClubs: (token: string) => request<{ clubs: ClubListing[] }>('/clubs', {}, token),
+  /** The clubs they were invited to and have not joined: the host's agent messaged them, and this is the same
+   *  invitation read off their own inbox, so the rail can offer the door. */
+  listInvitations: (token: string) => request<{ invitations: ClubInvitation[] }>('/clubs/invitations', {}, token),
   /**
    * One club, from its own agent: profile, roster, schedule, nights, and what you are to it.
    *

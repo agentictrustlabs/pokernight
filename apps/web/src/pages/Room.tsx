@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AuthState } from '../App';
 import type { AppSession, TableSummary } from '../lib/types';
-import { ApiError, api, type ClubListing } from '../lib/api';
+import { ApiError, api, type ClubInvitation, type ClubListing } from '../lib/api';
 import { Rail } from '../components/Rail';
 import type { Route } from '../lib/routes';
 import type { TreasuryView } from '../lib/treasury';
@@ -77,6 +77,7 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
     // authorised buy-ins that they still need to.
   }, [loadTreasury, moneyStamp]);
 
+  const [invitations, setInvitations] = useState<ClubInvitation[]>([]);
   const loadClubs = useCallback(async () => {
     try {
       setClubs((await api.listClubs(session.token)).clubs);
@@ -84,6 +85,9 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
       // The rail shows "Reading…" rather than "you are in none", which is the honest answer to a
       // question we asked and did not get back.
     }
+    // Invitations beside the clubs, and never blocking them: an inbox that cannot be read leaves the
+    // rail as it was — the message at their Home still says.
+    api.listInvitations(session.token).then((r) => setInvitations(r.invitations)).catch(() => undefined);
   }, [session.token]);
   useEffect(() => {
     void loadClubs();
@@ -129,7 +133,7 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
 
   return (
     <div className="room">
-      <Rail r={r} clubs={clubs} />
+      <Rail r={r} clubs={clubs} invitations={invitations} />
       <main className="room-main">
         {r.page === 'tables' ? (
           <TablesPage session={session} tables={tables} err={err} money={money} ready={ready} onChanged={reload} />

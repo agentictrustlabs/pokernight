@@ -21,6 +21,8 @@ import { SignInPage } from './SignInPage';
 export function JoinPage({ clubId, session, auth, onLogin }: { clubId: string; session: AppSession | null; auth: AuthState; onLogin: (s: AppSession) => void }) {
   const [state, setState] = useState<'checking' | 'member' | 'stranger'>('checking');
   const [err, setErr] = useState<string | null>(null);
+  /** The invitation itself, read off their own inbox — the club's name and who asked, when the Home can say. */
+  const [invitation, setInvitation] = useState<{ name: string; fromName?: string } | null>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -38,11 +40,21 @@ export function JoinPage({ clubId, session, auth, onLogin }: { clubId: string; s
     if (state === 'member') location.hash = clubHash(clubId);
   }, [state, clubId]);
 
+  useEffect(() => {
+    if (!session || state !== 'stranger') return;
+    let alive = true;
+    api
+      .listInvitations(session.token)
+      .then((r) => { const i = r.invitations.find((x) => x.clubId === clubId); if (alive && i) setInvitation({ name: i.name, ...(i.fromName ? { fromName: i.fromName } : {}) }); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [session, state, clubId]);
+
   return (
     <div className="stack">
       <section className="panel join-panel">
         <p className="hero-eyebrow">{PRODUCT_NAME}</p>
-        <h1>You have been invited to a club</h1>
+        <h1>{invitation ? `${invitation.fromName ? `${invitation.fromName} invited you to ` : 'You are invited to '}${invitation.name}` : 'You have been invited to a club'}</h1>
         <p className="hint">
           Its agent is <code className="mono" title={clubId}>{shortAddress(clubId)}</code>. The host invited you at their Home; joining is done at yours — one
           approval, and the club's own agent will know you as a member. Its tables, its nights and its huddle are then yours to use.

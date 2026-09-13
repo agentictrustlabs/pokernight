@@ -324,6 +324,32 @@ export async function myClubs(env: Env, agent: string): Promise<ClubListing[] | 
   }
 }
 
+/** The clubs this person has been invited to and not joined — from the invitation messages in their own inbox. */
+export interface ClubInvitation {
+  clubId: string;
+  name: string;
+  from?: string;
+  fromName?: string;
+  invitedAt?: string;
+}
+
+export async function myInvitations(env: Env, agent: string): Promise<ClubInvitation[] | null> {
+  const a2a = (env.HOME_A2A_ORIGIN ?? '').trim().replace(/\/$/, '');
+  const secret = (env.CLUB_ROSTER_SECRET ?? '').trim();
+  if (!a2a || !secret || !CLUB_ID_RE.test(agent)) return null;
+  try {
+    const r = await fetch(`${a2a}/clubs/invitations?agent=${lc(agent)}`, { headers: { accept: 'application/json', authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) return null;
+    const b = (await r.json().catch(() => null)) as { ok?: boolean; invitations?: Array<{ club?: string; name?: string; from?: string; fromName?: string; invitedAt?: string }> } | null;
+    if (!b?.ok || !Array.isArray(b.invitations)) return null;
+    return b.invitations
+      .filter((i) => CLUB_ID_RE.test(String(i.club ?? '')))
+      .map((i) => ({ clubId: lc(String(i.club)), name: String(i.name ?? i.club), ...(i.from ? { from: lc(String(i.from)) } : {}), ...(i.fromName ? { fromName: String(i.fromName) } : {}), ...(i.invitedAt ? { invitedAt: String(i.invitedAt) } : {}) }));
+  } catch {
+    return null;
+  }
+}
+
 /** The people this person already plays with: everyone on the rosters of their clubs, but them. */
 export async function knownPeople(env: Env, agent: string): Promise<KnownPerson[]> {
   const clubs = (await myClubs(env, agent)) ?? [];
