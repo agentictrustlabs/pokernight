@@ -255,6 +255,39 @@ These are held by tests in all three repositories, and by the vault itself:
 | A hand ending **never messages the coach** | `recordWithAdvisers` sends to your agent only; `card-room.test.ts` |
 | `poker.act` ≠ `poker.advise` ≠ `poker.record` ≠ `poker.review` — four skills, advertised separately | `adviser.test.ts`; the house players advertise neither record nor review |
 | Two seats, two grants — one person's grant is never used for another | `card-room.test.ts` |
+| **One cabinet per game, one coach per game** — hold'em's records are `cardroom.hand…`, canasta's `cardroom.canasta.hand…`; a hold'em grant reads nothing of canasta's | `studyRecords`, `verifyStudyGrant(family)`; `card-room.test.ts` "one cabinet per game" |
+| **Your profile is yours** (`cardroom.profile`) — read by every coach you hire, written by nobody but you | the vault admits it on your own `record.put` and refuses it on a service principal |
+| A **leak is a count**, a **plan is one change**, **progress is two numbers** — never a verdict | the review returns `leak {pattern, count, of, cost}` and measures against the last note's plan |
+
+---
+
+## 6½. Two games, one arrangement
+
+Everything above was written for hold'em and Bob. On 2026-09-13 canasta got its own coach — **Carol's**
+(`carol-coach.svc`, custodied by carol.me) — and the arrangement turned out to need no second design,
+only a second *rule book*:
+
+```
+                       your agent (alice.me)
+  poker.advise  ─────►  specialist: poker.advise   → bob-coach.svc    reads cardroom.hand|style|read|note
+  canasta.advise ────►  specialist: canasta.advise → carol-coach.svc  reads cardroom.canasta.hand|style|read|note
+                                                       both read       cardroom.profile  (yours, one across games)
+```
+
+- **A coach knows one game.** Bob's card advertises `poker.advise`/`poker.review` and nothing of canasta's;
+  Carol's the reverse. The specialist line in your playbook is per skill, so the two coaches sit side by side.
+- **Two grants, two cabinets.** Firing Carol revokes her grant and leaves Bob's alone, and the canasta rounds
+  can never reset the hold'em counts (one record for two games was a record for whichever wrote last).
+- **The ontology says it once.** `~/skills/ontology/card-room.ttl` is what both games derive from: the player as a
+  role, the coach service and its doctrine, the study grant and the engagement, the consultation and the review,
+  the cabinet, and the learning — your **profile** and **goals**, the **leak** with its count, the **one plan**,
+  and **progress** measured between two spans. `texas-holdem.ttl` and `canasta.ttl` each import it and specialize
+  twenty-two classes; a third game is a third rule book, not a third coaching arrangement.
+- **The review answers your goals first.** Under Settings → Coaches at your Home you say where you are at each
+  game, how you want to be spoken to, and what you want to get better at. Every coach reads it under its grant:
+  a *new* player gets the rule named before the move; *only when I ask* gets the move and nothing else; and a
+  review opens with your goal, measures the last plan's count against its count now, and only then says what it
+  found on its own.
 
 ---
 
