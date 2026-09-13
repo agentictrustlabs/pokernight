@@ -3,6 +3,7 @@ import type { AppSession, ClientCommand, HandResult, Street, TableEvent, TableVi
 import { api, ApiError, type CoachAdvice, type CoachStatus } from '../lib/api';
 import { remember, whoSaid, type Recommendation } from '../lib/recommendations';
 import { useUserIdle } from '../lib/useUserIdle';
+import { useCoachSheet, usePhone } from '../lib/useCoachSheet';
 import { newAlerts } from '../lib/alerts';
 import type { FormatContext } from '../lib/format';
 import { actionWords, handEndLines, playable, pokerAlerts, pokerFeedLines, spokenAction, spokenPokerLine } from '../lib/pokerWords';
@@ -132,10 +133,16 @@ export function PokerCoach({
    * in" link gave you a coach switched off. Once somebody presses one of the three, this stops.
    */
   const chosen = useRef(false);
+  /** The card's element — on a phone it is a sheet at the bottom, and the page is padded by its height. */
+  const sheetRef = useRef<HTMLElement | null>(null);
+  useCoachSheet(sheetRef);
+  const phone = usePhone();
+  const [showWhy, setShowWhy] = useState(false);
   useEffect(() => {
     if (!chosen.current) setMode(startOn);
   }, [startOn]);
   const [advice, setAdvice] = useState<CoachAdvice | null>(null);
+  useEffect(() => { setShowWhy(false); }, [advice]);
   const [said, setSaid] = useState<Recommendation[]>([]);
   /**
    * WHO IS ADVISING YOU, read from the TABLE rather than remembered from your own last press.
@@ -427,7 +434,7 @@ export function PokerCoach({
   if (!session) return null;
 
   return (
-    <section className={`panel coach${mode !== 'off' ? ' on' : ''}`}>
+    <section ref={sheetRef} className={`panel coach${mode !== 'off' ? ' on' : ''}`}>
       <div className="coach-head">
         <h2>Coach</h2>
         <div className="coach-modes" role="group" aria-label="Coach">
@@ -515,7 +522,13 @@ export function PokerCoach({
           {advice ? (
             <div className="coach-said">
               <p className="coach-say">{advice.say}</p>
-              <p className="coach-why">{advice.because}</p>
+              {/* ON A PHONE THE REASON FOLDS: the sheet shows the sentence and the button, and "why" opens the
+                  paragraph — a coach's three sentences of reason pushed the move off a small screen. */}
+              {phone && !showWhy ? (
+                <button type="button" className="link-button coach-why-toggle" onClick={() => setShowWhy(true)}>Why?</button>
+              ) : (
+                <p className="coach-why">{advice.because}</p>
+              )}
               {/* NO BUTTON WITHOUT A MOVE BEHIND IT. An adviser may answer with words and no action —
                   the skill allows it, and a coach that only talks is a real coach. What must never
                   happen is a button for a move that does not exist: it sends nothing, the card room

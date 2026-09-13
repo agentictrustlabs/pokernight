@@ -153,6 +153,14 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   Canasta's barrier is the RULES, so its coach says which moves exist; hold'em's is the PRICE, so
   its coach keeps saying what a call costs against what it can win. `Adviser` is the one shared
   piece, because naming your own agent is a fact about you rather than about a game.
+  **ON A PHONE THE COACH IS A SHEET** (`lib/useCoachSheet.ts`, `@media (max-width: 899px)`): both coach
+  cards pin to the bottom of the screen above the buttons, the page pads its bottom by the sheet's measured
+  height (`--coach-sheet`), the reason folds behind "Why?" so the sentence and the move fit, the canasta
+  felt puts the three other seats in one row of small plates, and the top bar drops the badges. Walk it
+  with the scratch `mobile-walk.cjs` (iPhone 13 viewport, plays a few turns, screenshots each). A COACH'S
+  MOVE IS CHECKED BEFORE A BUTTON IS DRAWN: `askAdviser` parses and applies the adviser's `action` against
+  the current state and drops it (words kept, a clause added) when the game would refuse it — a
+  language-model coach named a two-card canasta meld and the person got `illegal-action` for pressing it.
   **THE CANASTA SIDE IS THE SAME SHAPE** (`components/CanastaSide.tsx`), plus a SEAT BAR above the coach
   card that is always on screen: which seat, whose side, sit back in, and LEAVE — the leave button used to
   be three panels down. The canasta coach card hands up `CanastaArrangement`; `VoiceSettings` is exported

@@ -1863,7 +1863,23 @@ export class PokerTableDO extends DurableObject<Env> {
       a2aAdviceTimeoutMs(this.env),
       this.env,
     );
-    return res.ok ? { ok: true, advice: res.output } : { ok: false, error: res.error };
+    if (!res.ok) return { ok: false, error: res.error };
+    // A MOVE THE GAME WOULD REFUSE IS NOT A MOVE. A language-model coach names its move in the game's own
+    // shape and gets it wrong sometimes — a canasta meld of two cards, a raise below the minimum — and the
+    // screen drew a button for it; pressing it got "illegal-action" from the table. The words are still the
+    // coach's; the button is not drawn. Checked the way an agent's turn is: the game parses and applies it
+    // against the CURRENT state, and reports its own refusal, never the host's idea of legality.
+    const advice = { ...res.output };
+    if (advice.action !== undefined && advice.action !== null) {
+      const parsed = this.game.parseAction(advice.action);
+      const refused = !parsed.ok ? parsed.reason : (() => { const r = this.game.apply(this.state ?? state, seat, parsed.action); return r.ok ? null : r.reason; })();
+      if (refused) {
+        console.warn(`advice from ${adviser.agentName} named a move the game refuses (${refused}) — words kept, move dropped`);
+        delete advice.action;
+        advice.because = `${advice.because ?? ''}${advice.because ? ' ' : ''}(The move it named is not one the table allows here — ${refused} — so play this one yourself.)`.trim();
+      }
+    }
+    return { ok: true, advice };
   }
 
   /**
