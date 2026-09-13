@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppSession, ClubInvite, ClubView, KnownPerson, Night } from '../lib/types';
 import { ApiError, api } from '../lib/api';
-import { CHARTER_BLURB, canInvite, charterState, checkMember, confirmsRetire, memberAction, retireConsequences, standingLabel } from '../lib/clubs';
-import { startClubCharter, type AuthConfig } from '../lib/home';
+import { CHARTER_BLURB, agentOfPlayer, canInvite, charterState, checkMember, confirmsRetire, homeMembershipLabel, memberAction, membershipAtHome, retireConsequences, standingLabel } from '../lib/clubs';
+import { startClubCharter, startMembershipInvite, startMembershipJoin, type AuthConfig } from '../lib/home';
 import { shortAddress } from '../lib/format';
 import { clubHash } from '../lib/routes';
 import { downloadUrl, googleCalendarLink, nextNight } from '../lib/nights';
@@ -62,13 +62,36 @@ export function Roster({
       <Welcome view={view} session={session} host={host} onChanged={onChanged} />
       <Calendar clubId={view.clubId} clubName={view.name} session={session} />
       <Charter view={view} config={config} />
+      <JoinAtHome view={view} session={session} config={config} />
       {err ? <div className="form-error">{err}</div> : null}
       <ul className="club-roster">
-        {view.roster.map((m) => (
+        {view.roster.map((m) => {
+          const at = membershipAtHome(view, m);
+          const agent = agentOfPlayer(m.member);
+          return (
           <li key={m.member}>
             <span className="cr-name">{m.name}</span>
             {m.class === 'guest' ? <span className="tag">guest</span> : null}
             {m.member === view.createdBy ? <span className="tag">host</span> : null}
+            {homeMembershipLabel(at) ? <span className={`tag home-${at}`}>{homeMembershipLabel(at)}</span> : null}
+            {/* THE HOST'S HALF OF MEMBERSHIP AT THE HOME: an invitation signed with their own credential, for
+                a member who is on this roster but whom the club's agent does not know yet. */}
+            {host && config && view.agent && agent && (at === 'pending' || at === 'invited') ? (
+              <button
+                type="button"
+                className="link-button"
+                onClick={async () => {
+                  setErr(null);
+                  try {
+                    location.href = await startMembershipInvite(config, { clubId: view.clubId, name: view.name, agent: view.agent as string }, agent);
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : 'The invitation could not be started.');
+                  }
+                }}
+              >
+                {at === 'invited' ? 'Invite again at your Home' : 'Invite at your Home'}
+              </button>
+            ) : null}
             {host && m.member !== view.createdBy ? (
               <button
                 type="button"
@@ -89,7 +112,8 @@ export function Roster({
               </button>
             ) : null}
           </li>
-        ))}
+          );
+        })}
       </ul>
       {host ? <Invite clubId={view.clubId} session={session} roster={view.roster.map((m) => m.member)} onAdded={onChanged} /> : null}
       {/* WHAT A HOST DOES NEXT, said where they are standing.
@@ -358,6 +382,47 @@ function Calendar({ clubId, clubName, session }: { clubId: string; clubName: str
  * shows the host what they are agreeing to, and the card room never holds the club's key. That is
  * the same reason signing in and authorising a buy-in are navigations too.
  */
+/**
+ * THE MEMBER'S HALF OF MEMBERSHIP AT THE HOME (WORKSPACES.md §5, 2026-09-13).
+ *
+ * A club is a workspace agent at its host's Home, and belonging to it is recorded THERE, not here: the host
+ * invites at their Home, the member joins at theirs, and from then on the Home derives their standing — for
+ * the club's huddle, and for anything asked of the club's agent. This roster is the projection. So a member
+ * whose row says the Home does not know them yet is told, here, above the roster, what to do — and told
+ * plainly when the host has not invited them yet, because a join with no invitation waiting is a trip to the
+ * Home that ends in "no invitation was found".
+ */
+function JoinAtHome({ view, session, config }: { view: ClubView; session: AppSession; config: AuthConfig | null }) {
+  const [err, setErr] = useState<string | null>(null);
+  const mine = view.roster.find((m) => m.member === session.playerId);
+  if (!config || !view.agent || !mine) return null;
+  const at = membershipAtHome(view, mine);
+  if (at !== 'pending' && at !== 'invited') return null;
+  return (
+    <div className="club-join-home">
+      <p className="hint">
+        {at === 'invited'
+          ? `${view.name}'s host has invited you at your Home. Join there, and the club's own agent will know you as a member — its huddle lets members in.`
+          : `You are on ${view.name}'s roster here, but not at your Home yet. Ask its host to invite you at their Home; then join from here.`}
+      </p>
+      {err ? <div className="form-error">{err}</div> : null}
+      <button
+        type="button"
+        onClick={async () => {
+          setErr(null);
+          try {
+            location.href = await startMembershipJoin(config, { clubId: view.clubId, name: view.name, agent: view.agent as string });
+          } catch (e) {
+            setErr(e instanceof Error ? e.message : 'The join could not be started.');
+          }
+        }}
+      >
+        {at === 'invited' ? 'Join at your Home' : 'Try joining at your Home'}
+      </button>
+    </div>
+  );
+}
+
 function Charter({ view, config }: { view: ClubView; config: AuthConfig | null }) {
   const [err, setErr] = useState<string | null>(null);
   const state = charterState(view, Boolean(config?.home.clubTemplate));

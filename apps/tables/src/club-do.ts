@@ -158,7 +158,14 @@ type MemberRow = {
   joined_at: number;
   invited_by: string | null;
   valid_until: number | null;
+  /** The projection of the membership at the Home: 'invited' | 'joined' | null (see `ClubMember.home`). */
+  home: string | null;
 };
+
+/** What the Worker learned the Home records about this workspace's members — the roster's SOURCE. */
+export interface ReconcileRequest {
+  members: Array<{ agent: string; name?: string }>;
+}
 
 export class ClubDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -190,6 +197,12 @@ export class ClubDO extends DurableObject<Env> {
           invited_by  TEXT,
           valid_until INTEGER
         )`);
+      // WHERE THE MEMBERSHIP LIVES AT THE HOME — a projection column added after the fact (see `welcome`).
+      try {
+        ctx.storage.sql.exec('ALTER TABLE members ADD COLUMN home TEXT');
+      } catch {
+        /* already there */
+      }
       ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS invites (
           token           TEXT PRIMARY KEY,
@@ -282,8 +295,20 @@ export class ClubDO extends DurableObject<Env> {
       return await this.addMember((await request.json()) as AddMemberRequest, club);
     }
 
+    // The membership's state at the Home, as the Worker learned it from a ceremony's return leg.
+    if (request.method === 'POST' && path.startsWith('/members/') && path.endsWith('/home')) {
+      const member = decodeURIComponent(path.slice('/members/'.length, -'/home'.length));
+      return this.setHome(member, (await request.json()) as { home?: string }, club);
+    }
+
     if (request.method === 'DELETE' && path.startsWith('/members/')) {
       return await this.removeMember(decodeURIComponent(path.slice('/members/'.length)), club);
+    }
+
+    // THE ROSTER IS A PROJECTION OF THE HOME'S. The Worker read the workspace's own membership records and
+    // hands them down; this reconciles the rows to them (see `reconcile`).
+    if (request.method === 'POST' && path === '/reconcile') {
+      return await this.reconcile((await request.json()) as ReconcileRequest, club);
     }
 
     // The end of a club. The Worker has already checked that the caller is its host and that no
@@ -486,7 +511,61 @@ export class ClubDO extends DurableObject<Env> {
       body.validUntil ?? null,
     );
     await this.indexAdd(member, club.club_id, club.name, now);
-    return json({ added: this.toMember({ member, name, class: klass, joined_at: now, invited_by: body.invitedBy ?? null, valid_until: body.validUntil ?? null }) }, 201);
+    return json({ added: this.toMember({ member, name, class: klass, joined_at: now, invited_by: body.invitedBy ?? null, valid_until: body.validUntil ?? null, home: null }) }, 201);
+  }
+
+  private setHome(member: string, body: { home?: string }, club: ClubRow): Response {
+    const home = body.home === 'invited' || body.home === 'joined' ? body.home : null;
+    if (!home) return json({ error: 'home must be invited or joined' }, 400);
+    const row = this.memberRow(member);
+    if (!row && member !== club.created_by) return json({ error: 'they are not on the roster' }, 404);
+    // A join outranks an invitation; an invitation never un-joins somebody.
+    if (row?.home === 'joined' && home === 'invited') return json({ member: this.toMember(row) });
+    if (row) this.ctx.storage.sql.exec('UPDATE members SET home = ? WHERE member = ?', home, member);
+    return json({ member: row ? this.toMember({ ...row, home }) : null });
+  }
+
+  /**
+   * RECONCILE THE ROSTER TO THE HOME'S RECORD OF THE WORKSPACE (2026-09-13).
+   *
+   * Membership lives at the Home: the workspace's own `org.membership:member:<sa>` records, written when a
+   * person joins there. This roster is the card room's projection of that, refreshed whenever the club is
+   * looked at. Somebody the Home records who is not here is ADDED — a host may admit people at their Home
+   * without ever opening the card room, and the club must not disagree with its own agent. Somebody here
+   * whom the Home records is marked `joined`. Somebody here whom the Home does NOT record is LEFT ALONE:
+   * they were added by the card room's own roads (a name, an email link, a dev session) and still have
+   * standing here, and their row says so by carrying no `home` — the page tells them to join at their Home.
+   * Ending a membership at the Home is not projected yet (the Home's own remove ceremony is the follow-up);
+   * a roster that dropped people on a transient empty read would be worse than one a step behind.
+   */
+  private async reconcile(body: ReconcileRequest, club: ClubRow): Promise<Response> {
+    const members = Array.isArray(body.members) ? body.members : [];
+    let added = 0;
+    let joined = 0;
+    const now = Date.now();
+    for (const m of members) {
+      const agent = String(m.agent ?? '').toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(agent)) continue;
+      const playerId = `home:${agent}`;
+      if (playerId === club.created_by) continue;
+      const row = this.memberRow(playerId);
+      if (row) {
+        if (row.home !== 'joined') {
+          this.ctx.storage.sql.exec('UPDATE members SET home = ? WHERE member = ?', 'joined', playerId);
+          joined++;
+        }
+        continue;
+      }
+      const name = (m.name ?? '').trim().slice(0, 64) || agent;
+      this.ctx.storage.sql.exec(
+        'INSERT INTO members (member, name, class, joined_at, invited_by, valid_until, home) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        playerId, name, 'standard', now, null, null, 'joined',
+      );
+      await this.indexAdd(playerId, club.club_id, club.name, now);
+      added++;
+      joined++;
+    }
+    return json({ added, joined });
   }
 
   /**
@@ -902,6 +981,7 @@ export class ClubDO extends DurableObject<Env> {
       joinedAt: r.joined_at,
       ...(r.invited_by ? { invitedBy: r.invited_by } : {}),
       ...(r.valid_until !== null ? { validUntil: r.valid_until } : {}),
+      ...(r.home === 'invited' || r.home === 'joined' ? { home: r.home } : {}),
     };
   }
 

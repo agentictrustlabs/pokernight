@@ -198,6 +198,17 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   A club is CHARTERED ONCE as a `<label>.workspace` Smart Agent at the host's own Home
   (`workspace-create`); the card room records the address and never holds the key. Re-chartering to a
   different agent is refused. Design: `docs/WORKSPACES.md`.
+- **MEMBERSHIP OF A CLUB LIVES AT THE HOME; THE CARD ROOM'S ROSTER IS A PROJECTION OF IT** (2026-09-13,
+  `docs/WORKSPACES.md` §5.0). The host invites at their Home (`workspace-member-invite`), the member joins
+  at theirs (`workspace-join`, which has the workspace's own agent record them), and the Home derives
+  standing from its own records — for the club's huddle and for anything asked of the club's agent. It
+  asks the card room nothing (the old `standing-of` route is gone). `GET /clubs/:id` reconciles the roster
+  from `GET <a2a>/clubs/roster?workspace=` under the paired secret (`ClubDO.reconcile`): the Home's
+  members are on the roster as `home:'joined'`, added if they were admitted at the Home and never here;
+  a row the Home does not record keeps its standing here and carries no `home`, and the page tells that
+  member to join. `POST /clubs/:id/home-membership {leg}` is both ceremonies' return leg, and a join
+  believes nothing from the code — it asks the Home again. A huddle refused to a member the Home does not
+  know yet says "join the club at your Home", not "nothing here". Tables, nights and the rail stay here.
 - **A CLUB IS RETIRED BY ITS HOST, AND ITS AGENT IS NOT OURS TO RETIRE.** `DELETE /clubs/:clubId` is
   the only way one ends. There is exactly one host — `created_by` — so a member gets 403 by name and a
   stranger gets 404, the same answer a club that does not exist gives. It LOOKS FIRST and refuses the

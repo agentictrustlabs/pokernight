@@ -143,6 +143,16 @@ export const ClubMemberSchema = z.object({
   invitedBy: z.string().max(128).optional(),
   /** A guest's window. Absent means it does not close. */
   validUntil: z.number().int().optional(),
+  /**
+   * WHERE THIS MEMBERSHIP LIVES. A club is a `.workspace` agent at its host's Home, and MEMBERSHIP OF IT
+   * LIVES THERE TOO: the host invites at their Home (`workspace-member-invite`), the member joins at
+   * theirs (`workspace-join`), and the workspace's own membership record is what the Home derives
+   * standing from — for the club's huddle, and for anything else asked of the club's agent. This row
+   * is the card room's PROJECTION of that: `joined` when the Home records them, `invited` when the
+   * host has run the invite and they have not joined yet, absent when the club is chartered but this
+   * membership exists only here (added before the ceremonies, or by a dev session).
+   */
+  home: z.enum(['invited', 'joined']).optional(),
 });
 export type ClubMember = z.infer<typeof ClubMemberSchema>;
 

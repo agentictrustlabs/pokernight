@@ -192,3 +192,42 @@ export function charterState(
 /** The sentence under the charter offer. Says what it gets them, not what it is. */
 export const CHARTER_BLURB =
   'Give this club an agent of its own at your Home. You keep the keys; the card room never holds them.';
+
+/* ------------------------------------------------------ membership at the Home */
+
+/**
+ * WHERE ONE MEMBERSHIP STANDS AT THE HOME, for the roster row and for the banner (WORKSPACES.md §5, 2026-09-13).
+ *
+ *   steward   the host: the club's agent is theirs, there is nothing to join
+ *   joined    the Home records them — the club's agent knows them, its huddle lets them in
+ *   invited   the host has invited them at their Home; they have not joined yet
+ *   pending   the club is chartered and this membership exists only in the card room
+ *   none      no Home is involved: the club is not chartered, or this member has no agent (a dev session)
+ */
+export type HomeMembership = 'steward' | 'joined' | 'invited' | 'pending' | 'none';
+
+export function membershipAtHome(
+  club: { agent?: string; createdBy: string },
+  member: { member: string; home?: 'invited' | 'joined' },
+): HomeMembership {
+  if (!club.agent) return 'none';
+  if (member.member === club.createdBy) return 'steward';
+  if (!member.member.startsWith('home:')) return 'none';
+  return member.home ?? 'pending';
+}
+
+/** The agent address a `home:0x…` player id names, or null for anybody else. */
+export function agentOfPlayer(playerId: string): string | null {
+  const m = playerId.match(/^home:(0x[0-9a-fA-F]{40})$/);
+  return m?.[1] ? m[1].toLowerCase() : null;
+}
+
+/** The row's word about it. Empty where there is nothing to say (the host, an unchartered club). */
+export function homeMembershipLabel(state: HomeMembership): string {
+  switch (state) {
+    case 'joined': return 'joined at Home';
+    case 'invited': return 'invited at Home';
+    case 'pending': return 'not yet at Home';
+    default: return '';
+  }
+}

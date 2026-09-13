@@ -3544,6 +3544,27 @@ a.button.primary:hover {
   margin: 0;
   overflow-wrap: anywhere;
 }
+/* Membership at the Home: the member's own errand, said above the roster, and one word on each row. */
+.club-join-home {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: start;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.club-join-home .hint {
+  margin: 0;
+}
+.tag.home-joined {
+  color: var(--focus);
+  border-color: currentColor;
+}
+.tag.home-pending {
+  color: var(--warn);
+  border-color: currentColor;
+}
 
 /* ------------------------------------------------- the mission's four actions */
 /* Sits under "How a night works" because it answers the question that section

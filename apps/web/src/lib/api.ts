@@ -450,6 +450,10 @@ export const api = {
    */
   charterClub: (clubId: string, body: HomeAuthBody, token: string) =>
     request<ClubSummary>(`/clubs/${encodeURIComponent(clubId)}/charter`, { method: 'POST', body: JSON.stringify(body) }, token),
+  /** Finish a membership ceremony run at a Home — the host's invitation or the member's join — and let the
+   *  card room bring its roster up to date with what the Home now records. */
+  homeMembership: (clubId: string, body: HomeAuthBody & { leg: 'invite' | 'join'; member?: string }, token: string) =>
+    request<{ leg: 'invite' | 'join'; member: string; home: 'invited' | 'joined' }>(`/clubs/${encodeURIComponent(clubId)}/home-membership`, { method: 'POST', body: JSON.stringify(body) }, token),
   removeMember: (clubId: string, member: string, token: string) =>
     request<{ removed: string }>(`/clubs/${encodeURIComponent(clubId)}/members/${encodeURIComponent(member)}`, { method: 'DELETE' }, token),
   /** The host's own words about their club. It is what an invitation actually says. */

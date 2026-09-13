@@ -657,6 +657,119 @@ export async function startCoachHire(config: AuthConfig, coach: string, store: S
   return url.toString();
 }
 
+/* --------------------------------------------------------- membership at the Home */
+
+/** The two legs of MEMBERSHIP AT THE HOME (WORKSPACES.md §5, 2026-09-13). Offered wherever the club charter is:
+ *  the same Home registration carries all three templates. */
+export const MEMBER_INVITE_TEMPLATE = 'workspace-member-invite';
+export const MEMBER_JOIN_TEMPLATE = 'workspace-join';
+export const MEMBERSHIP_STASH_KEY = 'pokernight.home.membership';
+/** Which club, which leg, and (for an invitation) whom — this origin's own memory across the round trip. */
+export const MEMBERSHIP_LEG_KEY = 'pokernight.home.membership.leg';
+
+export interface MembershipLeg {
+  clubId: string;
+  leg: 'invite' | 'join';
+  /** The member's agent address, on the invite leg. */
+  member?: string;
+}
+
+async function startMembershipLeg(config: AuthConfig, template: string, extra: Record<string, string>, leg: MembershipLeg, store: StorageLike | null): Promise<string> {
+  if (!config.home.clientId || !config.home.origin) throw new Error('This deployment has no Home configured.');
+  if (!config.home.clubTemplate) throw new Error('Your Home does not run club membership yet.');
+  if (!isAllowedHomeOrigin(config.home.zone, config.home.origin)) {
+    throw new Error(`Refusing to send you to ${config.home.origin}: it is not a trusted Home for this site.`);
+  }
+  const client = homeClient(config);
+  const pkce = await generatePkce();
+  const stash: ConnectStash = { name: '', state: randomB64url(16), authOrigin: config.home.origin, codeVerifier: pkce.verifier, nonce: randomB64url(16) };
+  if (!writeStash(store, stash, MEMBERSHIP_STASH_KEY)) {
+    throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the membership cannot be arranged.');
+  }
+  try {
+    store?.setItem(MEMBERSHIP_LEG_KEY, JSON.stringify(leg));
+  } catch {
+    throw new Error('This browser will not let the site remember which club this is for, so the return trip could not be matched.');
+  }
+  const url = new URL(client.buildAuthorizeUrl({ authOrigin: stash.authOrigin, state: stash.state, nonce: stash.nonce, codeChallenge: pkce.challenge, agentName: '', template }));
+  for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v);
+  const home = readHomeSession(store);
+  if (home) url.hash = `session=${encodeURIComponent(home)}`;
+  else url.searchParams.set('prompt', 'select_account');
+  return url.toString();
+}
+
+/**
+ * Send a HOST to their Home to INVITE A MEMBER into the club's workspace: the Home signs the member's access
+ * to the club's agent with the host's own credential and holds it until the member joins. The card room
+ * learns only that the host ran it; the invitation itself lives at the Home.
+ */
+export function startMembershipInvite(
+  config: AuthConfig,
+  club: { clubId: string; name: string; agent: string },
+  member: string,
+  store: StorageLike | null = sessionStore(),
+): Promise<string> {
+  return startMembershipLeg(
+    config,
+    MEMBER_INVITE_TEMPLATE,
+    { grant_org: club.agent, member, org_base: club.name, ...(config.home.clubPurpose ? { org_purpose: config.home.clubPurpose } : {}) },
+    { clubId: club.clubId, leg: 'invite', member },
+    store,
+  );
+}
+
+/**
+ * Send a MEMBER to their Home to JOIN the club's workspace: claim the access its host set aside for them, link
+ * the club among the places they belong, and have the club's own agent record them. After this the Home
+ * derives their standing at the club — for its huddle, and for anything asked of the club's agent.
+ */
+export function startMembershipJoin(
+  config: AuthConfig,
+  club: { clubId: string; name: string; agent: string },
+  store: StorageLike | null = sessionStore(),
+): Promise<string> {
+  return startMembershipLeg(
+    config,
+    MEMBER_JOIN_TEMPLATE,
+    { grant_org: club.agent, org_base: club.name, ...(config.home.clubPurpose ? { org_purpose: config.home.clubPurpose } : {}) },
+    { clubId: club.clubId, leg: 'join' },
+    store,
+  );
+}
+
+export function takeMembershipLeg(store: StorageLike | null = sessionStore()): MembershipLeg | null {
+  try {
+    const raw = store?.getItem(MEMBERSHIP_LEG_KEY) ?? null;
+    store?.removeItem(MEMBERSHIP_LEG_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<MembershipLeg>;
+    if (typeof v.clubId !== 'string' || (v.leg !== 'invite' && v.leg !== 'join')) return null;
+    return { clubId: v.clubId, leg: v.leg, ...(typeof v.member === 'string' ? { member: v.member } : {}) };
+  } catch {
+    return null;
+  }
+}
+
+/** Consume a return leg belonging to a MEMBERSHIP ceremony, told apart by its own `state`. */
+export function takeMembershipCallback(store: StorageLike | null = sessionStore()): CallbackOutcome {
+  if (callbackConsumed) return { status: 'none' };
+  const cb = parseCallback(location.href);
+  if (!cb || cb.kind === 'error') return { status: 'none' };
+  const stash = readStash(store, MEMBERSHIP_STASH_KEY);
+  if (!stash || stash.state !== cb.state) return { status: 'none' };
+  const outcome = consumeCallback(location.href, store, MEMBERSHIP_STASH_KEY);
+  if (outcome.status === 'none') return outcome;
+  callbackConsumed = true;
+  clearStash(store, MEMBERSHIP_STASH_KEY);
+  try {
+    history.replaceState(null, '', stripAuthParams(location.href));
+  } catch {
+    /* an unwritable history is not a reason to fail the membership */
+  }
+  return outcome;
+}
+
 export function takeCoachName(store: StorageLike | null = sessionStore()): string | null {
   try {
     const v = store?.getItem(COACH_NAME_KEY) ?? null;

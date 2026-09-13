@@ -223,6 +223,36 @@ The Worker verifies the caller's session, derives their standing, and hands the 
 `{ actor, standing }`. **The Durable Object never sees a session and never derives anything.** That
 separation is what makes the DO testable and what keeps one authorization decision in one place.
 
+### 5.0 Where membership lives, and what the card room keeps (decided 2026-09-13)
+
+The design above says the roster lives in the club's own vault; for a year the card room kept it
+in `ClubDO` instead and the Home asked the card room who belonged. That was backwards — a relying
+app as the authority on membership of an agent it does not custody — and it is now the other way:
+
+**At the Home (the truth).** The club is a `.workspace` agent the host custodies. Membership of it is
+two ceremonies at the Home, both curated templates the card room's registration already carries: the
+host runs `workspace-member-invite` (signs the member's access to the workspace with their own
+credential; the Home stashes it), and the member runs `workspace-join` (claims it, links the club
+among the places they belong, and — since this date — has the workspace's own agent record them:
+`org.membership:member:<sa>`, spec 325). The Home derives standing from those records for the club's
+huddle and for anything asked of the club's agent; it asks the card room nothing.
+
+**In the card room (the projection).** `ClubDO.members` still exists, because a card room has to
+answer "may you see this club" in one hop without a Home call on every request. It is a projection:
+`GET /clubs/:id` first asks the Home for the workspace's roster (`GET <a2a>/clubs/roster?workspace=`,
+under the paired secret) and reconciles — people the Home records are on the roster, marked
+`home: 'joined'`, added if the host admitted them at the Home and never here. A row the Home does
+not record keeps its standing HERE (added by a name, an email link, a dev session) and carries no
+`home`, and the page tells that member to join at their Home; `home: 'invited'` is the host's
+invitation leg having run. The return leg of a join believes nothing from the code: it asks the Home
+again and marks `joined` only when the Home now records them.
+
+What stays in the card room by nature: tables (a live game — sockets, chips, the seed), nights and
+the schedule (the club's calendar as the card room materialises tables for it), the person's club
+index (their rail). What is not moved yet: ending a membership at the Home (the host removes here;
+the Home's own remove ceremony is the follow-up), and a `service-agent-wire` from the club's agent
+to the card room, which would replace the paired secret with a delegation.
+
 ### 5.1 Guests
 
 `MembershipClass` already has the word for the friend somebody brings once: `guest`. A guest is

@@ -84,6 +84,8 @@ import {
   cleanProfileName,
   completeCharterCeremony,
   completeCoachCeremony,
+  completeMembershipCeremony,
+  homeRoster,
   completeDemoSignIn,
   completeHomeSignIn,
   completeMandateCeremony,
@@ -181,6 +183,17 @@ app.get('/auth/config', (c) => {
       buyIn: buyInOffer(c.env),
     },
   });
+});
+
+/** A membership ceremony's return leg: the auth answer plus which leg it was, and for an invitation, whom. */
+const HomeMembershipRequestSchema = z.object({
+  code: z.string().min(1).max(4096),
+  codeVerifier: z.string().min(1).max(512),
+  authOrigin: z.string().min(1).max(512),
+  nonce: z.string().min(1).max(512),
+  state: z.string().min(1).max(512),
+  leg: z.enum(['invite', 'join']),
+  member: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
 });
 
 const HomeAuthRequestSchema = z.object({
@@ -608,33 +621,12 @@ app.get('/clubs', async (c) => {
 });
 
 /**
- * WHO IS THIS AGENT TO THIS CLUB — for the Home's huddle service and nobody else (spec 378, `club` scope).
- * A club's roster is this card room's record (WORKSPACES.md §5), so when a member wants into the club's huddle
- * the Home asks here: the club's workspace agent (so the Home can check it is the scope it was asked about)
- * and the caller's standing on the roster, by their agent address. Gated by the shared secret the Home
- * presents — membership is a fact about other people's arrangements, and this answers a stranger nothing.
- * A club that does not exist and a club the agent has no standing in look the same: `none`.
- */
-app.get('/clubs/:clubId/standing-of', async (c) => {
-  const secret = (c.env.CLUB_ROSTER_SECRET ?? '').trim();
-  const given = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, '');
-  if (!secret || !given || given !== secret) return c.json({ error: 'not for you' }, 403);
-  const clubId = c.req.param('clubId') ?? '';
-  const agent = (c.req.query('agent') ?? '').toLowerCase();
-  if (!CLUB_ID_RE.test(clubId) || !/^0x[0-9a-f]{40}$/.test(agent)) return c.json({ agent: null, standing: 'none' });
-  const playerId = homePlayerId(agent);
-  const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(playerId)}`);
-  if (!res.ok) return c.json({ agent: null, standing: 'none' });
-  const view = (await res.json().catch(() => null)) as { agent?: string; standing?: string; you?: { standing?: string } } | null;
-  const standing = view?.you?.standing ?? view?.standing;
-  return c.json({ agent: view?.agent ?? null, standing: standing === 'host' || standing === 'member' ? standing : 'none' });
-});
-
-/**
  * A CLUB'S HUDDLE, FROM THE CARD ROOM (Home spec 378, `club` scope). The Home's huddle service decides who may
  * start, join or end and Cloudflare carries the media; this route is the person's road to it: their card-room
- * session says who they are (a Home sign-in carries their agent address), the club's roster says they belong,
- * and the card room calls the Home server-to-server under the paired roster secret, naming them. What comes
+ * session says who they are (a Home sign-in carries their agent address), the club's roster says they belong
+ * here, and the card room calls the Home server-to-server under the paired secret, naming them — the Home
+ * derives their standing at the club from ITS OWN records (the workspace's membership), so a member who has not
+ * joined the club at their Home yet is refused there, by name, and the page says what to do. What comes
  * back — the run, and on start/join the ONE credential the browser SDK needs — is passed through once, kept
  * nowhere and logged nowhere. A dev session has no agent and cannot huddle; a stranger to the club gets the
  * same 404 the club gives a stranger for anything.
@@ -654,9 +646,14 @@ app.post('/clubs/:clubId/huddle/:op', async (c) => {
   if (!/^0x[0-9a-f]{40}$/.test(address)) return c.json({ ok: false, error: 'a huddle needs your own agent — sign in through your Home' }, 403);
   const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(session.playerId)}`);
   if (!res.ok) return c.json({ error: 'no such club' }, 404);
-  const view = (await res.json().catch(() => null)) as { name?: string; agent?: string } | null;
+  const view = (await res.json().catch(() => null)) as { name?: string; agent?: string; createdBy?: string; roster?: Array<{ member: string; home?: string }> } | null;
   if (!view?.agent) return c.json({ ok: false, error: `${view?.name ?? 'this club'} has no agent of its own yet — a huddle needs the club chartered at its host's Home` }, 409);
   const body = (await c.req.json().catch(() => ({}))) as { displayName?: string; key?: string };
+  // WHAT THE HOME KNOWS OF THEM. Standing at the club's huddle is the Home's to derive, from the workspace's
+  // membership; somebody on this roster whom the Home does not record yet is refused there. Said here in the
+  // words that lead somewhere — "join at your Home" — rather than the room's "nothing here".
+  const mine = view.roster?.find((m) => m.member === session.playerId);
+  const knownAtHome = session.playerId === view.createdBy || mine?.home === 'joined';
   const r = await fetch(`${a2a}/huddles/${op}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
@@ -664,16 +661,93 @@ app.post('/clubs/:clubId/huddle/:op', async (c) => {
     signal: AbortSignal.timeout(20_000),
   }).catch((e: unknown) => ({ ok: false, status: 502, json: async () => ({ ok: false, error: e instanceof Error ? e.message : String(e) }) }) as unknown as Response);
   const out = (await r.json().catch(() => ({ ok: false, error: `the Home answered ${r.status}` }))) as Record<string, unknown>;
+  if (out.ok === false && !knownAtHome) {
+    out.error = `your Home does not record you as a member of ${view.name ?? 'this club'} yet — join the club at your Home from its page, and its huddle will let you in`;
+  }
   return c.json(out, (r.status >= 200 && r.status < 600 ? r.status : 502) as 200);
 });
 
+/**
+ * A club, to somebody with standing in it — and, first, THE ROSTER BROUGHT UP TO DATE WITH THE HOME'S.
+ *
+ * Membership lives at the Home (WORKSPACES.md §5, 2026-09-13): the workspace's own membership records, written
+ * when a member joins there. The card room's roster is a projection of that, so a chartered club asks its
+ * Home who belongs before it answers, and reconciles (`ClubDO.reconcile`): people the Home records are on the
+ * roster, marked `joined`, whether or not anybody added them here. Best-effort and bounded — a Home that does
+ * not answer leaves the last projection standing, which is a step behind and never wrong about who is here.
+ */
 app.get('/clubs/:clubId', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
   const clubId = c.req.param('clubId') ?? '';
   if (!CLUB_ID_RE.test(clubId)) return c.json({ error: 'no such club' }, 404);
+  await reconcileWithHome(c.env, clubId);
   const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(session.playerId)}`);
   return passthrough(res);
+});
+
+async function reconcileWithHome(env: Env, clubId: string): Promise<{ members: number } | null> {
+  const sum = await clubStub(env, clubId).fetch('https://club/summary');
+  if (!sum.ok) return null;
+  const club = (await sum.json().catch(() => null)) as { agent?: string } | null;
+  if (!club?.agent) return null;
+  const roster = await homeRoster(env, club.agent);
+  if (!roster) return null;
+  await clubStub(env, clubId).fetch('https://club/reconcile', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ members: roster.members }),
+  });
+  return { members: roster.members.length };
+}
+
+/**
+ * The return leg of a MEMBERSHIP CEREMONY — either the host's invitation or the member's join, both run at a
+ * Home and both arriving here on the same redirect URI as every other ceremony (`leg` says which).
+ *
+ *   invite  a host of this club ran `workspace-member-invite` for `member`. The Home holds the grant for them
+ *           to claim; the roster marks them `invited` so the page can say "waiting for them to join".
+ *   join    a member of this club ran `workspace-join`. Nothing is believed from the code: the Worker asks the
+ *           Home for the workspace's roster and marks them `joined` only when the Home now records them.
+ *
+ * In both, the id_token's identity must be the session's — a ceremony completed by one person is never
+ * recorded as another's act.
+ */
+app.post('/clubs/:clubId/home-membership', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = HomeMembershipRequestSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  const gate = await requireStanding(c, parsed.data.leg === 'invite' ? 'host' : 'member');
+  if ('refused' in gate) return gate.refused;
+  let identity;
+  try {
+    identity = (await completeMembershipCeremony(c.env, parsed.data)).identity;
+  } catch (e) {
+    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
+    console.error('membership ceremony', e);
+    return c.json({ error: 'the membership ceremony could not be finished' }, 401);
+  }
+  if (homePlayerId(identity.address) !== gate.playerId) {
+    return c.json({ error: 'that ceremony was completed by a different person than this session' }, 403);
+  }
+  if (parsed.data.leg === 'invite') {
+    const member = (parsed.data.member ?? '').toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(member)) return c.json({ error: 'an invitation names the member it is for' }, 400);
+    const res = await clubStub(c.env, gate.clubId).fetch(`https://club/members/${encodeURIComponent(homePlayerId(member))}/home`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ home: 'invited' }),
+    });
+    if (!res.ok) return passthrough(res);
+    return c.json({ leg: 'invite', member: homePlayerId(member), home: 'invited' });
+  }
+  const done = await reconcileWithHome(c.env, gate.clubId);
+  const view = await clubStub(c.env, gate.clubId).fetch(`https://club/view?player=${encodeURIComponent(gate.playerId)}`);
+  const v = (await view.json().catch(() => null)) as { roster?: Array<{ member: string; home?: string }> } | null;
+  const mine = v?.roster?.find((m) => m.member === gate.playerId);
+  if (gate.standing === 'host') return c.json({ leg: 'join', member: gate.playerId, home: 'joined' });
+  if (mine?.home !== 'joined') {
+    return c.json({ error: done ? 'your Home finished, but the club\'s agent does not record you as a member yet — its host may need to enable the club\'s storage at their Home, then join again' : 'your Home finished, but the card room could not ask the club\'s agent who belongs; try again in a moment' }, 409);
+  }
+  return c.json({ leg: 'join', member: gate.playerId, home: 'joined' });
 });
 
 /**

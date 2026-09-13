@@ -7,6 +7,8 @@ import {
   startHomeSignIn,
   takeCharterCallback,
   takeCoachCallback,
+  takeMembershipCallback,
+  takeMembershipLeg,
   takeCoachName,
   takeCharterClub,
   takeHomeCallback,
@@ -16,7 +18,7 @@ import {
 } from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
-import { HOME_HASH, goTo, route, takeReturn } from './lib/routes';
+import { HOME_HASH, clubHash, goTo, route, takeReturn } from './lib/routes';
 import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
 import { PRODUCT_NAME } from './lib/brand';
 import { useHash } from './lib/hooks';
@@ -260,6 +262,39 @@ export function App() {
         if (back) goTo(back);
       })
       .catch((e: unknown) => setError(e instanceof ApiError ? e.message : `Could not finish hiring ${coachName ?? 'the coach'}.`))
+      .finally(() => setBusy(false));
+  }, []);
+
+  /**
+   * The return leg of a MEMBERSHIP CEREMONY — the host's invitation into the club's workspace, or the
+   * member's join of it. Told apart by its own `state`, matched to its club by this origin's own memory.
+   * The Worker exchanges the code, checks the identity, and on a join asks the Home whether the club's agent
+   * now records them — nothing is believed from the code itself.
+   */
+  useEffect(() => {
+    const outcome = takeMembershipCallback();
+    if (outcome.status !== 'signed-in') {
+      if (outcome.status === 'error') setError(outcome.message);
+      return;
+    }
+    const leg = takeMembershipLeg();
+    const current = sessionRef.current;
+    if (!current) {
+      setError('Your Home finished, but this browser is no longer signed in — sign in and the club will show it.');
+      return;
+    }
+    if (!leg) {
+      setError('Your Home finished, but this browser no longer knows which club it was for. Open the club and try again.');
+      return;
+    }
+    setBusy(true);
+    api
+      .homeMembership(leg.clubId, { code: outcome.code, codeVerifier: outcome.codeVerifier, authOrigin: outcome.authOrigin, nonce: outcome.nonce, state: outcome.state, leg: leg.leg, ...(leg.member ? { member: leg.member } : {}) }, current.token)
+      .then((r) => {
+        setNotice(r.leg === 'invite' ? 'Invited at your Home — they can join the club from its page now.' : 'You are a member of this club at your Home now.');
+        goTo(clubHash(leg.clubId));
+      })
+      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'Could not finish the membership ceremony.'))
       .finally(() => setBusy(false));
   }, []);
 

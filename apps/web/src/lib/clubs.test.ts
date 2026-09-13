@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentOfPlayer,
   canInvite,
+  homeMembershipLabel,
+  membershipAtHome,
   canOpenTable,
   charterState,
   checkMember,
@@ -175,5 +178,33 @@ describe('closing a club', () => {
       'Thursday Night is closed. Its 2 tables were closed with it. Its Smart Agent is untouched and still yours, at your Home.',
     );
     expect(retiredLine({ name: 'The Long Game', tablesClosed: [] })).toBe('The Long Game is closed.');
+  });
+});
+
+describe('membership at the Home (the roster as a projection)', () => {
+  const club = { agent: '0x' + 'e'.repeat(40), createdBy: 'home:0x' + 'a'.repeat(40) };
+  const bob = 'home:0x' + 'b'.repeat(40);
+
+  it('is the host\'s own agent for the host, and nothing for an unchartered club', () => {
+    expect(membershipAtHome(club, { member: club.createdBy })).toBe('steward');
+    expect(membershipAtHome({ createdBy: club.createdBy }, { member: bob })).toBe('none');
+  });
+
+  it('reads the row\'s projection, and calls a chartered club\'s card-room-only member pending', () => {
+    expect(membershipAtHome(club, { member: bob })).toBe('pending');
+    expect(membershipAtHome(club, { member: bob, home: 'invited' })).toBe('invited');
+    expect(membershipAtHome(club, { member: bob, home: 'joined' })).toBe('joined');
+  });
+
+  it('has no Home errand for somebody with no agent', () => {
+    expect(membershipAtHome(club, { member: 'dev:carol' })).toBe('none');
+    expect(agentOfPlayer('dev:carol')).toBeNull();
+    expect(agentOfPlayer(bob)).toBe('0x' + 'b'.repeat(40));
+  });
+
+  it('says it in the row\'s word, and says nothing where there is nothing to say', () => {
+    expect(homeMembershipLabel('joined')).toBe('joined at Home');
+    expect(homeMembershipLabel('pending')).toBe('not yet at Home');
+    expect(homeMembershipLabel('steward')).toBe('');
   });
 });
