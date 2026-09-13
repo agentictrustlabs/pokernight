@@ -213,9 +213,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   RealtimeKit) decides who may start, join or end; the card room keeps the ROSTER, so for a `club` scope
   the Home asks `GET /clubs/:id/standing-of?agent=` (gated by the paired secret `CLUB_ROSTER_SECRET`, set on
   both workers; the Home's `CLUB_ROSTER_ORIGINS` names this card room) and cross-checks the club's workspace
-  agent against the scope's principal. The person acts with THEIR OWN Home session straight from the browser
-  (`lib/huddle.ts`, CSRF from the Home's `/auth/csrf`); the join's `authToken` goes to the browser SDK and
-  nowhere else. `components/huddle/` — `ClubHuddleProvider` (owns the call above every page, so walking
+  agent against the scope's principal. THE ROAD IS THROUGH THE CARD ROOM: a person who signed in through their
+  Home holds no Home bearer in this browser (the code exchange was server-side), so `POST
+  /clubs/:id/huddle/:op` (card-room session; the club's roster gates it) calls the Home server-to-server
+  under the paired secret, naming the member's agent; the join's `authToken` passes through once, is kept
+  and logged nowhere, and goes to the browser SDK. A dev session has no agent and cannot huddle. `components/huddle/` — `ClubHuddleProvider` (owns the call above every page, so walking
   club ↔ table does not hang up; mic, camera, screen are local), `ClubHuddleDock` (faces or initials,
   active speaker, remote audio on <audio>, cameras/screens on <video>), `HuddleAffordance` on the club page
   and in a club table's top bar. `HOME_A2A_ORIGIN` reaches the client as `config.home.a2aOrigin`; a club

@@ -54,7 +54,7 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
   const [screenOn, setScreenOn] = useState(false);
   const meetingRef = useRef(meeting);
   meetingRef.current = meeting;
-  const offered = huddlesOffered(config);
+  const offered = huddlesOffered(config, session);
 
   // The SDK's own view of the mic, the camera and the screen, mirrored into state so the dock re-renders.
   useEffect(() => {
@@ -69,12 +69,12 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
   }, [meeting]);
 
   const enter = useCallback(async (how: 'start' | 'join', scope: HuddleScope, scopeName: string) => {
-    if (!config || !session) { setError('Sign in first.'); return; }
+    if (!session) { setError('Sign in first.'); return; }
     if (current) { setError(`You are already in the ${current.scopeName} huddle — leave it first.`); return; }
     setBusy(how === 'start' ? 'Starting…' : 'Joining…'); setError(null);
     try {
       const display = session.name || 'Someone';
-      const r = how === 'start' ? await huddles.start(config, scope, display) : await huddles.join(config, scope, display);
+      const r = how === 'start' ? await huddles.start(session.token, scope, display) : await huddles.join(session.token, scope, display);
       if (!r.ok) { setError(r.error); return; }
       if (!r.run || !r.authToken) { setError(r.parks ?? 'No huddle to join.'); return; }
       // THE TOKEN: to the SDK, and out of scope. `r` is not kept.
@@ -85,7 +85,7 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setBusy(null); }
-  }, [config, session, current, initMeeting]);
+  }, [session, current, initMeeting]);
 
   const leave = useCallback(async () => {
     const m = meetingRef.current;
@@ -95,19 +95,19 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
     try { if (m?.self.audioEnabled) await m.self.disableAudio(); } catch { /* already off */ }
     try { await m?.leave(); } catch { /* the SDK may already be gone */ }
     const c = current; setCurrent(null); setMicOn(false); setCamOn(false); setScreenOn(false);
-    if (config && c) await huddles.leave(config, c.scope).catch(() => undefined);
-  }, [current, config]);
+    if (session && c) await huddles.leave(session.token, c.scope).catch(() => undefined);
+  }, [current, session]);
 
   const end = useCallback(async () => {
-    if (!config || !current) return;
+    if (!session || !current) return;
     setBusy('Ending…'); setError(null);
     try {
       const c = current;
       await leave();
-      const r = await huddles.end(config, c.scope);
+      const r = await huddles.end(session.token, c.scope);
       if (!r.ok) setError(r.error);
     } finally { setBusy(null); }
-  }, [config, current, leave]);
+  }, [session, current, leave]);
 
   // After a toggle the SDK's own flag is the truth (a permission prompt may be refused): read it back.
   const toggleMic = useCallback(async () => { const m = meetingRef.current; if (!m) return; try { if (m.self.audioEnabled) await m.self.disableAudio(); else await m.self.enableAudio(); } catch (e) { setError(e instanceof Error ? `Microphone: ${e.message}` : String(e)); } finally { setMicOn(!!meetingRef.current?.self.audioEnabled); } }, []);
@@ -117,18 +117,18 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
   // The Home's view of the run, every ten seconds: an ended huddle (the host ended it, or the room emptied)
   // is left here too, so the dock does not sit on a call that no longer exists.
   useEffect(() => {
-    if (!current || !config) return;
+    if (!current || !session) return;
     const t = setInterval(() => {
-      void huddles.get(config, current.scope).then((r) => {
+      void huddles.get(session.token, current.scope).then((r) => {
         if (!r.ok) return;
         if (!r.run || r.run.state === 'ended' || r.run.state === 'ending') { void leave(); return; }
         setCurrent((c) => (c ? { ...c, run: r.run! } : c));
       }).catch(() => undefined);
     }, 10_000);
     return () => clearInterval(t);
-  }, [current, config, leave]);
+  }, [current, session, leave]);
 
-  const peek = useCallback(async (scope: HuddleScope) => { if (!config || !offered) return null; const r = await huddles.get(config, scope).catch(() => null); return r && r.ok ? r.run : null; }, [config, offered]);
+  const peek = useCallback(async (scope: HuddleScope) => { if (!session || !offered) return null; const r = await huddles.get(session.token, scope).catch(() => null); return r && r.ok ? r.run : null; }, [session, offered]);
 
   const value = useMemo<HuddleCtx>(() => ({
     offered, current, meeting, busy, error, micOn, camOn, screenOn,

@@ -630,6 +630,43 @@ app.get('/clubs/:clubId/standing-of', async (c) => {
   return c.json({ agent: view?.agent ?? null, standing: standing === 'host' || standing === 'member' ? standing : 'none' });
 });
 
+/**
+ * A CLUB'S HUDDLE, FROM THE CARD ROOM (Home spec 378, `club` scope). The Home's huddle service decides who may
+ * start, join or end and Cloudflare carries the media; this route is the person's road to it: their card-room
+ * session says who they are (a Home sign-in carries their agent address), the club's roster says they belong,
+ * and the card room calls the Home server-to-server under the paired roster secret, naming them. What comes
+ * back — the run, and on start/join the ONE credential the browser SDK needs — is passed through once, kept
+ * nowhere and logged nowhere. A dev session has no agent and cannot huddle; a stranger to the club gets the
+ * same 404 the club gives a stranger for anything.
+ */
+app.post('/clubs/:clubId/huddle/:op', async (c) => {
+  const op = String(c.req.param('op') ?? '');
+  if (!['start', 'join', 'get', 'leave', 'end'].includes(op)) return c.json({ ok: false, error: 'unknown huddle operation' }, 404);
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ ok: false, error: 'unauthenticated' }, 401);
+  const clubId = c.req.param('clubId') ?? '';
+  const gate = await clubGate(c, clubId);
+  if (gate) return gate;
+  const a2a = (c.env.HOME_A2A_ORIGIN ?? '').trim().replace(/\/$/, '');
+  const secret = (c.env.CLUB_ROSTER_SECRET ?? '').trim();
+  if (!a2a || !secret) return c.json({ ok: false, error: 'huddles_not_configured' }, 503);
+  const address = 'address' in session ? String((session as { address?: string }).address ?? '').toLowerCase() : '';
+  if (!/^0x[0-9a-f]{40}$/.test(address)) return c.json({ ok: false, error: 'a huddle needs your own agent — sign in through your Home' }, 403);
+  const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(session.playerId)}`);
+  if (!res.ok) return c.json({ error: 'no such club' }, 404);
+  const view = (await res.json().catch(() => null)) as { name?: string; agent?: string } | null;
+  if (!view?.agent) return c.json({ ok: false, error: `${view?.name ?? 'this club'} has no agent of its own yet — a huddle needs the club chartered at its host's Home` }, 409);
+  const body = (await c.req.json().catch(() => ({}))) as { displayName?: string; key?: string };
+  const r = await fetch(`${a2a}/huddles/${op}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+    body: JSON.stringify({ actor: address, scope: { kind: 'club', principal: view.agent.toLowerCase(), id: clubId }, displayName: (body.displayName ?? session.name ?? '').toString().slice(0, 80), key: (body.key ?? '').toString().slice(0, 120) || `${op}:${address}:${Date.now()}` }),
+    signal: AbortSignal.timeout(20_000),
+  }).catch((e: unknown) => ({ ok: false, status: 502, json: async () => ({ ok: false, error: e instanceof Error ? e.message : String(e) }) }) as unknown as Response);
+  const out = (await r.json().catch(() => ({ ok: false, error: `the Home answered ${r.status}` }))) as Record<string, unknown>;
+  return c.json(out, (r.status >= 200 && r.status < 600 ? r.status : 502) as 200);
+});
+
 app.get('/clubs/:clubId', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
