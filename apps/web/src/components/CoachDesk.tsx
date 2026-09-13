@@ -36,6 +36,8 @@ export function CoachSection({
   adviser,
   coach,
   onAdviserChanged,
+  game = 'poker',
+  pickAdviser = true,
 }: {
   tableId: string;
   session: AppSession | null;
@@ -44,6 +46,10 @@ export function CoachSection({
   /** The coach service the adviser last answered through, when one has. */
   coach: string | null;
   onAdviserChanged: (a: AdviserRef) => void;
+  /** Which game's coaches are on offer, and which game's Home page hires them. */
+  game?: 'poker' | 'canasta';
+  /** Whether to mount the adviser picker here (the canasta coach panel carries its own). */
+  pickAdviser?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -51,9 +57,9 @@ export function CoachSection({
   const [hireable, setHireable] = useState(false);
   useEffect(() => {
     let alive = true;
-    api.coaches().then((r) => { if (alive) { setCoaches(r.coaches); setHireable(r.hireable); } }).catch(() => {});
+    api.coaches(game).then((r) => { if (alive) { setCoaches(r.coaches); setHireable(r.hireable); } }).catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [game]);
   const hire = async (name: string) => {
     if (!config || busy) return;
     setBusy(true); setErr(null);
@@ -64,7 +70,7 @@ export function CoachSection({
       setBusy(false);
     }
   };
-  const homeCoaches = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/coaches?game=poker` : null;
+  const homeCoaches = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/coaches?game=${game}` : null;
 
   return (
     <div className="side-section coach-section">
@@ -76,19 +82,19 @@ export function CoachSection({
           <li className={coach ? '' : 'missing'}>
             <span className="voice-role">it consults</span>
             <strong>{coach ?? 'no coach yet'}</strong>
-            <span className="hint">{coach ? 'reads your recorded hands under a grant you signed · its tokens' : 'until you hire one, your agent says so and the house answers'}</span>
+            <span className="hint">{coach ? `reads your recorded ${game === 'canasta' ? 'rounds' : 'hands'} under a grant you signed · its tokens` : 'until you hire one, your agent says so and the house answers'}</span>
           </li>
         ) : null}
       </ol>
 
-      {session ? <Adviser tableId={tableId} session={session} game="poker" adviser={adviser} onChanged={onAdviserChanged} /> : null}
+      {session && pickAdviser ? <Adviser tableId={tableId} session={session} game={game} adviser={adviser} onChanged={onAdviserChanged} /> : null}
 
       <div className="side-sub">
         <h3>{coach ? 'Change your coach' : 'Hire a coach'}</h3>
         <p className="hint">
           A coach is a service somebody runs. Hiring one happens at your Home, under Settings → Coaches: it names the coach
-          in your agent's playbook and you sign a grant that lets the coach read the hands recorded to your vault — and
-          nothing else. You can fire it there any time.
+          in your agent's playbook and you sign a grant that lets the coach read the {game === 'canasta' ? 'rounds' : 'hands'} recorded to your vault — and
+          nothing else. A coach knows one game: a hold’em coach is not a canasta coach. You can fire it there any time.
         </p>
         {coaches.length > 0 ? (
           <ul className="adviser-offers">
@@ -124,10 +130,13 @@ export function ReviewSection({
   myTurn = false,
   onHold,
   onWaiting,
+  game = 'poker',
 }: {
   session: AppSession | null;
   adviser: AdviserRef;
   coach: string | null;
+  /** Which game's cabinet the review reads — the review skill, the coach and the records are all per game. */
+  game?: 'poker' | 'canasta';
   /** This is the viewer's OWN practice table — the one place a review may hold the table while it runs. */
   mine?: boolean;
   paused?: boolean;
@@ -143,6 +152,7 @@ export function ReviewSection({
   const [review, setReview] = useState<(CoachReview & { days: number }) | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const voice = voiceOf(adviser, coach);
+  const unit = game === 'canasta' ? 'rounds' : 'hands';
 
   /**
    * A REVIEW TAKES A WHILE, AND THE CLOCK DOES NOT KNOW. At your own practice table the table is HELD for the
@@ -158,7 +168,7 @@ export function ReviewSection({
     if (held) onHold!(true);
     onWaiting?.({ what: 'review', who: voice ?? 'your agent' });
     try {
-      setReview(await api.reviewDays(days, '', session.token));
+      setReview(await api.reviewDays(days, '', session.token, game));
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Your agent could not review your hands.');
     } finally {
@@ -171,7 +181,7 @@ export function ReviewSection({
     if (!session || busy) return;
     setBusy('backfill'); setErr(null); setSent(null);
     try {
-      const r = await api.backfillHands(days, session.token);
+      const r = await api.backfillHands(days, session.token, game);
       setSent(r.note);
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Your past hands could not be sent.');
@@ -184,7 +194,7 @@ export function ReviewSection({
     <div className="side-section review-section">
       <h3>How have I been playing?</h3>
       <p className="hint">
-        Your agent asks the coach you hired; the coach reads the hands the card room recorded to your vault — every
+        Your agent asks the coach you hired; the coach reads the {unit} the card room recorded to your vault — every
         table, not just this one — and answers with the count behind each leak and one thing to change.
       </p>
       <div className="desk-row">
@@ -195,26 +205,69 @@ export function ReviewSection({
           </select>
         </label>
         <button type="button" className="primary" disabled={!session || !adviser || busy != null} onClick={() => void ask()} title={adviser ? undefined : 'Name your own agent as your adviser first'}>
-          {busy === 'review' ? 'Reviewing…' : `Review my hands${mine ? ' (holds the table)' : ''}`}
+          {busy === 'review' ? 'Reviewing…' : `Review my ${unit}${mine ? ' (holds the table)' : ''}`}
         </button>
       </div>
-      {!adviser ? <p className="hint">Name your own agent under People first — the house coach keeps no hands.</p> : null}
+      {!adviser ? <p className="hint">Name your own agent {pickAdviserWords(game)} first — the house coach keeps no {unit}.</p> : null}
       {err ? <div className="form-error">{err}</div> : null}
       {review ? (
         <div className="coach-ask-answer coach-review">
           <p className="coach-say" style={{ whiteSpace: 'pre-line' }}>{review.say}</p>
           {review.because ? <p className="coach-why">Next session: {review.because}</p> : null}
-          <p className="hint">— {review.source?.coach ? `${review.source.coach}, via ${review.source.displayName}` : review.source?.displayName ?? adviser?.displayName}, from your recorded hands of the last {review.days} day{review.days === 1 ? '' : 's'}</p>
+          <p className="hint">— {review.source?.coach ? `${review.source.coach}, via ${review.source.displayName}` : review.source?.displayName ?? adviser?.displayName}, from your recorded {unit} of the last {review.days} day{review.days === 1 ? '' : 's'}</p>
         </div>
       ) : null}
       <details className="side-more">
         <summary>A coach hired today has not seen yesterday</summary>
-        <p className="hint">Every hand you were dealt in that span, at every table here, sent to your own agent to keep — so the coach can read the sessions before it was hired.</p>
+        <p className="hint">Every {game === 'canasta' ? 'round' : 'hand'} you were dealt in that span, at every table here, sent to your own agent to keep — so the coach can read the sessions before it was hired.</p>
         <button type="button" disabled={!session || !adviser || busy != null} onClick={() => void backfill()}>
-          {busy === 'backfill' ? 'Sending…' : `Send my last ${days === 1 ? 'day' : `${days} days`} of hands to my agent`}
+          {busy === 'backfill' ? 'Sending…' : `Send my last ${days === 1 ? 'day' : `${days} days`} of ${unit} to my agent`}
         </button>
         {sent ? <p className="hint desk-sent" role="status">{sent}</p> : null}
       </details>
     </div>
+  );
+}
+
+const pickAdviserWords = (game: 'poker' | 'canasta'): string => (game === 'canasta' ? 'in the coach panel above' : 'under People');
+
+/**
+ * THE CANASTA COACH DESK — the arrangement and the review beside the canasta coach, in one panel. The canasta
+ * coach panel carries its own adviser picker and who's-who; this adds what it lacks: which coach the agent
+ * consults, how to hire or change one (per game — Carol's, not Bob's), and the review over the last N days
+ * of recorded rounds. Reads the adviser from the table so the review knows whether there is anybody to ask.
+ */
+export function CanastaCoachDesk({
+  tableId,
+  session,
+  config,
+  mine = false,
+  paused = false,
+  myTurn = false,
+  onHold,
+}: {
+  tableId: string;
+  session: AppSession | null;
+  config: AuthConfig | null;
+  mine?: boolean;
+  paused?: boolean;
+  myTurn?: boolean;
+  onHold?: (held: boolean) => void;
+}) {
+  const [adviser, setAdviser] = useState<AdviserRef>(null);
+  const [coach, setCoach] = useState<string | null>(null);
+  useEffect(() => {
+    if (!session) return;
+    let alive = true;
+    api.getAdviser(tableId, session.token).then((r) => { if (alive) setAdviser(r.adviser); }).catch(() => {});
+    api.coachStatus(session.token, 'canasta').then((r) => { if (alive) setCoach(r.coach); }).catch(() => {});
+    return () => { alive = false; };
+  }, [session, tableId]);
+  return (
+    <section className="panel desk">
+      <h2>Your canasta coach</h2>
+      <CoachSection tableId={tableId} session={session} config={config} adviser={adviser} coach={coach} onAdviserChanged={setAdviser} game="canasta" pickAdviser={false} />
+      <ReviewSection session={session} adviser={adviser} coach={coach} mine={mine} paused={paused} myTurn={myTurn} onHold={onHold} game="canasta" />
+    </section>
   );
 }

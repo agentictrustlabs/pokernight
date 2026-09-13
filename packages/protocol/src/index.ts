@@ -864,7 +864,16 @@ export const POKER_REVIEW_SKILL = 'poker.review';
  *  coach can be offered to somebody without one, once. Answered from the playbook and the person's own
  *  preferences; with an `answered` in the input, the answer is written down. No model, no coach on the hop. */
 export const POKER_COACH_SKILL = 'poker.coach';
+export const CANASTA_COACH_SKILL = 'canasta.coach';
 export const CANASTA_REVIEW_SKILL = 'canasta.review';
+
+/** The card room's per-game skill ids, by act — a table asks for ITS game's by name. */
+export const CARD_ROOM_SKILLS = {
+  poker: { advise: POKER_ADVISE_SKILL, record: POKER_RECORD_SKILL, review: POKER_REVIEW_SKILL, coach: POKER_COACH_SKILL },
+  canasta: { advise: CANASTA_ADVISE_SKILL, record: CANASTA_RECORD_SKILL, review: CANASTA_REVIEW_SKILL, coach: CANASTA_COACH_SKILL },
+} as const;
+export type CardRoomGame = keyof typeof CARD_ROOM_SKILLS;
+export const cardRoomGameOf = (x: unknown): CardRoomGame => (x === 'canasta' ? 'canasta' : 'poker');
 
 /**
  * THE ROUND, REPORTED: the final view as the seat saw it, and the game's own COUNTS of it.

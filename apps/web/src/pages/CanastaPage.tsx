@@ -26,6 +26,9 @@ import { canastaCue } from '../lib/cues';
 import { useCues } from '../lib/useCues';
 import { Toast } from '../components/Toast';
 import { PracticePanel } from '../components/PracticePanel';
+import { CanastaCoachDesk } from '../components/CoachDesk';
+import { CoachQuestion } from '../components/CoachQuestion';
+import type { AuthConfig } from '../lib/home';
 import { PileReveal } from '../components/PileReveal';
 import { RoundCurtain } from '../components/RoundCurtain';
 import { curtainFor } from '../lib/roundEnd';
@@ -43,9 +46,12 @@ export function CanastaPage({
   tableId,
   practice = false,
   session,
+  config = null,
   onSignOut,
 }: {
   tableId: string;
+  /** The Home this card room trusts — where a coach is hired. */
+  config?: AuthConfig | null;
   /**
    * Set the table up on arrival: take a seat, fill the other three, switch the coach on.
    *
@@ -396,6 +402,11 @@ export function CanastaPage({
               send={send}
             />
           ) : null}
+          {/* THE DESK: which coach your agent consults for canasta, hire or change one at your Home, and the
+              review over the last N days of recorded rounds — kept out of the turn-by-turn panel. */}
+          {mySeat != null && session ? (
+            <CanastaCoachDesk tableId={tableId} session={session} config={config} mine={mine} paused={paused} myTurn={state.view?.toAct === mySeat && !state.view?.result} onHold={setHeld} />
+          ) : null}
           {/* FILLING THE EMPTY SEATS is what makes canasta playable at all.
               Poker deals to two, so a person with one friend has a game. Canasta needs exactly four,
               so without somebody to sit in the other chairs a person alone cannot play — which is
@@ -447,6 +458,9 @@ export function CanastaPage({
         </aside>
       </div>
       <Toast error={state.error} onDismiss={onDismiss} />
+      {/* WANT A CANASTA COACH? Asked once, the first time a canasta table is opened — the hold'em question is
+          asked on arrival; a coach knows one game, so each game asks for itself. */}
+      <CoachQuestion session={session} config={config} game="canasta" />
     </>
   );
 }

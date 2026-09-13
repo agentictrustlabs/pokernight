@@ -388,20 +388,20 @@ export const api = {
    * coach you hired; the coach reads the hands recorded to your vault over that span (seven days unless you
    * say) and answers in its own name.
    */
-  reviewDays: (days: number, question: string, token: string) =>
-    request<CoachReview & { days: number }>(`/me/review?days=${days}${question ? `&q=${encodeURIComponent(question)}` : ''}`, {}, token),
+  reviewDays: (days: number, question: string, token: string, game: 'poker' | 'canasta' = 'poker') =>
+    request<CoachReview & { days: number }>(`/me/review?days=${days}&game=${game}${question ? `&q=${encodeURIComponent(question)}` : ''}`, {}, token),
   /** SEND MY PAST HANDS to my own agent, so a coach hired later can read them: every hand I was dealt in the
    *  last N days, at every table this card room can find me at, one record per hand, retried, never awaited. */
-  backfillHands: (days: number, token: string) =>
-    request<{ ok: true; days: number; agent: string; tables: number; found: number; queued: number; note: string }>(`/me/hands/backfill?days=${days}`, { method: 'POST' }, token),
+  backfillHands: (days: number, token: string, game: 'poker' | 'canasta' = 'poker') =>
+    request<{ ok: true; days: number; agent: string; tables: number; found: number; queued: number; note: string }>(`/me/hands/backfill?days=${days}&game=${game}`, { method: 'POST' }, token),
   /** DO I HAVE A COACH, AND HAVE I BEEN ASKED — from my own agent (playbook + my preferences record). */
-  coachStatus: (token: string) =>
-    request<{ agent: string | null; coach: string | null; hasGrant?: boolean; asked: { at: string; answer: 'hired' | 'later' | 'no' } | null; advertises?: boolean; note?: string }>('/me/coach', {}, token),
+  coachStatus: (token: string, game: 'poker' | 'canasta' = 'poker') =>
+    request<{ agent: string | null; coach: string | null; hasGrant?: boolean; asked: { at: string; answer: 'hired' | 'later' | 'no' } | null; advertises?: boolean; note?: string }>(`/me/coach?game=${game}`, {}, token),
   /** I answered the coach question. Written to my vault by my own agent, so it is asked once. */
-  coachAnswered: (answer: 'hired' | 'later' | 'no', token: string) =>
-    request<{ agent: string | null; coach: string | null; asked: { at: string; answer: string } | null }>('/me/coach/asked', { method: 'POST', body: JSON.stringify({ answer }) }, token),
-  /** The coaching services this card room offers for hire, each read from its card. */
-  coaches: () => request<{ coaches: CoachListing[]; hireable: boolean }>('/coaches'),
+  coachAnswered: (answer: 'hired' | 'later' | 'no', token: string, game: 'poker' | 'canasta' = 'poker') =>
+    request<{ agent: string | null; coach: string | null; asked: { at: string; answer: string } | null }>('/me/coach/asked', { method: 'POST', body: JSON.stringify({ answer, game }) }, token),
+  /** The coaching services this card room offers for hire, for one game, each read from its card. */
+  coaches: (game: 'poker' | 'canasta' = 'poker') => request<{ coaches: CoachListing[]; hireable: boolean }>(`/coaches?game=${game}`),
   /** The return leg of hiring a coach at your Home. */
   homeCoach: (body: HomeAuthBody, token: string) =>
     request<{ ok: true; coach: { name: string; agent?: string; grantHash?: string } }>('/me/coach', { method: 'POST', body: JSON.stringify(body) }, token),

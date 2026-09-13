@@ -137,7 +137,7 @@ new_sqlite_classes = ["ClubDO", "ClubIndexDO"]
 [env.faithnet.vars]
 # Coach SERVICES for hire (each a Smart Agent somebody custodies, advertising poker.advise). The hiring is
 # a ceremony at the person's Home; HOME_COACH_TEMPLATE names it once the Home supports it (unset ⇒ not offered).
-COACH_SERVICES = "bob-coach.svc"
+COACH_SERVICES = "bob-coach.svc,carol-coach.svc"
 # Where `atl:capabilities` lives — what an agent ANSWERS, read beside its served card (a release is a snapshot).
 AGENT_PROFILE_RESOLVER = "0xB03F7C06ad3274F584AB72794406D639c02A45e1"
 CHAIN_ID = "34348"

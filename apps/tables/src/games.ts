@@ -49,6 +49,41 @@ const canastaWithCoach: HostedGame = {
     const { say, because } = explainMove(view, seat, action);
     return { action, say, because };
   },
+  // THE FINISHED ROUND AS COUNTS, for the person's own agent to remember — from the seat's own final view,
+  // so nothing the seat could not see is counted. Canasta's counts are about SIDES as much as seats: two
+  // partners share every canasta and every score, so each seat carries its side's outcome (the memory
+  // skill says so). Keyed by the player id the view shows; the card room keeps none of it.
+  observeFor(state: unknown, seat: number): unknown {
+    const s = state as CanastaState;
+    const round = s.round;
+    if (!round?.result) return null;
+    const view = canastaViewFor(s, seat);
+    const r = round.result;
+    const subjects: Record<string, { you?: boolean; counters: Record<string, number> }> = {};
+    for (const st of view.seats) {
+      if (!st.playerId) continue;
+      const team = st.team;
+      const score = r.scores[team];
+      const other = r.scores[(1 - team) as 0 | 1];
+      const melds = view.melds[team];
+      subjects[st.playerId] = {
+        ...(st.seat === seat ? { you: true } : {}),
+        counters: {
+          rounds: 1,
+          roundsWon: score.total > other.total ? 1 : 0,
+          canastas: melds.filter((m) => m.canasta).length,
+          naturalCanastas: melds.filter((m) => m.canasta && m.natural).length,
+          wentOut: r.wentOut === st.seat ? 1 : 0,
+          concealed: r.wentOut === st.seat && r.concealed ? 1 : 0,
+          redThrees: view.redThrees[team],
+          inHandValue: -score.inHand,
+          opened: melds.length > 0 ? 1 : 0,
+          netScore: score.total,
+        },
+      };
+    }
+    return { game: 'canasta', round: view.roundNo, subjects };
+  },
 };
 
 /**

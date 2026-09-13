@@ -57,6 +57,8 @@ import {
   CANASTA_ADVISE_SKILL,
   CANASTA_RECORD_SKILL,
   CANASTA_REVIEW_SKILL,
+  CARD_ROOM_SKILLS,
+  cardRoomGameOf,
   POKER_ADVISE_SKILL,
   POKER_COACH_SKILL,
   agentNameToHost,
@@ -1371,14 +1373,19 @@ async function myAgentCard(c: Context<{ Bindings: Env }>, skill: string): Promis
  * card room carries the question and shows the answer; it holds no hands of yours and reads none.
  */
 app.get('/me/review', async (c) => {
-  const me = await myAgentCard(c, POKER_REVIEW_SKILL);
+  // PER GAME (`?game=canasta`): the review skill, the coach the person's agent consults, and the cabinet
+  // the coach reads are each the game's own; hold'em unless said.
+  const game = cardRoomGameOf(c.req.query('game'));
+  const skills = CARD_ROOM_SKILLS[game];
+  const me = await myAgentCard(c, skills.review);
   if (!me.ok) return c.json({ error: me.error }, me.status as 400);
   const days = Math.min(30, Math.max(1, Number(c.req.query('days') ?? 7) || 7));
   const q = (c.req.query('q') ?? '').trim();
-  const asked = await callReview(me.endpoint, { skill: POKER_REVIEW_SKILL, tableId: '', seat: -1, question: q || `How have I been playing over the last ${days} days? Name my two biggest leaks from my recorded hands, with the count behind each, and one thing to change next session.`, days }, a2aReviewTimeoutMs(c.env), c.env);
+  const unit = game === 'canasta' ? 'rounds' : 'hands';
+  const asked = await callReview(me.endpoint, { skill: skills.review, tableId: '', seat: -1, question: q || `How have I been playing over the last ${days} days? Name my two biggest leaks from my recorded ${unit}, with the count behind each, and one thing to change next session.`, days }, a2aReviewTimeoutMs(c.env), c.env);
   if (!asked.ok) return c.json({ error: `${me.displayName} could not review — ${asked.error}` }, 502);
   const { source: coach, ...review } = asked.output;
-  return c.json({ ...review, days, source: { agent: me.agentName, displayName: me.displayName, ...(coach ? { coach } : {}) } });
+  return c.json({ ...review, days, game, source: { agent: me.agentName, displayName: me.displayName, ...(coach ? { coach } : {}) } });
 });
 
 /**
@@ -1391,11 +1398,14 @@ app.get('/me/review', async (c) => {
 app.post('/me/hands/backfill', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const me = await myAgentCard(c, POKER_RECORD_SKILL);
+  const game = cardRoomGameOf(c.req.query('game'));
+  const me = await myAgentCard(c, CARD_ROOM_SKILLS[game].record);
   if (!me.ok) return c.json({ error: me.error }, me.status as 400);
   const days = Math.min(30, Math.max(1, Number(c.req.query('days') ?? 7) || 7));
   const since = Date.now() - days * 86_400_000;
-  const ids = new Set<string>([await practiceTableId(session.playerId, 'poker'), ...(await tablesAround(c.env, session.playerId, 'backfill'))]);
+  // The game's practice table plus every table around the person; a table of the OTHER game answers its
+  // own backfill with its own record skill, which the agent advertises too, so nothing is sent twice.
+  const ids = new Set<string>([await practiceTableId(session.playerId, game), ...(await tablesAround(c.env, session.playerId, 'backfill'))]);
   const tables: Array<{ tableId: string; found: number; queued: number }> = [];
   for (const tableId of [...ids].slice(0, 40)) {
     try {
@@ -1409,7 +1419,8 @@ app.post('/me/hands/backfill', async (c) => {
   }
   const queued = tables.reduce((n, t) => n + t.queued, 0);
   const found = tables.reduce((n, t) => n + t.found, 0);
-  return c.json({ ok: true, days, agent: me.agentName, tables: tables.length, found, queued, note: queued ? `${queued} hand${queued === 1 ? '' : 's'} on the way to ${me.agentName}; ask for a review in a minute or two.` : found ? 'those hands were already sent.' : `no hands of yours in the last ${days} days at the tables this card room knows.` });
+  const unit = game === 'canasta' ? 'round' : 'hand';
+  return c.json({ ok: true, days, game, agent: me.agentName, tables: tables.length, found, queued, note: queued ? `${queued} ${unit}${queued === 1 ? '' : 's'} on the way to ${me.agentName}; ask for a review in a minute or two.` : found ? `those ${unit}s were already sent.` : `no ${unit}s of yours in the last ${days} days at the tables this card room knows.` });
 });
 
 /**
@@ -1419,6 +1430,9 @@ app.post('/me/hands/backfill', async (c) => {
  * grants anything.
  */
 app.get('/coaches', async (c) => {
+  // PER GAME: a coach knows one game, and is listed for the one whose advise skill its card advertises.
+  const game = cardRoomGameOf(c.req.query('game'));
+  const skills = CARD_ROOM_SKILLS[game];
   const names = (c.env.COACH_SERVICES ?? '').split(',').map((s) => s.trim().toLowerCase()).filter((s) => /\.svc$/.test(s));
   const coaches = await Promise.all(names.map(async (agentName) => {
     try {
@@ -1427,14 +1441,14 @@ app.get('/coaches', async (c) => {
       const zone = (c.env.AGENT_CARD_ZONE ?? '').trim();
       const base = zone ? `${zone === 'localhost' || zone.endsWith('.localhost') ? 'http' : 'https'}://${agentNameToHost(agentName, zone)}` : resolveAgentBase(c.env, agentName);
       const card = await fetchAgentCard(base, a2aTimeoutMs(c.env));
-      if (!card.ok || !hasActSkill(card.card, POKER_ADVISE_SKILL)) return null;
+      if (!card.ok || !hasActSkill(card.card, skills.advise)) return null;
       const listed = (card.card.skills ?? []).filter((s): s is NonNullable<typeof s> => s != null);
-      const skills = listed.map((s) => s.id);
-      const advise = listed.find((s) => s.id === POKER_ADVISE_SKILL);
-      return { agentName, displayName: card.card.name ?? agentName, description: advise?.description ?? card.card.description ?? '', skills, reviews: skills.includes(POKER_REVIEW_SKILL) };
+      const ids = listed.map((s) => s.id);
+      const advise = listed.find((s) => s.id === skills.advise);
+      return { agentName, displayName: card.card.name ?? agentName, description: advise?.description ?? card.card.description ?? '', skills: ids, reviews: ids.includes(skills.review), game };
     } catch { return null; }
   }));
-  return c.json({ coaches: coaches.filter((x): x is NonNullable<typeof x> => x !== null), hireable: !!(c.env.HOME_COACH_TEMPLATE ?? '').trim() });
+  return c.json({ game, coaches: coaches.filter((x): x is NonNullable<typeof x> => x !== null), hireable: !!(c.env.HOME_COACH_TEMPLATE ?? '').trim() });
 });
 
 /**
@@ -1465,7 +1479,8 @@ app.post('/me/coach', async (c) => {
  * different browser or a different card room deployment does not ask again.
  */
 app.get('/me/coach', async (c) => {
-  const me = await myAgentCard(c, POKER_COACH_SKILL);
+  const game = cardRoomGameOf(c.req.query('game'));
+  const me = await myAgentCard(c, CARD_ROOM_SKILLS[game].coach);
   if (!me.ok) {
     // AN AGENT WITHOUT THE CARD-ROOM SKILLS has no coach either — it cannot even be asked. Said as a fact with
     // the agent's name (a 200, not a refusal), so the screen can still offer a coach and say what the agent
@@ -1474,23 +1489,24 @@ app.get('/me/coach', async (c) => {
       const session = await resolveSession(c.env, sessionToken(c.req.raw));
       const home = session && 'address' in session ? (session as { address?: string; agentName?: string }) : null;
       const agentName = (home?.address ? await nameOfAgent(c.env, home.address) : null) ?? (home?.agentName && looksLikeAgentName(home.agentName) ? home.agentName : null);
-      return c.json({ agent: agentName, coach: null, asked: null, advertises: false, note: me.error });
+      return c.json({ agent: agentName, coach: null, asked: null, advertises: false, note: me.error, game });
     }
-    return c.json({ error: me.error, coach: null, asked: null, agent: null }, me.status as 400);
+    return c.json({ error: me.error, coach: null, asked: null, agent: null, game }, me.status as 400);
   }
-  const r = await callCoachStatus(me.endpoint, { skill: POKER_COACH_SKILL }, a2aTimeoutMs(c.env), c.env);
-  if (!r.ok) return c.json({ error: r.error, coach: null, asked: null, agent: me.agentName }, 502);
-  return c.json({ ...r.output, agent: me.agentName, advertises: true });
+  const r = await callCoachStatus(me.endpoint, { skill: CARD_ROOM_SKILLS[game].coach }, a2aTimeoutMs(c.env), c.env);
+  if (!r.ok) return c.json({ error: r.error, coach: null, asked: null, agent: me.agentName, game }, 502);
+  return c.json({ ...r.output, agent: me.agentName, advertises: true, game });
 });
 
 /** You answered the coach question — hired, later, or no. Written to your vault by your own agent; asked once. */
 app.post('/me/coach/asked', async (c) => {
-  const body = (await c.req.json().catch(() => null)) as { answer?: unknown } | null;
+  const body = (await c.req.json().catch(() => null)) as { answer?: unknown; game?: unknown } | null;
   const answer = body?.answer === 'hired' || body?.answer === 'later' || body?.answer === 'no' ? body.answer : null;
   if (!answer) return c.json({ error: 'answer must be hired, later or no' }, 400);
-  const me = await myAgentCard(c, POKER_COACH_SKILL);
+  const game = cardRoomGameOf(body?.game);
+  const me = await myAgentCard(c, CARD_ROOM_SKILLS[game].coach);
   if (!me.ok) return c.json({ error: me.error }, me.status as 400);
-  const r = await callCoachStatus(me.endpoint, { skill: POKER_COACH_SKILL, answered: answer }, a2aTimeoutMs(c.env), c.env);
+  const r = await callCoachStatus(me.endpoint, { skill: CARD_ROOM_SKILLS[game].coach, answered: answer }, a2aTimeoutMs(c.env), c.env);
   if (!r.ok) return c.json({ error: r.error }, 502);
   return c.json({ ...r.output, agent: me.agentName });
 });

@@ -16,9 +16,10 @@ import { api } from '../lib/api';
 import { readHomeSession, type AuthConfig } from '../lib/home';
 
 /** Where "asked" lives for an agent that cannot yet keep it: this browser, keyed by the agent. */
-const ASKED_KEY = (agent: string) => `pokernight.coach.asked:${agent.toLowerCase()}`;
+const ASKED_KEY = (agent: string, game: string) => `pokernight.coach.asked:${game === 'poker' ? '' : `${game}:`}${agent.toLowerCase()}`;
 
-export function CoachQuestion({ session, config }: { session: AppSession | null; config: AuthConfig | null }) {
+/** ASKED ONCE PER GAME: the hold'em question on arrival, the canasta one when a canasta table is first opened. */
+export function CoachQuestion({ session, config, game = 'poker' }: { session: AppSession | null; config: AuthConfig | null; game?: 'poker' | 'canasta' }) {
   const [show, setShow] = useState<{ agent: string; advertises: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [settingUp, setSettingUp] = useState<string | null>(null);
@@ -42,13 +43,13 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
           } catch { setSettingUp(null); }
         })()
       : Promise.resolve();
-    defaults.then(() => api.coachStatus(session.token))
+    defaults.then(() => api.coachStatus(session.token, game))
       .then((r) => {
         if (!alive || !r.agent || r.coach !== null || r.asked !== null) return;
         // An agent WITHOUT the card-room skills cannot keep the answer in its person's vault yet, so the
         // browser keeps it until it can — and the sheet says what the agent is missing.
         if (r.advertises === false) {
-          try { if (localStorage.getItem(ASKED_KEY(r.agent))) return; } catch { /* ask anyway */ }
+          try { if (localStorage.getItem(ASKED_KEY(r.agent, game))) return; } catch { /* ask anyway */ }
         }
         setShow({ agent: r.agent, advertises: r.advertises !== false });
       })
@@ -56,7 +57,7 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
     return () => {
       alive = false;
     };
-  }, [session]);
+  }, [session, game]);
   if (settingUp && !show) {
     return <div className="toast" role="status"><div>{settingUp}</div></div>;
   }
@@ -66,8 +67,8 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
     if (busy) return;
     setBusy(true);
     try {
-      if (show.advertises) await api.coachAnswered(a, session.token);
-      else { try { localStorage.setItem(ASKED_KEY(show.agent), `${a}@${new Date().toISOString()}`); } catch { /* then it is asked again next time */ } }
+      if (show.advertises) await api.coachAnswered(a, session.token, game);
+      else { try { localStorage.setItem(ASKED_KEY(show.agent, game), `${a}@${new Date().toISOString()}`); } catch { /* then it is asked again next time */ } }
     } catch {
       /* the sheet still closes; the question may come back next visit, which is the honest outcome */
     } finally {
@@ -76,23 +77,25 @@ export function CoachQuestion({ session, config }: { session: AppSession | null;
     }
   };
   const homeCaps = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/capabilities` : null;
-  const homeCoaches = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/coaches?game=poker` : null;
+  const homeCoaches = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/coaches?game=${game}` : null;
+  const gameLabel = game === 'canasta' ? 'canasta' : 'hold’em';
+  const skills = game === 'canasta' ? ['canasta.advise', 'canasta.record', 'canasta.review', 'canasta.coach'] : ['poker.advise', 'poker.record', 'poker.review', 'poker.coach'];
 
   return (
     <div className="sheet-backdrop" role="presentation">
       <div className="sheet coach-question" role="dialog" aria-modal="true" aria-labelledby="coachq-title">
-        <h2 id="coachq-title">Want a coach at the table?</h2>
+        <h2 id="coachq-title">Want a {gameLabel} coach at the table?</h2>
         <p>
-          Your agent <code>{show.agent}</code> can answer at the table, but it has no coach to consult yet. A coach is a
-          service somebody runs: it reads the hands the card room records to your vault — under a grant you sign, and
-          nothing else — and advises you in its own name, on its own tokens. You pick one per game at your Home, and you
-          can fire it there any time.
+          Your agent <code>{show.agent}</code> can answer at the table, but it has no {gameLabel} coach to consult yet. A
+          coach is a service somebody runs: it reads the {game === 'canasta' ? 'rounds' : 'hands'} the card room records
+          to your vault — under a grant you sign, and nothing else — and advises you in its own name, on its own tokens.
+          You pick one per game at your Home, and you can fire it there any time.
         </p>
         {!show.advertises ? (
           <p className="hint">
             First, your agent needs the card room’s skills on its card — at your Home, under{' '}
             {homeCaps ? <a href={homeCaps} target="_blank" rel="noreferrer">Capabilities</a> : 'Capabilities'}, add{' '}
-            <code>poker.advise</code>, <code>poker.record</code>, <code>poker.review</code>, <code>poker.coach</code>, publish, and release the card. Until then the house coach answers for you, and this answer is kept in this browser only.
+            {skills.map((sk, i) => <span key={sk}><code>{sk}</code>{i < skills.length - 1 ? ', ' : ''}</span>)}, publish, and release the card. Until then the house coach answers for you, and this answer is kept in this browser only.
           </p>
         ) : null}
         <div className="sheet-actions">
