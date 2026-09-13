@@ -163,7 +163,10 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   language-model coach named a two-card canasta meld and the person got `illegal-action` for pressing it.
   **THE CANASTA SIDE IS THE SAME SHAPE** (`components/CanastaSide.tsx`), plus a SEAT BAR above the coach
   card that is always on screen: which seat, whose side, sit back in, and LEAVE — the leave button used to
-  be three panels down. The canasta coach card hands up `CanastaArrangement`; `VoiceSettings` is exported
+  be three panels down. The hold'em page has the same bar (seat, stack, sit out / back in, leave).
+  **A NEW PERSON ARRIVES READY TO PLAY**: the Home's connect-time defaults make them a money account when
+  they have none (`CLIENT_DEFAULTS.pokernight.treasury`), and `App.tsx` runs `quick-start` once on
+  arrival (find + seed the play coin, no signature) — what is left is the buy-in mandate, theirs to sign. The canasta coach card hands up `CanastaArrangement`; `VoiceSettings` is exported
   from `Coach.tsx` and lives on the Table tab.
   **THE HOLD'EM SIDE IS TWO THINGS: the coach card and one panel of tabs.** `PokerCoach` is about THE
   HAND — mode, wait, advice, move, whose voice in one line — and hands everything else up

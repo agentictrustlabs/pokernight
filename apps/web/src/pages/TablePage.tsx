@@ -20,6 +20,7 @@ import { Table } from '../components/Table';
 import { drawsGame } from '../lib/games';
 import { Toast } from '../components/Toast';
 import { PokerCoach, type Arrangement } from '../components/PokerCoach';
+import { useLeaveTable } from '../lib/useLeaveTable';
 import { TableSide } from '../components/TableSide';
 import { whoIsWho } from '../lib/whoIsWho';
 import type { CoachStatus } from '../lib/api';
@@ -167,6 +168,9 @@ export function TablePage({
 
   /** The viewer's own seat. `viewerSeat` is the table's answer, so it is never inferred from a name. */
   const mySeat = state.view?.viewerSeat ?? null;
+  /** The seat bar's own leave — the same hook the board's controls use; two buttons, one act. */
+  const { leaving, leave } = useLeaveTable(mySeat != null, () => send({ type: 'leave' }));
+  const meAtTable = mySeat != null ? state.view?.seats.find((x) => x.seat === mySeat) ?? null : null;
 
   /**
    * HOLD OR RELEASE THE TABLE — one door, requests in order. The screen changes at once (it is saying
@@ -335,6 +339,23 @@ export function TablePage({
             something else shows the one panel that is true and none of the ones that are not. */}
         {drawable ? (
         <aside className="side">
+          {/* THE SEAT BAR: one line that is always on screen — which seat, the stack, sit out or back in, and
+              LEAVE. The board's controls row has a leave button too, under the action bar; at the top of the
+              column it is the one people look for. */}
+          {mySeat != null && meAtTable ? (
+            <div className={`seat-bar${meAtTable.status === 'sitting-out' ? ' out' : ''}`} role="group" aria-label="Your seat">
+              <span className="seat-bar-who">
+                <strong>Seat {mySeat + 1}</strong> · <span className="num">{meAtTable.stack}</span> chips
+                {meAtTable.status === 'sitting-out' ? <span className="hint"> · sitting out</span> : null}
+              </span>
+              {meAtTable.status === 'sitting-out'
+                ? <button type="button" className="primary" onClick={() => send({ type: 'sit-in' })}>Sit back in</button>
+                : <button type="button" onClick={() => send({ type: 'sit-out' })}>Sit out</button>}
+              <button type="button" className="seat-bar-leave" disabled={leaving} onClick={leave}>
+                {leaving ? 'Leaving…' : 'Leave table'}
+              </button>
+            </div>
+          ) : null}
           {/* THE COACH IS FIRST, the same place canasta's is.
               It used to sit under the money panels and be rendered ONLY for somebody already holding a
               seat — so a person who arrived at a table and had not sat down yet, or who reached it by

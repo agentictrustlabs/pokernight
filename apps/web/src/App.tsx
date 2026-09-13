@@ -145,6 +145,18 @@ export function App() {
     return () => removeEventListener('storage', onStorage);
   }, [endSession]);
 
+  // THE STAKE, SET UP ON ARRIVAL. A person who signed in through their Home has a money account made in
+  // the connect ceremony; the rest of "getting ready" — finding it, seeding it with the play coin — needs
+  // no signature and no screen, so it runs once here rather than waiting for the first money table to say
+  // "Set up your stake". What is left after this is the one thing that IS theirs to sign: the buy-in
+  // mandate, and the table asks for that by name. Best-effort and silent: the panel remains the recovery path.
+  useEffect(() => {
+    if (!session || session.via === 'dev') return;
+    const key = `pokernight.stake.ran:${session.token.slice(-16)}`;
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch { /* run anyway */ }
+    void api.quickStart(session.token).catch(() => {});
+  }, [session]);
+
   // Any route refusing a token we sent means this session is over, wherever we were standing.
   useEffect(() => {
     setUnauthorizedHandler(() => {
