@@ -74,6 +74,10 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   `LobbyDO`, which is what keeps it out of every listing; it always settles play money; and its
   owner may `POST /tables/:id/reset` to deal again, which KEEPS THE SEATS and throws the scores
   away. A reset at any other table is refused by the object, whoever asks.
+- **A TURN IS NINETY SECONDS in both games (2026-09-13; hold'em's was 30 s).** A person reading a coach's word,
+  or waiting the 15–20 s their own agent takes to write it, was sat out by a clock meant for somebody else.
+  `packages/engine` `DEFAULT_CONFIG.actionTimeoutMs`, `packages/canasta` `DEFAULT_CONFIG.turnMs`; a table is
+  pinned to its clock at creation.
 - **AGENT MOVES ARE PACED, and the pause is spent AFTER the agent has answered.** An agent replies in
   a couple of hundred milliseconds, so three of them take a whole lap between two frames and a
   person sees results without ever seeing the moves. `AGENT_PACE_MS` (default 2800) delays the

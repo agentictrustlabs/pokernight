@@ -29,7 +29,9 @@ export const DEFAULT_CONFIG: TableConfig = {
   ante: 0,
   minBuyIn: 40,
   maxBuyIn: 200,
-  actionTimeoutMs: 30_000,
+  // NINETY SECONDS, like canasta's. Thirty fit a pro; a person reading a coach's word, or waiting the 15–20 s
+  // their own agent takes to write it, was sat out by a clock meant for somebody else (2026-09-13).
+  actionTimeoutMs: 90_000,
 };
 
 const EMPTY_LEGAL: LegalActions = { fold: false, check: false, call: null, bet: null, raise: null, allIn: 0 };

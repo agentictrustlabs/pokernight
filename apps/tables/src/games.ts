@@ -244,12 +244,11 @@ export function gameFor(id: GameId | undefined): HostedGame {
 /**
  * WHAT A PRACTICE TABLE IS SET TO, per game — one place, read on creation AND on "start over".
  *
- * Poker's default 30 s turn is right for a money table and wrong for the one table that exists to
- * be learnt at: reading the advice, and the 15–20 s a person's own agent at their Home takes to write
- * it, do not fit inside it. Canasta already runs 90 s by default for the same reason. `reset` used to
- * rebuild from `{}`, so a practice table dealt again went back to the money clock — the setting was
- * true for exactly one game per table.
+ * Both games run a 90 s turn by default now (2026-09-13; poker's was 30 s, and a person reading a
+ * coach's word or waiting for their own agent to write it was sat out by it), so a practice table needs
+ * nothing of its own. Kept as the one place a practice setting would go; `reset` reads it too, so a
+ * practice table dealt again keeps whatever it says.
  */
-export function practiceConfigFor(id: GameId | undefined): Record<string, unknown> {
-  return (id ?? DEFAULT_GAME) === POKER_GAME_ID ? { actionTimeoutMs: 60_000 } : {};
+export function practiceConfigFor(_id: GameId | undefined): Record<string, unknown> {
+  return {};
 }
