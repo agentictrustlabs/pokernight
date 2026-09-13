@@ -136,7 +136,20 @@ export function Coach({
     let alive = true;
     api
       .getAdviser(tableId, session.token)
-      .then((r) => alive && setAdviser(r.adviser))
+      .then(async (r) => {
+        if (!alive) return;
+        if (r.adviser) { setAdviser(r.adviser); return; }
+        // YOUR OWN AGENT IS THE ADVISER BY DEFAULT WHEN IT HAS A CANASTA COACH — the hold'em board's rule, for the
+        // same reason: a person whose Home bound Carol's coach to their agent must not arrive "advised by the house
+        // coach" and go looking for the picker. Once per table; choosing the house afterwards is kept (the cleared
+        // mark); a dev session has no agent to appoint.
+        if (session.via === 'dev') return;
+        try { if (sessionStorage.getItem(`pokernight.adviser.cleared:${tableId}`)) return; } catch { /* appoint anyway */ }
+        const st = await api.coachStatus(session.token, 'canasta').catch(() => null);
+        if (!alive || !st?.agent || !st.coach || st.advertises === false) return;
+        const named = await api.setAdviser(tableId, st.agent, session.token).catch(() => null);
+        if (alive && named?.adviser) setAdviser(named.adviser);
+      })
       .catch(() => {});
     return () => {
       alive = false;

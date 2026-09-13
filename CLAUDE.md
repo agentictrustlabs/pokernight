@@ -231,6 +231,21 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   the grant) leaves nothing of hers behind. Estate: `charter-coach.mts bob bob-coach`,
   `bind-coach-specialist.mts alice bob-coach.svc`, `seed-cardroom-style.mts`, `add-cardroom-skills.mts
   --service bob-coach.svc --by bob`; the registry archetype is `holdem-coach-bob` (texas-holdem).
+- **ONE CABINET PER GAME, ONE COACH PER GAME (2026-09-13).** Canasta has its own coach service —
+  `carol-coach.svc`, custodied by carol.me, archetype `canasta-coach-carol` in the registry's `canasta`
+  context — hired the same way Bob is, and consulted the same way: the table addresses the person's own
+  agent with `canasta.advise`, the agent consults the specialist its playbook names for THAT skill under a
+  grant scoped to canasta's records. Hold'em's study records keep the bare names (`cardroom.hand`, …);
+  every other game's carry the family — `cardroom.canasta.hand`, `.hands:<day>`, `.style`, `.read`,
+  `.note` — so a hold'em grant covers nothing of canasta's and a canasta round never resets the hold'em
+  counts. The card room's coach routes take `?game=` (`/coaches`, `/me/coach`, `/me/coach/asked`,
+  `/me/review`, `/me/hands/backfill`; `CARD_ROOM_SKILLS` in the protocol names the four skills per game),
+  `COACH_SERVICES` lists both coaches, and canasta's `observeFor` counts a finished round from the seat's
+  final view (rounds, roundsWon, canastas, naturalCanastas, wentOut, concealed, redThrees, inHandValue,
+  opened, netScore — per seat, with its side's outcome). The web asks "want a coach?" once PER GAME
+  (canasta's when a canasta table is first opened), auto-appoints the person's own agent at a canasta
+  table when it has a canasta coach, and the canasta page carries a coach desk. Proven live: Alice's
+  practice canasta table → "carol-coach.svc, via alice.me" with Carol's doctrine in the words.
 - **A FINISHED ROUND IS RECORDED TO THE PERSON'S OWN AGENT — A VAULT PUT, NO MODEL, NEVER TO THE
   COACH.** `TableGame.observeFor?(state, seat)` is the other end of `readFor`: the round as the seat
   saw it, IN COUNTS — vpip, pfr, three-bet, fold-to-bet, c-bet, showdowns, won, net — keyed by the

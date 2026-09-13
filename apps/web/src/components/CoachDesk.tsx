@@ -71,14 +71,16 @@ export function CoachSection({
     }
   };
   const homeCoaches = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/coaches?game=${game}` : null;
+  // A person's own agent is a `.me`; a house persona is a `.svc` and consults nobody — the chain has one link then.
+  const ownAgent = !!adviser && /\.me$/i.test(adviser.agentName);
 
   return (
     <div className="side-section coach-section">
       {/* THE CHAIN, DRAWN: the table asks your agent; your agent consults the coach. One row per link, so
           "who is answering me?" is read off the picture rather than worked out from two names matching. */}
       <ol className="voice-chain" aria-label="Who advises you here">
-        <li><span className="voice-role">table asks</span><strong>{adviser ? adviser.displayName : 'the house coach'}</strong><span className="hint">{adviser ? 'your own agent, at your Home' : 'one strategy, the same for everybody, free'}</span></li>
-        {adviser ? (
+        <li><span className="voice-role">table asks</span><strong>{adviser ? adviser.displayName : 'the house coach'}</strong><span className="hint">{adviser ? (ownAgent ? 'your own agent, at your Home' : 'a house player — rules-based, free; it consults nobody') : 'one strategy, the same for everybody, free'}</span></li>
+        {adviser && ownAgent ? (
           <li className={coach ? '' : 'missing'}>
             <span className="voice-role">it consults</span>
             <strong>{coach ?? 'no coach yet'}</strong>
@@ -103,7 +105,7 @@ export function CoachSection({
                 <div className="adviser-offer">
                   <strong>{c.displayName}</strong>{c.displayName !== c.agentName ? <> <code>{c.agentName}</code></> : null}
                   <span className="who-tag agent">language model · its own tokens</span>
-                  {c.description && c.description !== 'poker.advise' ? <span className="hint">{c.description}</span> : null}
+                  {c.description && !/^[a-z]+\.[a-z]+$/i.test(c.description) ? <span className="hint">{c.description}</span> : null}
                   {hireable && config ? <button type="button" className="link-button" disabled={busy} onClick={() => void hire(c.agentName)}>Hire from here</button> : null}
                 </div>
               </li>
