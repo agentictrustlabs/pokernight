@@ -427,10 +427,9 @@ export function CanastaPage({
               scoreboard={state.view ? { scores: state.view.scores, target: state.view.target } : null}
               nameOf={nameOf}
               players={state.players}
-              /* EVERY TABLE OPENS IN "TELL ME" — the same rule as hold'em's board, for the same
-                 reason: it explains and leaves the move to you, wherever you sit, until you choose
-                 otherwise. */
-              startOn="watch"
+              /* EVERY TABLE OPENS QUIET — "don't ask" — except your own practice table, which exists to be
+                 talked through and opens in "ask every turn"; the same rule as hold'em's board. */
+              startOn={mine ? 'watch' : 'off'}
               send={send}
               onArrangement={setArrangement}
             />

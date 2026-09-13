@@ -111,6 +111,9 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   count it as attention, and `anybodyAttending()` is now a person's own input within `ATTENTION_MS` (a seated
   human sends something every turn or the clock sits them out) — `test/attention.test.ts`. Both coach
   panels also switch OFF after ten minutes without a pointer, key, wheel or touch (`useUserIdle`), saying why.
+  **THE COACH IS QUIET UNLESS ASKED (2026-09-13).** Modes: "Don't ask", "Ask on demand" (a word only when
+  you press Ask), "Ask every turn", "Play for me". Every table opens in "Don't ask" except your own practice
+  table, which exists to be talked through and opens in "Ask every turn".
   **NOBODY LOOKING, NOBODY ASKED — and sat out means off.** The coach panels (`PokerCoach`, `Coach`)
   do not ask an adviser while `document.visibilityState` is hidden, and switch themselves OFF when
   the person's seat is sat out for timeouts, saying why; the person presses "Tell me" to turn it back

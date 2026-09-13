@@ -380,11 +380,11 @@ export function TablePage({
             ctx={ctx}
             players={state.players}
             paused={paused}
-            /* A PLAY-MONEY TABLE OPENS IN "ASK EVERY TURN": it explains and leaves the move to you until you
-               choose otherwise. A MONEY TABLE OPENS QUIET — "don't ask" — because a coach that spoke up on
-               every turn of a settled game was a running commentary nobody asked for, and a named adviser's
-               tokens spent on a game the person came to play themselves; "ask on demand" is one press away. */
-            startOn={settles ? 'off' : 'watch'}
+            /* EVERY TABLE OPENS QUIET — "don't ask" — except your own practice table, which exists to be
+               talked through and opens in "ask every turn". A coach that spoke up on every turn of a game the
+               person came to play was a running commentary nobody asked for, and a named adviser's tokens;
+               "ask on demand" is one press away at any table. */
+            startOn={mine ? 'watch' : 'off'}
             mine={mine}
             onStatus={setCoachStatus}
             onArrangement={setArrangement}
