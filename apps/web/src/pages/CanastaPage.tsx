@@ -17,6 +17,8 @@ import { Identity } from '../components/Identity';
 import { useLeaveTable } from '../lib/useLeaveTable';
 import { PRODUCT_NAME } from '../lib/brand';
 import { clubHash } from '../lib/routes';
+import { useClubScope } from '../lib/useClubScope';
+import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { fillOutcome, seatsToFill, type FillPlan } from '../lib/fillSeats';
 import { CanastaTable } from '../components/CanastaTable';
 import { CanastaLog } from '../components/CanastaLog';
@@ -81,6 +83,7 @@ export function CanastaPage({
   const [mine, setMine] = useState(false);
   /** The club this table belongs to, if any — so the screen can say who can see it. */
   const [club, setClub] = useState<{ id: string; name: string } | null>(null);
+  const clubScope_ = useClubScope(club, session?.token ?? null);
   /** How long each agent's move waits before it lands. Read from the table, changed by the slider. */
   const [pace, setPace] = useState(3500);
   /**
@@ -326,6 +329,8 @@ export function CanastaPage({
               {club.name}
             </a>
           ) : null}
+          {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}
+          {club ? <HuddleAffordance scope={clubScope_} scopeName={club.name} compact /> : null}
 
           {state.view ? <span className="num">round #{state.view.roundNo}</span> : null}
         </span>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AppSession } from './lib/types';
 import { ApiError, api, loadSession, saveSession, setUnauthorizedHandler } from './lib/api';
 import { SESSION_KEY } from './lib/ssoLogout';
@@ -23,6 +23,8 @@ import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
 import { NewBuild } from './components/NewBuild';
 import { CoachQuestion } from './components/CoachQuestion';
+import { ClubHuddleProvider } from './components/huddle/ClubHuddleProvider';
+import { ClubHuddleDock } from './components/huddle/ClubHuddleDock';
 import { Identity } from './components/Identity';
 import { JoinPage } from './pages/JoinPage';
 import { TableRoute } from './pages/TableRoute';
@@ -388,8 +390,17 @@ export function App() {
     if (session && r.page === 'signin') goTo(HOME_HASH);
   }, [session, r.page]);
 
+  // THE CLUB HUDDLE lives above every page — the provider owns the browser call, the dock sits over the
+  // content — so walking from a club to one of its tables and back does not hang up (spec 378 §1).
+  const huddled = (node: ReactNode) => (
+    <ClubHuddleProvider session={session} config={config}>
+      {node}
+      <ClubHuddleDock />
+    </ClubHuddleProvider>
+  );
+
   if (r.page === 'join') {
-    return (
+    return huddled(
       <div className="app">
         <CardDefs />
         <div className="topbar">
@@ -407,7 +418,7 @@ export function App() {
   }
 
   if (r.page === 'table') {
-    return (
+    return huddled(
       <div className="app">
         <CardDefs />
         <TableRoute tableId={r.tableId} practice={r.practice === true} session={session} config={config} onSignOut={signOut} />
@@ -419,7 +430,7 @@ export function App() {
   // anybody — which is the only way a signed-in reader can get at the product explanation at all.
   const showLanding = (r.page === 'home' && !session) || r.page === 'about';
 
-  return (
+  return huddled(
     <div className="app">
       <CardDefs />
       <NewBuild />

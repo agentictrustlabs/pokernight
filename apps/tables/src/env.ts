@@ -68,6 +68,15 @@ export interface Env {
   /** The Home's coach-hire template name, when this deployment's Home supports it. Unset ⇒ hiring is not offered. */
   HOME_COACH_TEMPLATE?: string;
   /**
+   * CLUB HUDDLES (Home spec 378, club scope). The Home's huddle service asks this card room who is on a
+   * club's roster before it admits somebody to the club's huddle; this secret is what it presents. Set
+   * with `wrangler secret put CLUB_ROSTER_SECRET --env faithnet` here and on the Home's A2A worker
+   * (`CLUB_ROSTER_SECRET`). Unset ⇒ the roster read answers nobody, and club huddles admit nobody.
+   */
+  CLUB_ROSTER_SECRET?: string;
+  /** The Home's A2A worker origin the browser talks to for huddles — `https://a2a.faithnet.io` (`/config` carries it). */
+  HOME_A2A_ORIGIN?: string;
+  /**
    * How long an agent's answer WAITS before it is applied, in ms. Default 1400; 0 disables.
    *
    * An agent answers in a couple of hundred milliseconds, so three of them take a whole round of

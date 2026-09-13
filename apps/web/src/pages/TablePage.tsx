@@ -12,6 +12,8 @@ import { Identity } from '../components/Identity';
 import { SettlementTag } from '../components/SettlementTag';
 import { PRODUCT_NAME } from '../lib/brand';
 import { clubHash } from '../lib/routes';
+import { useClubScope } from '../lib/useClubScope';
+import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { SoundToggle } from '../components/SoundToggle';
 import { pokerCue } from '../lib/cues';
 import { useCues } from '../lib/useCues';
@@ -68,6 +70,7 @@ export function TablePage({
   const [tableName, setTableName] = useState<string | null>(null);
   /** The club this table belongs to, if any — so the screen can say who can see it. */
   const [club, setClub] = useState<{ id: string; name: string } | null>(null);
+  const clubScope_ = useClubScope(club, session?.token ?? null);
   const [settlement, setSettlement] = useState<string>('play-money');
   /**
    * The rate THIS table pinned when it was created. Read off the table's own summary, never from
@@ -312,6 +315,8 @@ export function TablePage({
               {club.name}
             </a>
           ) : null}
+          {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}
+          {club ? <HuddleAffordance scope={clubScope_} scopeName={club.name} compact /> : null}
           {/* The settlement mode travels with the table's NAME, so it is on screen from the moment
               the page opens and before anyone can reach a seat. */}
           <SettlementTag settlement={settlement} rate={tableRate(settlement, chipValue, assetSymbol)} withRate />

@@ -165,6 +165,8 @@ app.get('/auth/config', (c) => {
       clubPurpose: CLUB_PURPOSE,
       /** …and the one that hires a coach (a specialist in the playbook + a study grant), when the Home has it. */
       coachTemplate: (c.env.HOME_COACH_TEMPLATE ?? '').trim() || null,
+      /** The Home's A2A worker the browser talks to for a club HUDDLE (spec 378), when this deployment has one. */
+      a2aOrigin: (c.env.HOME_A2A_ORIGIN ?? '').trim() || null,
       /**
        * The spending ceiling signing in will ALSO ask the player to approve, or null where this
        * deployment cannot ask for one.
@@ -603,6 +605,29 @@ app.get('/clubs', async (c) => {
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
   const res = await c.env.CLUB_INDEX.get(c.env.CLUB_INDEX.idFromName(session.playerId)).fetch('https://index/list');
   return passthrough(res);
+});
+
+/**
+ * WHO IS THIS AGENT TO THIS CLUB — for the Home's huddle service and nobody else (spec 378, `club` scope).
+ * A club's roster is this card room's record (WORKSPACES.md §5), so when a member wants into the club's huddle
+ * the Home asks here: the club's workspace agent (so the Home can check it is the scope it was asked about)
+ * and the caller's standing on the roster, by their agent address. Gated by the shared secret the Home
+ * presents — membership is a fact about other people's arrangements, and this answers a stranger nothing.
+ * A club that does not exist and a club the agent has no standing in look the same: `none`.
+ */
+app.get('/clubs/:clubId/standing-of', async (c) => {
+  const secret = (c.env.CLUB_ROSTER_SECRET ?? '').trim();
+  const given = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, '');
+  if (!secret || !given || given !== secret) return c.json({ error: 'not for you' }, 403);
+  const clubId = c.req.param('clubId') ?? '';
+  const agent = (c.req.query('agent') ?? '').toLowerCase();
+  if (!CLUB_ID_RE.test(clubId) || !/^0x[0-9a-f]{40}$/.test(agent)) return c.json({ agent: null, standing: 'none' });
+  const playerId = homePlayerId(agent);
+  const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(playerId)}`);
+  if (!res.ok) return c.json({ agent: null, standing: 'none' });
+  const view = (await res.json().catch(() => null)) as { agent?: string; standing?: string; you?: { standing?: string } } | null;
+  const standing = view?.you?.standing ?? view?.standing;
+  return c.json({ agent: view?.agent ?? null, standing: standing === 'host' || standing === 'member' ? standing : 'none' });
 });
 
 app.get('/clubs/:clubId', async (c) => {

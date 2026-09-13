@@ -46,6 +46,8 @@ export interface AuthConfig {
     clubPurpose?: string;
     /** The Home's coach-hire template, when this deployment's Home has one. Null ⇒ hiring is not offered. */
     coachTemplate?: string | null;
+    /** The Home's A2A worker origin for club huddles (spec 378). Null ⇒ huddles are not offered here. */
+    a2aOrigin?: string | null;
     /**
      * The spending ceiling SIGNING IN also asks the player to approve, or null/absent where this
      * deployment cannot ask for one (local dev, a half-configured deployment).

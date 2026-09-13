@@ -7,6 +7,8 @@ import { CreateTable, TableList } from './TablesPage';
 import { canOpenTable, noTablesLine } from '../lib/clubs';
 import { HOME_HASH, TABLES_HASH } from '../lib/routes';
 import type { AuthConfig } from '../lib/home';
+import { clubScope } from '../lib/huddle';
+import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 
 /** The club's own tables refresh on the same cadence as the public list. */
 const POLL_MS = 5000;
@@ -137,8 +139,18 @@ export function ClubPage({
   }
 
   const host = canOpenTable(view.you.standing);
+  const scope = clubScope(view);
   return (
     <div className="stack club-page">
+      {/* THE HUDDLE: the club's voice-and-faces call at the top of its page — start it, or join the one running.
+          Anybody on the roster may be in it, playing or watching; it stays up while you walk to a table. A club
+          with no chartered agent yet has no scope for one, and nothing is shown. */}
+      {scope ? (
+        <div className="club-huddle-row">
+          <HuddleAffordance scope={scope} scopeName={view.name} />
+          <span className="hint">Talk and see each other while the game runs — the club's members, whether or not they are at a table.</span>
+        </div>
+      ) : null}
       {/* What a member came for. A roster is not it. */}
       <TableList
         tables={tables}

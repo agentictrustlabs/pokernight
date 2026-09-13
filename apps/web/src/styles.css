@@ -5192,3 +5192,51 @@ details.log-panel > .log { margin-top: 0.5rem; }
   border-radius: 8px;
   background: var(--felt-soft);
 }
+
+/* ═══ THE CLUB HUDDLE ═══ A dock over the pages — the club's voice-and-faces call while the cards are dealt. */
+.huddle-dock {
+  position: fixed;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 60;
+  width: min(30rem, calc(100vw - 1rem));
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.5rem 0.65rem;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.huddle-dock-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.huddle-title { background: transparent; border: 0; padding: 0; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; }
+.huddle-live { width: 0.55rem; height: 0.55rem; border-radius: 999px; background: var(--live-on); box-shadow: 0 0 0 4px var(--live-on-ring); }
+.huddle-controls { display: flex; gap: 0.3rem; margin-left: auto; flex-wrap: wrap; }
+.huddle-btn { font-size: 0.75rem; padding: 0.25rem 0.55rem; }
+.huddle-btn.on { background: var(--focus); border-color: var(--focus); color: #fff; }
+.huddle-btn.leave { border-color: var(--danger); color: var(--danger); }
+.huddle-btn.end { background: var(--danger); border-color: var(--danger); color: #fff; }
+.huddle-faces { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.huddle-face { margin: 0; display: grid; gap: 0.15rem; justify-items: center; width: 3.2rem; }
+.huddle-faces.open .huddle-face { width: 8.5rem; }
+.huddle-face video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; background: #111; }
+.huddle-face.mine video { transform: scaleX(-1); }
+.huddle-initial { width: 2.4rem; height: 2.4rem; border-radius: 999px; display: grid; place-items: center; background: var(--felt-soft); color: var(--felt-deep); font-weight: 700; }
+.huddle-faces.open .huddle-initial { width: 3.4rem; height: 3.4rem; font-size: 1.2rem; }
+.huddle-face.speaking .huddle-initial, .huddle-face.speaking video { outline: 3px solid var(--live-on); outline-offset: 1px; }
+.huddle-face figcaption { font-size: 0.68rem; color: var(--ink-soft); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.huddle-screens { display: grid; gap: 0.4rem; }
+.huddle-screen { margin: 0; }
+.huddle-screen video { width: 100%; border-radius: 8px; background: #111; }
+.huddle-screen figcaption { font-size: 0.7rem; color: var(--ink-soft); }
+.huddle-dock-error { color: var(--danger); font-size: 0.8rem; }
+.huddle-note { margin: 0; font-size: 0.72rem; }
+.huddle-here { font-size: 0.8rem; color: var(--live-on); font-weight: 600; }
+.huddle-start { font-size: 0.85rem; }
+.huddle-start.running { border-color: var(--live-on); color: var(--felt-deep); font-weight: 600; }
+.huddle-start.compact { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
+.club-huddle-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+@media (max-width: 899px) {
+  .huddle-dock { top: auto; bottom: calc(var(--coach-sheet, 0px) + 0.5rem); right: 0.5rem; left: 0.5rem; width: auto; }
+}

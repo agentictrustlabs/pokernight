@@ -208,6 +208,19 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   rail keeps a row that 404s. It NEVER touches the club's Smart Agent, and the answer returns the
   address so the client can say so: that agent lives at the host's own Home and this card room has
   never held its key.
+- **A CLUB HUDDLES — voice, faces and the table, for its members whether or not they are playing**
+  (2026-09-13; Home spec 378, `club` scope). The Home's huddle service (`a2a.faithnet.io`, Cloudflare
+  RealtimeKit) decides who may start, join or end; the card room keeps the ROSTER, so for a `club` scope
+  the Home asks `GET /clubs/:id/standing-of?agent=` (gated by the paired secret `CLUB_ROSTER_SECRET`, set on
+  both workers; the Home's `CLUB_ROSTER_ORIGINS` names this card room) and cross-checks the club's workspace
+  agent against the scope's principal. The person acts with THEIR OWN Home session straight from the browser
+  (`lib/huddle.ts`, CSRF from the Home's `/auth/csrf`); the join's `authToken` goes to the browser SDK and
+  nowhere else. `components/huddle/` — `ClubHuddleProvider` (owns the call above every page, so walking
+  club ↔ table does not hang up; mic, camera, screen are local), `ClubHuddleDock` (faces or initials,
+  active speaker, remote audio on <audio>, cameras/screens on <video>), `HuddleAffordance` on the club page
+  and in a club table's top bar. `HOME_A2A_ORIGIN` reaches the client as `config.home.a2aOrigin`; a club
+  with no chartered agent has no scope and offers nothing. Proven live: Alice (host) starts at Canasta
+  Club, Bob (a card-room member, no Home standing at the workspace) joins, faces render, Alice ends both.
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must

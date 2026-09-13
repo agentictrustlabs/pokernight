@@ -13,19 +13,20 @@
   },
   "dependencies": {
     "@agenticprimitives/connect-client": "link:../../../agenticprimitives/packages/connect-client",
+    "@cloudflare/realtimekit-react": "0.1.0",
     "@pokernight/engine": "workspace:*",
     "@pokernight/protocol": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@pokernight/canasta": "workspace:*",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^3.2.4",
-    "wrangler": "^4.61.1",
-    "@pokernight/canasta": "workspace:*"
+    "wrangler": "^4.61.1"
   }
 }
