@@ -36,6 +36,7 @@ import {
   type AuthConfig,
   type StorageLike, readTreasuryReturn,
   askToChooseNextTime,
+  CHOOSE_NEXT_KEY,
 } from './home';
 
 /** A `Storage`-shaped map. `throwOn` simulates private-mode storage, which throws on write. */
@@ -539,12 +540,11 @@ describe('signing out means choosing next time', () => {
     home: { clientId: 'pokernight', origin: 'https://www.faithnet.me', zone: 'faithnet.me', delegate: '0x0000000000000000000000000000000000000001', redirectUri: 'https://poker.faithnet.io/', buyIn: { template: 'poker-buyin', maxPerBuyIn: '1', maxTotal: '2', maxBuyIns: 1, windowSeconds: 1, assetSymbol: 'SHQ', assetDecimals: 6 } },
   } as unknown as AuthConfig;
 
-  it('asks the Home for the account chooser once after a sign-out, and not otherwise', async () => {
+  it('asks the Home for the account chooser on every sign-in — never the person the Home\'s cookie last was', async () => {
     const store = fakeStore();
-    expect(new URL(await startHomeSignIn(config, '', store)).searchParams.get('prompt')).toBeNull();
+    expect(new URL(await startHomeSignIn(config, '', store)).searchParams.get('prompt')).toBe('select_account');
     askToChooseNextTime(store);
     expect(new URL(await startHomeSignIn(config, '', store)).searchParams.get('prompt')).toBe('select_account');
-    // Spent: the sign-in after that recognises them again.
-    expect(new URL(await startHomeSignIn(config, '', store)).searchParams.get('prompt')).toBeNull();
+    expect(store.map.get(CHOOSE_NEXT_KEY)).toBeUndefined();
   });
 });

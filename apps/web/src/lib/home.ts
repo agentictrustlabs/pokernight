@@ -472,8 +472,13 @@ export async function startHomeSignIn(
   // The per-charge amount asked for. The Home caps it at whatever it has registered for this client,
   // so this can only ever ask for less than the ceiling the player is shown — never more.
   if (/^\d+$/.test(offer.maxPerBuyIn)) url.searchParams.set('pay_amount', offer.maxPerBuyIn);
-  // After a sign-out, the chooser — see `askToChooseNextTime`.
-  if (takeChooseNextTime(store)) url.searchParams.set('prompt', 'select_account');
+  // ALWAYS THE CHOOSER. The Home keeps its own session in its own cookie, and "sign in" here was landing
+  // on whoever that cookie last was — alice.me on a shared machine, david.me after signing out. A person
+  // pressing "sign in" at the card room is saying WHO next, so the Home is asked to ask, every time; one
+  // more tap for somebody coming back, and never the wrong person. (`takeChooseNextTime` is spent too, so
+  // the flag never lingers.)
+  takeChooseNextTime(store);
+  url.searchParams.set('prompt', 'select_account');
   return url.toString();
 }
 
