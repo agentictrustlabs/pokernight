@@ -27,7 +27,7 @@ describe('WebSocket', () => {
     const table = await createTableViaHttp();
     const s = await devSession('Bob');
     const c = await TestClient.connect(table.tableId, s.token);
-    expect(await c.next()).toMatchObject({ type: 'welcome', playerId: 'dev:bob' });
+    expect(await c.next()).toMatchObject({ type: 'welcome', playerId: s.playerId });
     c.close();
   });
 });

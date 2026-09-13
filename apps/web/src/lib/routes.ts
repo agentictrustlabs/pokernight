@@ -9,7 +9,7 @@
  *   #/about       what this place is — the front page, readable when signed in
  *   #/signin      sign-in on its own, where a sign-out or an expired session lands
  *   #/t/<tableId> a table
- *   #/join/<clubId>/<token>  an invitation somebody was emailed
+ *   #/join/<clubId>          the door into a club: join it at your Home (the host's agent sent the link)
  *
  * WHY `#/` IS PLAY AND NOT THE TABLE LIST. The commonest visitor to a card room wants to be dealt a
  * hand, and every game product worth copying spends its first slot on that rather than on a lobby
@@ -48,7 +48,7 @@ export type Route =
    * say which club to ask — a club is its own object, and a global index of every invitation in the
    * card room would be a thing to leak rather than a thing to have.
    */
-  | { page: 'join'; clubId: string; token: string };
+  | { page: 'join'; clubId: string };
 
 /** Where sign-out, an expired session and "I want to sign in" all go. */
 export const SIGNIN_HASH = '#/signin';
@@ -81,8 +81,8 @@ export function route(hash: string): Route {
     const practice = new URLSearchParams(query).get('practice') === '1';
     return { page: 'table', tableId: decodeURIComponent(table[1]), ...(practice ? { practice: true } : {}) };
   }
-  const join = /^\/join\/([^/?#]+)\/([^/?#]+)/.exec(path);
-  if (join?.[1] && join[2]) return { page: 'join', clubId: decodeURIComponent(join[1]), token: decodeURIComponent(join[2]) };
+  const join = /^\/join\/(0x[0-9a-fA-F]{40})(?:[/?#]|$)/.exec(path);
+  if (join?.[1]) return { page: 'join', clubId: join[1].toLowerCase() };
   // `new` is checked BEFORE the id, and a club id is a UUID, so the two can never be confused.
   if (/^\/clubs\/new\/?$/.test(path)) return { page: 'newClub' };
   // A club id and nothing else. `#/clubs` with no id is not a directory and never will be — a club

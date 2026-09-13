@@ -103,91 +103,63 @@ export type SettlementMode = z.infer<typeof SettlementModeSchema>;
 /* -------------------------------------------------------------------- clubs */
 
 /**
- * A CLUB is the group a poker night belongs to: a set of people who play together, the tables they
- * play at, and (later) the schedule and season that hang off it. See `docs/WORKSPACES.md`.
- *
- * WHY AN OPAQUE ID AND NOT AN ADDRESS. A club is destined to be a `<label>.workspace` Smart Agent,
- * and the design pins the AGENT on every table. It is not one yet — chartering it is a ceremony at
- * the member's Home — and minting the id from something that does not exist yet is how a stable
- * identifier ends up needing a migration. So `clubId` is minted here, is opaque, and never changes;
- * `agent` is the workspace address and is simply absent until the charter lands. Nothing that
- * references a club has to move when it does.
+ * A CLUB IS ITS WORKSPACE AGENT — a `<label>.workspace` Smart Agent its host custodies at their Home
+ * (`docs/WORKSPACES.md` §5.0, 2026-09-13). It exists ONCE, there: who belongs is the workspace's own
+ * membership, and what the club calls itself, when it meets and how each night diverges from the rule
+ * are three records in the workspace's vault, written by the club's own agent when the card room acts
+ * as the club under the wire its host signed. The card room keeps no roster and no club table of its
+ * own; a club's id IS its agent's address, and everything that names a club — a table's stamp, a
+ * night, the rail — names the agent.
  */
-export const ClubIdSchema = z.string().regex(/^[0-9a-f-]{36}$/);
+export const ClubIdSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 
 export * from './when.js';
 export * from './recurrence.js';
 export * from './ics.js';
 
-/** What someone IS to a club, derived from the club's own records and never asserted by a caller. */
+/** What someone IS to a club, derived at the Home from its records and never asserted by a caller. */
 export const ClubStandingSchema = z.enum(['host', 'member', 'none']);
 export type ClubStanding = z.infer<typeof ClubStandingSchema>;
 
-/**
- * Membership shapes, narrowed from the substrate's `MembershipClass`.
- *
- * `guest` is the friend somebody brings once: a real membership with a validity window, not a
- * special case. When the window passes the row is not deleted — it expires, which is a different
- * fact and a better one, because "Elena played once in March" stays answerable.
- */
-export const MembershipClassSchema = z.enum(['standard', 'guest', 'observer']);
-export type MembershipClass = z.infer<typeof MembershipClassSchema>;
-
+/** One member, as the club's own agent records them (aporg:OrganizationMembership). */
 export const ClubMemberSchema = z.object({
-  /** The member's `playerId` — `home:0x…` for a person, `dev:…` in local dev. */
-  member: z.string().min(1).max(128),
+  /** Their agent address, lowercased — the identity a Home sign-in carries. */
+  agent: ClubIdSchema,
   name: z.string().min(1).max(64),
-  class: MembershipClassSchema,
-  joinedAt: z.number().int(),
-  /** Who put them on the roster. Absent for the person who created the club. */
-  invitedBy: z.string().max(128).optional(),
-  /** A guest's window. Absent means it does not close. */
-  validUntil: z.number().int().optional(),
-  /**
-   * WHERE THIS MEMBERSHIP LIVES. A club is a `.workspace` agent at its host's Home, and MEMBERSHIP OF IT
-   * LIVES THERE TOO: the host invites at their Home (`workspace-member-invite`), the member joins at
-   * theirs (`workspace-join`), and the workspace's own membership record is what the Home derives
-   * standing from — for the club's huddle, and for anything else asked of the club's agent. This row
-   * is the card room's PROJECTION of that: `joined` when the Home records them, `invited` when the
-   * host has run the invite and they have not joined yet, absent when the club is chartered but this
-   * membership exists only here (added before the ceremonies, or by a dev session).
-   */
-  home: z.enum(['invited', 'joined']).optional(),
+  /** The host is whoever stewards the workspace — derived, not a roster row. */
+  host: z.boolean(),
 });
 export type ClubMember = z.infer<typeof ClubMemberSchema>;
+
+/**
+ * WHAT THE CLUB SAYS ABOUT ITSELF — the `cardroom.club.profile` record (apctx:CardRoomClub, cr:Club).
+ * Written by the club's agent when the card room acts as it.
+ */
+export const ClubProfileSchema = z.object({
+  name: z.string().min(1).max(64),
+  /** The steward who founded it — who to SHOW as host. Their standing is still derived by the Home on
+   *  every read; a club whose custody moved would show its founder until the profile is rewritten. */
+  foundedBy: ClubIdSchema,
+  /** The host's own words about the club: the invitation's content. */
+  welcome: z.string().max(2000).optional(),
+  /** Which games this club deals, by the deployment's game ids. */
+  games: z.array(z.string().max(32)).optional(),
+  charteredAt: z.number().int(),
+  updatedAt: z.string().optional(),
+});
+export type ClubProfile = z.infer<typeof ClubProfileSchema>;
 
 export const ClubSummarySchema = z.object({
   clubId: ClubIdSchema,
   name: z.string(),
-  createdAt: z.number().int(),
-  /** The `playerId` of whoever started it. They are the club's first host. */
-  createdBy: z.string(),
-  /** The `<label>.workspace` Smart Agent, once the charter ceremony has run. */
-  agent: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
-  /**
-   * WHAT THE HOST WANTS SAID about their club: what it is, which games, how the evening goes.
-   *
-   * It is the invitation's content. The Home's mailer composes the email itself and takes only an
-   * address, a link and a name — so a host's own words cannot ride in the mail, and this is what the
-   * link opens onto instead. That is the better place for it anyway: mail clients strip formatting
-   * and block images, and a page can show the schedule and the next few dates live.
-   */
+  /** The host's agent — the workspace's steward. */
+  host: ClubIdSchema,
   welcome: z.string().max(2000).optional(),
+  games: z.array(z.string()).optional(),
+  charteredAt: z.number().int(),
   members: z.number().int(),
 });
 export type ClubSummary = z.infer<typeof ClubSummarySchema>;
-
-/** A club as somebody with standing in it sees it. `you` is why they were shown it at all. */
-export const ClubViewSchema = ClubSummarySchema.extend({
-  roster: z.array(ClubMemberSchema),
-  you: z.object({ standing: ClubStandingSchema, because: z.string() }),
-});
-export type ClubView = z.infer<typeof ClubViewSchema>;
-
-export const CreateClubRequestSchema = z.object({
-  name: z.string().min(1).max(64),
-});
-export type CreateClubRequest = z.infer<typeof CreateClubRequestSchema>;
 
 /* --------------------------------------------------------- the schedule and its nights */
 
@@ -284,115 +256,30 @@ export const NightSchema = z.object({
 });
 export type Night = z.infer<typeof NightSchema>;
 
-export const InviteMemberRequestSchema = z.object({
-  /**
-   * WHO, in whichever way the host knows them.
-   *
-   * Three shapes reach the roster the same day: a `playerId`, a bare Smart Agent address, or an
-   * AGENT NAME (`carol.me`), which the card room resolves on chain to the address behind it. A
-   * fourth — an email — cannot, because nobody's address is known from their email; that one opens
-   * a pending invitation instead and lands here when they claim it.
-   *
-   * An address is the shape a host is LEAST likely to have to hand, and it was the only one this
-   * accepted for its first month. Every other shape here exists because a host knows their friends
-   * by name and should not have to go and find a hex string to add one.
-   */
-  member: z.string().min(1).max(128),
-  name: z.string().min(1).max(64).optional(),
-  class: MembershipClassSchema.default('standard'),
-  validUntil: z.number().int().positive().optional(),
+
+/** A club as somebody with standing in it sees it — ONE read of the club's agent. */
+export const ClubViewSchema = ClubSummarySchema.extend({
+  roster: z.array(ClubMemberSchema),
+  you: z.object({ standing: ClubStandingSchema, because: z.string() }),
+  schedule: ClubScheduleSchema.nullable(),
+  nights: z.array(NightSchema),
 });
-export type InviteMemberRequest = z.infer<typeof InviteMemberRequestSchema>;
+export type ClubView = z.infer<typeof ClubViewSchema>;
 
-/* ------------------------------------------------------- invitations by email */
-
-/**
- * An invitation to somebody whose Smart Agent the card room does not know.
- *
- * A roster row needs a `playerId`, and an email address is not one and cannot be turned into one:
- * nothing on chain maps an inbox to an agent, and inventing a row keyed by the email would create a
- * membership nobody's session can ever satisfy — an invitation that looks accepted and is not.
- *
- * So an email invitation is a SEPARATE record with its own life: it is created here, it is mailed by
- * the host's Home (the card room never holds a mail key), it is claimed by whoever opens the link
- * and signs in, and only THEN does a roster row exist — keyed by the agent that actually signed in.
- * Until then the club has a pending invitation, which is the true state and is shown as one.
- */
-export const ClubInviteRequestSchema = z.object({
-  email: z.string().email().max(200),
-  /** What to call them on the roster once they claim it. */
-  name: z.string().min(1).max(64).optional(),
-  class: MembershipClassSchema.default('standard'),
-  validUntil: z.number().int().positive().optional(),
-});
-export type ClubInviteRequest = z.infer<typeof ClubInviteRequestSchema>;
-
-export const ClubInviteSchema = z.object({
-  /** The claim token. It IS the invitation — whoever holds it can claim it, once, before it expires. */
-  token: z.string().min(16).max(128),
+/** One row of "the clubs you are in" — read from the person's own links at their Home. */
+export const ClubListingSchema = z.object({
   clubId: ClubIdSchema,
-  clubName: z.string(),
-  email: z.string(),
-  name: z.string().optional(),
-  class: MembershipClassSchema,
-  invitedBy: z.string().max(128),
-  invitedByName: z.string().max(64),
-  createdAt: z.number().int(),
-  expiresAt: z.number().int(),
-  /** The `playerId` that claimed it, once somebody has. A claimed invitation is spent. */
-  claimedBy: z.string().max(128).optional(),
-  claimedAt: z.number().int().optional(),
-  validUntil: z.number().int().optional(),
+  name: z.string(),
+  standing: z.enum(['host', 'member']),
 });
-export type ClubInvite = z.infer<typeof ClubInviteSchema>;
+export type ClubListing = z.infer<typeof ClubListingSchema>;
 
 /**
- * What an invitation looks like to whoever OPENS the link, before they have signed in.
- *
- * Deliberately less than the record: who invited them, to what, and whether it is still good. The
- * email is not echoed back — the person reading the page already knows their own address, and a
- * page that prints it would print it for anyone who guessed the token.
- */
-/**
- * WHAT AN INVITATION SAYS, before anybody has proved who they are.
- *
- * The email is a short link — the Home composes the mail itself and takes only an address, a link and
- * a name — so everything an invitation actually communicates has to be on the page that link opens.
- * This is that: who invited you, to what, what the host wants said about it, when they meet, and the
- * next few dates.
- *
- * DELIBERATELY LESS THAN THE CLUB'S RECORD. No roster, no member count, no addresses. Somebody
- * holding an unclaimed link has not joined anything yet, and a link that leaks a group's membership
- * to whoever it was forwarded to is a link nobody should send.
- */
-export const InviteGreetingSchema = z.object({
-  clubName: z.string(),
-  invitedByName: z.string(),
-  expiresAt: z.number().int(),
-  /** `open` is claimable. The other two say exactly why it is not, so the page can say so. */
-  state: z.enum(['open', 'claimed', 'expired']),
-  /** The host's own words about the club. Absent when they have not written any. */
-  welcome: z.string().optional(),
-  /** When they meet, as a rule — enough to say "every other Thursday at eight" and no more. */
-  meets: z
-    .object({ startLocal: z.string(), timezone: z.string(), recurrence: RecurrenceSchema })
-    .optional(),
-  /** The next few dates, so an invitation is about something specific rather than about a group. */
-  nights: z.array(z.object({ startsAt: z.number().int(), timezone: z.string(), title: z.string().optional() })).optional(),
-  /** Which games this club deals, so somebody can tell whether it is for them. */
-  games: z.array(z.string()).optional(),
-});
-export type InviteGreeting = z.infer<typeof InviteGreetingSchema>;
-
-/**
- * Somebody the caller already plays with: a member of one of their OWN clubs.
- *
- * The card room knows these people by name because a host typed the name when they added them. It
- * is the answer to "add the people I already play with", which is the most common invitation there
- * is and the one that should never require an identifier at all.
+ * Somebody the caller already plays with: a member of one of their OWN clubs, by the name the club's
+ * agent records them under. The answer to "invite the people I already play with".
  */
 export const KnownPersonSchema = z.object({
-  member: z.string().min(1).max(128),
+  agent: ClubIdSchema,
   name: z.string().min(1).max(64),
   /** The clubs of the caller's that this person is in, by name. Their reason for being on the list. */
   clubs: z.array(z.string()),
@@ -604,8 +491,6 @@ export interface SeatCleared {
   idleMs: number;
 }
 
-/** Dev-only login (DEV_AUTH=true). Production uses the Home OIDC flow. */
-export const DevSessionRequestSchema = z.object({ name: z.string().min(1).max(32) });
 export const SessionSchema = z.object({ token: z.string(), playerId: z.string(), name: z.string() });
 export type Session = z.infer<typeof SessionSchema>;
 

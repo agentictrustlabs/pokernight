@@ -555,20 +555,16 @@ export const BUY_IN_TEMPLATE = 'poker-buyin';
 export const CLUB_TEMPLATE = 'workspace-create';
 
 /**
- * Send the host to their Home to charter a club.
- *
- * The same ceremony shape as sign-in and the buy-in authorisation, with the template changed and one
- * extra parameter: `org_base`, the name to deploy the workspace under. The Home does the deploying
- * and the custody — the card room never holds the club's key, exactly as it never holds a player's
- * — and hands back the address on the token exchange, which the Worker runs.
- *
- * The club id is stashed beside the PKCE stash because the Home carries no state of ours. Without it
- * the return leg would know a club had been chartered and not which one, and guessing is how a club
- * ends up pointed at another club's agent.
+ * STARTING A CLUB is two ceremonies at the host's Home, and this is the first: `workspace-create`
+ * charters the club's agent under the name the host typed. The Home does the deploying and the
+ * custody — the card room never holds the club's key — and hands back the address on the token
+ * exchange, which the Worker runs. The NAME is stashed beside the PKCE stash because the Home carries
+ * no state of ours, and the club's profile is written with it once the club has authorised the card
+ * room (`startClubWire`, the second ceremony).
  */
 export async function startClubCharter(
   config: AuthConfig,
-  club: { clubId: string; name: string },
+  club: { name: string; games?: string[] },
   store: StorageLike | null = sessionStore(),
 ): Promise<string> {
   if (!config.home.clientId || !config.home.origin) throw new Error('This deployment has no Home configured.');
@@ -588,7 +584,7 @@ export async function startClubCharter(
     throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the club cannot be chartered.');
   }
   try {
-    store?.setItem(CHARTER_CLUB_KEY, club.clubId);
+    store?.setItem(CHARTER_CLUB_KEY, JSON.stringify({ name: club.name, ...(club.games?.length ? { games: club.games } : {}) }));
   } catch {
     throw new Error('This browser will not let the site remember which club you are chartering, so the return trip could not be matched.');
   }
@@ -602,18 +598,99 @@ export async function startClubCharter(
       template: config.home.clubTemplate ?? CLUB_TEMPLATE,
     }),
   );
-  // The Home's own parameters, not `buildAuthorizeUrl`'s: the name to deploy under, and WHY this
-  // agent exists — which is what the person will see beside it in their own list of agents forever.
   url.searchParams.set('org_base', club.name);
   if (config.home.clubPurpose) url.searchParams.set('purpose', config.home.clubPurpose);
-  // ARRIVE ALREADY SIGNED IN, when the Home gave us their session to hand back. The Home consumes
-  // `#session=` the same way it consumes its own cookie. Without it a demo persona lands on a
-  // sign-in screen offering four credentials they do not have, because the Home holds their key.
-  // With no session we ask the Home to let them choose an account rather than guessing at one.
   const home = readHomeSession(store);
   if (home) url.hash = `session=${encodeURIComponent(home)}`;
   else url.searchParams.set('prompt', 'select_account');
   return url.toString();
+}
+
+/** The second ceremony's own stash and memory: which club the wire is for, and the name to found it under. */
+export const WIRE_STASH_KEY = 'pokernight.home.wire';
+export const WIRE_CLUB_KEY = 'pokernight.home.wire.club';
+export const WIRE_TEMPLATE = 'service-agent-wire';
+
+/**
+ * THE CLUB AUTHORISES THE CARD ROOM — the second ceremony (`service-agent-wire`). At the Home the host
+ * signs, as the club's custodian, a wire from the club's agent to this card room's session key; the Home
+ * hands it to the card room directly (`/admin/service-wire`) and sends the host back here with a
+ * `collect` result rather than a code. `collect_token` is the host's Home id_token from the charter,
+ * which is what the Home presents to the card room's `/admin/*` on their behalf.
+ */
+export async function startClubWire(
+  config: AuthConfig,
+  club: { clubId: string; name: string; games?: string[]; idToken: string },
+  store: StorageLike | null = sessionStore(),
+): Promise<string> {
+  if (!config.home.clientId || !config.home.origin) throw new Error('This deployment has no Home configured.');
+  if (!isAllowedHomeOrigin(config.home.zone, config.home.origin)) {
+    throw new Error(`Refusing to send you to ${config.home.origin}: it is not a trusted Home for this site.`);
+  }
+  const client = homeClient(config);
+  const pkce = await generatePkce();
+  const stash: ConnectStash = { name: '', state: randomB64url(16), authOrigin: config.home.origin, codeVerifier: pkce.verifier, nonce: randomB64url(16) };
+  if (!writeStash(store, stash, WIRE_STASH_KEY)) {
+    throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the club cannot authorise the card room.');
+  }
+  try {
+    store?.setItem(WIRE_CLUB_KEY, JSON.stringify({ clubId: club.clubId, name: club.name, ...(club.games?.length ? { games: club.games } : {}) }));
+  } catch {
+    throw new Error('This browser will not let the site remember which club this is for, so the return trip could not be matched.');
+  }
+  const url = new URL(client.buildAuthorizeUrl({ authOrigin: stash.authOrigin, state: stash.state, nonce: stash.nonce, codeChallenge: pkce.challenge, agentName: '', template: WIRE_TEMPLATE }));
+  url.searchParams.set('grant_org', club.clubId);
+  url.searchParams.set('collect_token', club.idToken);
+  const home = readHomeSession(store);
+  if (home) url.hash = `session=${encodeURIComponent(home)}`;
+  else url.searchParams.set('prompt', 'select_account');
+  return url.toString();
+}
+
+export interface PendingClub {
+  clubId: string;
+  name: string;
+  games?: string[];
+}
+
+export function takeWireClub(store: StorageLike | null = sessionStore()): PendingClub | null {
+  try {
+    const raw = store?.getItem(WIRE_CLUB_KEY) ?? null;
+    store?.removeItem(WIRE_CLUB_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<PendingClub>;
+    if (typeof v.clubId !== 'string' || typeof v.name !== 'string') return null;
+    return { clubId: v.clubId, name: v.name, ...(Array.isArray(v.games) ? { games: v.games.filter((g): g is string => typeof g === 'string') } : {}) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Consume the wire ceremony's return leg: `?collect=1&collect_kind=service-agent-wire&state=…`, matched to
+ * the stash by `state`. There is no code — the Home handed the wire to the card room itself — so the
+ * outcome is only whether it is ours. An `?error` on a matching state is the ceremony refused.
+ */
+export function takeWireCallback(store: StorageLike | null = sessionStore()): { status: 'none' } | { status: 'done' } | { status: 'error'; message: string } {
+  if (callbackConsumed) return { status: 'none' };
+  let u: URL;
+  try { u = new URL(location.href); } catch { return { status: 'none' }; }
+  const state = u.searchParams.get('state');
+  const stash = readStash(store, WIRE_STASH_KEY);
+  if (!state || !stash || stash.state !== state) return { status: 'none' };
+  const error = u.searchParams.get('error');
+  const collected = u.searchParams.get('collect') === '1' && u.searchParams.get('collect_kind') === WIRE_TEMPLATE;
+  if (!error && !collected) return { status: 'none' };
+  callbackConsumed = true;
+  clearStash(store, WIRE_STASH_KEY);
+  try {
+    for (const p of ['collect', 'collected', 'attempted', 'collect_kind', 'state', 'error', 'error_description']) u.searchParams.delete(p);
+    history.replaceState(null, '', `${u.origin}${u.pathname}${u.searchParams.toString() ? `?${u.searchParams.toString()}` : ''}${u.hash}`);
+  } catch {
+    /* an unwritable history is not a reason to fail */
+  }
+  if (error) return { status: 'error', message: describeCallbackError(error, u.searchParams.get('error_description') ?? undefined) };
+  return { status: 'done' };
 }
 
 /** Which club the charter callback belongs to, consumed once. */
@@ -706,7 +783,7 @@ async function startMembershipLeg(config: AuthConfig, template: string, extra: R
  */
 export function startMembershipInvite(
   config: AuthConfig,
-  club: { clubId: string; name: string; agent: string },
+  club: { clubId: string; name: string },
   member: string,
   store: StorageLike | null = sessionStore(),
 ): Promise<string> {
@@ -714,13 +791,13 @@ export function startMembershipInvite(
     config,
     MEMBER_INVITE_TEMPLATE,
     {
-      grant_org: club.agent,
+      grant_org: club.clubId,
       member,
       org_base: club.name,
       ...(config.home.clubPurpose ? { org_purpose: config.home.clubPurpose } : {}),
       // WHERE THEY PICK IT UP. The host's agent tells the member at their Home, and the message carries
-      // this club's page — the Home accepts only a link on this app's own origin.
-      app_link: `${location.origin}/#/clubs/${encodeURIComponent(club.clubId)}`,
+      // the join page for this club — a page that needs no standing, because they have none yet.
+      app_link: `${location.origin}/#/join/${encodeURIComponent(club.clubId)}`,
     },
     { clubId: club.clubId, leg: 'invite', member },
     store,
@@ -734,13 +811,13 @@ export function startMembershipInvite(
  */
 export function startMembershipJoin(
   config: AuthConfig,
-  club: { clubId: string; name: string; agent: string },
+  club: { clubId: string; name?: string },
   store: StorageLike | null = sessionStore(),
 ): Promise<string> {
   return startMembershipLeg(
     config,
     MEMBER_JOIN_TEMPLATE,
-    { grant_org: club.agent, org_base: club.name, ...(config.home.clubPurpose ? { org_purpose: config.home.clubPurpose } : {}) },
+    { grant_org: club.clubId, ...(club.name ? { org_base: club.name } : {}), ...(config.home.clubPurpose ? { org_purpose: config.home.clubPurpose } : {}) },
     { clubId: club.clubId, leg: 'join' },
     store,
   );
@@ -807,11 +884,15 @@ export function takeCoachCallback(store: StorageLike | null = sessionStore()): C
   return outcome;
 }
 
-export function takeCharterClub(store: StorageLike | null = sessionStore()): string | null {
+/** The name (and games) the charter now returning was started under, consumed once. */
+export function takeCharterClub(store: StorageLike | null = sessionStore()): { name: string; games?: string[] } | null {
   try {
-    const v = store?.getItem(CHARTER_CLUB_KEY) ?? null;
+    const raw = store?.getItem(CHARTER_CLUB_KEY) ?? null;
     store?.removeItem(CHARTER_CLUB_KEY);
-    return v;
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { name?: unknown; games?: unknown };
+    if (typeof v.name !== 'string') return null;
+    return { name: v.name, ...(Array.isArray(v.games) ? { games: v.games.filter((g): g is string => typeof g === 'string') } : {}) };
   } catch {
     return null;
   }

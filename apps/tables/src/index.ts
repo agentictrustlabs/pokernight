@@ -10,13 +10,14 @@
  *                                       → same shape (Home quick-connect / demo users)
  *   POST /auth/signout                  → SignOutResult (auth required; stands the player up from every
  *                                       seat they hold, then drops the server-side session record)
- *   POST /dev/session {name}            → {token, playerId, name}   (DEV_AUTH=true only)
- *   POST /clubs CreateClubRequest       → ClubSummary (201)         (auth required)
- *   GET  /clubs                         → the clubs this player has standing in (auth required)
- *   GET  /clubs/:clubId                 → ClubView, or 404 to anyone with no standing (auth required)
- *   GET  /clubs/:clubId/members         → the roster (auth required; members and hosts)
- *   POST /clubs/:clubId/members InviteMemberRequest → adds one (auth required; HOSTS only)
- *   DELETE /clubs/:clubId/members/:member → removes one (auth required; HOSTS only)
+ *   GET  /clubs                         → the clubs this person is in, from their Home (auth required)
+ *   POST /clubs/charter {code…}         → the workspace-create ceremony's return leg: {clubId, idToken}
+ *   POST /clubs/:clubId/found {name}    → the first act as the club: its profile (host only)
+ *   GET  /admin/signer-address?identity= · POST /admin/service-wire {wire}   (the Home's wire ceremony)
+ *   GET  /clubs/:clubId                 → ClubView from the club's own agent, or 404 to anyone with no standing
+ *   GET  /clubs/:clubId/members · /schedule · /nights · /calendar   (members and hosts)
+ *   PUT  /clubs/:clubId/welcome · /schedule · POST …/nights/:id/cancel · DELETE /clubs/:clubId   (hosts)
+ *   GET  /clubs/:clubId/resolve?who=    → an agent name or address, resolved (hosts; the invite names it)
  *   GET  /tables                        → open PICKUP tables; ?club= for a club's own (auth for a club)
  *   POST /tables CreateTableRequest     → TableSummary (201)         (auth required; ?club= needs host)
  *   GET  /tables/:id                    → spectator view {tableId, name, settlement, view, names}
@@ -42,16 +43,9 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
 import {
-  CreateClubRequestSchema,
   CreateTableRequestSchema,
-  DevSessionRequestSchema,
-  ClubInviteRequestSchema,
-  InviteMemberRequestSchema,
   POKER_ACT_SKILL,
   SeatAgentRequestSchema,
-  type ClubInvite,
-  type ClubView,
-  type KnownPerson,
   type SeatStandUpFailure,
   type SeatStoodUp,
   CANASTA_ADVISE_SKILL,
@@ -73,8 +67,8 @@ import {
 } from '@pokernight/protocol';
 import { agentKindFromCard, callCoachStatus, callReview, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
 import { addressOfAgent, advertisedOnChain, looksLikeAgentName, nameOfAgent } from './naming.js';
-import { HOME_SESSION_TTL_MS, dropSessionRecord, mintDevSession, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
-import { a2aReviewTimeoutMs, a2aTimeoutMs, allowedOrigins, isDevAuth, siteOrigin, type Env } from './env.js';
+import { HOME_SESSION_TTL_MS, dropSessionRecord, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
+import { a2aReviewTimeoutMs, a2aTimeoutMs, allowedOrigins, siteOrigin, type Env } from './env.js';
 import { OPERATOR_HEADER, checkOperator } from './operator.js';
 import {
   BUY_IN_TEMPLATE,
@@ -84,13 +78,12 @@ import {
   cleanProfileName,
   completeCharterCeremony,
   completeCoachCeremony,
-  completeMembershipCeremony,
-  homeRoster,
   completeDemoSignIn,
   completeHomeSignIn,
   completeMandateCeremony,
   homePlayerId,
   homeRedirectUri,
+  verifyHomeIdToken,
   type HomeIdentity,
 } from './home.js';
 import {
@@ -108,17 +101,15 @@ import {
 } from './routes-treasury.js';
 import type { SessionRecord } from './session-do.js';
 import type { SeatAgentBody } from './table-do.js';
-import { CLUB_ID_RE, belongs, clubStub, memberIdOf, resolveInvitee, standingAt } from './clubs.js';
-import { mailInvite } from './invite-mail.js';
+import { CLUB_ID_RE, CLUB_WIRE_SKILLS, belongs, clubDelegateAddress, clubViewFor, knownPeople, myClubs, nightsOf, readClub, scheduleFrom, standingAt, storeClubWire, writeClubRecord } from './clubs.js';
+import { resolveAgentName } from './naming.js';
 import { gameFor } from './games.js';
 import { ensurePracticeTable, practiceTableId } from './practice.js';
 import { feedPlayer, feedToken } from './feed-token.js';
-import type { AddMemberRequest, ClaimInviteRequest, CreateInviteRequest, InitClubRequest } from './club-do.js';
 
 export { PokerTableDO } from './table-do.js';
 export { LobbyDO } from './lobby-do.js';
 export { SessionDO } from './session-do.js';
-export { ClubDO, ClubIndexDO } from './club-do.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -134,8 +125,19 @@ const corsMiddleware = cors({
   maxAge: 600,
 });
 
+// THE HOME'S OWN CALLS. The `service-agent-wire` ceremony runs in the host's browser AT THE HOME and asks this
+// card room, cross-origin, for its signing key and hands the signed wire back (`/admin/*`). Those two routes
+// admit the Home's origin and nothing else does; the page's own origin is the ordinary allowlist below.
+const homeCors = cors({
+  origin: (origin, c) => ((c.env as Env).HOME_ORIGIN ?? '').replace(/\/$/, '') === origin.replace(/\/$/, '') ? origin : null,
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  allowHeaders: ['content-type', 'authorization'],
+  maxAge: 600,
+});
+app.use('/admin/*', homeCors);
+
 // WebSocket upgrades are not CORS requests; keep the 101 response untouched.
-app.use('*', (c, next) => (c.req.header('upgrade')?.toLowerCase() === 'websocket' ? next() : corsMiddleware(c, next)));
+app.use('*', (c, next) => (c.req.header('upgrade')?.toLowerCase() === 'websocket' ? next() : c.req.path.startsWith('/admin/') ? next() : corsMiddleware(c, next)));
 
 app.get('/health', (c) => c.json({ ok: true, service: 'pokernight-tables', chainId: c.env.CHAIN_ID }));
 
@@ -152,7 +154,7 @@ app.get('/auth/config', (c) => {
     redirectUri = null;
   }
   return c.json({
-    devAuth: isDevAuth(c.env),
+    devAuth: false,
     home: {
       clientId: c.env.HOME_CLIENT_ID ?? '',
       origin: c.env.HOME_ORIGIN ?? '',
@@ -183,17 +185,6 @@ app.get('/auth/config', (c) => {
       buyIn: buyInOffer(c.env),
     },
   });
-});
-
-/** A membership ceremony's return leg: the auth answer plus which leg it was, and for an invitation, whom. */
-const HomeMembershipRequestSchema = z.object({
-  code: z.string().min(1).max(4096),
-  codeVerifier: z.string().min(1).max(512),
-  authOrigin: z.string().min(1).max(512),
-  nonce: z.string().min(1).max(512),
-  state: z.string().min(1).max(512),
-  leg: z.enum(['invite', 'join']),
-  member: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
 });
 
 const HomeAuthRequestSchema = z.object({
@@ -400,18 +391,18 @@ const SIGN_OUT_SWEEP_LIMIT = 100;
  * The index is a projection and may be briefly behind. A club missing from it means a seat that is
  * not stood up now; it is stood up by the operator seat-clear, which is what that gate is for.
  */
+/** The lobbies of this person's clubs — their clubs are their own links at their Home. Not fatal when the
+ *  Home cannot be asked: the pickup lobby is still swept, and saying so beats sweeping nothing. */
+async function lobbiesOf(env: Env, playerId: string, log: string): Promise<string[]> {
+  const agent = playerId.match(/^home:(0x[0-9a-f]{40})$/i)?.[1]?.toLowerCase();
+  if (!agent) return [];
+  const clubs = await myClubs(env, agent).catch((e: unknown) => { console.error(`${log}: could not list clubs`, e); return null; });
+  return (clubs ?? []).map((c) => c.clubId);
+}
+
 /** Every table this person could have sat at: the pickup lobby's, and each of their clubs'. */
 async function tablesAround(env: Env, playerId: string, log = 'sweep'): Promise<string[]> {
-  const lobbies: (string | undefined)[] = [undefined];
-  try {
-    const res = await env.CLUB_INDEX.get(env.CLUB_INDEX.idFromName(playerId)).fetch('https://index/list');
-    if (res.ok) {
-      const body = (await res.json()) as { clubs?: { clubId: string }[] };
-      for (const c of body.clubs ?? []) lobbies.push(c.clubId);
-    }
-  } catch (e) {
-    console.error(`${log}: could not list clubs`, e);
-  }
+  const lobbies: (string | undefined)[] = [undefined, ...(await lobbiesOf(env, playerId, log))];
   const tableIds: string[] = [];
   for (const which of lobbies) {
     try {
@@ -428,17 +419,7 @@ async function tablesAround(env: Env, playerId: string, log = 'sweep'): Promise<
 async function standUpEverywhere(env: Env, playerId: string): Promise<{ stoodUp: SeatStoodUp[]; failed: SeatStandUpFailure[] }> {
   const stoodUp: SeatStoodUp[] = [];
   const failed: SeatStandUpFailure[] = [];
-  const lobbies: (string | undefined)[] = [undefined];
-  try {
-    const res = await env.CLUB_INDEX.get(env.CLUB_INDEX.idFromName(playerId)).fetch('https://index/list');
-    if (res.ok) {
-      const body = (await res.json()) as { clubs?: { clubId: string }[] };
-      for (const c of body.clubs ?? []) lobbies.push(c.clubId);
-    }
-  } catch (e) {
-    // Not fatal: the pickup lobby is still swept, and saying so beats sweeping nothing.
-    console.error('sign-out: could not list clubs', e);
-  }
+  const lobbies: (string | undefined)[] = [undefined, ...(await lobbiesOf(env, playerId, 'sign-out'))];
   const tableIds: string[] = [];
   for (const which of lobbies) {
     try {
@@ -472,13 +453,6 @@ async function standUpEverywhere(env: Env, playerId: string): Promise<{ stoodUp:
   }
   return { stoodUp, failed };
 }
-
-app.post('/dev/session', async (c) => {
-  if (!isDevAuth(c.env)) return c.json({ error: 'dev auth disabled' }, 404);
-  const parsed = DevSessionRequestSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
-  return c.json(await mintDevSession(c.env, parsed.data.name));
-});
 
 /**
  * The lobby that holds a club's tables — or, with no club, the PICKUP lobby.
@@ -516,376 +490,278 @@ async function tableClub(env: Env, tableId: string): Promise<string | undefined>
   return ((await res.json()) as { club?: string }).club;
 }
 
-type Gate = { clubId: string; playerId: string; standing: 'host' | 'member' } | { refused: Response };
-
-/**
- * Resolve the caller and require at least `need` standing at the club named in the path.
- *
- * Both failures answer 404 rather than 403 on purpose: a stranger must not be able to tell a club
- * they are not in from a club that is not there. A MEMBER who needs to be a HOST is the one case
- * that gets a real refusal, because they already know the club exists and the useful answer is which
- * authority they are missing.
- */
-async function requireStanding(c: Context<{ Bindings: Env }>, need: 'host' | 'member'): Promise<Gate> {
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return { refused: c.json({ error: 'unauthenticated' }, 401) };
-  const clubId = c.req.param('clubId') ?? '';
-  if (!CLUB_ID_RE.test(clubId)) return { refused: c.json({ error: 'no such club' }, 404) };
-  const answer = await standingAt(c.env, clubId, session.playerId);
-  if (!answer || !belongs(answer.standing)) return { refused: c.json({ error: 'no such club' }, 404) };
-  if (need === 'host' && answer.standing !== 'host') {
-    return { refused: c.json({ error: `only a host of this club can do that — ${answer.because}` }, 403) };
-  }
-  return { clubId, playerId: session.playerId, standing: answer.standing as 'host' | 'member' };
-}
-
-/**
- * The gate a TABLE puts in front of itself once it belongs to a club: `null` to allow, a 404 to
- * refuse. A pickup table (no club) passes straight through, which is every table that exists today.
- */
-async function clubGate(c: Context<{ Bindings: Env }>, clubId: string | undefined): Promise<Response | null> {
-  if (!clubId) return null;
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  const answer = await standingAt(c.env, clubId, session?.playerId ?? null);
-  return !answer || !belongs(answer.standing) ? c.json({ error: 'no such table' }, 404) : null;
-}
-
-/**
- * The two gates every club route needs, said once.
- *
- * `clubMember` is "may you see this club at all"; `clubHost` is "may you change it". Both resolve the
- * session, DERIVE standing from the club's own roster, and refuse in the two different ways the whole
- * design turns on:
- *
- *   NO STANDING → 404, identical to a club that does not exist, because confirming that a club is
- *   real is confirming a fact about other people's private arrangements.
- *   MEMBER, where a host is needed → 403 BY NAME. They can already see the club, so telling them who
- *   may do this leaks nothing, and "only a host can" is a sentence somebody can act on.
- */
-type ClubGate = { refused: Response } | { clubId: string; session: { playerId: string; name?: string }; standing: ClubStanding };
-
-async function clubMember(c: Context<{ Bindings: Env }>): Promise<ClubGate> {
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return { refused: c.json({ error: 'unauthenticated' }, 401) };
-  const clubId = c.req.param('clubId') ?? '';
-  const answer = await standingAt(c.env, clubId, session.playerId);
-  if (!answer || !belongs(answer.standing)) return { refused: c.json({ error: 'no such club' }, 404) };
-  return { clubId, session, standing: answer.standing };
-}
-
-async function clubHost(c: Context<{ Bindings: Env }>): Promise<ClubGate> {
-  const gate = await clubMember(c);
-  if ('refused' in gate) return gate;
-  if (gate.standing !== 'host') {
-    return { refused: c.json({ error: `only a host of this club can do that — you are on its roster, not running it` }, 403) };
-  }
-  return gate;
-}
 
 /* ------------------------------------------------------------------ clubs */
 
 /**
- * A club is the group a poker night belongs to (`docs/WORKSPACES.md`). Every route here resolves the
- * session, DERIVES the caller's standing from the club's own roster, and then decides — and every
- * refusal says what is missing, because "you are not a member of Thursday Night" is a sentence
- * somebody can act on and a bare 403 is not.
+ * A CLUB IS ITS WORKSPACE AGENT AT THE HOME, and every route here asks that agent (`clubs.ts`).
  *
- * A club nobody has standing in is INDISTINGUISHABLE from one that does not exist: 404, never 403.
- * Confirming that a club exists is confirming a fact about other people's private arrangements.
+ * The session says who is asking (a Home sign-in carries their agent address); the club's own agent,
+ * asked as the club under the wire its host signed, says what they are to it — host, member, none —
+ * from ITS records and the chain. Nothing about a club is kept here but the wire. A club nobody has
+ * standing in answers 404, never 403: confirming that a club exists is confirming a fact about other
+ * people's arrangements, and a club this card room holds no wire for is, to it, no club at all.
  */
-app.post('/clubs', async (c) => {
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const parsed = CreateClubRequestSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
-  const clubId = crypto.randomUUID();
-  const init: InitClubRequest = {
-    clubId,
-    name: parsed.data.name,
-    createdBy: session.playerId,
-    createdByName: session.name,
-  };
-  const res = await clubStub(c.env, clubId).fetch('https://club/init', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(init),
-  });
-  return passthrough(res);
-});
+type Gate = { clubId: string; agent: string; name: string; standing: 'host' | 'member' } | { refused: Response };
 
+/** The person's agent address from their session — what every club question is asked about. */
+function agentOf(session: { playerId: string } & { address?: string }): string | null {
+  const a = String(session.address ?? '').toLowerCase();
+  return CLUB_ID_RE.test(a) ? a : null;
+}
+
+async function requireStanding(c: Context<{ Bindings: Env }>, need: 'host' | 'member'): Promise<Gate> {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return { refused: c.json({ error: 'unauthenticated' }, 401) };
+  const clubId = (c.req.param('clubId') ?? '').toLowerCase();
+  if (!CLUB_ID_RE.test(clubId)) return { refused: c.json({ error: 'no such club' }, 404) };
+  const agent = agentOf(session);
+  if (!agent) return { refused: c.json({ error: 'a club needs your own agent — sign in through your Home' }, 403) };
+  const answer = await standingAt(c.env, clubId, agent);
+  if (!answer || !belongs(answer.standing)) return { refused: c.json({ error: 'no such club' }, 404) };
+  if (need === 'host' && answer.standing !== 'host') {
+    return { refused: c.json({ error: `only a host of this club can do that — ${answer.because}` }, 403) };
+  }
+  return { clubId, agent, name: session.name, standing: answer.standing as 'host' | 'member' };
+}
+
+/**
+ * The gate a TABLE puts in front of itself once it belongs to a club: `null` to allow, a 404 to
+ * refuse. A pickup table (no club) passes straight through.
+ */
+async function clubGate(c: Context<{ Bindings: Env }>, clubId: string | undefined): Promise<Response | null> {
+  if (!clubId) return null;
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  const agent = session ? agentOf(session) : null;
+  const answer = agent ? await standingAt(c.env, clubId, agent) : null;
+  return !answer || !belongs(answer.standing) ? c.json({ error: 'no such table' }, 404) : null;
+}
+
+const clubMember = (c: Context<{ Bindings: Env }>) => requireStanding(c, 'member');
+const clubHost = (c: Context<{ Bindings: Env }>) => requireStanding(c, 'host');
+
+/** The clubs this person is in — their own links at their Home, filtered to this card room's clubs. */
 app.get('/clubs', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const res = await c.env.CLUB_INDEX.get(c.env.CLUB_INDEX.idFromName(session.playerId)).fetch('https://index/list');
-  return passthrough(res);
+  const agent = agentOf(session);
+  if (!agent) return c.json({ clubs: [] });
+  const clubs = await myClubs(c.env, agent);
+  return c.json({ clubs: clubs ?? [] });
+});
+
+/**
+ * THE WIRE CEREMONY'S TWO CALLS — what the Home's `service-agent-wire` template asks of the service it is
+ * authorising (`authorizeServiceAgentWire` at the Home). The bearer is the Home's own id_token for the
+ * person running the ceremony, verified here as at sign-in; `identity` is the club's agent the card room is
+ * to act as. The custodian then signs AS that agent at their Home — which nobody but the workspace's
+ * custodian can do — and hands the wire back to be checked and kept (`storeClubWire`).
+ */
+app.get('/admin/signer-address', async (c) => {
+  const who = await ceremonyPerson(c);
+  if (!who.ok) return c.json({ error: who.error }, 401);
+  const identity = String(c.req.query('identity') ?? '').toLowerCase();
+  if (!CLUB_ID_RE.test(identity)) return c.json({ error: 'identity (the club\'s agent) required' }, 400);
+  const delegate = clubDelegateAddress(c.env);
+  if (!delegate) return c.json({ error: 'this card room has no signing key to be authorised' }, 503);
+  return c.json({ identity, delegate, skills: [...CLUB_WIRE_SKILLS] });
+});
+
+app.post('/admin/service-wire', async (c) => {
+  const who = await ceremonyPerson(c);
+  if (!who.ok) return c.json({ error: who.error }, 401);
+  const body = (await c.req.json().catch(() => null)) as { wire?: unknown } | null;
+  if (!body?.wire || typeof body.wire !== 'object') return c.json({ error: 'wire required' }, 400);
+  const kept = await storeClubWire(c.env, body.wire as Parameters<typeof storeClubWire>[1]);
+  if (!kept.ok) return c.json({ ok: false, error: kept.error }, 400);
+  return c.json({ ok: true, club: kept.club, expiresAt: kept.expiresAt });
+});
+
+/** The person a ceremony's bearer names: a Home id_token for this client, verified as at sign-in. */
+async function ceremonyPerson(c: Context<{ Bindings: Env }>): Promise<{ ok: true; address: string } | { ok: false; error: string }> {
+  const bearer = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  if (!bearer) return { ok: false, error: 'the ceremony\'s bearer is required' };
+  try {
+    const identity = await verifyHomeIdToken(c.env, c.env.HOME_ORIGIN ?? '', bearer, '', Date.now());
+    return { ok: true, address: identity.address.toLowerCase() };
+  } catch (e) {
+    return { ok: false, error: e instanceof HomeAuthError ? e.reason : 'the ceremony\'s bearer did not verify' };
+  }
+}
+
+/**
+ * STARTING A CLUB is two ceremonies at the host's Home, and this is the return leg of each.
+ *
+ *   1. `workspace-create` charters the club's agent. The Worker exchanges the code, checks the identity
+ *      against the session, and answers with the agent's address and the id_token the wire ceremony needs
+ *      as its bearer — nothing is written yet, because nothing can be: the card room cannot act as the
+ *      club until the club has authorised it.
+ *   2. `service-agent-wire` (the Home calls `/admin/*` above and keeps nothing) authorises this card room
+ *      to act as the club. Then `POST /clubs/:clubId/found` writes the club's profile — the first act as
+ *      the club — after the club's own agent has said the person asking is its host.
+ */
+app.post('/clubs/charter', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const parsed = HomeAuthRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  let result;
+  try {
+    result = await completeCharterCeremony(c.env, parsed.data);
+  } catch (e) {
+    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
+    console.error('charter ceremony', e);
+    return c.json({ error: 'the club could not be chartered' }, 401);
+  }
+  if (homePlayerId(result.identity.address) !== session.playerId) {
+    return c.json({ error: 'that ceremony was completed by a different person than this session' }, 403);
+  }
+  return c.json({ clubId: result.agent, ...(result.agentName ? { agentName: result.agentName } : {}), idToken: result.idToken });
+});
+
+const FoundClubSchema = z.object({ name: z.string().min(1).max(64), games: z.array(z.string().max(32)).max(8).optional() });
+
+app.post('/clubs/:clubId/found', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const clubId = (c.req.param('clubId') ?? '').toLowerCase();
+  if (!CLUB_ID_RE.test(clubId)) return c.json({ error: 'no such club' }, 404);
+  const agent = agentOf(session);
+  if (!agent) return c.json({ error: 'a club needs your own agent — sign in through your Home' }, 403);
+  const parsed = FoundClubSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  const read = await readClub(c.env, clubId, agent);
+  if (!read) return c.json({ error: 'this card room holds no authorisation from that club yet — run the ceremony at your Home' }, 404);
+  if (read.you?.standing !== 'host') return c.json({ error: `only the club's steward can found it — ${read.you?.because ?? 'the club does not know you'}` }, 403);
+  if (read.profile?.name) return c.json({ error: `${read.profile.name} is already founded — a club is founded once` }, 409);
+  const profile = { name: parsed.data.name.trim(), foundedBy: agent, charteredAt: Date.now(), ...(parsed.data.games?.length ? { games: parsed.data.games } : {}) };
+  const w = await writeClubRecord(c.env, clubId, 'profile', profile);
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  const view = await clubViewFor(c.env, clubId, agent);
+  return view ? c.json(view, 201) : c.json({ clubId, name: profile.name }, 201);
 });
 
 /**
  * A CLUB'S HUDDLE, FROM THE CARD ROOM (Home spec 378, `club` scope). The Home's huddle service decides who may
  * start, join or end and Cloudflare carries the media; this route is the person's road to it: their card-room
- * session says who they are (a Home sign-in carries their agent address), the club's roster says they belong
- * here, and the card room calls the Home server-to-server under the paired secret, naming them — the Home
- * derives their standing at the club from ITS OWN records (the workspace's membership), so a member who has not
- * joined the club at their Home yet is refused there, by name, and the page says what to do. What comes
- * back — the run, and on start/join the ONE credential the browser SDK needs — is passed through once, kept
- * nowhere and logged nowhere. A dev session has no agent and cannot huddle; a stranger to the club gets the
- * same 404 the club gives a stranger for anything.
+ * session says who they are, and the card room calls the Home server-to-server under the paired secret,
+ * naming them — the Home derives their standing at the club from ITS records (the workspace's membership).
+ * What comes back — the run, and on start/join the ONE credential the browser SDK needs — is passed through
+ * once, kept nowhere and logged nowhere.
  */
 app.post('/clubs/:clubId/huddle/:op', async (c) => {
   const op = String(c.req.param('op') ?? '');
   if (!['start', 'join', 'get', 'leave', 'end'].includes(op)) return c.json({ ok: false, error: 'unknown huddle operation' }, 404);
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return c.json({ ok: false, error: 'unauthenticated' }, 401);
-  const clubId = c.req.param('clubId') ?? '';
-  const gate = await clubGate(c, clubId);
-  if (gate) return gate;
+  const gate = await clubMember(c);
+  if ('refused' in gate) return gate.refused;
   const a2a = (c.env.HOME_A2A_ORIGIN ?? '').trim().replace(/\/$/, '');
   const secret = (c.env.CLUB_ROSTER_SECRET ?? '').trim();
   if (!a2a || !secret) return c.json({ ok: false, error: 'huddles_not_configured' }, 503);
-  const address = 'address' in session ? String((session as { address?: string }).address ?? '').toLowerCase() : '';
-  if (!/^0x[0-9a-f]{40}$/.test(address)) return c.json({ ok: false, error: 'a huddle needs your own agent — sign in through your Home' }, 403);
-  const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(session.playerId)}`);
-  if (!res.ok) return c.json({ error: 'no such club' }, 404);
-  const view = (await res.json().catch(() => null)) as { name?: string; agent?: string; createdBy?: string; roster?: Array<{ member: string; home?: string }> } | null;
-  if (!view?.agent) return c.json({ ok: false, error: `${view?.name ?? 'this club'} has no agent of its own yet — a huddle needs the club chartered at its host's Home` }, 409);
   const body = (await c.req.json().catch(() => ({}))) as { displayName?: string; key?: string };
-  // WHAT THE HOME KNOWS OF THEM. Standing at the club's huddle is the Home's to derive, from the workspace's
-  // membership; somebody on this roster whom the Home does not record yet is refused there. Said here in the
-  // words that lead somewhere — "join at your Home" — rather than the room's "nothing here".
-  const mine = view.roster?.find((m) => m.member === session.playerId);
-  const knownAtHome = session.playerId === view.createdBy || mine?.home === 'joined';
   const r = await fetch(`${a2a}/huddles/${op}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
-    body: JSON.stringify({ actor: address, scope: { kind: 'club', principal: view.agent.toLowerCase(), id: clubId }, displayName: (body.displayName ?? session.name ?? '').toString().slice(0, 80), key: (body.key ?? '').toString().slice(0, 120) || `${op}:${address}:${Date.now()}` }),
+    body: JSON.stringify({ actor: gate.agent, scope: { kind: 'club', principal: gate.clubId, id: gate.clubId }, displayName: (body.displayName ?? gate.name ?? '').toString().slice(0, 80), key: (body.key ?? '').toString().slice(0, 120) || `${op}:${gate.agent}:${Date.now()}` }),
     signal: AbortSignal.timeout(20_000),
   }).catch((e: unknown) => ({ ok: false, status: 502, json: async () => ({ ok: false, error: e instanceof Error ? e.message : String(e) }) }) as unknown as Response);
   const out = (await r.json().catch(() => ({ ok: false, error: `the Home answered ${r.status}` }))) as Record<string, unknown>;
-  if (out.ok === false && !knownAtHome) {
-    out.error = `your Home does not record you as a member of ${view.name ?? 'this club'} yet — join the club at your Home from its page, and its huddle will let you in`;
-  }
   return c.json(out, (r.status >= 200 && r.status < 600 ? r.status : 502) as 200);
 });
 
-/**
- * A club, to somebody with standing in it — and, first, THE ROSTER BROUGHT UP TO DATE WITH THE HOME'S.
- *
- * Membership lives at the Home (WORKSPACES.md §5, 2026-09-13): the workspace's own membership records, written
- * when a member joins there. The card room's roster is a projection of that, so a chartered club asks its
- * Home who belongs before it answers, and reconciles (`ClubDO.reconcile`): people the Home records are on the
- * roster, marked `joined`, whether or not anybody added them here. Best-effort and bounded — a Home that does
- * not answer leaves the last projection standing, which is a step behind and never wrong about who is here.
- */
+/** A club, to somebody with standing in it: ONE read of the club's agent. */
 app.get('/clubs/:clubId', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const clubId = c.req.param('clubId') ?? '';
-  if (!CLUB_ID_RE.test(clubId)) return c.json({ error: 'no such club' }, 404);
-  await reconcileWithHome(c.env, clubId);
-  const res = await clubStub(c.env, clubId).fetch(`https://club/view?player=${encodeURIComponent(session.playerId)}`);
-  return passthrough(res);
+  const clubId = (c.req.param('clubId') ?? '').toLowerCase();
+  const agent = agentOf(session);
+  if (!CLUB_ID_RE.test(clubId) || !agent) return c.json({ error: 'no such club' }, 404);
+  const view = await clubViewFor(c.env, clubId, agent);
+  return view ? c.json(view) : c.json({ error: 'no such club' }, 404);
 });
 
-async function reconcileWithHome(env: Env, clubId: string): Promise<{ members: number } | null> {
-  const sum = await clubStub(env, clubId).fetch('https://club/summary');
-  if (!sum.ok) return null;
-  const club = (await sum.json().catch(() => null)) as { agent?: string } | null;
-  if (!club?.agent) return null;
-  const roster = await homeRoster(env, club.agent);
-  if (!roster) return null;
-  await clubStub(env, clubId).fetch('https://club/reconcile', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ members: roster.members }),
-  });
-  return { members: roster.members.length };
-}
-
-/**
- * The return leg of a MEMBERSHIP CEREMONY — either the host's invitation or the member's join, both run at a
- * Home and both arriving here on the same redirect URI as every other ceremony (`leg` says which).
- *
- *   invite  a host of this club ran `workspace-member-invite` for `member`. The Home holds the grant for them
- *           to claim; the roster marks them `invited` so the page can say "waiting for them to join".
- *   join    a member of this club ran `workspace-join`. Nothing is believed from the code: the Worker asks the
- *           Home for the workspace's roster and marks them `joined` only when the Home now records them.
- *
- * In both, the id_token's identity must be the session's — a ceremony completed by one person is never
- * recorded as another's act.
- */
-app.post('/clubs/:clubId/home-membership', async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = HomeMembershipRequestSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
-  const gate = await requireStanding(c, parsed.data.leg === 'invite' ? 'host' : 'member');
-  if ('refused' in gate) return gate.refused;
-  let identity;
-  try {
-    identity = (await completeMembershipCeremony(c.env, parsed.data)).identity;
-  } catch (e) {
-    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
-    console.error('membership ceremony', e);
-    return c.json({ error: 'the membership ceremony could not be finished' }, 401);
-  }
-  if (homePlayerId(identity.address) !== gate.playerId) {
-    return c.json({ error: 'that ceremony was completed by a different person than this session' }, 403);
-  }
-  if (parsed.data.leg === 'invite') {
-    const member = (parsed.data.member ?? '').toLowerCase();
-    if (!/^0x[0-9a-f]{40}$/.test(member)) return c.json({ error: 'an invitation names the member it is for' }, 400);
-    const res = await clubStub(c.env, gate.clubId).fetch(`https://club/members/${encodeURIComponent(homePlayerId(member))}/home`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ home: 'invited' }),
-    });
-    if (!res.ok) return passthrough(res);
-    return c.json({ leg: 'invite', member: homePlayerId(member), home: 'invited' });
-  }
-  const done = await reconcileWithHome(c.env, gate.clubId);
-  const view = await clubStub(c.env, gate.clubId).fetch(`https://club/view?player=${encodeURIComponent(gate.playerId)}`);
-  const v = (await view.json().catch(() => null)) as { roster?: Array<{ member: string; home?: string }> } | null;
-  const mine = v?.roster?.find((m) => m.member === gate.playerId);
-  if (gate.standing === 'host') return c.json({ leg: 'join', member: gate.playerId, home: 'joined' });
-  if (mine?.home !== 'joined') {
-    return c.json({ error: done ? 'your Home finished, but the club\'s agent does not record you as a member yet — its host may need to enable the club\'s storage at their Home, then join again' : 'your Home finished, but the card room could not ask the club\'s agent who belongs; try again in a moment' }, 409);
-  }
-  return c.json({ leg: 'join', member: gate.playerId, home: 'joined' });
-});
-
-/**
- * WHAT THE HOST WANTS SAID about their club.
- *
- * This is the invitation's content. The Home's mailer composes the email itself and takes only an
- * address, a link and a name — so a host's own words cannot ride in the mail, and this is what the
- * link opens onto instead. Which is the better place for it: mail clients strip formatting and block
- * images, and a page can show the schedule and the next few dates as they actually are.
- */
+/** What the host wants said about their club — the profile, rewritten with the new words. */
 app.put('/clubs/:clubId/welcome', async (c) => {
   const gate = await clubHost(c);
   if ('refused' in gate) return gate.refused;
   const body = (await c.req.json().catch(() => null)) as { welcome?: unknown } | null;
   if (typeof body?.welcome !== 'string') return c.json({ error: 'welcome must be text' }, 400);
-  return passthrough(
-    await clubStub(c.env, gate.clubId).fetch('https://club/welcome', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ welcome: body.welcome }),
-    }),
-  );
+  const read = await readClub(c.env, gate.clubId, gate.agent);
+  if (!read?.profile) return c.json({ error: 'no such club' }, 404);
+  const text = body.welcome.trim().slice(0, 2000);
+  const { welcome: _old, ...rest } = read.profile;
+  const w = await writeClubRecord(c.env, gate.clubId, 'profile', { ...rest, ...(text ? { welcome: text } : {}) });
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  return c.json({ welcome: text || undefined });
 });
 
 /**
- * THE CLUB'S NIGHTS, AS A CALENDAR SUBSCRIPTION.
- *
- * "A recurring calendar invite that shows up in their calendar with a link that takes them right into
- * the game." A calendar client fetches this every half hour from a phone with no session and no way
- * to be prompted for anything, so the URL carries the authority — see `feed-token.ts` for what that
- * token is and is not.
- *
- * MEMBERSHIP IS STILL CHECKED, every fetch. The token says who is asking; the club says whether they
- * still belong. So a feed stops answering when somebody leaves, with nothing to revoke and nothing to
- * remember to clean up.
- *
- * Discrete events rather than one RRULE, and why, is in `packages/protocol/src/ics.ts`.
+ * THE CLUB'S NIGHTS, AS A CALENDAR SUBSCRIPTION. A calendar client fetches this every half hour from a
+ * phone with no session, so the URL carries the authority (`feed-token.ts`); membership is still asked of
+ * the club's agent on every fetch, so a feed stops answering when somebody leaves.
  */
 app.get('/clubs/:clubId/calendar/:token', async (c) => {
-  const clubId = c.req.param('clubId') ?? '';
-  // `.ics` on the end is what makes a phone open this with a calendar rather than a text viewer.
+  const clubId = (c.req.param('clubId') ?? '').toLowerCase();
   const token = (c.req.param('token') ?? '').replace(/\.ics$/, '');
-  const player = await feedPlayer(c.env, clubId, token);
-  if (!player) return c.json({ error: 'no such calendar' }, 404);
-  const answer = await standingAt(c.env, clubId, player);
-  if (!answer || !belongs(answer.standing)) return c.json({ error: 'no such calendar' }, 404);
-
-  const sum = await clubStub(c.env, clubId).fetch('https://club/summary');
-  if (!sum.ok) return c.json({ error: 'no such calendar' }, 404);
-  const club = (await sum.json()) as { name: string; welcome?: string };
-  const got = await clubStub(c.env, clubId).fetch('https://club/nights?limit=50');
-  const nights = got.ok ? ((await got.json()) as { nights: Night[] }).nights : [];
-
+  const agent = await feedPlayer(c.env, clubId, token);
+  if (!agent || !CLUB_ID_RE.test(agent)) return c.json({ error: 'no such calendar' }, 404);
+  const view = await clubViewFor(c.env, clubId, agent);
+  if (!view) return c.json({ error: 'no such calendar' }, 404);
   const site = siteOrigin(c.env);
-  // THE LINK THAT OPENS THE GAME. The club's page: it is where that night's table appears when it is
-  // opened, and it is a link that is true today rather than one pointing at a table id that does not
-  // exist yet.
   const url = `${site}/#/clubs/${encodeURIComponent(clubId)}`;
   const body = icsCalendar({
-    name: club.name,
-    ...(club.welcome ? { description: club.welcome } : {}),
+    name: view.name,
+    ...(view.welcome ? { description: view.welcome } : {}),
     domain: new URL(site).hostname,
-    nights: nights.map((n) => ({
+    nights: view.nights.map((n) => ({
       nightId: n.nightId,
       startsAt: n.startsAt,
-      // A phone's calendar shows the SUMMARY and often nothing else, so the game goes in it. "Thursday
-      // Night" and "Thursday Night — Canasta" are the difference between a reminder and a decision.
-      title: n.game ? `${n.title ?? club.name} — ${gameName(n.game)}` : (n.title ?? club.name),
-      description: `${club.name} at ${site.replace(/^https?:\/\//, '')}\n\n${club.welcome ?? ''}`.trim(),
+      title: n.game ? `${n.title ?? view.name} — ${gameName(n.game)}` : (n.title ?? view.name),
+      description: `${view.name} at ${site.replace(/^https?:\/\//, '')}\n\n${view.welcome ?? ''}`.trim(),
       url,
       ...(n.status ? { status: n.status } : {}),
     })),
   });
-  // `?download=1` asks for a FILE rather than a subscription. It matters because the two are
-  // different answers to different questions: a subscription keeps up with the club and is invisible
-  // in Google Calendar for hours, and a download appears the moment it is opened and never changes
-  // again. `attachment` is what makes a browser save it rather than show it as text — and the
-  // `download` attribute on a link cannot do that job here, because the feed is on another origin.
   const asFile = c.req.query('download') === '1';
-  const file = `${club.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'club'}.ics`;
+  const file = `${view.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'club'}.ics`;
   return new Response(body, {
     headers: {
       'content-type': 'text/calendar; charset=utf-8',
       'content-disposition': `${asFile ? 'attachment' : 'inline'}; filename="${file}"`,
-      // Never cached by anything in between: a night called off has to reach a subscriber.
       'cache-control': 'no-store',
     },
   });
 });
 
-/** What a game is called, for a calendar entry. The client has the full list; this needs the names. */
+/** What a game is called, for a calendar entry. */
 function gameName(game: string): string {
   return game === 'canasta' ? 'Canasta' : game === 'poker' ? "Texas Hold'em" : game;
 }
 
-/** The subscription URL for the caller's own feed of this club. A member's, not a host's, to have. */
+/** The subscription URL for the caller's own feed of this club. */
 app.get('/clubs/:clubId/calendar', async (c) => {
   const gate = await clubMember(c);
   if ('refused' in gate) return gate.refused;
   let token: string;
   try {
-    token = await feedToken(c.env, gate.clubId, gate.session.playerId);
+    token = await feedToken(c.env, gate.clubId, gate.agent);
   } catch {
-    // A deployment with no signing secret has no feeds, and says so rather than handing out a URL
-    // that will 404 forever.
     return c.json({ error: 'this card room cannot publish calendars' }, 503);
   }
-  // This Worker's own origin, because that is what a calendar client will fetch.
   const api = new URL(c.req.url).origin;
   const url = `${api}/clubs/${encodeURIComponent(gate.clubId)}/calendar/${token}.ics`;
-  return c.json({
-    url,
-    // `webcal:` is what makes a phone offer to SUBSCRIBE rather than to import once — the difference
-    // between a calendar that keeps up with the club and eight events frozen at the moment of download.
-    webcal: url.replace(/^https?:/, 'webcal:'),
-  });
+  return c.json({ url, webcal: url.replace(/^https?:/, 'webcal:') });
 });
 
 /**
- * WHEN THIS CLUB MEETS, and the nights that come of it.
- *
- * READING is a member's right and SETTING is a host's — the same split as every other club route, and
- * the same 404 for anybody with no standing, because a club they are not in must stay
- * indistinguishable from one that does not exist.
- *
- * The schedule is a RULE and stores a wall clock; a night is one OCCURRENCE and stores an instant
- * resolved once, at materialisation, and never resolved again (`packages/protocol/src/when.ts`).
- * Nights are materialised AHEAD, because an invitation cannot be sent to an occurrence that does not
- * exist and "who is coming on the 12th" cannot be asked of a formula.
- *
- * Everything the materialiser cannot honour is refused by NAME at this boundary rather than stored:
- * a schedule accepted and silently misread produces nights at the wrong time for months, and nobody
- * looks at the schedule again because it was accepted.
+ * WHEN THIS CLUB MEETS. The schedule is a RULE (`cardroom.club.schedule`) and the nights are DERIVED from it
+ * at read time, with the host's exceptions (`cardroom.club.nights`) laid over — nothing is materialised and
+ * nothing has to be kept in step. Reading is a member's; setting is a host's.
  */
 app.get('/clubs/:clubId/schedule', async (c) => {
   const gate = await clubMember(c);
   if ('refused' in gate) return gate.refused;
-  return passthrough(await clubStub(c.env, gate.clubId).fetch('https://club/schedule'));
+  const view = await clubViewFor(c.env, gate.clubId, gate.agent);
+  return c.json({ schedule: view?.schedule ?? null });
 });
 
 app.put('/clubs/:clubId/schedule', async (c) => {
@@ -893,94 +769,58 @@ app.put('/clubs/:clubId/schedule', async (c) => {
   if ('refused' in gate) return gate.refused;
   const parsed = SetScheduleRequestSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
-  return passthrough(
-    await clubStub(c.env, gate.clubId).fetch('https://club/schedule', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...parsed.data, createdBy: gate.session.playerId }),
-    }),
-  );
+  const made = scheduleFrom(gate.clubId, parsed.data, gate.agent);
+  if (!made.ok) return c.json({ error: made.error }, 400);
+  const w = await writeClubRecord(c.env, gate.clubId, 'schedule', made.schedule);
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  return c.json({ schedule: made.schedule, nights: nightsOf(gate.clubId, made.schedule, null) });
 });
 
-/**
- * Stop meeting on a rule.
- *
- * The nights it already made are LEFT ALONE. People were told about those; withdrawing a recurrence
- * is not the same as calling off a Thursday, and deleting somebody's night because the host edited a
- * rule is exactly the behaviour that makes people stop trusting a calendar.
- */
 app.delete('/clubs/:clubId/schedule', async (c) => {
   const gate = await clubHost(c);
   if ('refused' in gate) return gate.refused;
-  return passthrough(await clubStub(c.env, gate.clubId).fetch('https://club/schedule', { method: 'DELETE' }));
+  const read = await readClub(c.env, gate.clubId, gate.agent);
+  if (!read?.schedule) return c.json({ retired: true });
+  const w = await writeClubRecord(c.env, gate.clubId, 'schedule', { ...read.schedule, status: 'retired' });
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  return c.json({ retired: true });
 });
 
 app.get('/clubs/:clubId/nights', async (c) => {
   const gate = await clubMember(c);
   if ('refused' in gate) return gate.refused;
-  const q = new URLSearchParams();
-  if (c.req.query('from')) q.set('from', c.req.query('from') as string);
-  if (c.req.query('limit')) q.set('limit', c.req.query('limit') as string);
-  return passthrough(await clubStub(c.env, gate.clubId).fetch(`https://club/nights?${q.toString()}`));
+  const view = await clubViewFor(c.env, gate.clubId, gate.agent);
+  return c.json({ nights: view?.nights ?? [] });
 });
 
-/** Call one off (`cancelled`), or take just this one out of the series (`skip: true` → `skipped`). */
+/** Call one off (`cancelled`), or take just this one out of the series (`skipped`): an exception on the record. */
 app.post('/clubs/:clubId/nights/:nightId/cancel', async (c) => {
   const gate = await clubHost(c);
   if ('refused' in gate) return gate.refused;
+  const nightId = decodeURIComponent(c.req.param('nightId') ?? '');
   const body = (await c.req.json().catch(() => ({}))) as { reason?: string; skip?: boolean };
-  return passthrough(
-    await clubStub(c.env, gate.clubId).fetch(`https://club/nights/${encodeURIComponent(c.req.param('nightId') ?? '')}/cancel`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ reason: body.reason, skip: body.skip === true }),
-    }),
-  );
+  const read = await readClub(c.env, gate.clubId, gate.agent);
+  if (!read) return c.json({ error: 'no such club' }, 404);
+  const schedule = read.schedule && read.schedule.status === 'active' ? read.schedule : null;
+  const night = nightsOf(gate.clubId, schedule, read.nights).find((n) => n.nightId === nightId);
+  if (!night) return c.json({ error: 'no such night' }, 404);
+  const exceptions = { ...(read.nights?.exceptions ?? {}), [nightId]: { status: (body.skip === true ? 'skipped' : 'cancelled') as 'skipped' | 'cancelled', cancelledAt: Date.now(), ...((body.reason ?? '').trim() ? { reason: (body.reason ?? '').trim() } : {}) } };
+  const w = await writeClubRecord(c.env, gate.clubId, 'nights', { ...(read.nights ?? {}), exceptions });
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  const after = nightsOf(gate.clubId, schedule, { exceptions }).find((n) => n.nightId === nightId);
+  return c.json({ night: after ?? night });
 });
 
 /**
- * RETIRE A CLUB — the host's own way to close one, and the thing every other refusal points at.
- *
- * Removing the person who started a club is refused with "retire the club instead", and until now that
- * sentence named a route that did not exist: a club, once made, was permanent. Nobody could clear a
- * mistake, a test, or a group that had stopped meeting, and every one of them stayed in its members'
- * navigation for good.
- *
- * ONLY ITS HOST. There is exactly one — `created_by` — so this is not a role that can be shared or
- * handed over, and the refusals split the way every other club refusal does: somebody with NO standing
- * gets 404, because a club they are not in must stay indistinguishable from one that does not exist,
- * and a MEMBER gets 403 by name, because they can already see the club and telling them who may close
- * it leaks nothing.
- *
- * ITS TABLES GO WITH IT, and this is the order that matters:
- *
- *   1. LOOK at every table in the club's lobby, and refuse the whole thing if anybody is seated at
- *      one. A seat holds somebody's chips, and at a settled table those chips are their money —
- *      closing the club out from under them would strand both. Nothing has been destroyed yet when
- *      this refusal happens, and it names the tables in the way so the host knows what to do.
- *   2. Retire the tables. A club's table is private to it, so leaving them behind would leave tables
- *      that no living standing can ever see again — reachable by direct link and by nothing else.
- *   3. Retire the club itself, which drops it from every member's index last.
- *
- * IT DOES NOT TOUCH THE CLUB'S SMART AGENT. The `<label>.workspace` agent was deployed at the host's
- * own Home and this card room has never held its key. The answer says so when there was one, because
- * a host who reads "retired" and assumes the agent went too has been misled about something that is
- * still out there in the estate with their name on it.
- *
- * There is no undo, and no operator override: this is the host's decision about their own group.
+ * RETIRING A CLUB. It LOOKS FIRST and refuses (409, naming them) if anybody is seated at one of the club's
+ * tables; then closes the club's tables; then marks the club's profile retired at its Home and lets go of
+ * the wire. The club's agent is NOT ours to retire: it lives at the host's Home and this card room never
+ * held its key — the answer says so.
  */
 app.delete('/clubs/:clubId', async (c) => {
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const clubId = c.req.param('clubId') ?? '';
-  const answer = await standingAt(c.env, clubId, session.playerId);
-  if (!answer || !belongs(answer.standing)) return c.json({ error: 'no such club' }, 404);
-  if (answer.standing !== 'host') {
-    return c.json({ error: `only the person who started this club can retire it — ${answer.because}` }, 403);
-  }
-
-  // 1. Look before touching anything.
-  const listed = await lobby(c.env, clubId).fetch('https://lobby/list');
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const listed = await lobby(c.env, gate.clubId).fetch('https://lobby/list');
   const tables = listed.ok ? ((await listed.json()) as TableSummary[]) : [];
   const busy = tables.filter((t) => t.seated > 0);
   if (busy.length > 0) {
@@ -994,265 +834,53 @@ app.delete('/clubs/:clubId', async (c) => {
       409,
     );
   }
-
-  // 2. Its tables. Each one is private to this club, so a table left behind is a table nobody can
-  //    ever reach through a listing again.
   const closed: string[] = [];
   for (const t of tables) {
-    const res = await lobby(c.env, clubId).fetch('https://lobby/retire', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tableId: t.tableId }),
-    });
+    const res = await lobby(c.env, gate.clubId).fetch('https://lobby/retire', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tableId: t.tableId }) });
     if (res.ok) closed.push(t.name);
   }
-
-  // 3. The club, which drops itself from every member's index on the way out.
-  const res = await clubStub(c.env, clubId).fetch('https://club/retire', { method: 'POST' });
-  if (!res.ok) return passthrough(res);
-  const done = (await res.json()) as Record<string, unknown>;
-  return c.json({ ...done, tablesClosed: closed }, 200);
-});
-
-/**
- * Finish the `workspace-create` ceremony the host ran at their Home, and record what it deployed.
- *
- * Two checks before anything is written, and they are different questions: HOST STANDING says this
- * person may charter this club, and the id_token subject says the ceremony they are handing over is
- * their own. Either alone is not enough — a host could otherwise record somebody else's ceremony,
- * and a stranger could otherwise record their own onto a club they have nothing to do with.
- */
-app.post('/clubs/:clubId/charter', async (c) => {
-  const gate = await requireStanding(c, 'host');
-  if ('refused' in gate) return gate.refused;
-  const parsed = HomeAuthRequestSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
-
-  let result;
-  try {
-    result = await completeCharterCeremony(c.env, parsed.data);
-  } catch (e) {
-    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
-    console.error('charter ceremony', e);
-    return c.json({ error: 'the club could not be chartered' }, 401);
+  const read = await readClub(c.env, gate.clubId, gate.agent);
+  const name = read?.profile?.name ?? gate.clubId;
+  if (read?.profile) {
+    const w = await writeClubRecord(c.env, gate.clubId, 'profile', { ...read.profile, retiredAt: Date.now() });
+    if (!w.ok) return c.json({ error: w.error }, w.status as 502);
   }
-  if (homePlayerId(result.identity.address) !== gate.playerId) {
-    return c.json({ error: 'that ceremony was completed by a different person than this session' }, 403);
-  }
-  const res = await clubStub(c.env, gate.clubId).fetch('https://club/charter', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      agent: result.agent,
-      ...(result.agentName ? { agentName: result.agentName } : {}),
-      ...(result.stewardship === undefined ? {} : { stewardship: result.stewardship }),
-    }),
-  });
-  return passthrough(res);
+  await c.env.CLUB_WIRES?.delete(`wire:${gate.clubId}`);
+  return c.json({ retired: gate.clubId, name, agent: gate.clubId, tablesClosed: closed }, 200);
 });
 
 app.get('/clubs/:clubId/members', async (c) => {
-  const gate = await requireStanding(c, 'member');
+  const gate = await clubMember(c);
   if ('refused' in gate) return gate.refused;
-  const res = await clubStub(c.env, gate.clubId).fetch(`https://club/view?player=${encodeURIComponent(gate.playerId)}`);
-  if (!res.ok) return passthrough(res);
-  const view = (await res.json()) as { roster: unknown[] };
-  return c.json({ members: view.roster });
-});
-
-app.post('/clubs/:clubId/members', async (c) => {
-  const gate = await requireStanding(c, 'host');
-  if ('refused' in gate) return gate.refused;
-  const parsed = InviteMemberRequestSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
-  // An address, a playerId, or an AGENT NAME — the last resolved on chain, because a host knows
-  // their friends by name and should not have to find a hex string to add one.
-  const who = await resolveInvitee(c.env, parsed.data.member);
-  if (!who.ok) return c.json({ error: who.error }, 400);
-  const body: AddMemberRequest = {
-    member: who.member,
-    name: parsed.data.name ?? who.name ?? who.member,
-    class: parsed.data.class,
-    invitedBy: gate.playerId,
-    ...(parsed.data.validUntil === undefined ? {} : { validUntil: parsed.data.validUntil }),
-  };
-  const res = await clubStub(c.env, gate.clubId).fetch('https://club/members', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return passthrough(res);
-});
-
-/* ------------------------------------------------------------- invitations */
-
-/** How long an invitation link is good for. A poker night is weekly; a fortnight covers two of them. */
-const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-
-/** Where an invitation LANDS. Registered for this app at the Home, which is what makes it mailable. */
-function joinUrl(env: Env, clubId: string, token: string): string {
-  const origin = new URL(homeRedirectUri(env)).origin;
-  return `${origin}/#/join/${encodeURIComponent(clubId)}/${encodeURIComponent(token)}`;
-}
-
-/**
- * Invite somebody by EMAIL.
- *
- * The one identifier a host always has and the card room can do nothing with: no chain maps an inbox
- * to an agent. So this writes a pending invitation, asks the host's Home to mail the link, and
- * answers with the link either way — a Home with no mailer configured is a reason to show the host
- * something to paste, never a reason to lose the invitation.
- */
-app.post('/clubs/:clubId/invites', async (c) => {
-  const gate = await requireStanding(c, 'host');
-  if ('refused' in gate) return gate.refused;
-  const parsed = ClubInviteRequestSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
-
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
-  const body: CreateInviteRequest = {
-    token,
-    email: parsed.data.email.trim().toLowerCase(),
-    ...(parsed.data.name ? { name: parsed.data.name } : {}),
-    class: parsed.data.class,
-    invitedBy: gate.playerId,
-    invitedByName: session?.name ?? gate.playerId,
-    expiresAt: Date.now() + INVITE_TTL_MS,
-    ...(parsed.data.validUntil === undefined ? {} : { validUntil: parsed.data.validUntil }),
-  };
-  const res = await clubStub(c.env, gate.clubId).fetch('https://club/invites', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (res.status !== 201) return passthrough(res);
-  const { invite } = (await res.json()) as { invite: ClubInvite };
-  const url = joinUrl(c.env, gate.clubId, token);
-  const mail = await mailInvite(c.env, {
-    playerId: gate.playerId,
-    email: invite.email,
-    joinUrl: url,
-    clubName: invite.clubName,
-  });
-  return c.json(
-    {
-      invite,
-      joinUrl: url,
-      // Exactly what happened to the mail, in the same words every time: sent, logged by a Home with
-      // no mailer, or not sent and why. A host who is told "sent" when nothing was sent will wait.
-      delivery: mail.ok ? mail.delivery : 'not-sent',
-      ...(mail.ok ? {} : { deliveryError: mail.why }),
-    },
-    201,
-  );
-});
-
-/** The club's invitations, for its hosts. Claimed ones stay: they are the record of who let who in. */
-app.get('/clubs/:clubId/invites', async (c) => {
-  const gate = await requireStanding(c, 'host');
-  if ('refused' in gate) return gate.refused;
-  return passthrough(await clubStub(c.env, gate.clubId).fetch('https://club/invites'));
-});
-
-app.delete('/clubs/:clubId/invites/:token', async (c) => {
-  const gate = await requireStanding(c, 'host');
-  if ('refused' in gate) return gate.refused;
-  const token = c.req.param('token') ?? '';
-  return passthrough(
-    await clubStub(c.env, gate.clubId).fetch(`https://club/invites/${encodeURIComponent(token)}`, { method: 'DELETE' }),
-  );
+  const view = await clubViewFor(c.env, gate.clubId, gate.agent);
+  return c.json({ members: view?.roster ?? [] });
 });
 
 /**
- * What somebody who OPENED an invitation is told — with NO session, because they do not have one yet.
- *
- * This is the whole reason the greeting is smaller than the record: the person reading it has proved
- * nothing except that they hold the token. They get the club's name, who invited them and whether it
- * is still good, which is what they need to decide whether to sign in. Not the email, not the roster.
+ * WHOM A HOST MEANS, by name or address — resolved on chain so a host never has to find a hex string. The
+ * membership itself is two ceremonies at the Home (invite, join); this only turns "carol.me" into the
+ * agent the invitation names.
  */
-app.get('/clubs/:clubId/invite/:token', async (c) => {
-  const clubId = c.req.param('clubId') ?? '';
-  if (!CLUB_ID_RE.test(clubId)) return c.json({ error: 'no such invitation' }, 404);
-  const token = c.req.param('token') ?? '';
-  return passthrough(await clubStub(c.env, clubId).fetch(`https://club/invite?token=${encodeURIComponent(token)}`));
+app.get('/clubs/:clubId/resolve', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const raw = (c.req.query('who') ?? '').trim();
+  if (CLUB_ID_RE.test(raw)) return c.json({ agent: raw.toLowerCase() });
+  if (!looksLikeAgentName(raw)) return c.json({ error: `"${raw}" is not an agent name or address` }, 400);
+  const answer = await resolveAgentName(c.env, raw);
+  if (!answer.ok) return c.json({ error: answer.error }, 400);
+  return c.json({ agent: answer.address.toLowerCase(), name: answer.name });
 });
 
-/**
- * Claim it. The membership is keyed by whoever SIGNED IN, never by the email it was sent to.
- *
- * A person could forward the mail; the club gets the agent that actually turned up, which is the only
- * identity a session can present and therefore the only one worth writing down.
- */
-app.post('/clubs/:clubId/invite/:token/claim', async (c) => {
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const clubId = c.req.param('clubId') ?? '';
-  if (!CLUB_ID_RE.test(clubId)) return c.json({ error: 'no such invitation' }, 404);
-  const body: ClaimInviteRequest = {
-    token: c.req.param('token') ?? '',
-    member: session.playerId,
-    ...(session.name ? { name: session.name } : {}),
-  };
-  return passthrough(
-    await clubStub(c.env, clubId).fetch('https://club/invite/claim', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
-  );
-});
-
-/**
- * The people the caller ALREADY PLAYS WITH: everyone on the roster of any club they are in.
- *
- * The most common invitation there is — "add the three of them from Tuesday" — and the one that
- * should need no identifier at all, because the card room already knows these people by name. The
- * caller is left out of their own list, and so is anybody they have no club in common with: this
- * answers "who do YOU play with", never "who is in this card room".
- */
+/** The people this person already plays with: everyone on the rosters of their clubs, but them. */
 app.get('/people', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const listed = await c.env.CLUB_INDEX.get(c.env.CLUB_INDEX.idFromName(session.playerId)).fetch('https://index/list');
-  if (!listed.ok) return c.json({ people: [] });
-  const { clubs } = (await listed.json()) as { clubs: { clubId: string; name: string }[] };
-
-  const byMember = new Map<string, KnownPerson>();
-  for (const club of clubs) {
-    const res = await clubStub(c.env, club.clubId).fetch(`https://club/view?player=${encodeURIComponent(session.playerId)}`);
-    if (!res.ok) continue;
-    const view = (await res.json()) as ClubView;
-    for (const m of view.roster) {
-      if (m.member === session.playerId) continue;
-      const known = byMember.get(m.member);
-      if (known) known.clubs.push(view.name);
-      else byMember.set(m.member, { member: m.member, name: m.name, clubs: [view.name] });
-    }
-  }
-  return c.json({ people: [...byMember.values()].sort((a, b) => a.name.localeCompare(b.name)) });
+  const agent = agentOf(session);
+  if (!agent) return c.json({ people: [] });
+  return c.json({ people: await knownPeople(c.env, agent) });
 });
 
-app.delete('/clubs/:clubId/members/:member', async (c) => {
-  const gate = await requireStanding(c, 'host');
-  if ('refused' in gate) return gate.refused;
-  const who = memberIdOf(c.req.param('member') ?? '');
-  if (!who.ok) return c.json({ error: who.error }, 400);
-  const res = await clubStub(c.env, gate.clubId).fetch(`https://club/members/${encodeURIComponent(who.member)}`, { method: 'DELETE' });
-  return passthrough(res);
-});
-
-/**
- * The agents this deployment can seat, for a game.
- *
- * A PROXY, so the browser talks to one API. The card room already knows where the agent worker is
- * (`AGENT_BASE_URL`), and a client that had to reach a second origin to find out who it could seat
- * would need that origin's CORS, its zone and its naming convention — three things the browser has
- * no business knowing and the Worker already does.
- *
- * `game` narrows it, and narrowing it is the point: an agent that plays poker cannot play canasta,
- * and offering one at the other's table is offering a seat that will be refused a moment later.
- */
 app.get('/agents', async (c) => {
   const base = (c.env.AGENT_BASE_URL ?? '').trim().replace(/\/+$/, '');
   if (!base) return c.json({ agents: [] });
@@ -1278,7 +906,8 @@ app.get('/tables', async (c) => {
   const clubId = c.req.query('club') ?? c.req.query('circle');
   if (!clubId) return passthrough(await lobby(c.env, undefined).fetch('https://lobby/list'));
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  const answer = await standingAt(c.env, clubId, session?.playerId ?? null);
+  const agent = session ? agentOf(session) : null;
+  const answer = agent ? await standingAt(c.env, clubId, agent) : null;
   if (!answer || !belongs(answer.standing)) return c.json({ error: 'no such club' }, 404);
   return passthrough(await lobby(c.env, clubId).fetch('https://lobby/list'));
 });
@@ -1300,13 +929,13 @@ app.post('/tables', async (c) => {
   const clubId = parsed.data.club;
   let clubName: string | undefined;
   if (clubId) {
-    const answer = await standingAt(c.env, clubId, session.playerId);
-    if (!answer || !belongs(answer.standing)) return c.json({ error: 'no such club' }, 404);
-    if (answer.standing !== 'host') {
-      return c.json({ error: `only a host of this club can open a table for it — ${answer.because}` }, 403);
+    const agent = agentOf(session);
+    const read = agent ? await readClub(c.env, clubId, agent) : null;
+    if (!read || !read.you || !belongs(read.you.standing)) return c.json({ error: 'no such club' }, 404);
+    if (read.you.standing !== 'host') {
+      return c.json({ error: `only a host of this club can open a table for it — ${read.you.because}` }, 403);
     }
-    const sum = await clubStub(c.env, clubId).fetch('https://club/summary');
-    clubName = sum.ok ? ((await sum.json()) as { name: string }).name : undefined;
+    clubName = read.profile?.name;
   }
   const res = await lobby(c.env, clubId).fetch('https://lobby/create', {
     method: 'POST',
@@ -1879,7 +1508,8 @@ app.delete('/tables/:id', async (c) => {
     let mayClose = meta.createdBy !== undefined && meta.createdBy === session.playerId;
     if (!mayClose && meta.club) {
       // A club's table is the club's, so its host may close it even if somebody else opened it.
-      const answer = await standingAt(c.env, meta.club, session.playerId);
+      const agent = agentOf(session);
+      const answer = agent ? await standingAt(c.env, meta.club, agent) : null;
       mayClose = answer?.standing === 'host';
     }
     if (!mayClose) {
@@ -1993,7 +1623,8 @@ app.get('/tables/:id/ws', async (c) => {
   // table, and cannot spectate one either — watching a private game is being at it.
   const clubId = await tableClub(c.env, c.req.param('id'));
   if (clubId) {
-    const answer = await standingAt(c.env, clubId, session?.playerId ?? null);
+    const agent = session ? agentOf(session) : null;
+    const answer = agent ? await standingAt(c.env, clubId, agent) : null;
     if (!answer || !belongs(answer.standing)) return c.json({ error: 'no such table' }, 404);
   }
   const headers = new Headers({ Upgrade: 'websocket' });

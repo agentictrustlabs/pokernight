@@ -17,7 +17,7 @@ import { SELF, env, fetchMock, runInDurableObject } from 'cloudflare:test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SeatCleared, SeatClearRefusal, SignOutResult } from '@pokernight/protocol';
 import { agentPlayerId, type PokerTableDO } from '../src/table-do.js';
-import { TestClient, createTableViaHttp, createClubViaHttp, devSession, engineReady, sleep, soloClub } from './helpers.js';
+import { TestClient, createTableViaHttp, devSession, engineReady, sleep, soloClub } from './helpers.js';
 
 const OPERATOR_TOKEN = 'test-operator-token';
 
@@ -403,8 +403,8 @@ async function retireTable(tableId: string, token: string | null, club?: string)
 }
 
 /** The tables in a club's own lobby, read as somebody with standing there. */
-async function lobbyIds(club: { club: string; token: string }): Promise<string[]> {
-  const res = await SELF.fetch(`http://tables.test/tables?club=${club.club}`, {
+async function lobbyIds(club: { club?: string; token: string }): Promise<string[]> {
+  const res = await SELF.fetch(`http://tables.test/tables${club.club ? `?club=${club.club}` : ''}`, {
     headers: { authorization: `Bearer ${club.token}` },
   });
   return ((await res.json()) as Array<{ tableId: string }>).map((t) => t.tableId);
@@ -466,7 +466,9 @@ describe('DELETE /tables/:id — the operator retire', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ retired: true, tableId: doomed.tableId, name: 'retire me' });
 
-    expect(await lobbyIds(club)).toEqual([keep.tableId]);
+    const ids = await lobbyIds(club);
+    expect(ids).toContain(keep.tableId);
+    expect(ids).not.toContain(doomed.tableId);
     // A retired table is gone, not hidden: the spectator view has nothing to show — and a host of
     // the club it belonged to is exactly the person who must not be shown a husk.
     const gone = await SELF.fetch(`http://tables.test/tables/${doomed.tableId}`, {

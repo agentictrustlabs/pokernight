@@ -14,14 +14,16 @@ import { TestClient, createTableViaHttp, devSession, engineReady, waitForAny } f
 describe('end to end (engine required)', () => {
   it.skipIf(!engineReady)('two players join, a hand starts, and an action is applied', async () => {
     const table = await createTableViaHttp('e2e', { minBuyIn: 40, maxBuyIn: 200, actionTimeoutMs: 30_000 });
-    const alice = await TestClient.connect(table.tableId, (await devSession('Alice')).token);
-    const bob = await TestClient.connect(table.tableId, (await devSession('Bob')).token);
-    expect(await alice.next()).toMatchObject({ type: 'welcome', playerId: 'dev:alice' });
-    expect(await bob.next()).toMatchObject({ type: 'welcome', playerId: 'dev:bob' });
+    const aliceS = await devSession('Alice');
+    const bobS = await devSession('Bob');
+    const alice = await TestClient.connect(table.tableId, aliceS.token);
+    const bob = await TestClient.connect(table.tableId, bobS.token);
+    expect(await alice.next()).toMatchObject({ type: 'welcome', playerId: aliceS.playerId });
+    expect(await bob.next()).toMatchObject({ type: 'welcome', playerId: bobS.playerId });
 
     alice.send({ type: 'join', seat: 0, buyIn: 100 });
     const joinedA = await alice.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined');
-    expect(joinedA).toMatchObject({ type: 'event', event: { seat: 0, playerId: 'dev:alice', name: 'Alice', stack: 100 } });
+    expect(joinedA).toMatchObject({ type: 'event', event: { seat: 0, playerId: aliceS.playerId, name: 'Alice', stack: 100 } });
     await bob.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined');
 
     bob.send({ type: 'join', seat: 1, buyIn: 100 });
@@ -96,7 +98,7 @@ describe('end to end (engine required)', () => {
     // Leaving cashes out through the ledger + outbox and is announced to the table.
     alice.send({ type: 'leave' });
     const left = await bob.waitFor((m) => m.type === 'event' && m.event.type === 'seat-left', 8000);
-    expect(left).toMatchObject({ type: 'event', event: { seat: 0, playerId: 'dev:alice' } });
+    expect(left).toMatchObject({ type: 'event', event: { seat: 0, playerId: aliceS.playerId } });
 
     alice.close();
     bob.close();

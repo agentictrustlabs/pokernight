@@ -99,16 +99,12 @@ describe('route', () => {
     expect(route('#/t/abc-123?other=1')).toEqual({ page: 'table', tableId: 'abc-123' });
   });
 
-  it('reads an invitation link, which carries the club as well as the token', () => {
-    // The token alone does not say which club to ask, and a global index of every invitation in the
-    // card room would be a thing to leak rather than a thing to have.
-    expect(route('#/join/9cf3b05b-1c27-47ac-b9a5-f042f6b97aca/abc123')).toEqual({
+  it('reads the door into a club, which the host’s agent sends by link', () => {
+    expect(route(`#/join/0x${'ab'.repeat(20)}`)).toEqual({
       page: 'join',
-      clubId: '9cf3b05b-1c27-47ac-b9a5-f042f6b97aca',
-      token: 'abc123',
+      clubId: `0x${'ab'.repeat(20)}`,
     });
-    // Half a link is not one. It goes to the front door rather than to a page that would ask the
-    // card room about an empty token.
+    // A link naming no agent is not a door to anywhere: the front door instead.
     expect(route('#/join/only-a-club')).toEqual({ page: 'home' });
     expect(route('#/join')).toEqual({ page: 'home' });
   });

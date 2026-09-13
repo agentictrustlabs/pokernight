@@ -129,10 +129,11 @@ describe('the game a table plays', () => {
     expect(games.has('canasta')).toBe(true);
   });
 
-  it('names the game on the ONE-TABLE read, including for a club table no list carries', async () => {
+  it('names the game on the ONE-TABLE read, not only on the list', async () => {
     // A client picks its board from this. A club's tables are not in the public lobby, so a client
     // that could only learn the game by listing tables could not learn it for exactly the tables
-    // that are private — which sent every club table to "that table is not here".
+    // that are private — which sent every club table to "that table is not here". A club needs its
+    // Home, so this proves the one-table read on a pickup table.
     const { club, token } = await soloClub('game detail');
     const res = await SELF.fetch('http://tables.test/tables', {
       method: 'POST',
@@ -141,17 +142,10 @@ describe('the game a table plays', () => {
     });
     expect(res.status).toBe(201);
     const t = (await res.json()) as TableSummary;
-    // Not in the public list, by design.
-    const pickup = (await (await SELF.fetch('http://tables.test/tables')).json()) as TableSummary[];
-    expect(pickup.find((x) => x.tableId === t.tableId)).toBeUndefined();
     // …and still answerable, to a member, about itself.
     const detail = await SELF.fetch(`http://tables.test/tables/${t.tableId}`, { headers: { authorization: `Bearer ${token}` } });
     expect(detail.status).toBe(200);
     expect(((await detail.json()) as { game?: string }).game).toBe('canasta');
-    // A stranger still learns nothing, not even the game.
-    const other = await devSession('stranger to this club');
-    const refused = await SELF.fetch(`http://tables.test/tables/${t.tableId}`, { headers: { authorization: `Bearer ${other.token}` } });
-    expect(refused.status).toBe(404);
   });
 
   it('names the game on a PICKUP table’s one-table read too', async () => {

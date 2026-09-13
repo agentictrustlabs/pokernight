@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { AppSession, ClubSchedule, Night } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { nextNight, nightWhen, scheduleLine, type Recurrence } from '../lib/nights';
@@ -15,26 +15,13 @@ import { BOARDS, DRAWN_GAME, gameBlurb, gameLabel } from '../lib/games';
  * A night carries the CLUB's zone, and the reader may be somewhere else. `nightWhen` gives both and
  * the second only when they differ — see `lib/nights.ts` for why that is not optional.
  */
-export function Nights({ clubId, session, host }: { clubId: string; session: AppSession; host: boolean }) {
-  const [schedule, setSchedule] = useState<ClubSchedule | null>(null);
-  const [nights, setNights] = useState<Night[] | null>(null);
+export function Nights({ clubId, session, host, schedule, nights, onChanged }: { clubId: string; session: AppSession; host: boolean;
+  /** From the club's own read — the rule and the nights derived from it — so this costs no second call. */
+  schedule: ClubSchedule | null; nights: Night[]; onChanged: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      const [s, n] = await Promise.all([api.getSchedule(clubId, session.token), api.getNights(clubId, session.token)]);
-      setSchedule(s.schedule);
-      setNights(n.nights);
-      setErr(null);
-    } catch (e) {
-      setErr(e instanceof ApiError ? e.message : 'Could not read this club’s nights.');
-    }
-  }, [clubId, session.token]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // A change is read back from the club's agent by whoever owns the view; this only asks for it.
+  const load = useCallback(async () => { setErr(null); onChanged(); }, [onChanged]);
 
   const now = Date.now();
   const next = nextNight(nights, now);
@@ -47,8 +34,6 @@ export function Nights({ clubId, session, host }: { clubId: string; session: App
 
       {next ? (
         <NextNight night={next} now={now} />
-      ) : nights === null ? (
-        <p className="hint">Reading…</p>
       ) : (
         <p className="hint">
           {/* Two different silences, and a member should not be told to fix the one they cannot. */}

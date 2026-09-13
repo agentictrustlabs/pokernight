@@ -1,4 +1,3 @@
-import type { ClubDO, ClubIndexDO } from './club-do.js';
 import type { LobbyDO } from './lobby-do.js';
 import type { SessionDO } from './session-do.js';
 import type { PokerTableDO } from './table-do.js';
@@ -10,14 +9,11 @@ export interface Env {
   /** One instance per playerId; holds the server-side half of a Home session (see session-do.ts). */
   SESSIONS: DurableObjectNamespace<SessionDO>;
   /** One instance per club; holds its roster and answers standing (see club-do.ts). */
-  CLUBS: DurableObjectNamespace<ClubDO>;
   /** One instance per playerId; the index of clubs they are in. A projection, never the record. */
-  CLUB_INDEX: DurableObjectNamespace<ClubIndexDO>;
 
   CHAIN_ID: string;
   RPC_URL: string;
   /** "true" enables POST /dev/session. Never true in a deployed env. */
-  DEV_AUTH: string;
   ALLOW_AGENT_ENDPOINT?: string;
   /**
    * HOW THE CARD ROOM NAMES ITSELF TO A PERSON'S OWN AGENT. Both secrets, both from
@@ -68,12 +64,15 @@ export interface Env {
   /** The Home's coach-hire template name, when this deployment's Home supports it. Unset ⇒ hiring is not offered. */
   HOME_COACH_TEMPLATE?: string;
   /**
-   * CLUB HUDDLES (Home spec 378, club scope). The Home's huddle service asks this card room who is on a
-   * club's roster before it admits somebody to the club's huddle; this secret is what it presents. Set
-   * with `wrangler secret put CLUB_ROSTER_SECRET --env faithnet` here and on the Home's A2A worker
-   * (`CLUB_ROSTER_SECRET`). Unset ⇒ the roster read answers nobody, and club huddles admit nobody.
+   * THE PAIRED SECRET with the Home's A2A worker (`CLUB_ROSTER_SECRET` there; `wrangler secret put` on both).
+   * Two uses: naming a member to the Home's club huddle (spec 378), and asking which clubs a person is in.
+   * Everything else about a club is done AS the club under its wire (`clubs.ts`).
    */
   CLUB_ROSTER_SECRET?: string;
+  /** The wires clubs signed for this card room, keyed `wire:<club agent>` — the one thing kept about a club. */
+  CLUB_WIRES?: KVNamespace;
+  /** The estate's UniversalSignatureValidator — how a club's wire is checked against the club's own account. */
+  UNIVERSAL_SIGNATURE_VALIDATOR?: string;
   /** The Home's A2A worker origin the browser talks to for huddles — `https://a2a.faithnet.io` (`/config` carries it). */
   HOME_A2A_ORIGIN?: string;
   /**
@@ -180,15 +179,6 @@ export function siteOrigin(env: Env): string {
   return allowedOrigins(env)[0] ?? 'https://poker.faithnet.io';
 }
 
-export function isDevAuth(env: Env): boolean {
-  return env.DEV_AUTH === 'true';
-}
-
-/**
- * Whether `seat-agent` accepts a caller-supplied `endpoint`. Deliberately SEPARATE from DEV_AUTH:
- * dev auth governs who may log in, this governs which hosts the table will fetch every turn.
- * Defaults to false, so a deployment has to opt in.
- */
 /**
  * Operator-configured base for agent personas served from ONE host, e.g.
  * `https://agents.faithnet.io` + `/sharkbot.svc`. Set, it wins over per-agent host resolution.

@@ -5261,3 +5261,19 @@ details.log-panel > .log { margin-top: 0.5rem; }
 @media (max-width: 899px) {
   .huddle-dock { top: auto; bottom: calc(var(--coach-sheet, 0px) + 0.5rem); right: 0.5rem; left: 0.5rem; width: auto; }
 }
+
+/* A ceremony's word to somebody signed in: one line under the top bar, dismissable. */
+.app-banner {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.5rem 1.25rem;
+  background: var(--brass-soft);
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.92rem;
+}
+.app-banner-error {
+  background: #f8e3df;
+  color: var(--danger);
+}

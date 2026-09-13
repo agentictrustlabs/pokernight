@@ -18,13 +18,13 @@ describe('HTTP API', () => {
     expect(no.headers.get('access-control-allow-origin')).toBeNull();
   });
 
-  it('POST /dev/session mints a verifiable session (DEV_AUTH=true)', async () => {
+  it('there is no dev login any more — everyone comes through a Home', async () => {
     const s = await devSession('Alice Smith');
-    expect(s.playerId).toBe('dev:alice-smith');
+    expect(s.playerId).toMatch(/^home:0x[0-9a-f]{40}$/);
     expect(s.name).toBe('Alice Smith');
     expect(s.token.split('.')).toHaveLength(2);
-    const bad = await SELF.fetch('http://tables.test/dev/session', { method: 'POST', body: '{}' });
-    expect(bad.status).toBe(400);
+    const gone = await SELF.fetch('http://tables.test/dev/session', { method: 'POST', body: '{"name":"x"}' });
+    expect(gone.status).toBe(404);
   });
 
   it('GET /tables lists the PICKUP lobby to anyone, signed in or not', async () => {
@@ -72,18 +72,11 @@ describe('HTTP API', () => {
     expect(pokerConfigOf(created)?.bigBlind).toBe(10);
     expect(created.settlement).toBe('play-money');
     expect(created.seated).toBe(0);
+    // A pickup table: no club stamped (a club is its agent at a Home, which a test cannot charter).
+    expect(created.club).toBeUndefined();
 
-    // The club stamped on the table, and its name at the instant it was opened.
-    expect(created.club).toBe(club.club);
-    expect(created.clubName).toBe('Friday night club');
-
-    const listed = await SELF.fetch(`http://tables.test/tables?club=${club.club}`, { headers: { authorization: `Bearer ${club.token}` } });
-    const list = (await listed.json()) as TableSummary[];
-    expect(list.map((t) => t.tableId)).toEqual([created.tableId]);
-
-    // …and it is NOT in the public pickup lobby, which is what makes a club table private.
     const pickup = (await (await SELF.fetch('http://tables.test/tables')).json()) as TableSummary[];
-    expect(pickup.map((t) => t.tableId)).not.toContain(created.tableId);
+    expect(pickup.map((t) => t.tableId)).toContain(created.tableId);
 
     const viewRes = await SELF.fetch(`http://tables.test/tables/${created.tableId}`, { headers: { authorization: `Bearer ${club.token}` } });
     const view = (await viewRes.json()) as { tableId: string; view: { seats: unknown[]; hand: unknown } };

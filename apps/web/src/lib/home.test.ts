@@ -451,12 +451,12 @@ describe('startClubCharter', () => {
     expect(charter!.state).not.toBe(signIn!.state);
   });
 
-  it('remembers WHICH club, because the Home carries no state of ours', async () => {
+  it('remembers the NAME the club is to be founded under, because the Home carries no state of ours', async () => {
     const store = fakeStore();
     await startClubCharter(config, club, store);
-    expect(store.map.get(CHARTER_CLUB_KEY)).toBe(club.clubId);
-    // Consumed once: a second charter must never be recorded against the first one's club.
-    expect(takeCharterClub(store)).toBe(club.clubId);
+    expect(JSON.parse(store.map.get(CHARTER_CLUB_KEY) ?? 'null')).toEqual({ name: club.name });
+    // Consumed once: a second charter must never be founded under the first one's name.
+    expect(takeCharterClub(store)).toEqual({ name: club.name });
     expect(takeCharterClub(store)).toBeNull();
   });
 

@@ -101,7 +101,6 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
           </div>
 
           {personas.length > 0 ? <DemoUsers auth={auth} homeHost={homeHost} /> : null}
-          {config.devAuth ? <DevLogin onLogin={onLogin} /> : null}
         </>
       )}
     </div>
@@ -196,41 +195,3 @@ function DemoUsers({ auth, homeHost }: { auth: AuthState; homeHost: string | nul
 
 /** Dev-only name login. Proves nothing; only offered where the API says DEV_AUTH is on, and folded
  *  shut so it never competes with a door that does prove something. */
-function DevLogin({ onLogin }: { onLogin: (s: AppSession) => void }) {
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  return (
-    <details className="dev-login">
-      <summary>Development sign-in</summary>
-      <form
-        className="form"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const n = name.trim();
-          if (!n) return;
-          setBusy(true);
-          setErr(null);
-          try {
-            const s: Session = await api.devLogin(n);
-            onLogin({ ...s, via: 'dev' });
-          } catch (ex) {
-            setErr(ex instanceof Error ? ex.message : String(ex));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <p className="hint">On this development deployment only: pick a name and a play-money session is minted for you. No proof of anything.</p>
-        <label>
-          Name
-          <input type="text" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
-        </label>
-        {err ? <div className="form-error">{err}</div> : null}
-        <button className="quiet" type="submit" disabled={busy || !name.trim()}>
-          {busy ? 'Signing in…' : 'Enter with a dev name'}
-        </button>
-      </form>
-    </details>
-  );
-}

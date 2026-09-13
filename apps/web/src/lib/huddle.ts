@@ -61,7 +61,7 @@ export const huddles = {
   end: (token: string, scope: HuddleScope) => op(token, 'end', scope),
 };
 
-/** The scope of a club's huddle: its workspace agent, narrowed by the card room's club id. */
-export function clubScope(club: { clubId: string; agent?: string | null }): HuddleScope | null {
-  return club.agent && /^0x[0-9a-fA-F]{40}$/.test(club.agent) ? { kind: 'club', principal: club.agent.toLowerCase(), id: club.clubId } : null;
+/** The scope of a club's huddle: its workspace agent — which IS the club's id — as principal and id both. */
+export function clubScope(club: { clubId: string }): HuddleScope | null {
+  return /^0x[0-9a-fA-F]{40}$/.test(club.clubId) ? { kind: 'club', principal: club.clubId.toLowerCase(), id: club.clubId.toLowerCase() } : null;
 }

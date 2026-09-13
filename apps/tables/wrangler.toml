@@ -37,8 +37,6 @@ bindings = [
   { name = "TABLES", class_name = "PokerTableDO" },
   { name = "LOBBIES", class_name = "LobbyDO" },
   { name = "SESSIONS", class_name = "SessionDO" },
-  { name = "CLUBS", class_name = "ClubDO" },
-  { name = "CLUB_INDEX", class_name = "ClubIndexDO" },
 ]
 
 # Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
@@ -51,17 +49,25 @@ new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
 tag = "v2"
 new_sqlite_classes = ["SessionDO"]
 
-# Clubs (docs/WORKSPACES.md). `ClubDO` holds one club's roster; `ClubIndexDO` is one player's list of
-# the clubs they are in — a projection the club writes to, never the record.
+# Clubs (docs/WORKSPACES.md). v3 gave a club a roster object and a player a club index; v4 takes both away
+# again: a club is its workspace agent at the Home and the card room keeps nothing of it but the wire it
+# was handed (`src/clubs.ts`, KV `CLUB_WIRES`).
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["ClubDO", "ClubIndexDO"]
 
-# Local dev (Anvil on :8545, Vite on :5173). DEV_AUTH=true enables POST /dev/session.
+[[migrations]]
+tag = "v4"
+deleted_classes = ["ClubDO", "ClubIndexDO"]
+
+[[kv_namespaces]]
+binding = "CLUB_WIRES"
+id = "e8fd7d1531324551a74655bb622dab58"
+
+# Local dev (Anvil on :8545, Vite on :5173). There is no dev login: sign in through a Home.
 [vars]
 CHAIN_ID = "31337"
 RPC_URL = "http://127.0.0.1:8545"
-DEV_AUTH = "true"
 # Local dev points agents at localhost:8788; a public deployment must NOT enable this.
 ALLOW_AGENT_ENDPOINT = "true"
 ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
@@ -116,8 +122,6 @@ bindings = [
   { name = "TABLES", class_name = "PokerTableDO" },
   { name = "LOBBIES", class_name = "LobbyDO" },
   { name = "SESSIONS", class_name = "SessionDO" },
-  { name = "CLUBS", class_name = "ClubDO" },
-  { name = "CLUB_INDEX", class_name = "ClubIndexDO" },
 ]
 
 [[env.faithnet.migrations]]
@@ -128,17 +132,25 @@ new_sqlite_classes = ["PokerTableDO", "LobbyDO"]
 tag = "v2"
 new_sqlite_classes = ["SessionDO"]
 
-# Clubs (docs/WORKSPACES.md). `ClubDO` holds one club's roster; `ClubIndexDO` is one player's list of
-# the clubs they are in — a projection the club writes to, never the record.
 [[env.faithnet.migrations]]
 tag = "v3"
 new_sqlite_classes = ["ClubDO", "ClubIndexDO"]
+
+# A club is its workspace agent at the Home; the card room keeps nothing of it but the wire (KV CLUB_WIRES).
+[[env.faithnet.migrations]]
+tag = "v4"
+deleted_classes = ["ClubDO", "ClubIndexDO"]
+
+[[env.faithnet.kv_namespaces]]
+binding = "CLUB_WIRES"
+id = "e8fd7d1531324551a74655bb622dab58"
 
 [env.faithnet.vars]
 # Coach SERVICES for hire (each a Smart Agent somebody custodies, advertising poker.advise). The hiring is
 # a ceremony at the person's Home; HOME_COACH_TEMPLATE names it once the Home supports it (unset ⇒ not offered).
 COACH_SERVICES = "bob-coach.svc,carol-coach.svc"
-# The Home's A2A worker the browser talks to for a club huddle (spec 378). Secret CLUB_ROSTER_SECRET pairs it.
+# The Home's A2A worker: a club's own agent is asked there under the club's wire (`clubs.ts`), and its huddle
+# service under the paired CLUB_ROSTER_SECRET (spec 378).
 HOME_A2A_ORIGIN = "https://a2a.faithnet.io"
 # Where `atl:capabilities` lives — what an agent ANSWERS, read beside its served card (a release is a snapshot).
 AGENT_PROFILE_RESOLVER = "0xB03F7C06ad3274F584AB72794406D639c02A45e1"
@@ -163,11 +175,8 @@ AGENT_BASE_URL = "https://agents.faithnet.io"
 A2A_TIMEOUT_MS = "20000"
 # See the dev block above. Five minutes of silence before an abandoned seat may be cleared.
 SEAT_IDLE_MS = "300000"
-# Home sign-in (POST /auth/home) is live. Dev name-only sessions stay ON for now as a fallback; turn
-# this off (DEV_AUTH = "false") once a real person has confirmed Home sign-in works end to end on
-# https://poker.faithnet.io — at which point the dev name box disappears from the UI too, because the
-# client reads GET /auth/config rather than a build flag.
-DEV_AUTH = "true"
+# The estate's UniversalSignatureValidator — a club's wire is checked against the club's own account with it.
+UNIVERSAL_SIGNATURE_VALIDATOR = "0xeDd56f500325D4701B9985A34e5Fa6EED6716137"
 ALLOWED_ORIGINS = "https://poker.faithnet.io"
 # 1 chip = 1.000000 Sheqel for tables opened from now on. Tables opened before this line changed keep
 # the 0.01 chip they were created with — the rate is pinned per table, never re-read from here

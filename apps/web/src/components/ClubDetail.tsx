@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AppSession, ClubInvite, ClubView, KnownPerson, Night } from '../lib/types';
+import type { AppSession, ClubView, KnownPerson, Night } from '../lib/types';
 import { ApiError, api } from '../lib/api';
-import { CHARTER_BLURB, agentOfPlayer, canInvite, charterState, checkMember, confirmsRetire, homeMembershipLabel, memberAction, membershipAtHome, retireConsequences, standingLabel } from '../lib/clubs';
-import { startClubCharter, startMembershipInvite, startMembershipJoin, type AuthConfig } from '../lib/home';
+import { CHARTER_BLURB, canInvite, confirmsRetire, retireConsequences, standingLabel } from '../lib/clubs';
+import { startClubCharter, startMembershipInvite, type AuthConfig } from '../lib/home';
 import { shortAddress } from '../lib/format';
 import { clubHash } from '../lib/routes';
 import { downloadUrl, googleCalendarLink, nextNight } from '../lib/nights';
@@ -60,62 +60,20 @@ export function Roster({
         {view.name} <span className="club-role">{standingLabel(view.you.standing)}</span>
       </h2>
       <Welcome view={view} session={session} host={host} onChanged={onChanged} />
-      <Calendar clubId={view.clubId} clubName={view.name} session={session} />
-      <Charter view={view} config={config} />
-      <JoinAtHome view={view} session={session} config={config} />
+      <Calendar clubId={view.clubId} clubName={view.name} session={session} nights={view.nights} />
+      <p className="hint club-agent">
+        Its agent: <code className="mono" title={view.clubId}>{shortAddress(view.clubId)}</code> — at {host ? 'your' : "the host's"} Home; this card room acts as it.
+      </p>
       {err ? <div className="form-error">{err}</div> : null}
       <ul className="club-roster">
-        {view.roster.map((m) => {
-          const at = membershipAtHome(view, m);
-          const agent = agentOfPlayer(m.member);
-          return (
-          <li key={m.member}>
+        {view.roster.map((m) => (
+          <li key={m.agent}>
             <span className="cr-name">{m.name}</span>
-            {m.class === 'guest' ? <span className="tag">guest</span> : null}
-            {m.member === view.createdBy ? <span className="tag">host</span> : null}
-            {homeMembershipLabel(at) ? <span className={`tag home-${at}`}>{homeMembershipLabel(at)}</span> : null}
-            {/* THE HOST'S HALF OF MEMBERSHIP AT THE HOME: an invitation signed with their own credential, for
-                a member who is on this roster but whom the club's agent does not know yet. */}
-            {host && config && view.agent && agent && (at === 'pending' || at === 'invited') ? (
-              <button
-                type="button"
-                className="link-button"
-                onClick={async () => {
-                  setErr(null);
-                  try {
-                    location.href = await startMembershipInvite(config, { clubId: view.clubId, name: view.name, agent: view.agent as string }, agent);
-                  } catch (e) {
-                    setErr(e instanceof Error ? e.message : 'The invitation could not be started.');
-                  }
-                }}
-              >
-                {at === 'invited' ? 'Invite again at your Home' : 'Invite at your Home'}
-              </button>
-            ) : null}
-            {host && m.member !== view.createdBy ? (
-              <button
-                type="button"
-                className="link-button"
-                onClick={async () => {
-                  setErr(null);
-                  try {
-                    await api.removeMember(view.clubId, m.member, session.token);
-                  } catch (e) {
-                    // The card room names its refusals — "the person who started a club cannot be
-                    // removed from it" is a useful sentence and this used to eat it.
-                    setErr(e instanceof ApiError ? e.message : `${m.name} could not be removed.`);
-                  }
-                  onChanged();
-                }}
-              >
-                Remove
-              </button>
-            ) : null}
+            {m.host ? <span className="tag">host</span> : null}
           </li>
-          );
-        })}
+        ))}
       </ul>
-      {host ? <Invite clubId={view.clubId} session={session} roster={view.roster.map((m) => m.member)} onAdded={onChanged} /> : null}
+      {host ? <Invite view={view} session={session} config={config} onErr={setErr} /> : null}
       {/* WHAT A HOST DOES NEXT, said where they are standing.
           Opening a table lives in a folded panel below this one, and a host reading their roster and
           wondering how to actually play was reading the wrong panel with no way to know it. This is
@@ -167,7 +125,7 @@ function Retire({
     <details className="club-retire">
       <summary>Close {view.name}</summary>
       <ul className="club-retire-what">
-        {retireConsequences(view.name, tables, view.agent).map((line) => (
+        {retireConsequences(view.name, tables).map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
@@ -299,7 +257,7 @@ function Welcome({ view, session, host, onChanged }: { view: ClubView; session: 
  * `webcal:` is what makes a phone offer to subscribe rather than to import once. The https URL is
  * shown too, because that is the one that works when pasted into a desktop calendar.
  */
-function Calendar({ clubId, clubName, session }: { clubId: string; clubName: string; session: AppSession }) {
+function Calendar({ clubId, clubName, session, nights }: { clubId: string; clubName: string; session: AppSession; nights: Night[] }) {
   const [cal, setCal] = useState<{ url: string; webcal: string } | null>(null);
   const [next, setNext] = useState<Night | null>(null);
 
@@ -311,15 +269,11 @@ function Calendar({ clubId, clubName, session }: { clubId: string; clubName: str
       .calendarUrl(clubId, session.token)
       .then((c) => alive && setCal(c))
       .catch(() => undefined);
-    // The next night, for the one-press Google link. Failing to read it costs that link and nothing else.
-    void api
-      .getNights(clubId, session.token)
-      .then((n) => alive && setNext(nextNight(n.nights, Date.now())))
-      .catch(() => undefined);
+    setNext(nextNight(nights, Date.now()));
     return () => {
       alive = false;
     };
-  }, [clubId, session.token]);
+  }, [clubId, session.token, nights]);
 
   if (!cal) return null;
   return (
@@ -383,136 +337,29 @@ function Calendar({ clubId, clubName, session }: { clubId: string; clubName: str
  * the same reason signing in and authorising a buy-in are navigations too.
  */
 /**
- * THE MEMBER'S HALF OF MEMBERSHIP AT THE HOME (WORKSPACES.md §5, 2026-09-13).
+ * INVITING SOMEBODY IS A CEREMONY AT THE HOST'S HOME, and this is the door to it.
  *
- * A club is a workspace agent at its host's Home, and belonging to it is recorded THERE, not here: the host
- * invites at their Home, the member joins at theirs, and from then on the Home derives their standing — for
- * the club's huddle, and for anything asked of the club's agent. This roster is the projection. So a member
- * whose row says the Home does not know them yet is told, here, above the roster, what to do — and told
- * plainly when the host has not invited them yet, because a join with no invitation waiting is a trip to the
- * Home that ends in "no invitation was found".
+ * Membership lives at the Home: the host signs the person's access into the club's workspace there
+ * (`workspace-member-invite`), their agent tells the person, and the person joins from the link it sent.
+ * What this form does is turn what the host knows — `carol.me`, or an address — into the agent the
+ * invitation names, on chain, and go. There is no email road: somebody without a Home gets one the
+ * first time they sign in, and is invited by the name they took.
  */
-function JoinAtHome({ view, session, config }: { view: ClubView; session: AppSession; config: AuthConfig | null }) {
-  const [err, setErr] = useState<string | null>(null);
-  const mine = view.roster.find((m) => m.member === session.playerId);
-  if (!config || !view.agent || !mine) return null;
-  const at = membershipAtHome(view, mine);
-  if (at !== 'pending' && at !== 'invited') return null;
-  return (
-    <div className="club-join-home">
-      <p className="hint">
-        {at === 'invited'
-          ? `${view.name}'s host has invited you at your Home. Join there, and the club's own agent will know you as a member — its huddle lets members in.`
-          : `You are on ${view.name}'s roster here, but not at your Home yet. Ask its host to invite you at their Home; then join from here.`}
-      </p>
-      {err ? <div className="form-error">{err}</div> : null}
-      <button
-        type="button"
-        onClick={async () => {
-          setErr(null);
-          try {
-            location.href = await startMembershipJoin(config, { clubId: view.clubId, name: view.name, agent: view.agent as string });
-          } catch (e) {
-            setErr(e instanceof Error ? e.message : 'The join could not be started.');
-          }
-        }}
-      >
-        {at === 'invited' ? 'Join at your Home' : 'Try joining at your Home'}
-      </button>
-    </div>
-  );
-}
-
-function Charter({ view, config }: { view: ClubView; config: AuthConfig | null }) {
-  const [err, setErr] = useState<string | null>(null);
-  const state = charterState(view, Boolean(config?.home.clubTemplate));
-  if (state.kind === 'hidden') return null;
-  if (state.kind === 'chartered') {
-    return (
-      <p className="hint club-agent">
-        Its own agent: <code className="mono" title={state.agent}>{shortAddress(state.agent)}</code>
-      </p>
-    );
-  }
-  if (state.kind === 'unavailable') {
-    return <p className="hint">This card room cannot charter clubs yet, so this one lives here and nowhere else.</p>;
-  }
-  return (
-    <div className="club-charter">
-      <p className="hint">{CHARTER_BLURB}</p>
-      {err ? <div className="form-error">{err}</div> : null}
-      <button
-        type="button"
-        onClick={async () => {
-          if (!config) return;
-          try {
-            location.href = await startClubCharter(config, { clubId: view.clubId, name: view.name });
-          } catch (e) {
-            setErr(e instanceof Error ? e.message : 'The charter could not be started.');
-          }
-        }}
-      >
-        Charter it at your Home
-      </button>
-    </div>
-  );
-}
-
-/**
- * Adding somebody — by whatever the host actually knows about them.
- *
- * THIS FORM USED TO TAKE ONE THING: a forty-character Smart Agent address, which is the identifier a
- * host is least likely to have and cannot ask a friend for without explaining what it is. Everything
- * here exists to undo that. There are three roads in, and the field decides which one it is on from
- * what has been typed rather than making the host choose a mode first:
- *
- *   a name  (`carol.me`)          the card room resolves it on chain — on the roster at once
- *   an address or player id       on the roster at once, as before
- *   an email                      an invitation, mailed by the host's Home; a membership when the
- *                                 person opens it and signs in
- *
- * And above the field, the shortest road of all: the people this host ALREADY PLAYS WITH, who the
- * card room can name because a host named them once already.
- */
-function Invite({
-  clubId,
-  session,
-  roster,
-  onAdded,
-}: {
-  clubId: string;
-  session: AppSession;
-  /** Who is already here, so the picker never offers somebody the club would refuse. */
-  roster: string[];
-  onAdded: () => void;
-}) {
+function Invite({ view, session, config, onErr }: { view: ClubView; session: AppSession; config: AuthConfig | null; onErr: (e: string | null) => void }) {
   const [who, setWho] = useState('');
-  const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  /** What the last send did, when it needs saying: a link to pass on, or mail that did go. */
-  const [sent, setSent] = useState<{ joinUrl: string; email: string; delivery: string; why?: string } | null>(null);
-  const check = checkMember(who);
-  const action = memberAction(who);
+  const here = new Set(view.roster.map((m) => m.agent));
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!who.trim() || !check.ok || busy) return;
+  const invite = async (target: string) => {
+    if (!config || busy) return;
     setBusy(true);
-    setErr(null);
-    setSent(null);
+    onErr(null);
     try {
-      if (check.shape === 'email') {
-        const res = await api.inviteByEmail(clubId, who.trim(), name.trim() || undefined, session.token);
-        setSent({ joinUrl: res.joinUrl, email: res.invite.email, delivery: res.delivery, ...(res.deliveryError ? { why: res.deliveryError } : {}) });
-      } else {
-        await api.inviteMember(clubId, who.trim(), name.trim() || undefined, session.token);
-      }
-      setWho('');
-      setName('');
-      onAdded();
+      const r = await api.resolveMember(view.clubId, target.trim(), session.token);
+      if (here.has(r.agent.toLowerCase())) { onErr(`${r.name ?? target} is already a member of ${view.name}.`); return; }
+      location.href = await startMembershipInvite(config, { clubId: view.clubId, name: view.name }, r.agent);
     } catch (ex) {
-      setErr(ex instanceof ApiError ? ex.message : 'That did not go through');
+      onErr(ex instanceof ApiError ? ex.message : ex instanceof Error ? ex.message : 'That did not go through');
     } finally {
       setBusy(false);
     }
@@ -520,84 +367,36 @@ function Invite({
 
   return (
     <div className="club-add">
-      <KnownPeople clubId={clubId} session={session} roster={roster} onAdded={onAdded} />
-      <form className="club-invite" onSubmit={submit}>
+      <KnownPeople session={session} roster={[...here]} busy={busy} onPick={(p) => void invite(p.agent)} />
+      <form
+        className="club-invite"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (who.trim()) void invite(who);
+        }}
+      >
         <label>
-          Add someone
-          <input
-            type="text"
-            value={who}
-            onChange={(e) => setWho(e.target.value)}
-            placeholder="carol.me, or an email address"
-            aria-invalid={!check.ok}
-            aria-describedby="invite-hint"
-          />
+          Invite someone
+          <input type="text" value={who} onChange={(e) => setWho(e.target.value)} placeholder="carol.me, or a Smart Agent address" aria-describedby="invite-hint" />
         </label>
-        <label>
-          What to call them
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Marcus" />
-        </label>
-        {/* One line, always present, saying what the button will do with what has been typed. The
-            two roads have different consequences and the host should know which one they are on. */}
-        <p className={check.ok ? 'hint' : 'hint invite-bad'} id="invite-hint">
-          {check.ok ? action.hint : check.hint}
+        <p className="hint" id="invite-hint">
+          Their agent name or address. You will sign the invitation at your Home; your agent tells them, and they join from the link it sends.
         </p>
-        {err ? <div className="form-error">{err}</div> : null}
-        <button type="submit" disabled={busy || !who.trim() || !check.ok}>
-          {busy ? 'Sending…' : action.label}
+        <button type="submit" disabled={busy || !who.trim() || !config}>
+          {busy ? 'Finding them…' : 'Invite at your Home'}
         </button>
       </form>
-      {sent ? <Sent sent={sent} /> : null}
-      <PendingInvites clubId={clubId} session={session} refreshOn={sent?.joinUrl ?? ''} />
     </div>
   );
 }
 
 /**
- * What happened to an invitation that was just sent.
- *
- * THE LINK IS ALWAYS SHOWN, including when the mail went out. A host who wants to send it in a group
- * chat instead should not have to go and find it, and a host whose Home has no mailer must not be
- * left thinking an invitation vanished. `delivery` says which of those happened, in the Home's own
- * words rather than a guess.
+ * The people this host already plays with, as one press each — the most common invitation there is,
+ * and the one that should need no identifier: the card room reads them off the rosters of the host's
+ * clubs, by the names those clubs' agents record them under.
  */
-function Sent({ sent }: { sent: { joinUrl: string; email: string; delivery: string; why?: string } }) {
-  const mailed = sent.delivery === 'sent';
-  return (
-    <div className="club-sent">
-      <p className="hint">
-        {mailed
-          ? `Invitation sent to ${sent.email}. It is good for two weeks.`
-          : `The invitation is open for ${sent.email}, but nothing was emailed${sent.why ? ` — ${sent.why}` : ''}. Send them this link yourself:`}
-      </p>
-      <input className="mono" readOnly value={sent.joinUrl} onFocus={(e) => e.currentTarget.select()} aria-label="invitation link" />
-    </div>
-  );
-}
-
-/**
- * The people this host already plays with, as one press each.
- *
- * The most common invitation there is — "the three of them from Tuesday" — and the one that should
- * need no identifier at all, because the card room already knows these people by the name a host
- * typed for them once. Anybody already on THIS club's roster is not offered.
- */
-function KnownPeople({
-  clubId,
-  session,
-  roster,
-  onAdded,
-}: {
-  clubId: string;
-  session: AppSession;
-  roster: string[];
-  onAdded: () => void;
-}) {
+function KnownPeople({ session, roster, busy, onPick }: { session: AppSession; roster: string[]; busy: boolean; onPick: (p: KnownPerson) => void }) {
   const [people, setPeople] = useState<KnownPerson[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  /** Why the last one-press add did not take. It used to be swallowed, so the chip simply stayed. */
-  const [addErr, setAddErr] = useState<string | null>(null);
-
   useEffect(() => {
     let alive = true;
     api
@@ -607,96 +406,18 @@ function KnownPeople({
     return () => {
       alive = false;
     };
-  }, [session.token, clubId]);
-
+  }, [session.token]);
   const here = new Set(roster);
-  const offer = (people ?? []).filter((p) => !here.has(p.member));
+  const offer = (people ?? []).filter((p) => !here.has(p.agent));
   if (offer.length === 0) return null;
-
   return (
     <div className="club-known">
       <p className="hint">People you already play with:</p>
       <ul className="known-list">
         {offer.map((p) => (
-          <li key={p.member}>
-            <button
-              type="button"
-              className="known-add"
-              disabled={busy !== null}
-              title={p.clubs.join(', ')}
-              onClick={async () => {
-                setBusy(p.member);
-                try {
-                  await api.inviteMember(clubId, p.member, p.name, session.token);
-                  setPeople((cur) => (cur ?? []).filter((q) => q.member !== p.member));
-                  onAdded();
-                } catch (e) {
-                  setAddErr(e instanceof ApiError ? e.message : `${p.name} could not be added.`);
-                } finally {
-                  setBusy(null);
-                }
-              }}
-            >
-              {busy === p.member ? 'Adding…' : `+ ${p.name}`}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {addErr ? <div className="form-error">{addErr}</div> : null}
-    </div>
-  );
-}
-
-/**
- * Invitations sent and not yet opened.
- *
- * A club with an outstanding invitation is in a real state that the roster does not show, and a host
- * who cannot see it will send a second one. Claimed invitations are not listed: those people are on
- * the roster, which is where a member belongs.
- */
-function PendingInvites({ clubId, session, refreshOn }: { clubId: string; session: AppSession; refreshOn: string }) {
-  const [invites, setInvites] = useState<ClubInvite[] | null>(null);
-  /** Why taking one back did not work. Silence here reads as "it worked", and the list is unchanged. */
-  const [err, setErr] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setInvites((await api.listInvites(clubId, session.token)).invites);
-    } catch {
-      setInvites([]);
-    }
-  }, [clubId, session.token]);
-
-  useEffect(() => {
-    void load();
-  }, [load, refreshOn]);
-
-  const open = (invites ?? []).filter((i) => !i.claimedBy && i.expiresAt > Date.now());
-  if (open.length === 0) return null;
-
-  return (
-    <div className="club-pending">
-      <p className="hint">Waiting to be opened:</p>
-      {err ? <div className="form-error">{err}</div> : null}
-      <ul className="pending-list">
-        {open.map((i) => (
-          <li key={i.token}>
-            <span className="cr-name">{i.name ?? i.email}</span>
-            <span className="hint">{i.name ? i.email : ''}</span>
-            <button
-              type="button"
-              className="link-button"
-              onClick={async () => {
-                setErr(null);
-                try {
-                  await api.revokeInvite(clubId, i.token, session.token);
-                } catch (e) {
-                  setErr(e instanceof ApiError ? e.message : `That invitation could not be taken back.`);
-                }
-                void load();
-              }}
-            >
-              Take back
+          <li key={p.agent}>
+            <button type="button" className="known-add" disabled={busy} title={p.clubs.join(', ')} onClick={() => onPick(p)}>
+              + {p.name}
             </button>
           </li>
         ))}
@@ -705,32 +426,26 @@ function PendingInvites({ clubId, session, refreshOn }: { clubId: string; sessio
   );
 }
 
-/* --------------------------------------------------------------- starting one */
-
 /**
- * The form that starts a club: a name, and that is all.
- *
- * It was a folded `<details>` beside the table list. It is bare now, because it stands on a page of its
- * own (`#/clubs/new`) that says what a club is — a form carrying its own explanation twice reads as two
- * different explanations.
+ * STARTING A CLUB is chartering its agent at your Home — the club IS that agent. The name typed here is
+ * what the workspace is deployed under and what the club is founded as; the trip is two ceremonies at
+ * the Home (charter, then authorising this card room to act as the club), and the return leg lands on
+ * the club's page.
  */
-export function StartClub({ session, onStarted }: { session: AppSession; onStarted: (c: { clubId: string }) => void }) {
+export function StartClub({ config }: { config: AuthConfig | null }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || busy) return;
+    if (!name.trim() || busy || !config) return;
     setBusy(true);
     setErr(null);
     try {
-      const club = await api.createClub(name.trim(), session.token);
-      setName('');
-      onStarted(club);
+      location.href = await startClubCharter(config, { name: name.trim() });
     } catch (ex) {
-      setErr(ex instanceof ApiError ? ex.message : 'The club could not be started');
-    } finally {
+      setErr(ex instanceof Error ? ex.message : 'The club could not be started');
       setBusy(false);
     }
   };
@@ -741,9 +456,10 @@ export function StartClub({ session, onStarted }: { session: AppSession; onStart
         Call it
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Thursday Night" maxLength={64} autoFocus />
       </label>
+      <p className="hint">{CHARTER_BLURB}</p>
       {err ? <div className="form-error">{err}</div> : null}
-      <button className="primary" type="submit" disabled={busy || !name.trim()}>
-        {busy ? 'Starting…' : 'Start it'}
+      <button className="primary" type="submit" disabled={busy || !name.trim() || !config}>
+        {busy ? 'Off to your Home…' : 'Start it at your Home'}
       </button>
     </form>
   );

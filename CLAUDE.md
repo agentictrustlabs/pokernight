@@ -26,7 +26,7 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   house custodies. Names no currency: the address and ticker are injected by `apps/*`.
   Config injected (rpc, chain id, deployments, signer); no hostnames, no addresses, no keys.
 - `apps/tables`       Cloudflare Worker: `PokerTableDO` (WebSockets, SQLite, alarms), `LobbyDO`,
-  `SessionDO`, `ClubDO` + `ClubIndexDO`. hono routes.
+  `SessionDO`; clubs are their agents at the Home (`clubs.ts`, KV `CLUB_WIRES`). hono routes.
 - `apps/web`          Vite + React client.
 - `apps/agent`        reference WebSocket bot (`pnpm --filter pokernight-agent bot`).
 - `apps/agent-worker` Cloudflare Worker hosting the A2A agent personas (`poker.act`, standard profile).
@@ -190,50 +190,43 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   never become a migration.
 - Every hand must replay byte-identically from (seed, action log). Tests assert this.
 - Hole cards and the deck never leave the DO except through `viewFor` / `redactEvent`.
-- **A CLUB is a group of people, and standing in it is DERIVED, never asserted.** `ClubDO` holds the
-  roster and answers `host` / `member` / `none`; the Worker verifies the caller, asks, and decides.
-  The Durable Object never sees a session. A club nobody has standing in answers **404, never 403** —
-  a refusal would confirm the club exists, which is a fact about other people's arrangements.
-  A table with no `club` is a PICKUP table: public, and what every table was before clubs.
-  A club is CHARTERED ONCE as a `<label>.workspace` Smart Agent at the host's own Home
-  (`workspace-create`); the card room records the address and never holds the key. Re-chartering to a
-  different agent is refused. Design: `docs/WORKSPACES.md`.
-- **MEMBERSHIP OF A CLUB LIVES AT THE HOME; THE CARD ROOM'S ROSTER IS A PROJECTION OF IT** (2026-09-13,
-  `docs/WORKSPACES.md` §5.0). The host invites at their Home (`workspace-member-invite`), the member joins
-  at theirs (`workspace-join`, which has the workspace's own agent record them), and the Home derives
-  standing from its own records — for the club's huddle and for anything asked of the club's agent. It
-  asks the card room nothing (the old `standing-of` route is gone). `GET /clubs/:id` reconciles the roster
-  from `GET <a2a>/clubs/roster?workspace=` under the paired secret (`ClubDO.reconcile`): the Home's
-  members are on the roster as `home:'joined'`, added if they were admitted at the Home and never here;
-  a row the Home does not record keeps its standing here and carries no `home`, and the page tells that
-  member to join. `POST /clubs/:id/home-membership {leg}` is both ceremonies' return leg, and a join
-  believes nothing from the code — it asks the Home again. A huddle refused to a member the Home does not
-  know yet says "join the club at your Home", not "nothing here". Tables, nights and the rail stay here.
-- **A CLUB IS RETIRED BY ITS HOST, AND ITS AGENT IS NOT OURS TO RETIRE.** `DELETE /clubs/:clubId` is
-  the only way one ends. There is exactly one host — `created_by` — so a member gets 403 by name and a
-  stranger gets 404, the same answer a club that does not exist gives. It LOOKS FIRST and refuses the
-  whole thing (409, naming them) if anybody is seated at one of the club's tables, because a seat holds
-  chips and at a settled table those chips are money; nothing is destroyed by a refusal. Then it closes
-  the club's tables — a club table left behind is private to a club that no longer exists, reachable by
-  direct link and by nothing else — and last it drops the club from every member's index, so nobody's
-  rail keeps a row that 404s. It NEVER touches the club's Smart Agent, and the answer returns the
-  address so the client can say so: that agent lives at the host's own Home and this card room has
-  never held its key.
+- **A CLUB IS ITS WORKSPACE AGENT AT THE HOME, AND THE CARD ROOM KEEPS NOTHING OF IT BUT THE WIRE**
+  (2026-09-13, `docs/WORKSPACES.md` §5.0; `apps/tables/src/clubs.ts`). There is no `ClubDO`, no roster
+  table, no club index, no email invitations, no dev login: everyone is a person with a Home, and a club is a
+  `<label>.workspace` Smart Agent its host custodies there. Its id IS the agent's address. Who belongs is the
+  workspace's own membership (`org.membership:member:<sa>`, spec 325), written by two Home ceremonies — the
+  host's `workspace-member-invite` (her agent then MESSAGES the person with the link to `#/join/<club>`) and the
+  member's `workspace-join`. What the club calls itself, when it meets and how each night diverges from the
+  rule are three records in the workspace's vault — `cardroom.club.profile|schedule|nights`
+  (apctx:CardRoomClub, CardRoomClubSchedule, CardRoomClubNights; cr:Club, cr:ClubSchedule, cr:ClubNight in
+  the card-room ontology) — written by the club's OWN agent when the card room acts as it. STARTING A CLUB is
+  two ceremonies (`workspace-create`, then `service-agent-wire` with `grant_org` = the club: the host signs, as
+  custodian, a wire from the club's agent to this card room's session key — `/admin/signer-address` and
+  `/admin/service-wire` answer the Home; the wire is checked on chain and kept in KV `CLUB_WIRES`) and one
+  first act (`POST /clubs/:id/found` writes the profile). Every club route then asks the club's agent at the
+  Home (`POST <a2a>/clubs/act` under an `A2A-Session` assertion over the wire, `club.read` / `club.write`, no
+  model, ~2 s): the view is ONE read (profile, schedule, nights record, roster, and the person's standing —
+  host/member/none — derived by the Home from ITS records and the chain, never a row here). Nights are DERIVED
+  from the rule at read time (`nightsOf`), exceptions laid over; nothing is materialised. Standing at a club
+  is asked of the Home per request; the Home remembers a POSITIVE answer a minute, never `none`. Each act
+  carries a nonce, because the assertion is spent once and a page reads the club several times a second. The
+  one read still on the paired secret is `GET <a2a>/clubs/mine` — which of a person's linked workspaces keep a
+  club profile — for the rail. A club nobody has standing in, or that this card room holds no wire for,
+  answers **404, never 403**. A table with no `club` is a PICKUP table: public, and what every table was.
+  Tables, the lobby per club, and the person's session stay in Durable Objects because they are live.
+  `pnpm walk:club` proves the whole road; `pnpm walk:nav` presses the two-ceremony start.
+- **A CLUB IS RETIRED BY ITS HOST, AND ITS AGENT IS NOT OURS TO RETIRE.** `DELETE /clubs/:clubId` LOOKS FIRST
+  and refuses (409, naming them) if anybody is seated at one of the club's tables; then closes the club's
+  tables; then marks the club's profile `retiredAt` at its Home (the rail skips retired clubs) and lets go of
+  the wire. It NEVER touches the club's Smart Agent: that lives at the host's Home and this card room has
+  never held its key — the answer returns the address so the client can say so.
 - **A CLUB HUDDLES — voice, faces and the table, for its members whether or not they are playing**
-  (2026-09-13; Home spec 378, `club` scope). The Home's huddle service (`a2a.faithnet.io`, Cloudflare
-  RealtimeKit) decides who may start, join or end; the card room keeps the ROSTER, so for a `club` scope
-  the Home asks `GET /clubs/:id/standing-of?agent=` (gated by the paired secret `CLUB_ROSTER_SECRET`, set on
-  both workers; the Home's `CLUB_ROSTER_ORIGINS` names this card room) and cross-checks the club's workspace
-  agent against the scope's principal. THE ROAD IS THROUGH THE CARD ROOM: a person who signed in through their
-  Home holds no Home bearer in this browser (the code exchange was server-side), so `POST
-  /clubs/:id/huddle/:op` (card-room session; the club's roster gates it) calls the Home server-to-server
-  under the paired secret, naming the member's agent; the join's `authToken` passes through once, is kept
-  and logged nowhere, and goes to the browser SDK. A dev session has no agent and cannot huddle. `components/huddle/` — `ClubHuddleProvider` (owns the call above every page, so walking
-  club ↔ table does not hang up; mic, camera, screen are local), `ClubHuddleDock` (faces or initials,
-  active speaker, remote audio on <audio>, cameras/screens on <video>), `HuddleAffordance` on the club page
-  and in a club table's top bar. `HOME_A2A_ORIGIN` reaches the client as `config.home.a2aOrigin`; a club
-  with no chartered agent has no scope and offers nothing. Proven live: Alice (host) starts at Canasta
-  Club, Bob (a card-room member, no Home standing at the workspace) joins, faces render, Alice ends both.
+  (Home spec 378, `club` scope; principal and id are both the club's agent). The Home's huddle service
+  decides who may start, join or end from standing IT derives; the card room's `POST /clubs/:id/huddle/:op`
+  names the member to the Home under the paired secret (a person who signed in through their Home holds no
+  Home bearer here), and passes the join's `authToken` through once. `components/huddle/` —
+  `ClubHuddleProvider` (owns the call above every page), `ClubHuddleDock`, `HuddleAffordance` on the club page
+  and in a club table's top bar.
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must
@@ -338,8 +331,10 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - `pnpm dev:tables` (wrangler dev on :8787) · `pnpm dev:web` (vite on :5173) · `pnpm dev:agents` (wrangler dev on :8788)
 - `pnpm --filter pokernight-agent bot -- --table <id> --seat 3` (rules-based bot)
 - `pnpm walk:nav` (presses every road through the card room on the live deployment as one of the Home's
-  demo people: every rail row, a refresh on two pages, a club created and found in the rail, a club you
-  are not in, and leaving a table. `--site` to point it elsewhere, `--headed` to watch.)
+  demo people: every rail row, a refresh on two pages, a club chartered at the Home and found in the rail, a
+  club you are not in, and leaving a table. `--site` to point it elsewhere, `--headed` to watch.)
+- `pnpm walk:club` (a club end to end: Alice charters and founds one, invites Bob at her Home, Bob joins at his
+  from the door her agent's message links, the club's own agent answers the roster, and both huddle.)
 - `pnpm walk:coach` (presses "deal me in" for BOTH games on the live deployment and checks the coach
   came with them: on by default at a practice table, narrating, saying whose advice it is.)
 - `pnpm walk:round-end` (the end of a canasta round on the live deployment: the curtain, the freeze

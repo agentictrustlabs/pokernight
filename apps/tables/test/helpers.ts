@@ -1,6 +1,7 @@
-import { SELF } from 'cloudflare:test';
+import { SELF, env } from 'cloudflare:test';
+import { mintHomeSessionToken, putSessionRecord } from '../src/auth.js';
 import { createTable } from '@pokernight/engine';
-import type { ClubSummary, PokerServerMessage, TableSummary } from '@pokernight/protocol';
+import type { PokerServerMessage, TableSummary } from '@pokernight/protocol';
 
 /**
  * The engine bodies are being implemented separately and currently throw "not implemented".
@@ -45,39 +46,30 @@ export async function createTableViaHttp(
   return (await res.json()) as TableSummary;
 }
 
-/** Start a club. The signed-in player becomes its first host, and is on its roster from the start. */
-export async function createClubViaHttp(token: string, name = 'test club'): Promise<ClubSummary> {
-  const res = await SELF.fetch('http://tables.test/clubs', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ name }),
-  });
-  if (res.status !== 201) throw new Error(`create club failed: ${res.status} ${await res.text()}`);
-  return (await res.json()) as ClubSummary;
+/**
+ * A club is its workspace agent at a Home now, so a test cannot start one: what `soloClub` used to give —
+ * a lobby nobody else is writing to — is given by a table name nobody else uses, and the tests that
+ * listed a lobby filter by the ids they made. Kept as a name so the call sites read the same; `club`
+ * is always undefined (a pickup table).
+ */
+export async function soloClub(_name = 'solo'): Promise<{ club: undefined; token: string }> {
+  const host = await devSession(`host-${crypto.randomUUID().slice(0, 8)}`);
+  return { club: undefined, token: host.token };
 }
 
 /**
- * A club of one, and the host who can open tables in it.
- *
- * This is the isolation a test wants when all it needs is a lobby nobody else is writing to — the
- * job a random `circle` string used to do, now done by the real gated path so the isolation and the
- * feature are tested by the same call. Returns the shape `createTableViaHttp` takes, so it reads as
- * `createTableViaHttp('name', {}, await soloClub())`.
+ * A signed-in person, minted the way a Home sign-in mints one — a `home:0x…` player with a session
+ * record — but without a Home: the address is derived from the name, the record is written directly.
+ * The dev login is gone from the Worker (everyone comes through a Home); this is the test's stand-in.
  */
-export async function soloClub(name = 'solo'): Promise<{ club: string; token: string }> {
-  const host = await devSession(`host-${crypto.randomUUID().slice(0, 8)}`);
-  const club = await createClubViaHttp(host.token, name);
-  return { club: club.clubId, token: host.token };
-}
-
-export async function devSession(name: string): Promise<{ token: string; playerId: string; name: string }> {
-  const res = await SELF.fetch('http://tables.test/dev/session', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-  if (res.status !== 200) throw new Error(`dev session failed: ${res.status}`);
-  return (await res.json()) as { token: string; playerId: string; name: string };
+export async function devSession(name: string): Promise<{ token: string; playerId: string; name: string; address: string }> {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`test-person:${name}`)));
+  const address = `0x${[...bytes.slice(0, 20)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  const playerId = `home:${address}`;
+  const exp = Date.now() + 12 * 60 * 60 * 1000;
+  await putSessionRecord(env as never, { playerId, name, address, homeOrigin: 'http://home.test', idToken: 'test', createdAt: Date.now(), expiresAt: exp } as never);
+  const token = await mintHomeSessionToken(env as never, playerId, name, exp);
+  return { token, playerId, name, address };
 }
 
 /**

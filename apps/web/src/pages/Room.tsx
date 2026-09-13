@@ -136,7 +136,7 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
         ) : r.page === 'money' ? (
           <MoneyPage session={session} config={auth.config} treasury={treasury} treasuryErr={treasuryErr} tables={tables} onChanged={loadTreasury} />
         ) : r.page === 'newClub' ? (
-          <NewClubPage session={session} onStarted={loadClubs} />
+          <NewClubPage config={auth.config} />
         ) : r.page === 'club' ? (
           <ClubPage clubId={r.clubId} session={session} config={auth.config} money={money} ready={ready} onChanged={loadClubs} />
         ) : (

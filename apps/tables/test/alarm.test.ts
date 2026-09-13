@@ -50,21 +50,22 @@ describe('alarms and persistence (engine required)', () => {
 
   it.skipIf(!engineReady)('writes ledger rows for buy-in and cash-out and settles the outbox', async () => {
     const table = await createTableViaHttp('ledger');
-    const a = await TestClient.connect(table.tableId, (await devSession('Cara')).token);
+    const cara = await devSession('Cara');
+    const a = await TestClient.connect(table.tableId, cara.token);
     a.send({ type: 'join', seat: 2, buyIn: 150 });
     await a.waitFor((m) => m.type === 'event' && m.event.type === 'seat-joined');
     a.send({ type: 'add-chips', amount: 20 });
     await a.waitFor((m) => m.type === 'event' && m.event.type === 'seat-status');
     a.send({ type: 'leave' });
     const left = await a.waitFor((m) => m.type === 'event' && m.event.type === 'seat-left');
-    expect(left).toMatchObject({ type: 'event', event: { seat: 2, playerId: 'dev:cara', stack: 170 } });
+    expect(left).toMatchObject({ type: 'event', event: { seat: 2, playerId: cara.playerId, stack: 170 } });
 
     const stub = env.TABLES.get(env.TABLES.idFromName(table.tableId));
     // The outbox alarm was scheduled for "now"; run it directly rather than waiting on the clock.
     await runInDurableObject(stub, async (instance: PokerTableDO) => instance.alarm());
     await runInDurableObject(stub, async (_instance: PokerTableDO, state) => {
       const rows = state.storage.sql
-        .exec<{ kind: string; chips: number; receipt_json: string | null }>('SELECT kind, chips, receipt_json FROM ledger WHERE player_id = ? ORDER BY at, kind', 'dev:cara')
+        .exec<{ kind: string; chips: number; receipt_json: string | null }>('SELECT kind, chips, receipt_json FROM ledger WHERE player_id = ? ORDER BY at, kind', cara.playerId)
         .toArray();
       expect(rows.map((r) => [r.kind, r.chips])).toEqual([
         ['buy-in', 150],

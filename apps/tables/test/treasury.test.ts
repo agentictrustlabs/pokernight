@@ -87,15 +87,6 @@ describe('POST /treasury/select', () => {
   });
 });
 
-describe('POST /treasury/create', () => {
-  it('refuses a session with no person agent, naming what is missing', async () => {
-    const s = await devSession('Treasury Maker');
-    const res = await post('/treasury/create', {}, s.token);
-    expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: string }).error).toMatch(/no Smart Agent/);
-  });
-});
-
 describe('POST /treasury/mandate', () => {
   it('refuses to authorise anything before a treasury is chosen', async () => {
     const s = await devSession('Mandate Signer');

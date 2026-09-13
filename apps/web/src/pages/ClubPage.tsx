@@ -173,7 +173,7 @@ export function ClubPage({
       />
       {/* WHEN, before WHO. A member arriving at a club wants to know if there is a game and when it is;
           the roster is the thing they cannot act on. */}
-      <Nights clubId={clubId} session={session} host={host} />
+      <Nights clubId={clubId} session={session} host={host} schedule={view.schedule} nights={view.nights} onChanged={() => void loadView()} />
       <Roster
         view={view}
         session={session}

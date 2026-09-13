@@ -1,11 +1,11 @@
 /**
  * Session tokens.
  *
- * BOTH sign-in paths mint the SAME token, so nothing downstream cares which one you used:
+ * ONE WAY IN — the Home (2026-09-13; the dev login is gone: everyone at this card room is a person with a
+ * Home, because a club is that person's agent's affair). The token:
  *   base64url(JSON payload) "." base64url(HMAC-SHA256(SESSION_SECRET, `${playerId}.${name}.${exp}`))
  * verified with the same HMAC via WebCrypto.
  *
- *   dev  (DEV_AUTH=true)  playerId = `dev:<slug(name)>`   — any name, no proof. Localhost only.
  *   home (Home OIDC)      playerId = `home:0x<sa address>` — minted only after the Worker itself has
  *                         exchanged the code and verified the id_token (`home.ts`). The browser's
  *                         claim about who it is never reaches this file.
@@ -42,12 +42,12 @@ export interface HomeSessionClaims extends SessionClaims {
 }
 
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
-/** Used only when DEV_AUTH=true and no SESSION_SECRET is configured, so `wrangler dev` works without .dev.vars. */
+/** Used only when no SESSION_SECRET is configured against a LOCALHOST Home, so `wrangler dev` works without .dev.vars. */
 const INSECURE_DEV_SECRET = 'pokernight-dev-insecure-secret';
 
 export function sessionSecret(env: Env): string | null {
   if (env.SESSION_SECRET) return env.SESSION_SECRET;
-  return env.DEV_AUTH === 'true' ? INSECURE_DEV_SECRET : null;
+  return (env.HOME_ZONE ?? '').trim().toLowerCase() === 'localhost' ? INSECURE_DEV_SECRET : null;
 }
 
 export function slug(name: string): string {
@@ -118,15 +118,6 @@ function isClaims(x: unknown): x is SessionClaims {
   if (typeof x !== 'object' || x === null) return false;
   const o = x as Record<string, unknown>;
   return typeof o.playerId === 'string' && typeof o.name === 'string' && typeof o.exp === 'number' && o.playerId.length > 0;
-}
-
-/** Dev login: DEV_AUTH=true only. */
-export async function mintDevSession(env: Env, name: string, now = Date.now()): Promise<{ token: string; playerId: string; name: string }> {
-  const secret = sessionSecret(env);
-  if (!secret) throw new Error('SESSION_SECRET is not configured');
-  const playerId = `dev:${slug(name)}`;
-  const token = await mintSessionToken(secret, { playerId, name, exp: now + DEFAULT_TTL_MS });
-  return { token, playerId, name };
 }
 
 /**

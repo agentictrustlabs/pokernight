@@ -25,7 +25,28 @@ const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback;
 };
+
 const SITE = (flag('site', 'https://poker.faithnet.io') || '').replace(/\/+$/, '');
+
+/**
+ * Drive the Home's screens until the walk is back at the card room and settled: press "Allow" on each consent
+ * sheet, answer the name step if the persona has none, and let a return leg that bounces straight back out
+ * (the charter's, into the wire ceremony) do so.
+ */
+async function homeTrip(page) {
+  for (let i = 0; i < 60; i++) {
+    await page.waitForTimeout(2500);
+    if (page.url().startsWith(SITE)) {
+      await page.waitForTimeout(4000);
+      if (page.url().startsWith(SITE)) return;
+      continue;
+    }
+    const nameBox = page.locator('input[placeholder*="Rich Pedersen"]');
+    if (await nameBox.count().catch(() => 0)) { await nameBox.fill('Nav Walker'); await page.locator('button', { hasText: 'Continue' }).first().click(); continue; }
+    const allow = page.locator('button', { hasText: /^Allow / });
+    if (await allow.count().catch(() => 0)) { await allow.first().click(); continue; }
+  }
+}
 const HEADED = args.includes('--headed');
 
 const step = (s) => console.log(`· ${s}`);
@@ -101,19 +122,19 @@ const hashOf = (page) => `#${(page.url().split('#')[1] ?? '')}`;
     check('starting a club is a page, not a form in the rail', hashOf(page), '#/clubs/new');
     await page.locator('.club-start input').fill(clubName);
     await page.locator('.club-start button[type=submit]').click();
-    // Wait for the LANDING, not for a guessed number of milliseconds. Creating a club waits on the
-    // player's club index being written before it answers, so a fixed sleep was timing a round trip
-    // that got longer — and reporting the redirect as missing when it had merely not happened yet.
-    await page.waitForFunction(() => /^#\/clubs\/[0-9a-f-]{36}$/.test(location.hash), { timeout: 30_000 }).catch(() => {});
+    // STARTING A CLUB IS TWO CEREMONIES AT THE HOME — charter the club's agent, then authorise the card room
+    // to act as it — each with an approval sheet; the walk presses "Allow" on both and waits for the landing.
+    await homeTrip(page);
+    await page.waitForFunction(() => /^#\/clubs\/0x[0-9a-f]{40}$/i.test(location.hash), { timeout: 60_000 }).catch(() => {});
     // `.room-main .panel` is satisfied by the "Reading the club…" panel, so waiting on it waits for
     // nothing. `.club-detail` only exists once the club itself has answered.
     await page.waitForSelector('.club-detail', { timeout: 30_000 }).catch(() => {});
     // THE RACE THIS CAUGHT: the index write was fire-and-forget, so the club was not in the rail when
     // the new host was sent to it.
-    check('a new club lands you ON the club', hashOf(page), (h) => /^#\/clubs\/[0-9a-f-]{36}$/.test(h));
+    check('a new club lands you ON the club', hashOf(page), (h) => /^#\/clubs\/0x[0-9a-f]{40}$/i.test(h));
 
     const clubHash = hashOf(page);
-    check('a club is a URL of its own', clubHash, (h) => /^#\/clubs\/[0-9a-f-]{36}$/.test(h));
+    check('a club is a URL of its own', clubHash, (h) => /^#\/clubs\/0x[0-9a-f]{40}$/i.test(h));
     check('the club page names it', tidy(await page.locator('.room-main').innerText()), (t) => t.includes(clubName));
     check('and leads with its TABLES, not its roster', await page.locator('.room-main .panel h2').first().innerText(), (t) =>
       /Tables at/.test(t),

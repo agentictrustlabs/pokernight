@@ -1,13 +1,10 @@
 import type {
-  ClubInvite,
-  ClubMember,
+  ClubListing,
   ClubSchedule,
-  ClubSummary,
   ClubView,
   CreateTableRequest,
   Night,
   SetScheduleRequest as SetSchedule,
-  InviteGreeting,
   KnownPerson,
   Session,
   SignOutResult,
@@ -101,12 +98,7 @@ export function advertises(agent: AgentListing, skill: string): boolean {
   return (agent.skills ?? []).includes(skill);
 }
 
-/** One row of "the clubs you are in" — the index the club writes to, not the club itself. */
-export interface ClubListing {
-  clubId: string;
-  name: string;
-  joinedAt: number;
-}
+export type { ClubListing };
 import { SESSION_KEY } from './ssoLogout';
 import type { AppSession } from './types';
 import type { AuthConfig } from './home';
@@ -134,7 +126,7 @@ export function loadSession(): AppSession | null {
         token: s.token,
         playerId: s.playerId,
         name: s.name,
-        via: s.via === 'home' || s.via === 'demo' || s.via === 'dev' ? s.via : s.playerId.startsWith('home:') ? 'home' : 'dev',
+        via: s.via === 'home' || s.via === 'demo' ? s.via : 'home',
         address: typeof s.address === 'string' ? s.address : undefined,
         agentName: typeof s.agentName === 'string' ? s.agentName : undefined,
       };
@@ -269,7 +261,6 @@ export const api = {
    *  checks the mandate against this session's treasury, and stores it — or says what came back. */
   homeMandate: (body: HomeAuthBody, token: string) =>
     request<MandateResult>('/auth/home/mandate', { method: 'POST', body: JSON.stringify(body) }, token),
-  devLogin: (name: string) => request<Session>('/dev/session', { method: 'POST', body: JSON.stringify({ name }) }),
   /** The open tables. With no club that is the PUBLIC pickup lobby, which needs no session at all;
    *  with one it is that club's own tables, and the card room checks standing before it answers. */
   listTables: (token?: string, club?: string) =>
@@ -279,68 +270,28 @@ export const api = {
 
   /* ---------------------------------------------------------------------- clubs */
 
-  /** Start a club. Whoever signs the request is its first host and is on its roster immediately. */
-  createClub: (name: string, token: string) =>
-    request<ClubSummary>('/clubs', { method: 'POST', body: JSON.stringify({ name }) }, token),
-  /** The clubs this person is in. Never a list of clubs — there is no such thing to ask for. */
+  /** The clubs this person is in — their own links at their Home. Never a list of clubs to browse. */
   listClubs: (token: string) => request<{ clubs: ClubListing[] }>('/clubs', {}, token),
   /**
-   * One club, with its roster and what you are to it.
+   * One club, from its own agent: profile, roster, schedule, nights, and what you are to it.
    *
    * A club you are not in answers 404, exactly as a club that does not exist does. The client must
-   * not turn that into "you do not have access" — the card room is declining to say either way, and
-   * saying more on its behalf would leak the thing the 404 exists to hide.
+   * not turn that into "you do not have access" — the card room is declining to say either way.
    */
   getClub: (clubId: string, token: string) => request<ClubView>(`/clubs/${encodeURIComponent(clubId)}`, {}, token),
   /**
-   * Put somebody on the roster, by whichever identifier the host has of them.
-   *
-   * A Smart Agent address, a playerId, or an AGENT NAME (`carol.me`) — the card room resolves the
-   * last on chain. An email is NOT one of these and is refused by name: it identifies nobody, and
-   * goes through `inviteByEmail` instead, which opens an invitation rather than a membership.
+   * STARTING A CLUB, in three steps the card room and the Home take turns at: the `workspace-create`
+   * ceremony's return leg (this — the club's agent exists; `idToken` is the bearer the wire ceremony
+   * needs), then the `service-agent-wire` ceremony (the Home talks to the card room directly), then
+   * `foundClub` — the card room's first act as the club, writing its profile.
    */
-  inviteMember: (clubId: string, member: string, name: string | undefined, token: string) =>
-    request<{ added: ClubMember }>(
-      `/clubs/${encodeURIComponent(clubId)}/members`,
-      { method: 'POST', body: JSON.stringify({ member, ...(name ? { name } : {}) }) },
-      token,
-    ),
-  /**
-   * Invite somebody whose Smart Agent nobody knows — which is nearly everybody, before they arrive.
-   *
-   * Answers with the link as well as the delivery outcome, ALWAYS. A Home with no mailer configured
-   * says `logged`, and a Home that refused says `not-sent` with a reason; in both cases the
-   * invitation exists and the host can send the link themselves.
-   */
-  inviteByEmail: (clubId: string, email: string, name: string | undefined, token: string) =>
-    request<{ invite: ClubInvite; joinUrl: string; delivery: 'sent' | 'logged' | 'not-sent'; deliveryError?: string }>(
-      `/clubs/${encodeURIComponent(clubId)}/invites`,
-      { method: 'POST', body: JSON.stringify({ email, ...(name ? { name } : {}) }) },
-      token,
-    ),
-  /** The club's invitations, outstanding and spent. Hosts only. */
-  listInvites: (clubId: string, token: string) =>
-    request<{ invites: ClubInvite[] }>(`/clubs/${encodeURIComponent(clubId)}/invites`, {}, token),
-  /** Take back an invitation nobody has used. */
-  revokeInvite: (clubId: string, inviteToken: string, token: string) =>
-    request<{ revoked: string }>(
-      `/clubs/${encodeURIComponent(clubId)}/invites/${encodeURIComponent(inviteToken)}`,
-      { method: 'DELETE' },
-      token,
-    ),
-  /**
-   * What an invitation says to whoever opened it. NO SESSION: they do not have one yet, and the
-   * whole point of the page this feeds is that it tells them what they are being asked to sign in for.
-   */
-  inviteGreeting: (clubId: string, inviteToken: string) =>
-    request<InviteGreeting>(`/clubs/${encodeURIComponent(clubId)}/invite/${encodeURIComponent(inviteToken)}`, {}),
-  /** Spend it. The membership is keyed to the session that claims it, not to the email it was sent to. */
-  claimInvite: (clubId: string, inviteToken: string, token: string) =>
-    request<{ claimed: ClubInvite; already?: boolean }>(
-      `/clubs/${encodeURIComponent(clubId)}/invite/${encodeURIComponent(inviteToken)}/claim`,
-      { method: 'POST', body: '{}' },
-      token,
-    ),
+  charterClub: (body: HomeAuthBody, token: string) =>
+    request<{ clubId: string; agentName?: string; idToken: string }>('/clubs/charter', { method: 'POST', body: JSON.stringify(body) }, token),
+  foundClub: (clubId: string, body: { name: string; games?: string[] }, token: string) =>
+    request<ClubView>(`/clubs/${encodeURIComponent(clubId)}/found`, { method: 'POST', body: JSON.stringify(body) }, token),
+  /** Whom a host means — `carol.me` or an address — resolved on chain so the invitation can name the agent. */
+  resolveMember: (clubId: string, who: string, token: string) =>
+    request<{ agent: string; name?: string }>(`/clubs/${encodeURIComponent(clubId)}/resolve?who=${encodeURIComponent(who)}`, {}, token),
   /**
    * Your practice table for a game — the same one every time.
    *
@@ -441,21 +392,6 @@ export const api = {
     request<{ seated: true }>(`/tables/${encodeURIComponent(tableId)}/seat-agent`, { method: 'POST', body: JSON.stringify(body) }, token),
   /** The people you already play with — everyone on the roster of a club of yours, but you. */
   knownPeople: (token: string) => request<{ people: KnownPerson[] }>('/people', {}, token),
-  /**
-   * Finish the charter ceremony the host ran at their Home, and record what it deployed.
-   *
-   * The card room does the code exchange, not the browser — the same split as sign-in and the buy-in
-   * authorisation. It checks the ceremony was completed by the person holding this session and that
-   * they are a host of this club before it writes anything down.
-   */
-  charterClub: (clubId: string, body: HomeAuthBody, token: string) =>
-    request<ClubSummary>(`/clubs/${encodeURIComponent(clubId)}/charter`, { method: 'POST', body: JSON.stringify(body) }, token),
-  /** Finish a membership ceremony run at a Home — the host's invitation or the member's join — and let the
-   *  card room bring its roster up to date with what the Home now records. */
-  homeMembership: (clubId: string, body: HomeAuthBody & { leg: 'invite' | 'join'; member?: string }, token: string) =>
-    request<{ leg: 'invite' | 'join'; member: string; home: 'invited' | 'joined' }>(`/clubs/${encodeURIComponent(clubId)}/home-membership`, { method: 'POST', body: JSON.stringify(body) }, token),
-  removeMember: (clubId: string, member: string, token: string) =>
-    request<{ removed: string }>(`/clubs/${encodeURIComponent(clubId)}/members/${encodeURIComponent(member)}`, { method: 'DELETE' }, token),
   /** The host's own words about their club. It is what an invitation actually says. */
   setWelcome: (clubId: string, welcome: string, token: string) =>
     request<{ welcome?: string }>(`/clubs/${encodeURIComponent(clubId)}/welcome`, { method: 'PUT', body: JSON.stringify({ welcome }) }, token),

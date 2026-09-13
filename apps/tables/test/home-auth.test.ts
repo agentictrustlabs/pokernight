@@ -106,7 +106,7 @@ describe('GET /auth/config', () => {
     const res = await SELF.fetch('http://tables.test/auth/config');
     expect(res.status).toBe(200);
     const cfg = (await res.json()) as { devAuth: boolean; home: Record<string, unknown> };
-    expect(cfg.devAuth).toBe(true); // [vars] DEV_AUTH = "true"
+    expect(cfg.devAuth).toBe(false); // there is no dev login
     expect(cfg.home.clientId).toBe('pokernight');
     expect(cfg.home.origin).toBe(HOME);
     expect(cfg.home.zone).toBe('localhost');
@@ -345,14 +345,8 @@ describe('POST /auth/home', () => {
 
 describe('verifyHomeSession', () => {
   it('ignores tokens that are not Home sessions', async () => {
-    const dev = await SELF.fetch('http://tables.test/dev/session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Dev Dan' }),
-    });
-    const { token } = (await dev.json()) as { token: string };
-    expect(await verifyHomeSession(env, token)).toBeNull();
     expect(await verifyHomeSession(env, 'garbage')).toBeNull();
+    expect(await verifyHomeSession(env, 'a.b')).toBeNull();
   });
 });
 

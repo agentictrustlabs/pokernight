@@ -391,6 +391,9 @@ export interface HomeCharterResult {
   identity: HomeIdentity;
   /** The workspace Smart Agent the Home deployed, lowercased. */
   agent: string;
+  /** The Home's id_token for the host — the bearer the wire ceremony that follows presents to `/admin/*`.
+   *  Handed to the browser for that one trip and kept nowhere here. */
+  idToken: string;
   /** What it was named at the Home. May be absent; the club keeps its own name either way. */
   agentName?: string;
   /** The workspace → person stewardship wire. Kept because it is the evidence the person custodies
@@ -425,6 +428,7 @@ export async function completeCharterCeremony(env: Env, req: HomeAuthRequest, no
   return {
     identity,
     agent,
+    idToken: token.idToken,
     ...(token.org?.orgName ? { agentName: token.org.orgName } : {}),
     ...(token.org?.delegation ? { stewardship: token.org.delegation } : {}),
   };
@@ -458,55 +462,6 @@ export async function completeCoachCeremony(env: Env, req: HomeAuthRequest, now 
   const coach = (token as { coach?: { name?: string; agent?: string; grantHash?: string } }).coach;
   if (!coach?.name) throw new HomeAuthError('your Home completed the ceremony but named no coach, so there is nothing to record');
   return { identity, coach: { name: coach.name, ...(coach.agent ? { agent: coach.agent.toLowerCase() } : {}), ...(coach.grantHash ? { grantHash: coach.grantHash } : {}) } };
-}
-
-/** The two legs of MEMBERSHIP AT THE HOME (WORKSPACES.md §5 as amended 2026-09-13): the host invites a member
- *  into the club's workspace at THEIR Home, the member joins it at THEIRS. Both are curated templates the Home
- *  runs as side-effects on the way into an ordinary sign-in, so the card room learns they finished the same way
- *  it learns anything from the Home — a code, exchanged here, whose identity is checked against the session. */
-export const MEMBER_INVITE_TEMPLATE = 'workspace-member-invite';
-export const MEMBER_JOIN_TEMPLATE = 'workspace-join';
-
-/**
- * Finish a membership ceremony (either leg). Nothing rides on the token beyond WHO ran it: an invitation is
- * stashed at the Home for the member to claim, and a join is recorded in the workspace's own vault — the
- * Worker asks the Home for the roster afterwards rather than believing the return leg, because a code says
- * somebody signed in, not what happened on the way.
- */
-export async function completeMembershipCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<{ identity: HomeIdentity }> {
-  if (!isAllowedHomeOrigin(env, req.authOrigin)) {
-    throw new HomeAuthError(`home origin "${req.authOrigin}" is not a trusted issuer for this deployment`);
-  }
-  if (!req.nonce) throw new HomeAuthError('id_token nonce does not match the authorisation request');
-  const token = await exchangeAtHome(env, req);
-  const identity = await verifyHomeIdToken(env, req.authOrigin, token.idToken, req.nonce, now);
-  return { identity };
-}
-
-/**
- * WHO THE HOME SAYS BELONGS TO THIS WORKSPACE — the club roster's source (2026-09-13). The Home answers under
- * the paired secret from the workspace's own membership records; the card room reconciles its roster to it.
- * `null` when it could not be asked (no Home, no secret, a timeout): a read that failed is not an empty club.
- */
-export async function homeRoster(env: Env, workspace: string): Promise<{ members: Array<{ agent: string; name?: string }>; needsEnable?: boolean } | null> {
-  const a2a = (env.HOME_A2A_ORIGIN ?? '').trim().replace(/\/$/, '');
-  const secret = (env.CLUB_ROSTER_SECRET ?? '').trim();
-  if (!a2a || !secret || !/^0x[0-9a-fA-F]{40}$/.test(workspace)) return null;
-  try {
-    const r = await fetch(`${a2a}/clubs/roster?workspace=${workspace.toLowerCase()}`, {
-      headers: { accept: 'application/json', authorization: `Bearer ${secret}` },
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!r.ok) return null;
-    const b = (await r.json().catch(() => null)) as { ok?: boolean; members?: Array<{ agent?: string; name?: string }>; needsEnable?: boolean } | null;
-    if (!b?.ok || !Array.isArray(b.members)) return null;
-    return {
-      members: b.members.filter((m) => /^0x[0-9a-fA-F]{40}$/.test(String(m.agent ?? ''))).map((m) => ({ agent: String(m.agent).toLowerCase(), ...(m.name ? { name: String(m.name) } : {}) })),
-      ...(b.needsEnable ? { needsEnable: true } : {}),
-    };
-  } catch {
-    return null;
-  }
 }
 
 export async function completeMandateCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<HomeMandateResult> {

@@ -289,11 +289,11 @@ describe('sign-in render', () => {
     expect(html).not.toContain('Sign in and set tonight');
   });
 
-  it('offers the dev name box only where the API says dev auth is on', () => {
+  it('offers no dev name box — everyone comes through a Home', () => {
     const cfg = auth().config;
     const html = signIn(auth({ config: { ...cfg, devAuth: true } as NonNullable<AuthState['config']> }));
     expect(html).toContain('Sign in to play');
-    expect(html).toContain('Enter with a dev name');
+    expect(html).not.toContain('Enter with a dev name');
   });
 
   it('shows a failure and a way onward rather than a blank screen', () => {
@@ -682,35 +682,43 @@ describe('a club page for a club you are not in', () => {
   });
 });
 
-describe('an invitation, to somebody who has never heard of the club', () => {
+describe('the door into a club, for somebody who has been invited', () => {
   const auth0 = { config: null, configError: null, busy: false, error: null, signInWithHome: () => {}, dismissError: () => {}, personas: [], demoBusy: null, demoError: null, connectAsDemo: () => {}, notice: null } as never;
-  const page = (greeting: unknown): string =>
-    renderToStaticMarkup(createElement(JoinPage, { clubId: 'c1', token: 't', session: null, auth: auth0, onLogin: () => {} } as never));
+  const page = (session: unknown): string =>
+    renderToStaticMarkup(createElement(JoinPage, { clubId: `0x${'ab'.repeat(20)}`, session, auth: auth0, onLogin: () => {} } as never));
 
-  it('renders before the greeting has arrived, without claiming anything', () => {
-    // The first frame a person sees after pressing a link in their mail.
-    expect(page(null)).toContain('Reading the invitation');
+  it('says what it is for and asks for a sign-in first, claiming nothing about the club', () => {
+    // A club you are not in is indistinguishable from one that does not exist: no name, no roster here.
+    const html = page(null);
+    expect(html).toContain('You have been invited to a club');
+    expect(html).toContain('Sign in first');
+    expect(html).not.toContain('Join at your Home');
+  });
+
+  it('offers the join to somebody signed in, while it looks whether they already belong', () => {
+    const html = page({ token: 't', playerId: `home:0x${'cd'.repeat(20)}`, name: 'Barb', via: 'home' });
+    expect(html).toContain('Looking…');
   });
 });
 
 describe('a club’s nights', () => {
   const session = { token: 't', playerId: 'dev:barb', name: 'Barb' } as never;
 
-  it('says it is reading rather than claiming there are none', () => {
-    const html = renderToStaticMarkup(createElement(Nights, { clubId: 'c1', session, host: false } as never));
-    expect(html).toContain('Reading');
-    expect(html).not.toContain('No nights are scheduled');
+  const nights = (host: boolean) => createElement(Nights, { clubId: 'c1', session, host, schedule: null, nights: [], onChanged: () => {} } as never);
+
+  it('tells a member and a host different things when there are none, and never tells a member to fix it', () => {
+    expect(renderToStaticMarkup(nights(false))).toContain('A host sets them');
+    expect(renderToStaticMarkup(nights(true))).toContain('Set when it meets and they appear here');
   });
 
   it('leads with Nights, which is what a member came to find out', () => {
-    const html = renderToStaticMarkup(createElement(Nights, { clubId: 'c1', session, host: false } as never));
-    expect(html).toContain('<h2>Nights</h2>');
+    expect(renderToStaticMarkup(nights(false))).toContain('<h2>Nights</h2>');
   });
 
   it('offers a host the control and a member nothing to press', () => {
     // Offering somebody a button they will be refused at is worse than saying nothing.
-    expect(renderToStaticMarkup(createElement(Nights, { clubId: 'c1', session, host: true } as never))).toContain('Set when it meets');
-    expect(renderToStaticMarkup(createElement(Nights, { clubId: 'c1', session, host: false } as never))).not.toContain('Set when it meets');
+    expect(renderToStaticMarkup(nights(true))).toContain('Set when it meets');
+    expect(renderToStaticMarkup(nights(false))).not.toContain('Set when it meets');
   });
 });
 
@@ -718,7 +726,7 @@ describe('starting a club', () => {
   const session = { token: 't', playerId: 'dev:barb', name: 'Barb' } as never;
 
   it('says what a club is before asking for a name', () => {
-    const html = renderToStaticMarkup(createElement(NewClubPage, { session, onStarted: () => {} } as never));
+    const html = renderToStaticMarkup(createElement(NewClubPage, { config: null } as never));
     expect(html).toContain('Start a club');
     // The promise the landing page makes, kept here in the same words: private, and yours.
     expect(html).toContain('nobody outside it can see it');

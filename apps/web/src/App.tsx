@@ -9,6 +9,9 @@ import {
   takeCoachCallback,
   takeMembershipCallback,
   takeMembershipLeg,
+  startClubWire,
+  takeWireCallback,
+  takeWireClub,
   takeCoachName,
   takeCharterClub,
   takeHomeCallback,
@@ -82,6 +85,10 @@ export function App() {
   // The 401 handler needs the CURRENT session without re-registering on every change.
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  // The auth config, for a return leg that has to go straight back out (the charter's, into the wire
+  // ceremony) — it is fetched after mount, so the ref reads whatever has arrived by then.
+  const authRef = useRef(config);
+  authRef.current = config;
 
   const login = useCallback((s: AppSession) => {
     saveSession(s);
@@ -266,10 +273,9 @@ export function App() {
   }, []);
 
   /**
-   * The return leg of a MEMBERSHIP CEREMONY — the host's invitation into the club's workspace, or the
-   * member's join of it. Told apart by its own `state`, matched to its club by this origin's own memory.
-   * The Worker exchanges the code, checks the identity, and on a join asks the Home whether the club's agent
-   * now records them — nothing is believed from the code itself.
+   * The return leg of a MEMBERSHIP CEREMONY — the host's invitation into the club, or the member's join.
+   * Told apart by its own `state`, matched to its club by this origin's own memory. Nothing to record: the
+   * membership lives at the Home, and the club's page is read fresh from the club's own agent.
    */
   useEffect(() => {
     const outcome = takeMembershipCallback();
@@ -278,34 +284,19 @@ export function App() {
       return;
     }
     const leg = takeMembershipLeg();
-    const current = sessionRef.current;
-    if (!current) {
-      setError('Your Home finished, but this browser is no longer signed in — sign in and the club will show it.');
-      return;
-    }
     if (!leg) {
       setError('Your Home finished, but this browser no longer knows which club it was for. Open the club and try again.');
       return;
     }
-    setBusy(true);
-    api
-      .homeMembership(leg.clubId, { code: outcome.code, codeVerifier: outcome.codeVerifier, authOrigin: outcome.authOrigin, nonce: outcome.nonce, state: outcome.state, leg: leg.leg, ...(leg.member ? { member: leg.member } : {}) }, current.token)
-      .then((r) => {
-        setNotice(r.leg === 'invite' ? 'Invited at your Home — they can join the club from its page now.' : 'You are a member of this club at your Home now.');
-        goTo(clubHash(leg.clubId));
-      })
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'Could not finish the membership ceremony.'))
-      .finally(() => setBusy(false));
+    setNotice(leg.leg === 'invite' ? 'Invited at your Home — your agent has told them, and they can join from the link it sent.' : 'You are a member of this club at your Home now.');
+    goTo(clubHash(leg.clubId));
   }, []);
 
   /**
-   * The return leg of a CLUB CHARTER. Third ceremony on the same redirect URI, told apart the same
-   * way — by the `state` it stashed — and consumed before the sign-in path for the same reason: a
-   * code from a charter is not a code to mint a session out of.
-   *
-   * Which club it was for came back from this origin's own storage, never from the Home. If that is
-   * missing the charter cannot be recorded against anything, and saying so beats writing it onto
-   * whichever club happens to be on screen.
+   * The return leg of a CLUB CHARTER — the first of the two ceremonies that start a club. The Worker
+   * exchanges the code and checks the identity; what comes back is the club's agent and the bearer the
+   * SECOND ceremony needs, and the browser goes straight on to it: the club authorising this card room
+   * to act as it. The name came back from this origin's own storage, never from the Home.
    */
   useEffect(() => {
     const outcome = takeCharterCallback();
@@ -313,31 +304,46 @@ export function App() {
       if (outcome.status === 'error') setError(outcome.message);
       return;
     }
-    const clubId = takeCharterClub();
+    const pending = takeCharterClub();
     const current = sessionRef.current;
     if (!current) {
-      setError('Your Home chartered the club, but this browser is no longer signed in — sign in and it will be there.');
+      setError('Your Home chartered the club, but this browser is no longer signed in — sign in and try again.');
       return;
     }
-    if (!clubId) {
-      setError('Your Home finished, but this browser no longer knows which club it was for. Open the club and try again.');
+    if (!pending) {
+      setError('Your Home finished, but this browser no longer knows what the club was to be called. Start it again.');
       return;
     }
     setBusy(true);
     api
-      .charterClub(
-        clubId,
-        {
-          code: outcome.code,
-          codeVerifier: outcome.codeVerifier,
-          authOrigin: outcome.authOrigin,
-          nonce: outcome.nonce,
-          state: outcome.state,
-        },
-        current.token,
-      )
-      .then((club) => setNotice(`${club.name} has an agent of its own now.`))
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'Could not record the club charter.'))
+      .charterClub({ code: outcome.code, codeVerifier: outcome.codeVerifier, authOrigin: outcome.authOrigin, nonce: outcome.nonce, state: outcome.state }, current.token)
+      .then(async (r) => {
+        // The config may not have arrived yet on a fresh load: this effect runs at mount, the config fetch beside it.
+        const cfg = authRef.current ?? (await api.authConfig());
+        location.href = await startClubWire(cfg, { clubId: r.clubId, name: pending.name, ...(pending.games ? { games: pending.games } : {}), idToken: r.idToken });
+      })
+      .catch((e: unknown) => { setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Could not charter the club.'); setBusy(false); });
+  }, []);
+
+  /**
+   * The return leg of the WIRE ceremony — the club has authorised this card room. The first act as the
+   * club is to found it: write its profile under the name the host chose. Then its page.
+   */
+  useEffect(() => {
+    const outcome = takeWireCallback();
+    if (outcome.status === 'none') return;
+    const pending = takeWireClub();
+    if (outcome.status === 'error') { setError(outcome.message); return; }
+    const current = sessionRef.current;
+    if (!current || !pending) {
+      setError('Your Home finished, but this browser no longer knows which club it was for. Open Tables — the club may already be there.');
+      return;
+    }
+    setBusy(true);
+    api
+      .foundClub(pending.clubId, { name: pending.name, ...(pending.games ? { games: pending.games } : {}) }, current.token)
+      .then((club) => { setNotice(`${club.name} is yours — its agent lives at your Home, and this card room acts as it.`); goTo(clubHash(pending.clubId)); })
+      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'The club was chartered, but could not be founded here.'))
       .finally(() => setBusy(false));
   }, []);
 
@@ -446,7 +452,7 @@ export function App() {
           <span className="meta">{session ? <Identity session={session} onSignOut={signOut} /> : null}</span>
         </div>
         <div className="page">
-          <JoinPage clubId={r.clubId} token={r.token} session={session} auth={auth} onLogin={login} />
+          <JoinPage clubId={r.clubId} session={session} auth={auth} onLogin={login} />
         </div>
       </div>
     );
@@ -485,6 +491,14 @@ export function App() {
           )}
         </span>
       </div>
+      {/* WHAT A CEREMONY'S RETURN LEG HAD TO SAY, to somebody already signed in. These used to reach only the
+          sign-in panel, so a host whose club could not be founded came back to a page that said nothing. */}
+      {session && (error || notice) ? (
+        <div className={`app-banner${error ? ' app-banner-error' : ''}`} role="status">
+          <span>{error ?? notice}</span>
+          <button type="button" className="link-button" onClick={() => { setError(null); setNotice(null); }}>dismiss</button>
+        </div>
+      ) : null}
       {showLanding ? (
         <Landing auth={auth} onLogin={login} session={session} />
       ) : (
