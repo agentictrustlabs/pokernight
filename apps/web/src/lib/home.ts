@@ -143,6 +143,48 @@ export function readHomeSession(store: StorageLike | null = sessionStore()): str
   }
 }
 
+/**
+ * WHO IS AT THE HOME, for a CEREMONY trip (a charter, a wire, an invitation, a join, a coach, a registration).
+ * A person signed in through their Home holds no Home bearer here (the exchange was server-side), and every
+ * ceremony used to force the Home's account chooser in that case — a person plainly signed in, starting a
+ * club, was asked "who are you?" twice (2026-09-14, "I am already connected and just creating an org"). The
+ * Home already does the right thing on its own: a ceremony runs on the Home session its cookie names, and a
+ * browser with no cookie is sent to sign in first. So a ceremony says NOTHING about who — no `prompt`, and no
+ * pinned `agent_name` either: a pinned name sends `workspace-create` down the Home's named-org flow, which
+ * deploys the workspace WITHOUT its vault binding, and a club chartered that way can never keep its profile
+ * (seen live: the club was "created" and never appeared). Forcing the chooser is the plain sign-in's business.
+ * The return leg still refuses a ceremony run by a different person than this session (403 by identity).
+ */
+/** A typed name's label from a display name, the way the Home slugs an organization's: lowercase, runs of
+ *  anything but letters and digits become one hyphen, trimmed, at most 63 characters. */
+export function agentLabel(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63).replace(/-+$/g, '');
+}
+
+/**
+ * IS THE NAME FREE — asked of the Home before the trip, so a taken name is a line under the field and not a
+ * dead end at the Home's door ("already taken — pick another name. Return to Game Night", 2026-09-14).
+ * `null` when the Home could not be asked; the trip still runs and the Home has the last word.
+ */
+export async function nameAvailable(config: AuthConfig, name: string, tld: 'workspace' | 'org'): Promise<{ label: string; available: boolean; name: string } | null> {
+  const label = agentLabel(name);
+  if (label.length < 3 || !config.home.origin) return null;
+  try {
+    const r = await fetch(`${config.home.origin.replace(/\/$/, '')}/connect/name?exact=1&label=${encodeURIComponent(label)}&tld=${tld}`, { signal: AbortSignal.timeout(6_000) });
+    const b = (await r.json()) as { label?: string; name?: string; taken?: boolean; error?: string };
+    if (b.taken) return { label, available: false, name: b.name ?? `${label}.${tld}` };
+    if (b.label && b.name) return { label: b.label, available: true, name: b.name };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function addressTheHome(url: URL, store: StorageLike | null): void {
+  const home = readHomeSession(store);
+  if (home) url.hash = `session=${encodeURIComponent(home)}`;
+}
+
 export function forgetHomeSession(store: StorageLike | null = sessionStore()): void {
   try {
     store?.removeItem(HOME_SESSION_KEY);
@@ -641,11 +683,13 @@ export async function startClubCharter(
       template: config.home.clubTemplate ?? CLUB_TEMPLATE,
     }),
   );
-  url.searchParams.set('org_base', club.name);
+  // THE LABEL, not the name. The Home claims `<org_base>.workspace` exactly as sent, and its exact-name check
+  // strips what it cannot use — "erie hope game night" became `eriehopegamenight.workspace`, and a second try
+  // was told the name was taken by the first. The club's NAME stays what was typed (it is founded with it);
+  // the workspace is claimed under its slug, the way the Home slugs an organization's name itself.
+  url.searchParams.set('org_base', agentLabel(club.name));
   if (config.home.clubPurpose) url.searchParams.set('purpose', config.home.clubPurpose);
-  const home = readHomeSession(store);
-  if (home) url.hash = `session=${encodeURIComponent(home)}`;
-  else url.searchParams.set('prompt', 'select_account');
+  addressTheHome(url, store);
   return url.toString();
 }
 
@@ -684,9 +728,7 @@ export async function startClubWire(
   const url = new URL(client.buildAuthorizeUrl({ authOrigin: stash.authOrigin, state: stash.state, nonce: stash.nonce, codeChallenge: pkce.challenge, agentName: '', template: WIRE_TEMPLATE }));
   url.searchParams.set('grant_org', club.clubId);
   url.searchParams.set('collect_token', club.idToken);
-  const home = readHomeSession(store);
-  if (home) url.hash = `session=${encodeURIComponent(home)}`;
-  else url.searchParams.set('prompt', 'select_account');
+  addressTheHome(url, store);
   return url.toString();
 }
 
@@ -771,9 +813,7 @@ export async function startCoachHire(config: AuthConfig, coach: string, store: S
   const url = new URL(client.buildAuthorizeUrl({ authOrigin: stash.authOrigin, state: stash.state, nonce: stash.nonce, codeChallenge: pkce.challenge, agentName: '', template: config.home.coachTemplate }));
   url.searchParams.set('coach', coach);
   // Arrive already signed in, exactly as the club charter does (a demo persona has no credential to present).
-  const home = readHomeSession(store);
-  if (home) url.hash = `session=${encodeURIComponent(home)}`;
-  else url.searchParams.set('prompt', 'select_account');
+  addressTheHome(url, store);
   return url.toString();
 }
 
@@ -813,9 +853,7 @@ async function startMembershipLeg(config: AuthConfig, template: string, extra: R
   }
   const url = new URL(client.buildAuthorizeUrl({ authOrigin: stash.authOrigin, state: stash.state, nonce: stash.nonce, codeChallenge: pkce.challenge, agentName: '', template }));
   for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v);
-  const home = readHomeSession(store);
-  if (home) url.hash = `session=${encodeURIComponent(home)}`;
-  else url.searchParams.set('prompt', 'select_account');
+  addressTheHome(url, store);
   return url.toString();
 }
 
@@ -977,9 +1015,7 @@ export async function startMissionRegistration(config: AuthConfig, draft: Missio
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
   url.searchParams.set('registry_entry', btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
-  const home = readHomeSession(store);
-  if (home) url.hash = `session=${encodeURIComponent(home)}`;
-  else url.searchParams.set('prompt', 'select_account');
+  addressTheHome(url, store);
   return url.toString();
 }
 

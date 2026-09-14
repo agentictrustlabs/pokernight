@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AppSession, ClubView, KnownPerson, Night } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { CHARTER_BLURB, canInvite, confirmsRetire, retireConsequences, standingLabel } from '../lib/clubs';
+import { NameCheck, useNameCheck } from './NameCheck';
 import { startClubCharter, startMembershipInvite, type AuthConfig } from '../lib/home';
 import { shortAddress } from '../lib/format';
 import { clubHash } from '../lib/routes';
@@ -436,6 +437,8 @@ export function StartClub({ config }: { config: AuthConfig | null }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // THE NAME IS CHECKED HERE, before the trip: a taken workspace name was a dead end at the Home's door.
+  const check = useNameCheck(config, name, 'workspace');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -456,9 +459,10 @@ export function StartClub({ config }: { config: AuthConfig | null }) {
         Call it
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Thursday Night" maxLength={64} autoFocus />
       </label>
+      <NameCheck check={check} what="club" />
       <p className="hint">{CHARTER_BLURB}</p>
       {err ? <div className="form-error">{err}</div> : null}
-      <button className="primary" type="submit" disabled={busy || !name.trim() || !config}>
+      <button className="primary" type="submit" disabled={busy || !name.trim() || !config || check.state === 'taken' || check.state === 'checking'}>
         {busy ? 'Off to your Home…' : 'Start it at your Home'}
       </button>
     </form>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { MISSION_COVENANT_CLAUSES, PRESENCE_LIMITS, countryCeiling, displayPoint, type CountryCeiling } from '@pokernight/missions';
 import { api, ApiError } from '../lib/api';
+import { NameCheck, useNameCheck } from '../components/NameCheck';
 import { startMissionRegistration, type AuthConfig } from '../lib/home';
 import { MISSIONS_HASH } from '../lib/routes';
 import type { AppSession } from '../lib/types';
@@ -29,6 +30,7 @@ export function MissionRegisterPage({ session, config }: { session: AppSession; 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const searchTimer = useRef<number | null>(null);
+  const nameCheck = useNameCheck(config, name, 'org');
 
   // The geocoder, on a debounce, through the card room (the browser names one origin).
   useEffect(() => {
@@ -85,6 +87,7 @@ export function MissionRegisterPage({ session, config }: { session: AppSession; 
           Name
           <input value={name} onChange={(e) => setName(e.target.value.slice(0, PRESENCE_LIMITS.name))} placeholder="Hope for the City" autoComplete="organization" required />
           <span className="hint">Also the organization’s name at your Home, if it is created there tonight.</span>
+          <NameCheck check={nameCheck} what="organization" />
         </label>
         <label>
           What it does
@@ -155,6 +158,7 @@ export function MissionRegisterPage({ session, config }: { session: AppSession; 
         {err ? <div className="form-error">{err}</div> : null}
         <div className="row">
           <button className="primary" type="submit" disabled={busy || !config}>{busy ? 'Going to your Home…' : 'Register at my Home'}</button>
+          {nameCheck.state === 'taken' ? <span className="hint">If that organization is already yours, keep this name — your Home will offer it to you on the way — or pick another.</span> : null}
           <a className="small" href={MISSIONS_HASH}>Back to the map</a>
         </div>
         <p className="hint">Your Home asks which organization this is — one you already steward, or a new one it creates — then two signatures: the covenant as you, the entry as the organization.</p>

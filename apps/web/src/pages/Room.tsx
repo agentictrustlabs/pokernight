@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AuthState } from '../App';
 import type { AppSession, TableSummary } from '../lib/types';
 import { ApiError, api, type ClubInvitation, type ClubListing } from '../lib/api';
@@ -108,6 +108,14 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
   useEffect(() => {
     void loadClubs();
   }, [loadClubs]);
+  // A CLUB JUST FOUNDED lands on its page before the rail has heard of it: the rail read its list on mount,
+  // and the club came to exist after. One re-read per unknown club id, so the rail catches up without a loop.
+  const askedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (r.page !== 'club' || !clubs || clubs.some((c) => c.clubId === r.clubId) || askedFor.current === r.clubId) return;
+    askedFor.current = r.clubId;
+    void loadClubs();
+  }, [r, clubs, loadClubs]);
 
   /**
    * Read the public list again NOW, rather than waiting for the next poll.

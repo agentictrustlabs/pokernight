@@ -439,7 +439,8 @@ describe('startClubCharter', () => {
     expect(url.searchParams.get('redirect_uri')).toBe('https://poker.faithnet.io/');
     // The name the workspace is deployed under, and WHY it exists — which is what the host will see
     // beside that agent in their own list, forever.
-    expect(url.searchParams.get('org_base')).toBe('Thursday Night');
+    // THE LABEL, slugged the way the Home slugs an org's name: the club's own name is founded from the stash.
+    expect(url.searchParams.get('org_base')).toBe('thursday-night');
     expect(url.searchParams.get('purpose')).toBe('poker-club');
   });
 
@@ -505,10 +506,13 @@ describe('handing a ceremony the person’s own Home session', () => {
     expect(url.searchParams.get('prompt')).toBeNull();
   });
 
-  it('asks the Home to let them choose an account when we have no session for them', async () => {
+  it('says nothing about who when we have no session for them — the Home runs it on its own session', async () => {
+    // A forced chooser asked a signed-in person "who are you?" twice, and a pinned name sent workspace-create
+    // down the Home's named-org flow, which deploys a workspace without its vault (2026-09-14).
     const url = new URL(await startClubCharter(config, club, fakeStore()));
     expect(url.hash).toBe('');
-    expect(url.searchParams.get('prompt')).toBe('select_account');
+    expect(url.searchParams.get('prompt')).toBeNull();
+    expect(url.searchParams.get('agent_name')).toBe('');
   });
 
   it('keeps it out of the session object, and forgets it on demand', () => {

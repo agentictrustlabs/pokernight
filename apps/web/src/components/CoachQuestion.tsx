@@ -16,6 +16,7 @@ import { ApiError, api } from '../lib/api';
 import { readHomeSession, type AuthConfig } from '../lib/home';
 
 /** Where "asked" lives for an agent that cannot yet keep it: this browser, keyed by the agent. */
+const LATER_KEY = (agent: string, game: string) => `pokernight.coach.later:${game}:${agent.toLowerCase()}`;
 const ASKED_KEY = (agent: string, game: string) => `pokernight.coach.asked:${game === 'poker' ? '' : `${game}:`}${agent.toLowerCase()}`;
 
 /** ASKED ONCE PER GAME: the hold'em question on arrival, the canasta one when a canasta table is first opened. */
@@ -54,13 +55,13 @@ export function CoachQuestion({ session, config, game = 'poker', onSetUp }: { se
         // A coach is the card room's default now, so the sheet stays until one is hired — a person who really
         // does not want one says "no thanks" each visit, which is one tap.
         if (!alive || !r.agent || r.coach !== null) return;
-        // An agent WITHOUT the card-room skills cannot keep the answer in its person's vault yet, so the
-        // browser keeps it until it can. Only "don't ask again" is honoured from there: "not now" used to be
-        // kept for good too, so one tap on a bad evening meant the house coach on every hand after it, and no
-        // offer ever again (2026-09-13).
-        if (r.advertises === false) {
-          try { if ((localStorage.getItem(ASKED_KEY(r.agent, game)) ?? '').startsWith('no@')) return; } catch { /* ask anyway */ }
-        }
+        // "DON'T ASK AGAIN" is kept — in the vault when the agent can keep it, in the browser when it cannot.
+        // "NOT NOW" is kept for THIS BROWSER SESSION: the offer used to come back on every page load, so a person
+        // who came back from chartering a club at their Home was asked about a coach before they saw the club
+        // (2026-09-14, "I went back in and it asked to setup a coach"). A visit is a session, not a load.
+        if (r.asked?.answer === 'no') return;
+        try { if ((localStorage.getItem(ASKED_KEY(r.agent, game)) ?? '').startsWith('no@')) return; } catch { /* ask anyway */ }
+        try { if (sessionStorage.getItem(LATER_KEY(r.agent, game))) return; } catch { /* ask anyway */ }
         setShow({ agent: r.agent, advertises: r.advertises !== false });
       })
       .catch((e: unknown) => {
@@ -83,6 +84,7 @@ export function CoachQuestion({ session, config, game = 'poker', onSetUp }: { se
     if (busy) return;
     setBusy(true);
     try {
+      if (a === 'later') { try { sessionStorage.setItem(LATER_KEY(show.agent, game), '1'); } catch { /* then it is asked again on the next load */ } }
       if (show.advertises) await api.coachAnswered(a, session.token, game);
       else { try { localStorage.setItem(ASKED_KEY(show.agent, game), `${a}@${new Date().toISOString()}`); } catch { /* then it is asked again next time */ } }
     } catch {
