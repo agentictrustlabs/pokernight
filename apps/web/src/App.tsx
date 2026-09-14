@@ -409,6 +409,10 @@ export function App() {
       })
       .then((r) => {
         login({ token: r.token, playerId: r.playerId, name: r.name, via: 'home', address: r.address, agentName: r.agentName });
+        // WHERE THEY WERE GOING: a visitor who pressed "Register a mission" on the front door signed in to do
+        // that, and lands on the form rather than on Play.
+        const back = takeReturn();
+        if (back) goTo(back);
         // WHAT THE HOME COULD NOT SET UP on the way in — a coach, a money account — said here, in the Home's
         // own words, with where to finish it. Silence was a person sitting down with the house coach and no
         // idea that anything had been tried.

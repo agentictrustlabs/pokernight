@@ -1,3 +1,4 @@
+import { MissionsSection } from '../components/MissionsSection';
 import { useEffect, useState } from 'react';
 import type { AuthState } from '../App';
 import type { AppSession, TableSummary } from '../lib/types';
@@ -41,6 +42,8 @@ export function Landing({ auth, onLogin, session = null }: { auth: AuthState; on
     <main className="landing">
       <Hero live={live} />
       <div className="landing-body">
+        {/* THE MISSIONS FIRST after the hero: the site is as much about them as about a night. */}
+        <MissionsSection signedIn={!!session} />
         <HowItWorks />
         <LiveRoom live={live} />
         {/* THE SIGN-IN HALF IS FOR PEOPLE WHO ARE NOT SIGNED IN. Everything above it is the product
@@ -171,6 +174,9 @@ function Hero({ live }: { live: LiveLobby }) {
           </a>
           <a className="cta-quiet" href="#signin">
             Or just play a hand
+          </a>
+          <a className="cta-quiet" href="#missions">
+            The missions
           </a>
           <a className="cta-quiet" href="#how">
             How it works

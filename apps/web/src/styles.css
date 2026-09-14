@@ -6115,3 +6115,91 @@ details.log-panel > .log { margin-top: 0.5rem; }
   border: 0;
   background: transparent;
 }
+
+/* THE MISSIONS on the front door and on Play: the map beside the names, the two roads above them. */
+.missions-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.missions-head .eyebrow {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.missions-head .section-title {
+  margin: 0;
+}
+.missions-ctas {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+.missions-section .cta {
+  display: inline-block;
+  padding: 0.55rem 1.05rem;
+  border: 1px solid var(--cta-edge);
+  border-radius: var(--radius);
+  background: var(--cta-bg);
+  color: var(--cta-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+.missions-section .cta:hover {
+  background: var(--cta-bg-hover);
+}
+.missions-section .cta-quiet {
+  color: var(--felt-ink);
+  font-weight: 600;
+}
+.missions-lede {
+  max-width: 70ch;
+  margin: 0 0 1rem;
+  color: var(--ink-soft);
+}
+.missions-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+.missions-grid .mission-map {
+  border-radius: var(--radius);
+  border: 1px solid var(--rule);
+  overflow: hidden;
+}
+.missions-names {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.missions-names li {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+}
+.play .missions-section {
+  grid-column: 1 / -1;
+}
+.play .missions-section .section-title {
+  font-size: 1.15rem;
+}
+@media (max-width: 820px) {
+  .missions-grid {
+    grid-template-columns: 1fr;
+  }
+}
