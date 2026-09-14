@@ -88,8 +88,8 @@ flowchart LR
 
 | Piece | Choice | Why |
 | --- | --- | --- |
-| Renderer | **three.js via `@react-three/fiber` + `@react-three/drei`**, lazy-loaded (the Leaflet pattern: never at module time) | React-native scene graph; the HUD stays React; one chunk (~600 KB gz) loaded only for `?board=room` |
-| Bodies | **glTF, VRM-compatible humanoids**, 4–6 stock bodies + palette; a person's choice kept in their vault | VRM gives a standard skeleton, blend shapes for a face, and a large free ecosystem; no rigging of our own |
+| Renderer | **PlayCanvas** (`playcanvas` engine, `pc.Application` on a canvas the page owns), lazy-loaded (the Leaflet pattern: never at module time) — chosen over three.js 2026-09-14 | The PlayCanvas **editor** authors the lounge and the bodies as scenes/assets a team can work on without code; the engine's asset pipeline (glTF, animation, lightmaps) and physics come built in; the HUD stays React over the canvas, name plates are HTML projected with `worldToScreen` |
+| Bodies | **glTF humanoids** authored/imported in the PlayCanvas editor (VRM converts to glTF; the `anim` component drives idle/walk/sit), 4–6 stock bodies + palette; a person's choice kept in their vault | A standard skeleton and a large free ecosystem; no rigging of our own; capsules stand in until the first bodies are authored |
 | Faces | The participant's `MediaStreamTrack` → `THREE.VideoTexture` on a face plane on the head (camera on), or a **portrait ring** with initials (camera off) | Kumospace's "video in the world", on a character |
 | Audio | RealtimeKit audio track → `AudioContext` → `PannerNode` (HRTF) at the body's position; a table is a "quiet zone" (seated voices carry to the table, the bar fades) | Spatial voice is what makes a room a room |
 | Movement | WASD / click-to-walk / touch joystick; third-person follow camera; seated camera behind the cards | Decentraland's walk, without a world |

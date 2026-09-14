@@ -286,10 +286,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - **THE ROOM IS A PLACE; A TABLE IS A THING IN IT** (2026-09-14, `docs/SPATIAL-ROOM.md`). `SceneDO` (one per room:
   `hall`, `club:<id>`; migration v6) holds presence — who stands where, in which zone — and NOTHING about cards; the
   Worker admits by the club's standing and lays the lobby's poker tables on the lounge's anchors on every entry.
-  The client (`pages/RoomPage.tsx`, `components/room/Lounge.tsx`, react-three-fiber) is LAZY-LOADED like Leaflet —
-  three.js never at module time. A body in a table's zone is offered the FLAT table (step 5 draws the felt in the
-  room); sitting is the table's own `seat` command, never the room's. three r155+ lights are physical: a hemisphere
-  of ~2 and lamps of ~40 cd read as a room; the first pass at 0.55 rendered black.
+  The client (`pages/RoomPage.tsx`, `components/room/Lounge.tsx`, **PlayCanvas** — chosen over three.js for its editor
+  and asset pipeline) is LAZY-LOADED like Leaflet — the engine never at module time; name plates are HTML projected
+  with `camera.worldToScreen` (its `z` is view depth — behind the camera is negative, nothing else). A body in a table's zone is offered the FLAT table (step 5 draws the felt in the
+  room); sitting is the table's own `seat` command, never the room's. PlayCanvas primitives are unit-sized (a
+  capsule is 2 m tall at scale 1); lights are `directional` / `omni` with an `intensity` around 1–2.
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must
