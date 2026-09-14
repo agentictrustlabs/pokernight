@@ -45,7 +45,11 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
       : Promise.resolve();
     defaults.then(() => api.coachStatus(session.token, game))
       .then((r) => {
-        if (!alive || !r.agent || r.coach !== null || r.asked !== null) return;
+        // OFFERED UNTIL THERE IS ONE. "Later" and "no" used to be kept for good; a person whose connect-time
+        // defaults had failed then never saw the offer again and played on with the house coach, wondering.
+        // A coach is the card room's default now, so the sheet stays until one is hired — a person who really
+        // does not want one says "no thanks" each visit, which is one tap.
+        if (!alive || !r.agent || r.coach !== null) return;
         // An agent WITHOUT the card-room skills cannot keep the answer in its person's vault yet, so the
         // browser keeps it until it can — and the sheet says what the agent is missing.
         if (r.advertises === false) {

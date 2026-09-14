@@ -77,6 +77,7 @@ export interface AuthConfig {
 // raw account address sitting in their address bar, and a refresh cannot replay a finished ceremony.
 const CALLBACK_PARAMS = [
   'code',
+  'defaults_error',
   'state',
   'error',
   'error_description',
@@ -279,7 +280,7 @@ export function isAllowedHomeOrigin(zone: string, origin: string): boolean {
 }
 
 export type Callback =
-  | { kind: 'code'; code: string; state: string }
+  | { kind: 'code'; code: string; state: string; defaultsError?: string }
   | { kind: 'error'; error: string; description?: string };
 
 /** What (if anything) the Home put on the URL we came back to. */
@@ -295,7 +296,8 @@ export function parseCallback(href: string): Callback | null {
   if (error) return { kind: 'error', error, description: q.get('error_description') ?? undefined };
   const code = q.get('code');
   const state = q.get('state');
-  if (code && state) return { kind: 'code', code, state };
+  const defaultsError = (q.get('defaults_error') ?? '').trim();
+  if (code && state) return { kind: 'code', code, state, ...(defaultsError ? { defaultsError } : {}) };
   return null;
 }
 
@@ -484,7 +486,9 @@ export async function startHomeSignIn(
 
 export type CallbackOutcome =
   | { status: 'none' }
-  | { status: 'signed-in'; code: string; codeVerifier: string; authOrigin: string; nonce: string; state: string }
+  | { status: 'signed-in'; code: string; codeVerifier: string; authOrigin: string; nonce: string; state: string;
+      /** What the Home could NOT set up on the way in (the card room's defaults — a coach, a money account), in its words. */
+      defaultsError?: string }
   | { status: 'error'; message: string };
 
 /**
@@ -502,7 +506,7 @@ export function consumeCallback(href: string, store: StorageLike | null, key = S
   if (stash.state !== cb.state) {
     return { status: 'error', message: 'The sign-in did not match the request this browser started (state mismatch). Start again.' };
   }
-  return { status: 'signed-in', code: cb.code, codeVerifier: stash.codeVerifier, authOrigin: stash.authOrigin, nonce: stash.nonce, state: cb.state };
+  return { status: 'signed-in', code: cb.code, codeVerifier: stash.codeVerifier, authOrigin: stash.authOrigin, nonce: stash.nonce, state: cb.state, ...(cb.defaultsError ? { defaultsError: cb.defaultsError } : {}) };
 }
 
 /** Set once the return leg has been consumed, so React's double-invoked effects (and a second render)

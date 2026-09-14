@@ -374,7 +374,16 @@ export function App() {
         state: outcome.state,
         ...(profileName ? { profileName } : {}),
       })
-      .then((r) => login({ token: r.token, playerId: r.playerId, name: r.name, via: 'home', address: r.address, agentName: r.agentName }))
+      .then((r) => {
+        login({ token: r.token, playerId: r.playerId, name: r.name, via: 'home', address: r.address, agentName: r.agentName });
+        // WHAT THE HOME COULD NOT SET UP on the way in — a coach, a money account — said here, in the Home's
+        // own words, with where to finish it. Silence was a person sitting down with the house coach and no
+        // idea that anything had been tried.
+        if (outcome.defaultsError) {
+          const coaches = authRef.current?.home.origin ? `${authRef.current.home.origin.replace(/\/$/, '')}/coaches` : null;
+          setError(`Your Home signed you in but could not finish setting you up — ${outcome.defaultsError}.${coaches ? ` You can hire your coach at your Home: ${coaches}` : ''}`);
+        }
+      })
       .catch((e: unknown) =>
         setError(e instanceof ApiError ? `Your Home signed you in, but the card room would not accept it — ${e.message}` : 'Could not finish signing in.'),
       )
