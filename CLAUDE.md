@@ -270,6 +270,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   club, linked to the mission's page. A club's schedule carries a STANDING guest (`defaults.mission`) and the nights
   record a per-night one (`guests[nightId]`: a ref, or `null` for none) — a night's `mission` is derived (`guestOf`),
   never stored on the night. `components/MissionPicker.tsx` is the one control for all three.
+- **A CLUB'S PAGE IS A HEAD, FOUR TABS AND FLYOUTS — never one flow down the screen** (2026-09-14). The head
+  carries the club's name and its actions (huddle, open a table); the tabs are Nights · Tables · People · About
+  (`pages/ClubPage.tsx`, `People`/`About` in `components/ClubDetail.tsx`); a night's detail — its visit, its tables —
+  opens in `components/Drawer.tsx` beside the page (`Nights.tsx` `selected`), so going into a thing never scrolls
+  the page away from where the person was.
 - **A NIGHT IS AN EVENT THAT HOSTS TABLES; A MISSION'S VISIT IS ITS PARTICIPATION** (2026-09-14,
   `docs/MISSION-REGISTRY.md` §3.1). `cr:ClubNight ⊑ at:Event`; one-time nights live beside the series
   (`NightsRecord.oneOffs`, `oneOffFrom`, `POST /clubs/:id/nights`) and `nightsOf` merges them by start; a night has

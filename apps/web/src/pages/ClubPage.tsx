@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppSession, ClubView, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
-import { Roster } from '../components/ClubDetail';
+import { About, People } from '../components/ClubDetail';
 import { Nights } from '../components/Nights';
 import { TableList } from './TablesPage';
 import { canOpenTable, noTablesLine } from '../lib/clubs';
@@ -59,6 +59,7 @@ export function ClubPage({
    */
   const [retired, setRetired] = useState<string | null>(null);
   const [tables, setTables] = useState<TableSummary[] | null>(null);
+  const [tab, setTab] = useState<'nights' | 'tables' | 'people' | 'about'>('nights');
   const [err, setErr] = useState<string | null>(null);
 
   const loadView = useCallback(async () => {
@@ -140,62 +141,73 @@ export function ClubPage({
 
   const host = canOpenTable(view.you.standing);
   const scope = clubScope(view);
+  const openTables = (tables ?? []).length;
+  // THE PAGE IS A HEAD AND FOUR AREAS (2026-09-14). It used to be five panels one under another — the huddle,
+  // the tables, the nights, the roster, the form — "a single flow of content down the page". Each area is its
+  // own tab now, the head carries the club's name and its three actions, and a night's detail is a flyout.
   return (
     <div className="stack club-page">
-      {/* THE HUDDLE: the club's voice-and-faces call at the top of its page — start it, or join the one running.
-          Anybody on the roster may be in it, playing or watching; it stays up while you walk to a table. A club
-          with no chartered agent yet has no scope for one, and nothing is shown. */}
-      {scope ? (
-        <div className="club-huddle-row">
-          <HuddleAffordance scope={scope} scopeName={view.name} />
-          <span className="hint">Talk and see each other while the game runs — the club's members, whether or not they are at a table.</span>
+      <header className="club-head">
+        <div>
+          <span className="eyebrow">Your club · {standingWord(view.you.standing)}</span>
+          <h1>{view.name}</h1>
         </div>
-      ) : null}
-      {/* What a member came for. A roster is not it. */}
-      <TableList
-        tables={tables}
-        err={err}
-        title={`Tables at ${view.name}`}
-        playerId={session.playerId}
-        hostOf={host ? [clubId] : []}
-        session={session}
-        onChanged={() => setReloadAt((n) => n + 1)}
-        empty={
-          host ? (
-            noTablesLine(view.you.standing, view.name)
-          ) : (
-            <>
-              {noTablesLine(view.you.standing, view.name)} In the meantime you can{' '}
-              <a href={HOME_HASH}>deal yourself a hand</a> against the house.
-            </>
-          )
-        }
-      />
-      {/* WHEN, before WHO. A member arriving at a club wants to know if there is a game and when it is;
-          the roster is the thing they cannot act on. */}
-      <Nights clubId={clubId} session={session} host={host} schedule={view.schedule} nights={view.nights} tables={tables} onChanged={() => void loadView()} />
-      <Roster
-        view={view}
-        session={session}
-        config={config}
-        // How many of its tables closing it would close. Null (not read yet) counts as none rather than
-        // as a guess: a sentence saying "its 3 tables close" has to be true when it is shown.
-        tables={tables?.length ?? 0}
-        onRetired={(line) => {
-          setRetired(line);
-          // AND TELL THE RAIL. Moving the receipt up here dropped this, and the club stayed in the
-          // navigation after it was closed — a row that 404s the moment anybody presses it, which is
-          // the exact failure the awaited index write was added to prevent.
-          onChanged();
-        }}
-        onChanged={() => {
-          void loadView();
-          onChanged();
-        }}
-      />
-      {host ? (
-        <p className="lobby-create-link"><a className="button" href={newTableHash(clubId)}>+ Open a table for {view.name}</a></p>
-      ) : null}
+        <div className="club-actions">
+          {scope ? <HuddleAffordance scope={scope} scopeName={view.name} /> : null}
+          {host ? <a className="button" href={newTableHash(clubId)}>+ Open a table</a> : null}
+        </div>
+      </header>
+      <nav className="side-tabs club-tabs" role="tablist" aria-label="The club">
+        {(['nights', 'tables', 'people', 'about'] as const).map((t) => (
+          <button key={t} type="button" role="tab" aria-selected={tab === t} className={`side-tab${tab === t ? ' on' : ''}`} onClick={() => setTab(t)}>
+            {t === 'nights' ? `Nights${view.nights.length ? ` · ${view.nights.length}` : ''}` : t === 'tables' ? `Tables${openTables ? ` · ${openTables}` : ''}` : t === 'people' ? `People · ${view.roster.length}` : 'About'}
+          </button>
+        ))}
+      </nav>
+      {tab === 'nights' ? (
+        // WHEN, before WHO. A member arriving at a club wants to know if there is a game and when it is.
+        <Nights clubId={clubId} session={session} host={host} schedule={view.schedule} nights={view.nights} tables={tables} onChanged={() => void loadView()} />
+      ) : tab === 'tables' ? (
+        <TableList
+          tables={tables}
+          err={err}
+          title={`Tables at ${view.name}`}
+          playerId={session.playerId}
+          hostOf={host ? [clubId] : []}
+          session={session}
+          onChanged={() => setReloadAt((n) => n + 1)}
+          empty={
+            host ? (
+              noTablesLine(view.you.standing, view.name)
+            ) : (
+              <>
+                {noTablesLine(view.you.standing, view.name)} In the meantime you can{' '}
+                <a href={HOME_HASH}>deal yourself a hand</a> against the house.
+              </>
+            )
+          }
+        />
+      ) : tab === 'people' ? (
+        <People view={view} session={session} config={config} onChanged={() => { void loadView(); onChanged(); }} />
+      ) : (
+        <About
+          view={view}
+          session={session}
+          // How many of its tables closing it would close. Null (not read yet) counts as none rather than
+          // as a guess: a sentence saying "its 3 tables close" has to be true when it is shown.
+          tables={tables?.length ?? 0}
+          onRetired={(line) => {
+            setRetired(line);
+            // AND TELL THE RAIL: the club must leave the navigation the moment it is closed.
+            onChanged();
+          }}
+          onChanged={() => { void loadView(); onChanged(); }}
+        />
+      )}
     </div>
   );
+}
+
+function standingWord(standing: string): string {
+  return standing === 'host' ? 'you host it' : 'you are a member';
 }

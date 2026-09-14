@@ -26,23 +26,11 @@ import { retiredLine } from '../lib/clubs';
 
 /* ----------------------------------------------------------------- the roster */
 
-export function Roster({
-  view,
-  session,
-  config,
-  tables,
-  onChanged,
-  onRetired,
-}: {
-  view: ClubView;
-  session: AppSession;
-  config: AuthConfig | null;
-  /** How many tables this club has open, so closing it can say how many it closes. */
-  tables: number;
-  onChanged: () => void;
-  /** What to do when this club has been closed — the page says so, because this panel is going. */
-  onRetired: (line: string) => void;
-}) {
+/**
+ * THE PEOPLE of the club — the roster, and for a host the invitation. One tab of the club's page (2026-09-14):
+ * the page used to be one panel after another down the screen; each area is its own now.
+ */
+export function People({ view, session, config, onChanged }: { view: ClubView; session: AppSession; config: AuthConfig | null; onChanged: () => void }) {
   const host = canInvite(view.you.standing);
   /**
    * Why the last roster action did not happen.
@@ -53,18 +41,10 @@ export function Roster({
    * word about why, and the only way to tell a refusal from a slow network was to keep pressing.
    */
   const [err, setErr] = useState<string | null>(null);
+  void onChanged;
   return (
     <section className="panel club-detail">
-      {/* An h2, not an h3: this is a section of a page now rather than a block inside another panel,
-          and a heading level that says otherwise is a lie to anybody reading with a screen reader. */}
-      <h2>
-        {view.name} <span className="club-role">{standingLabel(view.you.standing)}</span>
-      </h2>
-      <Welcome view={view} session={session} host={host} onChanged={onChanged} />
-      <Calendar clubId={view.clubId} clubName={view.name} session={session} nights={view.nights} />
-      <p className="hint club-agent">
-        Its agent: <code className="mono" title={view.clubId}>{shortAddress(view.clubId)}</code> — at {host ? 'your' : "the host's"} Home; this card room acts as it.
-      </p>
+      <h2>{view.roster.length === 1 ? 'One member' : `${view.roster.length} members`}</h2>
       {err ? <div className="form-error">{err}</div> : null}
       <ul className="club-roster">
         {view.roster.map((m) => (
@@ -75,17 +55,24 @@ export function Roster({
         ))}
       </ul>
       {host ? <Invite view={view} session={session} config={config} onErr={setErr} /> : null}
-      {/* WHAT A HOST DOES NEXT, said where they are standing.
-          Opening a table lives in a folded panel below this one, and a host reading their roster and
-          wondering how to actually play was reading the wrong panel with no way to know it. This is
-          one line and a link to the thing, rather than a second copy of the form. */}
-      {host ? (
-        <p className="hint club-next">
-          {view.roster.length < 2
-            ? `Add someone else, then open a table — only ${view.name}'s members will see it.`
-            : `Open a table for ${view.name} below. Its members find it on this page, and you can send them the table's link.`}
-        </p>
-      ) : null}
+      {host && view.roster.length < 2 ? <p className="hint club-next">Add someone else, then open a table — only {view.name}'s members will see it.</p> : null}
+    </section>
+  );
+}
+
+/** ABOUT THE CLUB — what it says of itself, its calendar, its agent, and (for the host) closing it. */
+export function About({ view, session, tables, onChanged, onRetired }: { view: ClubView; session: AppSession; tables: number; onChanged: () => void; onRetired: (line: string) => void }) {
+  const host = canInvite(view.you.standing);
+  return (
+    <section className="panel club-detail">
+      <h2>
+        {view.name} <span className="club-role">{standingLabel(view.you.standing)}</span>
+      </h2>
+      <Welcome view={view} session={session} host={host} onChanged={onChanged} />
+      <Calendar clubId={view.clubId} clubName={view.name} session={session} nights={view.nights} />
+      <p className="hint club-agent">
+        Its agent: <code className="mono" title={view.clubId}>{shortAddress(view.clubId)}</code> — at {host ? 'your' : "the host's"} Home; this card room acts as it.
+      </p>
       {host ? <Retire view={view} session={session} tables={tables} onRetired={onRetired} /> : null}
     </section>
   );

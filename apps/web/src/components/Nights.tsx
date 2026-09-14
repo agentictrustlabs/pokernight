@@ -6,6 +6,7 @@ import { WEEKDAY_LABELS, WEEKDAY_ORDER } from '../lib/nightsForm';
 import { BOARDS, DRAWN_GAME, gameBlurb, gameLabel } from '../lib/games';
 import { MissionPicker } from './MissionPicker';
 import { missionHash, newTableHash } from '../lib/routes';
+import { Drawer } from './Drawer';
 
 /**
  * WHEN THIS CLUB MEETS, on the club's page.
@@ -26,6 +27,9 @@ export function Nights({ clubId, session, host, schedule, nights, tables, onChan
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
+  /** THE NIGHT IN THE FLYOUT — its detail opens beside the page rather than pushing the list down it. */
+  const [selected, setSelected] = useState<string | null>(null);
+  const selectedNight = selected ? (nights ?? []).find((n) => n.nightId === selected) ?? null : null;
   // A change is read back from the club's agent by whoever owns the view; this only asks for it.
   const load = useCallback(async () => { setErr(null); onChanged(); }, [onChanged]);
 
@@ -40,7 +44,7 @@ export function Nights({ clubId, session, host, schedule, nights, tables, onChan
       {err ? <div className="form-error">{err}</div> : null}
 
       {next ? (
-        <NextNight night={next} now={now} clubId={clubId} session={session} host={host} tables={tablesOf(next)} onChanged={load} />
+        <NextNight night={next} now={now} tables={tablesOf(next)} onOpen={() => setSelected(next.nightId)} />
       ) : (
         <p className="hint">
           {/* Two different silences, and a member should not be told to fix the one they cannot. */}
@@ -51,7 +55,7 @@ export function Nights({ clubId, session, host, schedule, nights, tables, onChan
       {rest.length > 0 ? (
         <ul className="night-list">
           {rest.map((n) => (
-            <NightRow key={n.nightId} night={n} now={now} clubId={clubId} session={session} host={host} tables={tablesOf(n)} onChanged={load} inherited={schedule?.defaults.mission ?? null} />
+            <NightRow key={n.nightId} night={n} now={now} clubId={clubId} session={session} host={host} tables={tablesOf(n)} onChanged={load} onOpen={() => setSelected(n.nightId)} />
           ))}
         </ul>
       ) : null}
@@ -79,6 +83,10 @@ export function Nights({ clubId, session, host, schedule, nights, tables, onChan
           ) : null}
         </div>
       ) : null}
+
+      <Drawer open={!!selectedNight} title={selectedNight ? `${selectedNight.title ?? 'Night'} — ${nightWhen(selectedNight, now).day}` : ''} onClose={() => setSelected(null)}>
+        {selectedNight ? <NightDetail night={selectedNight} clubId={clubId} session={session} host={host} tables={tablesOf(selectedNight)} onChanged={load} inherited={schedule?.defaults.mission ?? null} /> : null}
+      </Drawer>
 
       {host ? (
         editing ? (
@@ -125,7 +133,7 @@ export function Nights({ clubId, session, host, schedule, nights, tables, onChan
 }
 
 /** The one a member actually came for, said as a sentence rather than shown as a row — with its guest and its tables. */
-function NextNight({ night, now, clubId, session, host, tables, onChanged }: { night: Night; now: number; clubId: string; session: AppSession; host: boolean; tables: TableSummary[]; onChanged: () => void }) {
+function NextNight({ night, now, tables, onOpen }: { night: Night; now: number; tables: TableSummary[]; onOpen: () => void }) {
   const w = nightWhen(night, now);
   return (
     <div className="next-night">
@@ -137,8 +145,20 @@ function NextNight({ night, now, clubId, session, host, tables, onChanged }: { n
       </p>
       {/* The reader's own clock, only when it says something different. */}
       {w.alsoYours ? <p className="hint">Where you are, that is {w.alsoYours}.</p> : null}
-      <NightDetail night={night} clubId={clubId} session={session} host={host} tables={tables} onChanged={onChanged} open />
+      <VisitLine night={night} tables={tables} onOpen={onOpen} />
     </div>
+  );
+}
+
+/** One line: the guest and where the visit stands, how many tables, and the way into the night's detail. */
+function VisitLine({ night, tables, onOpen }: { night: Night; tables: TableSummary[]; onOpen: () => void }) {
+  const v = night.visit;
+  return (
+    <p className="night-visit-line">
+      {v ? <><a className="tag guest" href={missionHash(v.mission.entryId)}>♦ {v.mission.name}</a> <span className="hint">{VISIT_WORDS[v.status]}{v.representative ? ` · ${v.representative.name} attending` : ''}</span></> : <span className="hint">No guest{night.oneOff ? '' : ' this night'}.</span>}
+      {tables.length ? <span className="hint"> · {tables.length === 1 ? '1 table' : `${tables.length} tables`}</span> : null}
+      <button type="button" className="link-button" onClick={onOpen}>Details</button>
+    </p>
   );
 }
 
@@ -160,8 +180,7 @@ const VISIT_WORDS: Record<MissionVisitStatus, string> = { invited: 'invited', co
  * how to reach them — the host's to keep) and moves the status; a member sees the mission and the name.
  * The TABLES are the night's own — any number, all of its one game — and the host opens another from here.
  */
-function NightDetail({ night, clubId, session, host, tables, onChanged, open = false, inherited }: { night: Night; clubId: string; session: AppSession; host: boolean; tables: TableSummary[]; onChanged: () => void; open?: boolean; inherited?: { entryId: string; name: string } | null }) {
-  const [show, setShow] = useState(open);
+function NightDetail({ night, clubId, session, host, tables, onChanged, inherited }: { night: Night; clubId: string; session: AppSession; host: boolean; tables: TableSummary[]; onChanged: () => void; inherited?: { entryId: string; name: string } | null }) {
   const v = night.visit;
   const off = night.status === 'cancelled' || night.status === 'skipped';
   // The representative form, host only, kept in local state until saved.
@@ -187,17 +206,14 @@ function NightDetail({ night, clubId, session, host, tables, onChanged, open = f
     }
   };
 
-  const summary = (
-    <p className="night-visit-line">
-      {v ? <><a className="tag guest" href={missionHash(v.mission.entryId)}>♦ {v.mission.name}</a> <span className="hint">{VISIT_WORDS[v.status]}{v.representative ? ` · ${v.representative.name}${v.representative.agent ? ` (${v.representative.agent})` : ''} attending` : ''}</span></> : <span className="hint">No guest{night.oneOff ? '' : ' this night'}.</span>}
-      {tables.length ? <span className="hint"> · {tables.length === 1 ? '1 table' : `${tables.length} tables`}</span> : null}
-      {!open ? <button type="button" className="link-button" onClick={() => setShow((x) => !x)}>{show ? 'Less' : 'Details'}</button> : null}
-    </p>
-  );
-  if (!show) return summary;
+  const w = nightWhen(night, Date.now());
   return (
     <div className="night-detail">
-      {summary}
+      <p className="night-visit-line">
+        {night.game ? <span className="tag">{gameLabel(night.game)}</span> : null}
+        <span className="hint">{w.day} at {w.time} · {w.phrase}</span>
+        {v ? <><a className="tag guest" href={missionHash(v.mission.entryId)}>♦ {v.mission.name}</a> <span className="hint">{VISIT_WORDS[v.status]}{v.representative ? ` · ${v.representative.name}${v.representative.agent ? ` (${v.representative.agent})` : ''} attending` : ''}</span></> : <span className="hint">No guest.</span>}
+      </p>
       {host && !off ? (
         <div className="night-visit-form">
           <label className="row">
@@ -239,7 +255,7 @@ function NightDetail({ night, clubId, session, host, tables, onChanged, open = f
   );
 }
 
-function NightRow({ night, now, clubId, session, host, tables, onChanged, inherited }: { night: Night; now: number; clubId: string; session: AppSession; host: boolean; tables: TableSummary[]; onChanged: () => void; inherited?: { entryId: string; name: string } | null }) {
+function NightRow({ night, now, clubId, session, host, tables, onChanged, onOpen }: { night: Night; now: number; clubId: string; session: AppSession; host: boolean; tables: TableSummary[]; onChanged: () => void; onOpen: () => void }) {
   const w = nightWhen(night, now);
   const off = night.status === 'cancelled' || night.status === 'skipped';
   return (
@@ -265,7 +281,7 @@ function NightRow({ night, now, clubId, session, host, tables, onChanged, inheri
           </button>
         ) : null}
       </div>
-      {!off ? <NightDetail night={night} clubId={clubId} session={session} host={host} tables={tables} onChanged={onChanged} inherited={inherited} /> : null}
+      {!off ? <VisitLine night={night} tables={tables} onOpen={onOpen} /> : null}
     </li>
   );
 }

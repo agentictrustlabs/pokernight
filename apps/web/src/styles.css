@@ -6003,3 +6003,115 @@ details.log-panel > .log { margin-top: 0.5rem; }
 .night.off .night-head {
   opacity: 0.7;
 }
+
+/* THE CLUB PAGE: a head with the club's name and its actions, tabs for its four areas, flyouts for details. */
+.club-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 0.2rem 0 0.4rem;
+}
+.club-head .eyebrow {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.club-head h1 {
+  margin: 0;
+  font-size: 1.65rem;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+.club-head h1::before {
+  content: '♣';
+  margin-right: 0.45rem;
+  color: var(--brass);
+  font-size: 0.9em;
+}
+.club-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.club-actions .button {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--cta-edge);
+  border-radius: var(--radius);
+  background: var(--cta-bg);
+  color: var(--cta-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+.club-actions .button:hover {
+  background: var(--cta-bg-hover);
+}
+.club-tabs {
+  margin: 0 0 0.6rem;
+}
+
+/* THE DRAWER — a detail beside the page, the page still there behind it. */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(14, 26, 20, 0.35);
+  display: flex;
+  justify-content: flex-end;
+}
+.drawer {
+  width: min(480px, 100%);
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--rule);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  animation: drawer-in 0.18s ease-out;
+}
+@keyframes drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer { animation: none; }
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--hero-rule);
+  background: var(--hero-bg-deep);
+  background-image: linear-gradient(180deg, var(--hero-bg) 0%, var(--hero-bg-deep) 100%);
+  color: var(--hero-ink);
+}
+.drawer-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--hero-ink);
+}
+.drawer-head button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--hero-ink-soft);
+}
+.drawer-body {
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
+}
+.drawer-body .night-detail {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
