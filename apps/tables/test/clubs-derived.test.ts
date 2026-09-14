@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nightId, nightsOf, scheduleFrom } from '../src/clubs.js';
+import { guestOf, nightId, nightsOf, scheduleFrom } from '../src/clubs.js';
 
 /**
  * A CLUB'S NIGHTS ARE DERIVED, NOT KEPT. The rule lives at the club's Home (`cardroom.club.schedule`); the
@@ -48,5 +48,27 @@ describe('the nights a schedule gives', () => {
     if (!made.ok) throw new Error(made.error);
     expect(nightsOf(club, { ...made.schedule, status: 'retired' }, null, now)).toEqual([]);
     expect(nightsOf(club, null, null, now)).toEqual([]);
+  });
+});
+
+describe('the guest of a night', () => {
+  const club = '0x00000000000000000000000000000000000000c1';
+  const host = '0x00000000000000000000000000000000000000d1';
+  const now = Date.parse('2026-09-14T12:00:00Z');
+  const bob = { entryId: 'urn:ap:registry-entry:gamenight-missions/0x00000000000000000000000000000000000000ab', org: '0x00000000000000000000000000000000000000ab', name: 'Hope for the City' };
+  const carol = { ...bob, entryId: 'urn:ap:registry-entry:gamenight-missions/0x00000000000000000000000000000000000000ac', org: '0x00000000000000000000000000000000000000ac', name: 'Bread and Roses' };
+
+  it('is the series’ standing guest unless the night says otherwise — a mission, or none', () => {
+    const made = scheduleFrom(club, { startLocal: '20:00', timezone: 'America/Denver', recurrence: { kind: 'weekly', weekdays: ['thu'] }, defaults: { mission: bob } }, host, now);
+    if (!made.ok) throw new Error(made.error);
+    const nights = nightsOf(club, made.schedule, null, now, 3);
+    expect(nights.map((n) => n.mission?.name)).toEqual(['Hope for the City', 'Hope for the City', 'Hope for the City']);
+    const first = nights[0]!.nightId;
+    const second = nights[1]!.nightId;
+    const record = { guests: { [first]: carol, [second]: null } };
+    const over = nightsOf(club, made.schedule, record, now, 3);
+    expect(over.map((n) => n.mission?.name)).toEqual(['Bread and Roses', undefined, 'Hope for the City']);
+    expect(guestOf(made.schedule, record, second)).toBeNull();
+    expect(guestOf(made.schedule, record, nights[2]!.nightId)).toEqual(bob);
   });
 });

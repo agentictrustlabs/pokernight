@@ -5803,3 +5803,50 @@ details.log-panel > .log { margin-top: 0.5rem; }
 .mission-checks .skip {
   color: var(--ink-soft);
 }
+
+/* THE GUEST — a mission named on a table, a night, a series. Brass, like every mission mark. */
+.tag.guest {
+  background: var(--gold-soft);
+  color: var(--gold);
+  border-color: var(--brass);
+  text-decoration: none;
+}
+.tag.guest:hover {
+  background: var(--brass);
+  color: var(--cta-ink);
+}
+.table-guest {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--gold);
+}
+.mission-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.mission-picker select {
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.night-guest {
+  margin: 0.4rem 0;
+}
+.night-guest label.row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+}
+.night-guest .row > span {
+  font-weight: 600;
+}
+.night-guest-link {
+  color: var(--gold);
+  text-decoration: none;
+  font-size: 0.85rem;
+}

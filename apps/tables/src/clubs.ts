@@ -24,7 +24,7 @@ import { createPublicClient, http, type Address, type Hex } from 'viem';
 import { hashDelegation } from '@agenticprimitives/delegation';
 import { checkSessionWireShape, wireToDelegation, wrapSessionSignature, type DelegationWireV1 } from '@agenticprimitives/a2a';
 import { callerAssertionDigest, requestBodyHash, sessionAuthorizationHeader, type CallerAssertionV1 } from '@agenticprimitives/a2a/standard';
-import { occurrencesFrom, schedulingProblem, type ClubListing, type ClubMember, type ClubProfile, type ClubSchedule, type ClubStanding, type ClubSummary, type ClubView, type KnownPerson, type Night, type SetScheduleRequest } from '@pokernight/protocol';
+import { type MissionRef, occurrencesFrom, schedulingProblem, type ClubListing, type ClubMember, type ClubProfile, type ClubSchedule, type ClubStanding, type ClubSummary, type ClubView, type KnownPerson, type Night, type SetScheduleRequest } from '@pokernight/protocol';
 import type { Env } from './env.js';
 
 export const CLUB_ID_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -160,6 +160,9 @@ interface ClubRead {
 /** `cardroom.club.nights` — how the occasions diverge from the rule, keyed by night id (`<schedule>:<localDate>`). */
 export interface NightsRecord {
   exceptions?: Record<string, { status: 'cancelled' | 'skipped'; cancelledAt: number; reason?: string }>;
+  /** THE GUEST of one night, where it diverges from the series' standing guest: a mission, or `null` for
+   *  "none tonight". Absent means the schedule's default (`cr:ClubNight cr:guestMission`). */
+  guests?: Record<string, MissionRef | null>;
   updatedAt?: string;
 }
 
@@ -208,6 +211,13 @@ export function nightId(scheduleId: string, localDate: string): string {
   return `${scheduleId}:${localDate}`;
 }
 
+/** This night's guest: the night's own word when it has one (a mission, or none), else the series' standing guest. */
+export function guestOf(schedule: ClubSchedule, record: NightsRecord | null, nightId: string): MissionRef | null {
+  const own = record?.guests?.[nightId];
+  if (own !== undefined) return own;
+  return schedule.defaults.mission ?? null;
+}
+
 /** The club's next nights: the rule's occurrences from now, with the exceptions the host recorded laid over. */
 export function nightsOf(club: string, schedule: ClubSchedule | null, record: NightsRecord | null, now = Date.now(), limit = HORIZON_NIGHTS): Night[] {
   if (!schedule || schedule.status !== 'active') return [];
@@ -227,6 +237,7 @@ export function nightsOf(club: string, schedule: ClubSchedule | null, record: Ni
       ...(schedule.defaults.title ? { title: schedule.defaults.title } : {}),
       ...(schedule.defaults.seatCap ? { seatCap: schedule.defaults.seatCap } : {}),
       ...(schedule.defaults.game ? { game: schedule.defaults.game } : {}),
+      ...(guestOf(schedule, record, id) ? { mission: guestOf(schedule, record, id)! } : {}),
       createdAt: schedule.createdAt,
       ...(e ? { cancelledAt: e.cancelledAt } : {}),
       ...(e?.reason ? { reason: e.reason } : {}),

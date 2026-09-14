@@ -185,6 +185,17 @@ export const RecurrenceSchema = z.discriminatedUnion('kind', [
 ]);
 
 /** What every night of this schedule inherits, and any one of them may override. */
+/**
+ * A MISSION AS A GUEST (docs/MISSION-REGISTRY.md §3): enough to name it on a night or a table, and to look the
+ * rest up in the registry. A guest is shown and introduced; it never holds cards, chips or anyone's money.
+ */
+export const MissionRefSchema = z.object({
+  entryId: z.string().min(1).max(200),
+  org: z.string().regex(/^0x[0-9a-f]{40}$/),
+  name: z.string().min(1).max(80),
+});
+export type MissionRef = z.infer<typeof MissionRefSchema>;
+
 export const NightDefaultsSchema = z.object({
   /** What the night is called, when it is not just the club's name and a date. */
   title: z.string().max(64).optional(),
@@ -192,6 +203,8 @@ export const NightDefaultsSchema = z.object({
   seatCap: z.number().int().min(2).max(90).optional(),
   /** Which game it deals. A club is not a poker club — it can run either. */
   game: z.string().max(32).optional(),
+  /** The standing guest of the series — every night's, unless a night says otherwise. */
+  mission: MissionRefSchema.optional(),
 });
 export type NightDefaults = z.infer<typeof NightDefaultsSchema>;
 
@@ -250,6 +263,8 @@ export const NightSchema = z.object({
   title: z.string().optional(),
   seatCap: z.number().int().optional(),
   game: z.string().optional(),
+  /** This night's guest — the series' standing guest unless the host named another, or none, for it. */
+  mission: MissionRefSchema.optional(),
   createdAt: z.number().int(),
   cancelledAt: z.number().int().optional(),
   reason: z.string().optional(),
@@ -317,6 +332,9 @@ export const CreateTableRequestSchema = z.object({
    * Present requires HOST standing at that club, and stamps the table (see `TableMeta.club`).
    */
   club: ClubIdSchema.optional(),
+  /** The table's guest, by registry entry id. Resolved against the registry (active entries only) and
+   *  STAMPED on the table as a `MissionRef`, like the club and the chip rate. */
+  mission: z.string().max(200).optional(),
   /** @deprecated The pre-club name for {@link CreateTableRequestSchema.club}, kept for one release
    *  so nothing in flight breaks. It selected a lobby and was never validated or persisted. */
   circle: z.string().optional(),
@@ -377,6 +395,8 @@ export const TableSummarySchema = z.object({
   createdBy: z.string().optional(),
   /** The club that owns this table, pinned when it was created. Absent on a pickup table. */
   club: ClubIdSchema.optional(),
+  /** The table's guest mission, pinned when it was created. */
+  mission: MissionRefSchema.optional(),
   /** That club's name at the instant the table was created. A label, not a lookup — a table whose
    *  club has been renamed still says what it was called on the night it was played. */
   clubName: z.string().max(64).optional(),

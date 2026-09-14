@@ -16,7 +16,7 @@ import {
 import { Identity } from '../components/Identity';
 import { useLeaveTable } from '../lib/useLeaveTable';
 import { Brand } from '../components/Brand';
-import { clubHash } from '../lib/routes';
+import { missionHash, clubHash } from '../lib/routes';
 import { useClubScope } from '../lib/useClubScope';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { fillOutcome, seatsToFill, type FillPlan } from '../lib/fillSeats';
@@ -86,6 +86,8 @@ export function CanastaPage({
   const [mine, setMine] = useState(false);
   /** The club this table belongs to, if any — so the screen can say who can see it. */
   const [club, setClub] = useState<{ id: string; name: string } | null>(null);
+  /** THE GUEST — the mission this table was opened for, shown beside the club and linked to its page. */
+  const [guest, setGuest] = useState<{ entryId: string; name: string } | null>(null);
   const clubScope_ = useClubScope(club, session?.token ?? null);
   /** How long each agent's move waits before it lands. Read from the table, changed by the slider. */
   const [pace, setPace] = useState(3500);
@@ -127,6 +129,7 @@ export function CanastaPage({
         setTableName(d.name ?? null);
         setMine(d.practiceFor != null && d.practiceFor === session?.playerId);
         setClub(d.club && d.clubName ? { id: d.club, name: d.clubName } : null);
+        setGuest(d.mission ? { entryId: d.mission.entryId, name: d.mission.name } : null);
         if (typeof d.paceMs === 'number') setPace(d.paceMs);
         // Known either way: a table that reports no pace is one running the deployment's default, and
         // the slider may write to that from here on.
@@ -328,6 +331,12 @@ export function CanastaPage({
             // the club is where the rest of its tables are.
             <a className="tag club" href={clubHash(club.id)} title={`Private to ${club.name}`}>
               {club.name}
+            </a>
+          ) : null}
+          {/* THE GUEST TONIGHT, named where the table is named — a mission is introduced, never seated. */}
+          {guest ? (
+            <a className="tag guest" href={missionHash(guest.entryId)} title="Tonight's guest — a registered mission">
+              ♦ {guest.name}
             </a>
           ) : null}
           {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}

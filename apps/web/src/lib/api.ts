@@ -463,6 +463,11 @@ export const api = {
   getNights: (clubId: string, token: string, limit = 8) =>
     request<{ nights: Night[] }>(`/clubs/${encodeURIComponent(clubId)}/nights?limit=${limit}`, {}, token),
   /** `skip` takes just this one out of the series; without it the night is called off. */
+  /** THE GUEST: the series' standing guest, or one night's (a mission, none, or back to the series'). */
+  setScheduleGuest: (clubId: string, entryId: string | null, token: string) =>
+    request<{ schedule: ClubSchedule; nights: Night[] }>(`/clubs/${encodeURIComponent(clubId)}/schedule/guest`, { method: 'PUT', body: JSON.stringify({ entryId }) }, token),
+  setNightGuest: (clubId: string, nightId: string, body: { entryId?: string | null; inherit?: boolean }, token: string) =>
+    request<{ night: Night }>(`/clubs/${encodeURIComponent(clubId)}/nights/${encodeURIComponent(nightId)}/guest`, { method: 'PUT', body: JSON.stringify(body) }, token),
   cancelNight: (clubId: string, nightId: string, body: { reason?: string; skip?: boolean }, token: string) =>
     request<{ night: Night }>(
       `/clubs/${encodeURIComponent(clubId)}/nights/${encodeURIComponent(nightId)}/cancel`,

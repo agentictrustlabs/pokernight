@@ -264,6 +264,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   COUNTRY CEILING allows (`@pokernight/missions` `displayPoint`, ported from Gather27's table — `~/engage`
   is the worked example and is touched by nothing here). A mission is a standing presence, never an event.
   Nothing on the hop is Gather27's: not its workspace, not its records.
+- **A GUEST IS NAMED FROM THE REGISTRY AND STAMPED, LIKE THE CLUB** (2026-09-14). `CreateTableRequest.mission` is an
+  entry id; the Worker resolves it against the registry (active only, `activeMission`) and stamps a `MissionRef` on
+  the table (`TableMeta.mission`, on the summary and the spectator view); the top bar shows `♦ <name>` beside the
+  club, linked to the mission's page. A club's schedule carries a STANDING guest (`defaults.mission`) and the nights
+  record a per-night one (`guests[nightId]`: a ref, or `null` for none) — a night's `mission` is derived (`guestOf`),
+  never stored on the night. `components/MissionPicker.tsx` is the one control for all three.
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must

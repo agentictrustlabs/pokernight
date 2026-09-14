@@ -12,13 +12,13 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
-import { TableSummarySchema, type CreateTableRequest, type TableSummary } from '@pokernight/protocol';
+import { TableSummarySchema, type CreateTableRequest, type MissionRef, type TableSummary } from '@pokernight/protocol';
 import type { Env } from './env.js';
 import type { InitRequest } from './table-do.js';
 
 /** What the Worker sends to `/create`: the client's request plus the club NAME it resolved, which the
  *  client never supplies (it would be a label the club itself did not agree to). */
-type CreateTableBody = CreateTableRequest & { clubName?: string; createdBy?: string };
+type CreateTableBody = CreateTableRequest & { clubName?: string; createdBy?: string; guest?: MissionRef };
 
 type TableRow = {
   table_id: string;
@@ -79,6 +79,8 @@ export class LobbyDO extends DurableObject<Env> {
       // and the asset, and for the same reason. A table whose club is renamed still says what it was
       // called on the night it was played, and one whose club is retired still knows what it was.
       ...(req.club ? { club: req.club, ...(req.clubName ? { clubName: req.clubName } : {}) } : {}),
+      // THE GUEST, resolved by the Worker against the registry and stamped here like the club.
+      ...(req.guest ? { mission: req.guest } : {}),
       // Which game, passed straight through. The table resolves it and refuses by name; the lobby
       // does not keep a list of games, because two lists of games is one list too many.
       ...(req.game ? { game: req.game } : {}),

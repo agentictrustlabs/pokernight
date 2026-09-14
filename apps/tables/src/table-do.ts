@@ -59,6 +59,7 @@ import {
   POKER_REVIEW_SKILL,
   type ChatEvent,
   type ClientCommand,
+  type MissionRef,
   type PlayerInfo,
   type ActInput,
   type RecordInput,
@@ -150,6 +151,8 @@ export interface TableMeta {
   club?: string;
   /** That club's name at the instant the table was created. A label, not a lookup. */
   clubName?: string;
+  /** THE GUEST — a registered mission, pinned at creation (docs/MISSION-REGISTRY.md §3). Shown, never seated. */
+  mission?: MissionRef;
   /**
    * WHICH GAME this table plays, stamped at creation and never re-read.
    *
@@ -198,6 +201,8 @@ export interface InitRequest {
   /** The club that owns it. The Worker has already checked the creator is one of its hosts. */
   club?: string;
   clubName?: string;
+  /** The guest, resolved by the Worker against the registry. */
+  mission?: MissionRef;
   /** The `playerId` of whoever opened it, so they can close it again. */
   createdBy?: string;
   /** Which game to deal. Absent is poker. Refused at creation if this deployment does not have it. */
@@ -539,6 +544,7 @@ export class PokerTableDO extends DurableObject<Env> {
         // that answered a stranger in full.
         ...(this.meta.club ? { club: this.meta.club } : {}),
         ...(this.meta.clubName ? { clubName: this.meta.clubName } : {}),
+        ...(this.meta.mission ? { mission: this.meta.mission } : {}),
         // Whose practice table this is and how fast it plays, so the client can offer "deal again"
         // and the pace control only where they mean something — and read the current pace back.
         ...(this.meta.practiceFor ? { practiceFor: this.meta.practiceFor } : {}),
@@ -963,6 +969,7 @@ export class PokerTableDO extends DurableObject<Env> {
       ...(asset === null || assetSymbol === null ? {} : { assetSymbol }),
       ...(body.club ? { club: body.club } : {}),
       ...(body.club && body.clubName ? { clubName: body.clubName } : {}),
+      ...(body.mission ? { mission: body.mission } : {}),
       // WHO OPENED IT, pinned, so they can close it again.
       ...(body.createdBy ? { createdBy: body.createdBy } : {}),
       // Always stamped, including when it is the default. A field that is present only for the
@@ -1045,6 +1052,7 @@ export class PokerTableDO extends DurableObject<Env> {
       // tell a club table from a pickup one at a glance.
       ...(meta.club ? { club: meta.club } : {}),
       ...(meta.clubName ? { clubName: meta.clubName } : {}),
+      ...(meta.mission ? { mission: meta.mission } : {}),
       // WHO OPENED IT, so the Worker can let them close it and a client can offer the control only to
       // somebody it will not be refused for.
       ...(meta.createdBy ? { createdBy: meta.createdBy } : {}),

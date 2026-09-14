@@ -11,7 +11,7 @@ import { TableSocket, dismissError, initialState, reduce, setConnection, type Ta
 import { Identity } from '../components/Identity';
 import { SettlementTag } from '../components/SettlementTag';
 import { Brand } from '../components/Brand';
-import { clubHash } from '../lib/routes';
+import { missionHash, clubHash } from '../lib/routes';
 import { useClubScope } from '../lib/useClubScope';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { SoundToggle } from '../components/SoundToggle';
@@ -74,6 +74,8 @@ export function TablePage({
   const [tableName, setTableName] = useState<string | null>(null);
   /** The club this table belongs to, if any — so the screen can say who can see it. */
   const [club, setClub] = useState<{ id: string; name: string } | null>(null);
+  /** THE GUEST — the mission this table was opened for, shown beside the club and linked to its page. */
+  const [guest, setGuest] = useState<{ entryId: string; name: string } | null>(null);
   const clubScope_ = useClubScope(club, session?.token ?? null);
   const [settlement, setSettlement] = useState<string>('play-money');
   /**
@@ -133,6 +135,7 @@ export function TablePage({
         if (!alive) return;
         setTableName(detail.name ?? null);
         setClub(detail.club && detail.clubName ? { id: detail.club, name: detail.clubName } : null);
+        setGuest(detail.mission ? { entryId: detail.mission.entryId, name: detail.mission.name } : null);
         setMine(detail.practiceFor != null && detail.practiceFor === session?.playerId);
         setPaused(detail.paused === true);
         // Known either way: a table that reports no pace is one running the deployment's default.
@@ -315,6 +318,12 @@ export function TablePage({
             // the club is where the rest of its tables are.
             <a className="tag club" href={clubHash(club.id)} title={`Private to ${club.name}`}>
               {club.name}
+            </a>
+          ) : null}
+          {/* THE GUEST TONIGHT, named where the table is named — a mission is introduced, never seated. */}
+          {guest ? (
+            <a className="tag guest" href={missionHash(guest.entryId)} title="Tonight's guest — a registered mission">
+              ♦ {guest.name}
             </a>
           ) : null}
           {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}

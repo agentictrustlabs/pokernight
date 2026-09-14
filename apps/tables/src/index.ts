@@ -43,7 +43,7 @@
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
-import {
+import { type MissionRef,
   CreateTableRequestSchema,
   POKER_ACT_SKILL,
   SeatAgentRequestSchema,
@@ -68,7 +68,7 @@ import {
 } from '@pokernight/protocol';
 import { agentKindFromCard, callCoachStatus, callReview, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
 import { addressOfAgent, advertisedOnChain, looksLikeAgentName, nameOfAgent } from './naming.js';
-import { MISSION_REGISTRY_ID, missionRegistryProfile, orgOfEntryId } from '@pokernight/missions';
+import { MISSION_REGISTRY_ID, missionRegistryProfile, orgOfEntryId, refOf, type MissionListing } from '@pokernight/missions';
 import { admitMission, missionRegistryConfigured, operatorAgentId, receiptFor, receiptHashOf, verifyOperatorReceipt, type MissionEnrolmentPayload } from './missions.js';
 import type { RegistrationReceiptV1 } from '@agenticprimitives/registry-kit';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
@@ -943,6 +943,55 @@ app.put('/clubs/:clubId/schedule', async (c) => {
   return c.json({ schedule: made.schedule, nights: nightsOf(gate.clubId, made.schedule, null) });
 });
 
+/**
+ * THE STANDING GUEST of a series, and ONE NIGHT'S guest. A host names a registered mission for every night
+ * the schedule generates (`defaults.mission`), or for one night — a mission, or `null` for "none tonight" —
+ * as an exception on the nights record; a night's row derives which applies (`guestOf`). A guest is
+ * shown and introduced; the club still holds no money and the mission holds no cards (docs/MISSION.md).
+ */
+app.put('/clubs/:clubId/schedule/guest', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const body = (await c.req.json().catch(() => ({}))) as { entryId?: string | null };
+  const read = await readClub(c.env, gate.clubId, gate.agent);
+  if (!read?.schedule || read.schedule.status !== 'active') return c.json({ error: 'the club has no schedule to name a guest for' }, 404);
+  let mission: MissionRef | undefined;
+  if (body.entryId) {
+    const found = await activeMission(c.env, body.entryId);
+    if (!found) return c.json({ error: 'that mission is not in the registry, or is not active' }, 400);
+    mission = found;
+  }
+  const { mission: _was, ...defaults } = read.schedule.defaults;
+  const schedule = { ...read.schedule, defaults: { ...defaults, ...(mission ? { mission } : {}) } };
+  const w = await writeClubRecord(c.env, gate.clubId, 'schedule', schedule);
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  return c.json({ schedule, nights: nightsOf(gate.clubId, schedule, read.nights) });
+});
+
+app.put('/clubs/:clubId/nights/:nightId/guest', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const nightId = decodeURIComponent(c.req.param('nightId') ?? '');
+  const body = (await c.req.json().catch(() => ({}))) as { entryId?: string | null; inherit?: boolean };
+  const read = await readClub(c.env, gate.clubId, gate.agent);
+  if (!read) return c.json({ error: 'no such club' }, 404);
+  const schedule = read.schedule && read.schedule.status === 'active' ? read.schedule : null;
+  const night = nightsOf(gate.clubId, schedule, read.nights).find((n) => n.nightId === nightId);
+  if (!night) return c.json({ error: 'no such night' }, 404);
+  const guests = { ...(read.nights?.guests ?? {}) };
+  if (body.inherit) delete guests[nightId];
+  else if (body.entryId) {
+    const found = await activeMission(c.env, body.entryId);
+    if (!found) return c.json({ error: 'that mission is not in the registry, or is not active' }, 400);
+    guests[nightId] = found;
+  } else guests[nightId] = null;
+  const record = { ...(read.nights ?? {}), guests };
+  const w = await writeClubRecord(c.env, gate.clubId, 'nights', record);
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  const after = nightsOf(gate.clubId, schedule, record).find((n) => n.nightId === nightId);
+  return c.json({ night: after ?? night });
+});
+
 app.delete('/clubs/:clubId/schedule', async (c) => {
   const gate = await clubHost(c);
   if ('refused' in gate) return gate.refused;
@@ -1104,14 +1153,32 @@ app.post('/tables', async (c) => {
     }
     clubName = read.profile?.name;
   }
+  // THE GUEST: a registered mission, named by entry id and resolved against the registry — active entries
+  // only — then stamped on the table as a ref, exactly like the club (docs/MISSION-REGISTRY.md §3).
+  let guest: MissionRef | undefined;
+  if (parsed.data.mission) {
+    const found = await activeMission(c.env, parsed.data.mission);
+    if (!found) return c.json({ error: 'that mission is not in the registry, or is not active' }, 400);
+    guest = found;
+  }
   const res = await lobby(c.env, clubId).fetch('https://lobby/create', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     // WHO OPENED IT travels with the request, so the table can let them close it again.
-    body: JSON.stringify({ ...parsed.data, createdBy: session.playerId, ...(clubId ? { club: clubId, clubName } : {}) }),
+    body: JSON.stringify({ ...parsed.data, createdBy: session.playerId, ...(clubId ? { club: clubId, clubName } : {}), ...(guest ? { guest } : {}) }),
   });
   return passthrough(res);
 });
+
+/** A mission the registry lists as active, as a ref — or null. What every "invite" resolves through. */
+async function activeMission(env: Env, entryId: string): Promise<MissionRef | null> {
+  if (!orgOfEntryId(entryId)) return null;
+  const r = await missions(env).fetch(`https://do/entry?id=${encodeURIComponent(entryId)}`);
+  if (!r.ok) return null;
+  const { listing } = (await r.json()) as { listing: MissionListing };
+  if (listing.status !== 'active' || (listing.expiresAt && listing.expiresAt <= new Date().toISOString())) return null;
+  return refOf(listing);
+}
 
 /**
  * YOUR PRACTICE TABLE — the same one every time, in no lobby, ready to be reset.

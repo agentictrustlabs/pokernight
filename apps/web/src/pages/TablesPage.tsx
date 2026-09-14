@@ -5,6 +5,7 @@ import { dualAmount, tableRate } from '../lib/money';
 import { SettlementTag } from '../components/SettlementTag';
 import { mayClose, seatsFree, stakeLabel } from '../lib/lobby';
 import { BOARDS, DRAWN_GAME, gameLabel, hasBoard } from '../lib/games';
+import { MissionPicker } from '../components/MissionPicker';
 import { HOME_HASH, MONEY_HASH } from '../lib/routes';
 
 /**
@@ -128,6 +129,7 @@ export function TableList({
                   <tr key={t.tableId}>
                     <td>
                       <a href={`#/t/${encodeURIComponent(t.tableId)}`}>{t.name}</a>
+                      {t.mission ? <span className="table-guest">♦ {t.mission.name}</span> : null}
                     </td>
                     <td className="mono">{stakeLabel(t)}</td>
                     <td className="num">
@@ -230,6 +232,8 @@ export function CreateTable({
    * nobody here can draw would be opening one nobody here can sit at.
    */
   const [game, setGame] = useState<string>(DRAWN_GAME);
+  /** THE GUEST, by registry entry id. The card room resolves it and stamps the ref; nothing is taken on our word. */
+  const [guest, setGuest] = useState<string | null>(null);
   const [settlement, setSettlement] = useState<'play-money' | 'mandate-transfer'>('play-money');
   const [seats, setSeats] = useState(6);
   const [sb, setSb] = useState(1);
@@ -262,6 +266,7 @@ export function CreateTable({
           // The club whose page this form is on. The card room checks that this person is one of its
           // hosts and refuses by name if they are not — the club is never taken on the client's word.
           ...(club ? { club } : {}),
+          ...(guest ? { mission: guest } : {}),
         };
         try {
           const t = await api.createTable(req, session.token);
@@ -293,6 +298,11 @@ export function CreateTable({
             </option>
           ))}
         </select>
+      </label>
+      <label>
+        Guest mission
+        <MissionPicker value={guest} onChange={(id) => setGuest(id ?? null)} />
+        <span className="hint">A registered mission, introduced at the table — its people join the talk. Optional.</span>
       </label>
       {!poker ? (
         <p className="hint">

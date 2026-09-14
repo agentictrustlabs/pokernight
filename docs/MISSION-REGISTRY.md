@@ -126,8 +126,10 @@ invitable the same way. Nothing in §3 depends on which registry an entry came f
 
 1. **Registry** — `packages/missions`; `provision:missions-registry`; `MissionRegistryDO` + routes
    (`GET /missions`, `GET /missions/:id`, `GET /missions/registry`, `POST /missions/enrol`,
-   `GET /geo/search`); the Home's `registry-enrol` ceremony; the web's Missions map, register road and
-   mission page; the rail row. *(this pass)*
-2. **Guests** — club schedule + nights, table creation, the pickers, the top-bar line, ontology terms.
+   `GET /geo/search`); the Home's org-create with `registry_entry`; the web's Missions map, register road and
+   mission page; the rail row. *(done 2026-09-14)*
+2. **Guests** — club schedule + nights, table creation, the pickers, the top-bar line, ontology terms. *(done
+   2026-09-14: `PUT /clubs/:id/schedule/guest`, `PUT /clubs/:id/nights/:nightId/guest`, `CreateTableRequest.mission`,
+   `MissionPicker`, `cr:guestMission` / `cr:standingGuest`, `apctx:CardRoomMission…`.)
 3. **Operator** — suspend / revoke / renew, revalidation status, the ops list.
 4. **Other registries** — §4.

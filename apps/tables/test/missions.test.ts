@@ -9,6 +9,7 @@ import { SELF, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { verifyEventChain } from '@agenticprimitives/registry-kit';
 import { MISSION_REGISTRY_ID, entryIdFor, type MissionListing } from '@pokernight/missions';
+import { createTableViaHttp, devSession } from './helpers.js';
 
 const org = '0x00000000000000000000000000000000000000ab';
 const presence = {
@@ -67,5 +68,24 @@ describe('the operator store', () => {
   it('refuses the return leg without a session, and the geocoder too', async () => {
     expect((await SELF.fetch('http://tables.test/missions/enrol', { method: 'POST', body: '{}' })).status).toBe(401);
     expect((await SELF.fetch('http://tables.test/geo/search?q=fort')).status).toBe(401);
+  });
+});
+
+describe('a mission as a table’s guest', () => {
+  it('is resolved against the registry and stamped on the table', async () => {
+    await admit('registered');
+    const { token } = await devSession('host-with-a-guest');
+    const res = await SELF.fetch('http://tables.test/tables', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'guest night', mission: entryIdFor(org) }) });
+    expect(res.status).toBe(201);
+    const t = (await res.json()) as { tableId: string; mission?: { name: string; org: string } };
+    expect(t.mission).toEqual({ entryId: entryIdFor(org), org, name: 'Hope for the City' });
+    const view = (await (await SELF.fetch(`http://tables.test/tables/${t.tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as { mission?: { name: string } };
+    expect(view.mission?.name).toBe('Hope for the City');
+  });
+  it('refuses a guest the registry does not list', async () => {
+    const { token } = await devSession('host-with-no-guest');
+    const res = await SELF.fetch('http://tables.test/tables', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ name: 'no guest', mission: entryIdFor('0x00000000000000000000000000000000000000ff') }) });
+    expect(res.status).toBe(400);
+    void createTableViaHttp;
   });
 });

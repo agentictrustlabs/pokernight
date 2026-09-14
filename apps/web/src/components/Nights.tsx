@@ -4,6 +4,8 @@ import { ApiError, api } from '../lib/api';
 import { nextNight, nightWhen, scheduleLine, type Recurrence } from '../lib/nights';
 import { WEEKDAY_LABELS, WEEKDAY_ORDER } from '../lib/nightsForm';
 import { BOARDS, DRAWN_GAME, gameBlurb, gameLabel } from '../lib/games';
+import { MissionPicker } from './MissionPicker';
+import { missionHash } from '../lib/routes';
 
 /**
  * WHEN THIS CLUB MEETS, on the club's page.
@@ -44,12 +46,34 @@ export function Nights({ clubId, session, host, schedule, nights, onChanged }: {
       {rest.length > 0 ? (
         <ul className="night-list">
           {rest.map((n) => (
-            <NightRow key={n.nightId} night={n} now={now} clubId={clubId} session={session} host={host} onChanged={load} />
+            <NightRow key={n.nightId} night={n} now={now} clubId={clubId} session={session} host={host} onChanged={load} inherited={schedule?.defaults.mission ?? null} />
           ))}
         </ul>
       ) : null}
 
       {schedule ? <p className="hint night-rule">{scheduleLine(schedule as { startLocal: string; recurrence: Recurrence })}</p> : null}
+
+      {/* THE STANDING GUEST of the series (docs/MISSION-REGISTRY.md §3): every night's, unless a night says
+          otherwise. A host picks from the registry; a member sees who is coming. */}
+      {schedule ? (
+        <div className="night-guest">
+          {host ? (
+            <label className="row">
+              <span>Guest every night</span>
+              <MissionPicker
+                value={schedule.defaults.mission?.entryId ?? null}
+                onChange={async (entryId) => {
+                  setErr(null);
+                  try { await api.setScheduleGuest(clubId, entryId ?? null, session.token); } catch (e) { setErr(e instanceof ApiError ? e.message : 'The guest could not be named.'); }
+                  void load();
+                }}
+              />
+            </label>
+          ) : schedule.defaults.mission ? (
+            <p className="hint">Guest every night: <a href={missionHash(schedule.defaults.mission.entryId)}>♦ {schedule.defaults.mission.name}</a></p>
+          ) : null}
+        </div>
+      ) : null}
 
       {host ? (
         editing ? (
@@ -100,11 +124,20 @@ function NextNight({ night, now }: { night: Night; now: number }) {
         <strong>{night.title ?? 'Next night'}</strong> — {w.day} at {w.time}
         <span className="tag">{w.phrase}</span>
         {night.game ? <span className="tag">{gameLabel(night.game)}</span> : null}
+        {night.mission ? <a className="tag guest" href={missionHash(night.mission.entryId)}>♦ guest: {night.mission.name}</a> : null}
       </p>
       {/* The reader's own clock, only when it says something different. */}
       {w.alsoYours ? <p className="hint">Where you are, that is {w.alsoYours}.</p> : null}
     </div>
   );
+}
+
+/** What the picker shows for one night: `undefined` = the series' guest; `null` = none; else the entry id.
+ *  A night whose guest equals the series' is read as inheriting, since the record says nothing for it. */
+function nightGuestValue(night: Night, inherited: { entryId: string } | null | undefined): string | null | undefined {
+  if (night.mission && inherited && night.mission.entryId === inherited.entryId) return undefined;
+  if (!night.mission && !inherited) return undefined;
+  return night.mission?.entryId ?? null;
 }
 
 function NightRow({
@@ -114,6 +147,7 @@ function NightRow({
   session,
   host,
   onChanged,
+  inherited,
 }: {
   night: Night;
   now: number;
@@ -121,6 +155,8 @@ function NightRow({
   session: AppSession;
   host: boolean;
   onChanged: () => void;
+  /** The series' standing guest, so the row can say "the series' guest" by name. */
+  inherited?: { entryId: string; name: string } | null;
 }) {
   const w = nightWhen(night, now);
   const off = night.status === 'cancelled' || night.status === 'skipped';
@@ -131,6 +167,20 @@ function NightRow({
       </span>
       {off ? <span className="tag">{night.status}</span> : <span className="hint">{w.phrase}</span>}
       {night.reason ? <span className="hint">{night.reason}</span> : null}
+      {/* THIS NIGHT'S GUEST: the series' unless the host names another, or none, for it. */}
+      {!off && night.mission && !host ? <a className="night-guest-link" href={missionHash(night.mission.entryId)}>♦ {night.mission.name}</a> : null}
+      {host && !off ? (
+        <MissionPicker
+          value={nightGuestValue(night, inherited)}
+          allowInherit
+          inheritLabel={inherited ? `Series’ guest (${inherited.name})` : 'Series’ guest (none)'}
+          onChange={async (entryId) => {
+            const body = entryId === undefined ? { inherit: true } : { entryId };
+            await api.setNightGuest(clubId, night.nightId, body, session.token).catch(() => undefined);
+            onChanged();
+          }}
+        />
+      ) : null}
       {host && !off ? (
         <button
           type="button"
