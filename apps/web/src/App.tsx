@@ -28,6 +28,7 @@ import { HOME_HASH, clubHash, goTo, missionHash, route, takeReturn } from './lib
 import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
 import { Brand } from './components/Brand';
 import { PRODUCT_MARK } from './lib/brand';
+import { MissionRegisterPage } from './pages/MissionRegisterPage';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
 import { NewBuild } from './components/NewBuild';
@@ -313,19 +314,17 @@ export function App() {
     }
     const draftName = takeMissionDraftName();
     const current = sessionRef.current;
-    if (!current) {
-      setError('Your Home registered the mission, but this browser is no longer signed in — sign in and it will be on the map.');
-      return;
-    }
     setBusy(true);
     api
-      .enrolMission({ code: outcome.code, codeVerifier: outcome.codeVerifier, authOrigin: outcome.authOrigin, nonce: outcome.nonce, state: outcome.state }, current.token)
+      .enrolMission({ code: outcome.code, codeVerifier: outcome.codeVerifier, authOrigin: outcome.authOrigin, nonce: outcome.nonce, state: outcome.state }, current?.token)
       .then((r) => {
+        // A VISITOR IS SIGNED IN BY THIS LEG — the Home proved who they are in the ceremony; no play-money set-up ran.
+        if (r.session && !current) login({ token: r.session.token, playerId: r.session.playerId, name: r.session.name, via: 'home', address: r.session.address, agentName: r.session.agentName });
         setNotice(r.act === 'renewed' ? `${r.listing.name} is renewed in the registry — its listing is current again.` : `${r.listing.name} is registered — on the map, and available to invite.`);
         goTo(missionHash(r.listing.entryId));
       })
       .catch((e: unknown) => setError(e instanceof ApiError ? `${draftName ?? 'The mission'} was not admitted — ${e.message}` : `Could not finish registering ${draftName ?? 'the mission'}.`))
-      .finally(() => setBusy(false));
+      .finally(() => { arrivingRef.current = false; setBusy(false); });
   }, []);
 
   /**
@@ -503,6 +502,34 @@ export function App() {
     </ClubHuddleProvider>
   );
 
+  // ARRIVING: the Home has handed the person back and the card room has not accepted them yet. The
+  // front door used to flash in that gap — hero, pitch, "Sign in" — and then vanish under the room
+  // (2026-09-14, "we flash the home page when we finally connect"). Known before the first paint from
+  // the address bar (the code is still in it), and kept while the return leg is in flight.
+  const arriving = !session && (busy || arrivingRef.current);
+
+  // THE MISSION REGISTER FORM IS OPEN TO A VISITOR: a steward is not here to play, so the card room's sign-in is
+  // not their door. They fill the form, their one trip is to their Home, and the return leg signs them in.
+  if (r.page === 'newMission' && !session) {
+    return huddled(
+      <div className="app">
+        <CardDefs />
+        <div className="topbar">
+          <Brand />
+          <span className="spacer" />
+          <span className="meta"><span>missions · register</span></span>
+        </div>
+        <div className="page">
+          {arriving ? (
+            <div className="arriving"><div><span className="arriving-mark" aria-hidden="true">{PRODUCT_MARK}</span><p>{error ?? 'Your Home has registered the mission — admitting it…'}</p></div></div>
+          ) : (
+            <MissionRegisterPage session={null} config={config} />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (r.page === 'join') {
     return huddled(
       <div className="app">
@@ -531,11 +558,6 @@ export function App() {
   // The front page, on two roads: the front door for a visitor with no session, and `#/about` for
   // anybody — which is the only way a signed-in reader can get at the product explanation at all.
   const showLanding = (r.page === 'home' && !session) || r.page === 'about';
-  // ARRIVING: the Home has handed the person back and the card room has not accepted them yet. The
-  // front door used to flash in that gap — hero, pitch, "Sign in" — and then vanish under the room
-  // (2026-09-14, "we flash the home page when we finally connect"). Known before the first paint from
-  // the address bar (the code is still in it), and kept while the return leg is in flight.
-  const arriving = !session && (busy || arrivingRef.current);
 
   return huddled(
     <div className="app">
@@ -567,7 +589,7 @@ export function App() {
         <div className="arriving" role="status" aria-live="polite">
           <div>
             <span className="arriving-mark" aria-hidden="true">{PRODUCT_MARK}</span>
-            <p>{error ?? 'Your Home has signed you in — taking your seat…'}</p>
+            <p>{error ?? 'Your Home has handed you back — one moment…'}</p>
             {error ? <p><a href="#/signin" onClick={() => { arrivingRef.current = false; }}>Sign in</a></p> : null}
           </div>
         </div>
@@ -582,7 +604,10 @@ export function App() {
           rendered — imported here, mounted nowhere — so a person whose Home had not set a coach up saw "the
           house coach" on every hand and was offered nothing (2026-09-13, "does not get bob the coach"). A
           table page (returned above) mounts its own game's sheet. */}
-      {session && r.page !== 'signin' ? <CoachQuestion session={session} config={config} game="poker" onSetUp={setUpAtHome} /> : null}
+      {/* Offered where PLAYING is the point — Play and Tables — and never on the missions' or a club's pages: a
+          mission steward who registered their organization is not here for a coach (2026-09-14). The table page
+          mounts its own game's sheet. */}
+      {session && (r.page === 'home' || r.page === 'tables') ? <CoachQuestion session={session} config={config} game="poker" onSetUp={setUpAtHome} /> : null}
     </div>
   );
 }

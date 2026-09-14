@@ -461,7 +461,9 @@ export async function completeMissionCeremony(env: Env, req: HomeAuthRequest, no
   const org = (token.org?.orgAgent ?? '').trim().toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(org)) throw new HomeAuthError('your Home completed the ceremony but named no organization');
   if (!token.org?.registry || typeof token.org.registry !== 'object') throw new HomeAuthError('your Home created the organization but did not list it in the registry — nothing was registered');
-  return { identity, org, ...(token.org.orgName ? { orgName: token.org.orgName } : {}), registry: token.org.registry };
+  // The site grant the ceremony minted rides with the identity, so a session issued from this leg carries it
+  // like one from the plain sign-in.
+  return { identity: { ...identity, ...(token.delegation ? { delegation: token.delegation } : {}) }, org, ...(token.org.orgName ? { orgName: token.org.orgName } : {}), registry: token.org.registry };
 }
 
 /** The template that HIRES A COACH at the person's Home: names the coach service as the specialist for

@@ -6203,3 +6203,22 @@ details.log-panel > .log { margin-top: 0.5rem; }
     grid-template-columns: 1fr;
   }
 }
+
+/* A MISSION STEWARD'S ONBOARDING — three steps above the form, for a visitor who is not here to play. */
+.mission-onboarding {
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.mission-onboarding ol {
+  margin: 0;
+  padding-left: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.mission-onboarding ol li::marker {
+  color: var(--brass);
+  font-weight: 700;
+}

@@ -305,6 +305,15 @@ app.post('/auth/home/demo', async (c) => {
  * so a session established either way is indistinguishable downstream.
  */
 async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIdentity, profileName?: string): Promise<Response> {
+  const minted = await mintSessionFor(c.env, identity, profileName);
+  if ('error' in minted) return c.json({ error: minted.error }, 500);
+  return c.json(minted);
+}
+
+export interface MintedSession { token: string; playerId: string; name: string; agentName?: string; address: string }
+
+/** The session record and its bearer, from a verified Home identity — what every Home road ends in. */
+async function mintSessionFor(env: Env, identity: HomeIdentity, profileName?: string): Promise<MintedSession | { error: string }> {
   const playerId = homePlayerId(identity.address);
   // The session never outlives the assertion it rests on.
   const exp = Math.min(Date.now() + HOME_SESSION_TTL_MS, identity.expiresAt);
@@ -337,19 +346,19 @@ async function issueHomeSession(c: Context<{ Bindings: Env }>, identity: HomeIde
     expiresAt: exp,
   };
   try {
-    await putSessionRecord(c.env, record);
+    await putSessionRecord(env, record);
   } catch (e) {
     console.error('session record', e);
-    return c.json({ error: 'could not store the session' }, 500);
+    return { error: 'could not store the session' };
   }
   let token: string;
   try {
-    token = await mintHomeSessionToken(c.env, playerId, name, exp);
+    token = await mintHomeSessionToken(env, playerId, name, exp);
   } catch (e) {
     console.error('mint home session', e);
-    return c.json({ error: 'the card room cannot issue sessions right now (SESSION_SECRET is not configured)' }, 500);
+    return { error: 'the card room cannot issue sessions right now (SESSION_SECRET is not configured)' };
   }
-  return c.json({ token, playerId, name, agentName: identity.agentName, address: identity.address });
+  return { token, playerId, name, ...(identity.agentName ? { agentName: identity.agentName } : {}), address: identity.address };
 }
 
 /**
@@ -650,8 +659,11 @@ app.get('/missions/:entryId{.+?}', async (c) => {
  * is projected: the chain may hold the entry, and the map will not show it until the checks pass.
  */
 app.post('/missions/enrol', async (c) => {
+  // A MISSION STEWARD'S OWN DOOR (2026-09-14): a person registering a mission is not here to play, so the
+  // register form is open before any sign-in and this leg SIGNS THEM IN as it admits the mission — the
+  // Home's org-create ceremony proved who they are, and no play-money set-up runs for them. A person already
+  // signed in must be the one who ran the ceremony.
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return c.json({ error: 'unauthenticated' }, 401);
   if (!missionRegistryConfigured(c.env)) return c.json({ error: 'this card room operates no mission registry' }, 503);
   const parsed = HomeAuthRequestSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
@@ -663,7 +675,7 @@ app.post('/missions/enrol', async (c) => {
     console.error('mission enrol', e);
     return c.json({ error: 'the registration could not be completed' }, 401);
   }
-  if (homePlayerId(result.identity.address) !== session.playerId) return c.json({ error: 'that ceremony was run by somebody else' }, 403);
+  if (session && homePlayerId(result.identity.address) !== session.playerId) return c.json({ error: 'that ceremony was run by somebody else' }, 403);
   const payload = result.registry as MissionEnrolmentPayload;
   const admission = await admitMission(c.env, payload, result.identity.address);
   if ('error' in admission) return c.json({ error: `the registration could not be read — ${admission.error}` }, 400);
@@ -683,7 +695,13 @@ app.post('/missions/enrol', async (c) => {
   });
   const b = (await r.json()) as { listing: unknown };
   console.log(`[missions] ${payload.act} ${payload.entryId} (${admission.orgName ?? 'nameless'}) — ${admission.verified.length} verified, ${admission.notVerified.length} not verified`);
-  return c.json({ ok: true, listing: b.listing, receipt, act: payload.act }, 201);
+  let minted: MintedSession | undefined;
+  if (!session) {
+    const m = await mintSessionFor(c.env, result.identity);
+    if ('error' in m) return c.json({ error: m.error }, 500);
+    minted = m;
+  }
+  return c.json({ ok: true, listing: b.listing, receipt, act: payload.act, ...(minted ? { session: minted } : {}) }, 201);
 });
 
 /**
@@ -692,8 +710,8 @@ app.post('/missions/enrol', async (c) => {
  * rate-limited with everything else that costs a round trip.
  */
 app.get('/geo/search', async (c) => {
-  const session = await resolveSession(c.env, sessionToken(c.req.raw));
-  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  // Open: the register form is open to a visitor (a mission steward is not here to play). The rate limit
+  // keys by IP when there is no session, like sign-in.
   const q = (c.req.query('q') ?? '').trim().slice(0, 120);
   if (q.length < 2) return c.json({ places: [] });
   const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8_000) }).catch(() => null);

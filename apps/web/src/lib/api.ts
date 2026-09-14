@@ -330,9 +330,10 @@ export const api = {
   mission: (entryId: string) =>
     request<{ listing: MissionListing; receipt: MissionReceipt | null; events: Array<{ kind: string; occurredAt: string; sequence: string }> }>(`/missions/${encodeURIComponent(entryId)}`),
   missionRegistry: () => request<{ registryId: string; name: string; description: string; chainId: number; registryAddress: string | null; operatorAgent: string; configured: boolean }>('/missions/registry'),
-  enrolMission: (body: HomeAuthBody, token: string) =>
-    request<{ ok: true; listing: MissionListing; receipt: MissionReceipt; act: 'registered' | 'renewed' }>('/missions/enrol', { method: 'POST', body: JSON.stringify(body) }, token),
-  geocode: (q: string, token: string) =>
+  /** The return leg. Without a session the card room SIGNS THE STEWARD IN as it admits the mission (`session`). */
+  enrolMission: (body: HomeAuthBody, token?: string) =>
+    request<{ ok: true; listing: MissionListing; receipt: MissionReceipt; act: 'registered' | 'renewed'; session?: HomeSessionResponse }>('/missions/enrol', { method: 'POST', body: JSON.stringify(body) }, token),
+  geocode: (q: string, token?: string) =>
     request<{ places: Array<{ label: string; country: string; lat: number; lng: number; kind: string }> }>(`/geo/search?q=${encodeURIComponent(q)}`, {}, token),
   foundClub: (clubId: string, body: { name: string; games?: string[] }, token: string) =>
     request<ClubView>(`/clubs/${encodeURIComponent(clubId)}/found`, { method: 'POST', body: JSON.stringify(body) }, token),

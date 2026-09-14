@@ -16,7 +16,7 @@ interface Place { label: string; country: string; lat: number; lng: number; kind
  * return leg then verifies and admits. What is drawn here is what will be published, and the ceiling is
  * shown before it is signed — a mission in a country whose ceiling hides the point is told so, not surprised.
  */
-export function MissionRegisterPage({ session, config }: { session: AppSession; config: AuthConfig | null }) {
+export function MissionRegisterPage({ session, config }: { session: AppSession | null; config: AuthConfig | null }) {
   const [name, setName] = useState('');
   const [blurb, setBlurb] = useState('');
   const [website, setWebsite] = useState('https://');
@@ -38,10 +38,10 @@ export function MissionRegisterPage({ session, config }: { session: AppSession; 
     if (searchTimer.current) window.clearTimeout(searchTimer.current);
     if (query.trim().length < 3) { setHits([]); return; }
     searchTimer.current = window.setTimeout(() => {
-      api.geocode(query.trim(), session.token).then((r) => setHits(r.places)).catch(() => setHits([]));
+      api.geocode(query.trim(), session?.token).then((r) => setHits(r.places)).catch(() => setHits([]));
     }, 350);
     return () => { if (searchTimer.current) window.clearTimeout(searchTimer.current); };
-  }, [query, place, session.token]);
+  }, [query, place, session?.token]);
 
   const ceiling: CountryCeiling | null = place ? countryCeiling(place.country) : null;
   const shown = place ? displayPoint({ country: place.country, lat: place.lat, lng: place.lng, precise }) : null;
@@ -80,6 +80,23 @@ export function MissionRegisterPage({ session, config }: { session: AppSession; 
         </div>
         <p className="lede">What you write here is what the map shows. Your Home does the rest in one trip: the organization, the covenant, the entry — and brings you straight back.</p>
       </header>
+
+      {/* A MISSION STEWARD'S OWN ONBOARDING (2026-09-14): a visitor registering a mission is not here to play, and
+          used to be sent through the card room's sign-in — play money, a buy-in limit, a seat. Now the form is open,
+          and the ONE trip is to their Home: sign in there (or make a Home), choose or create the organization, sign
+          the covenant, the organization signs its entry — and the card room signs them in as it admits the mission.
+          No coach, no money account, no seat is set up for them. */}
+      {!session ? (
+        <section className="panel mission-onboarding">
+          <h2 className="eyebrow-h">How registering works</h2>
+          <ol>
+            <li><strong>Say what the mission is</strong> — below. Its name, what it does, where it is, how the card room reaches you.</li>
+            <li><strong>Go to your Home.</strong> Your Home is your own account on the faithnet estate — sign in there, or make one on the way (a phone number, an email address or a social account; nothing to install). The organization is created there, in your custody, or you pick one you already steward.</li>
+            <li><strong>Two signatures.</strong> The covenant, as you; the registry entry, as the organization. Then you are back here, with the mission on the map.</li>
+          </ol>
+          <p className="hint">Registering makes you no player: no play money, no seat, no coach are set up for you. A game night invites your mission as its guest; your people join the talk, and giving is a separate choice — never a condition of anything here.</p>
+        </section>
+      ) : null}
 
       <form className="panel mission-form" onSubmit={submit}>
         <h2>The mission</h2>

@@ -101,6 +101,17 @@ the delegate over `receiptDigest`); `GET /missions/:id/receipt?verify=1` does ex
 six mandatory lines (shape, claims, binding proof, the chain's entry, the covenant's signature, the
 `.org` name) and receipted it; the receipt verifies on chain.
 
+### 2.4 A mission steward's own door (2026-09-14)
+
+A person registering a mission is not here to play, so they never see the card room's sign-in (play money,
+a buy-in limit, a seat). `#/missions/new` is open to a visitor; its one trip is to their Home — sign in there
+or make a Home on the way, choose or create the organization, sign the covenant, the organization signs its
+entry — and `POST /missions/enrol` **signs them in as it admits the mission** (a session minted from the
+ceremony's identity; no coach, no money account, no seat is set up, and the coach offer is not shown on the
+missions' pages). The Home runs the registry step on both of its org-create paths (`withMissionRegistry`),
+so a brand-new member's first organization is listed in the same trip. Proven live: a visitor, no session,
+registered "Bread and Roses" as Dave and landed on its page signed in.
+
 ## 3. Inviting a mission
 
 A mission is a **guest**, never a party to money (`docs/MISSION.md`): the invitation names it, shows

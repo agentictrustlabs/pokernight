@@ -65,9 +65,10 @@ describe('the operator store', () => {
     expect((await SELF.fetch('http://tables.test/missions/urn:ap:registry-entry:elsewhere/0xab')).status).toBe(404);
   });
 
-  it('refuses the return leg without a session, and the geocoder too', async () => {
-    expect((await SELF.fetch('http://tables.test/missions/enrol', { method: 'POST', body: '{}' })).status).toBe(401);
-    expect((await SELF.fetch('http://tables.test/geo/search?q=fort')).status).toBe(401);
+  it('refuses a return leg that carries no ceremony — a visitor may register, but only through the Home', async () => {
+    // 503 here: the test deployment operates no registry (no wire), and that is said before anything else.
+    expect([400, 503]).toContain((await SELF.fetch('http://tables.test/missions/enrol', { method: 'POST', body: '{}' })).status);
+    expect((await SELF.fetch('http://tables.test/geo/search?q=f')).status).toBe(200);
   });
 });
 

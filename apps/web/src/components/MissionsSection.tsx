@@ -17,8 +17,10 @@ export function MissionsSection({ signedIn, variant = 'landing' }: { signedIn: b
     return () => { alive = false; };
   }, []);
   const shown = (missions ?? []).slice(0, 6);
-  const register = () => { if (!signedIn) rememberReturn(NEW_MISSION_HASH); };
-  const registerHref = signedIn ? NEW_MISSION_HASH : '#signin';
+  // The register form is a mission steward's own door — open to a visitor, its one trip to their Home.
+  void signedIn; void rememberReturn;
+  const register = () => undefined;
+  const registerHref = NEW_MISSION_HASH;
   return (
     <section className={variant === 'landing' ? 'landing-section missions-section' : 'panel missions-section play-running'} id="missions">
       <div className="missions-head">
