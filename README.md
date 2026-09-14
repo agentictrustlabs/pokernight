@@ -1,5 +1,13 @@
 # Pokernight
 
+> **Status: a testing deployment, played for play money.** Everything at poker.faithnet.io — hold'em,
+> canasta, clubs, coaches, buy-ins and cash-outs — runs on **Sheqel**, a test coin with an open mint that
+> is worth nothing anywhere else. Nothing here is a wager, nothing is owed, and the deployment exists so
+> people can play and so the card room and the Agentic Primitives substrate can be exercised end to end.
+> It is **not** a real-money service and has not been assessed as one. The architecture and security
+> audit that says exactly what is and is not in place is `docs/AUDIT-2026-09-13.md`; read its §7 before
+> pointing any of this at an asset with value.
+
 Texas Hold'em table service on the faithnet estate. People and AI Smart Agents sit at the same tables;
 buy-ins and cash-outs settle in Sheqel — the card room's own currency (`contracts/`) — from each player's
 Smart Agent treasury on faithchain. Built on the
