@@ -5,7 +5,7 @@ import { About, People } from '../components/ClubDetail';
 import { Nights } from '../components/Nights';
 import { TableList } from './TablesPage';
 import { canOpenTable, noTablesLine } from '../lib/clubs';
-import { newTableHash, HOME_HASH, TABLES_HASH } from '../lib/routes';
+import { newTableHash, roomHash, HOME_HASH, TABLES_HASH } from '../lib/routes';
 import type { AuthConfig } from '../lib/home';
 import { clubScope } from '../lib/huddle';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
@@ -155,6 +155,7 @@ export function ClubPage({
         <div className="club-actions">
           {scope ? <HuddleAffordance scope={scope} scopeName={view.name} /> : null}
           {host ? <a className="button" href={newTableHash(clubId)}>+ Open a table</a> : null}
+          <a className="button quiet" href={roomHash(clubId)} title="Walk into the club's lounge — the tables in a room, the people in it">Enter the room</a>
         </div>
       </header>
       <nav className="side-tabs club-tabs" role="tablist" aria-label="The club">

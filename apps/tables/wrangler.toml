@@ -38,6 +38,7 @@ bindings = [
   { name = "LOBBIES", class_name = "LobbyDO" },
   { name = "SESSIONS", class_name = "SessionDO" },
   { name = "MISSIONS", class_name = "MissionRegistryDO" },
+  { name = "ROOMS", class_name = "SceneDO" },
 ]
 
 # Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
@@ -65,6 +66,11 @@ deleted_classes = ["ClubDO", "ClubIndexDO"]
 [[migrations]]
 tag = "v5"
 new_sqlite_classes = ["MissionRegistryDO"]
+
+# THE ROOM (docs/SPATIAL-ROOM.md): presence, one object per room.
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["SceneDO"]
 
 [[kv_namespaces]]
 binding = "CLUB_WIRES"
@@ -147,6 +153,7 @@ bindings = [
   { name = "LOBBIES", class_name = "LobbyDO" },
   { name = "SESSIONS", class_name = "SessionDO" },
   { name = "MISSIONS", class_name = "MissionRegistryDO" },
+  { name = "ROOMS", class_name = "SceneDO" },
 ]
 
 [[env.faithnet.migrations]]
@@ -169,6 +176,10 @@ deleted_classes = ["ClubDO", "ClubIndexDO"]
 [[env.faithnet.migrations]]
 tag = "v5"
 new_sqlite_classes = ["MissionRegistryDO"]
+
+[[env.faithnet.migrations]]
+tag = "v6"
+new_sqlite_classes = ["SceneDO"]
 
 [[env.faithnet.kv_namespaces]]
 binding = "CLUB_WIRES"

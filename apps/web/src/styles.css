@@ -6256,3 +6256,172 @@ button.tag.guest {
   pointer-events: auto;
   width: min(400px, 100%);
 }
+
+/* THE ROOM (docs/SPATIAL-ROOM.md): the lounge fills the page under a small head; the bar below says where you are. */
+.room-page {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  grid-template-areas: 'head head' 'scene people' 'bar people';
+  gap: 0.8rem;
+  align-items: start;
+}
+.room-head {
+  grid-area: head;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.room-head .eyebrow {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.room-head h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+}
+.room-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.lounge {
+  grid-area: scene;
+  position: relative;
+  height: min(68vh, 640px);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--hero-rule);
+  background: #0e2e20;
+}
+.lounge canvas {
+  display: block;
+}
+.lounge-loading {
+  grid-area: scene;
+  height: min(68vh, 640px);
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: var(--hero-bg-deep);
+  color: var(--hero-ink-soft);
+}
+.lounge-help {
+  position: absolute;
+  left: 0.8rem;
+  bottom: 0.6rem;
+  margin: 0;
+  color: var(--hero-ink-soft);
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+.lounge-plate {
+  pointer-events: none;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: #f4f2ea;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.lounge-plate small {
+  font-size: 11px;
+  color: #bdd0c4;
+}
+.lounge-plate-table span {
+  color: #d9b26a;
+  font-weight: 700;
+}
+.lounge-plate-name span {
+  font-weight: 600;
+}
+.lounge-plate-you span {
+  color: #d9b26a;
+}
+.lounge-bubble {
+  pointer-events: none;
+  background: #fffefb;
+  color: #1c2420;
+  padding: 0.3rem 0.6rem;
+  border-radius: 12px;
+  font-size: 13px;
+  max-width: 220px;
+  white-space: normal;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.room-bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.room-table-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.room-table-card .button.primary {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--cta-edge);
+  border-radius: var(--radius);
+  background: var(--cta-bg);
+  color: var(--cta-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+.room-say {
+  display: flex;
+  gap: 0.4rem;
+}
+.room-say input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  min-width: 240px;
+}
+.room-people {
+  grid-area: people;
+  padding: 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.room-people ul {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+.club-actions .button.quiet {
+  background: var(--surface);
+  color: var(--felt-ink);
+  border-color: var(--rule);
+}
+@media (max-width: 860px) {
+  .room-page {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'head' 'scene' 'bar' 'people';
+  }
+  .lounge, .lounge-loading {
+    height: 60vh;
+  }
+}

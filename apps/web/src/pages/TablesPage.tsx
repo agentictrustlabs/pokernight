@@ -5,7 +5,7 @@ import { dualAmount, tableRate } from '../lib/money';
 import { SettlementTag } from '../components/SettlementTag';
 import { mayClose, seatsFree, stakeLabel } from '../lib/lobby';
 import { gameLabel, hasBoard } from '../lib/games';
-import { newTableHash, HOME_HASH } from '../lib/routes';
+import { newTableHash, roomHash, HOME_HASH } from '../lib/routes';
 
 /**
  * TABLES — what is running, and a form to open something new.
@@ -51,7 +51,7 @@ export function TablesPage({
         {...(onChanged ? { onChanged } : {})}
       />
       {/* Opening a table is a thing a host does, not a step in playing — it has its own page. */}
-      <p className="lobby-create-link"><a className="button" href={newTableHash()}>+ Open your own table</a></p>
+      <p className="lobby-create-link"><a className="button" href={newTableHash()}>+ Open your own table</a> <a className="button" href={roomHash()} title="Walk into the hall — the open tables in a room">Enter the hall</a></p>
     </div>
   );
 }

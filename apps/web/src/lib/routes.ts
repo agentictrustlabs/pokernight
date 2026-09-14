@@ -34,6 +34,8 @@ export type Route =
   /** THE MISSIONS (docs/MISSION-REGISTRY.md): the map of registered missions, registering one, and one mission. */
   /** Opening a table — its own page. With a club it is private to the club; with a night it is one of the night's. */
   | { page: 'newTable'; clubId?: string; night?: string }
+  /** THE ROOM (docs/SPATIAL-ROOM.md): a club's lounge, or the hall. */
+  | { page: 'room'; clubId?: string }
   | { page: 'missions' }
   | { page: 'newMission' }
   | { page: 'mission'; entryId: string }
@@ -80,6 +82,11 @@ export function newTableHash(clubId?: string | null, night?: string | null): str
   return night ? `${base}?night=${encodeURIComponent(night)}` : base;
 }
 
+/** The room: a club's lounge, or the pickup hall. */
+export function roomHash(clubId?: string | null): string {
+  return clubId ? `#/clubs/${encodeURIComponent(clubId)}/room` : '#/hall';
+}
+
 /** The missions: the map, and registering one. */
 export const MISSIONS_HASH = '#/missions';
 export const NEW_MISSION_HASH = '#/missions/new';
@@ -104,6 +111,9 @@ export function route(hash: string): Route {
   if (join?.[1]) return { page: 'join', clubId: join[1].toLowerCase() };
   // `new` is checked BEFORE the id, and a club id is a UUID, so the two can never be confused.
   if (/^\/clubs\/new\/?$/.test(path)) return { page: 'newClub' };
+  const clubRoom = /^\/clubs\/([^/?#]+)\/room\/?$/.exec(path);
+  if (clubRoom?.[1]) return { page: 'room', clubId: decodeURIComponent(clubRoom[1]) };
+  if (/^\/hall\/?$/.test(path)) return { page: 'room' };
   const clubTable = /^\/clubs\/([^/?#]+)\/tables\/new\/?$/.exec(path);
   if (clubTable?.[1]) {
     const night = new URLSearchParams(hash.split('?')[1] ?? '').get('night');

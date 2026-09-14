@@ -43,7 +43,7 @@
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
-import { AddNightRequestSchema, SetVisitRequestSchema, type MissionRef,
+import { type RoomManifest, type RoomPerson, AddNightRequestSchema, SetVisitRequestSchema, type MissionRef,
   CreateTableRequestSchema,
   POKER_ACT_SKILL,
   SeatAgentRequestSchema,
@@ -115,6 +115,7 @@ import { feedPlayer, feedToken } from './feed-token.js';
 export { PokerTableDO } from './table-do.js';
 export { LobbyDO } from './lobby-do.js';
 export { MissionRegistryDO } from './missions.js';
+export { SceneDO } from './scene-do.js';
 export { SessionDO } from './session-do.js';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -138,7 +139,7 @@ const corsMiddleware = cors({
  * person, not a NAT), by IP otherwise; sign-in by IP. The limiter is a Workers binding; absent (dev, tests)
  * it limits nothing. A refusal is 429 with `retry-after`, and says which door.
  */
-const RATE_LIMITED = /^\/(clubs|auth|me|people|practice|coaches|geo)(\/|$)|^\/missions\/enrol$|^\/tables\/[^/]+\/(ws|advice|review|adviser)$/;
+const RATE_LIMITED = /^\/(clubs|auth|me|people|practice|coaches|geo|rooms)(\/|$)|^\/missions\/enrol$|^\/tables\/[^/]+\/(ws|advice|review|adviser)$/;
 app.use('*', async (c, next) => {
   const path = c.req.path;
   // `RATE_LIMITS = "off"` is for the test runner, where every request shares one address and the suite
@@ -610,6 +611,61 @@ app.get('/clubs', async (c) => {
 
 /** The clubs this person has been invited to and not joined: the host's agent told them at their Home, and the
  *  rail says so here too, with the door. */
+// ───────────────────────────────────────────────────────────────────────── the room
+// docs/SPATIAL-ROOM.md. A room is a place — a club's lounge (`club:<id>`) or the pickup hall (`hall`) — and its
+// tables are things in it. The Worker decides who may enter (the club's standing, as for its tables), lays the
+// room's tables out from the lobby, and hands the socket to `SceneDO`, which holds presence and nothing else.
+
+function room(env: Env, roomId: string) {
+  return env.ROOMS.get(env.ROOMS.idFromName(roomId));
+}
+
+async function roomAdmission(c: Context<{ Bindings: Env }>, roomId: string, session: { playerId: string; name: string } | null): Promise<{ ok: true; name: string; clubId: string | null } | { ok: false; response: Response }> {
+  if (!session) return { ok: false, response: c.json({ error: 'unauthenticated' }, 401) };
+  if (roomId === 'hall') return { ok: true, name: 'The hall', clubId: null };
+  const m = /^club:(0x[0-9a-f]{40})$/.exec(roomId);
+  if (!m) return { ok: false, response: c.json({ error: 'no such room' }, 404) };
+  const agent = agentOf(session as never);
+  const read = agent ? await readClub(c.env, m[1]!, agent) : null;
+  if (!read || !read.you || !belongs(read.you.standing)) return { ok: false, response: c.json({ error: 'no such room' }, 404) };
+  return { ok: true, name: read.profile?.name ?? 'The club', clubId: m[1]! };
+}
+
+/** Lay the room's tables out from the lobby it belongs to — the club's own, or the pickup list. */
+async function layoutRoom(env: Env, roomId: string, name: string, clubId: string | null): Promise<RoomManifest> {
+  const r = await lobby(env, clubId ?? undefined).fetch('https://lobby/list');
+  const listed = r.ok ? ((await r.json()) as TableSummary[] | { tables?: TableSummary[] }) : [];
+  const tables = (Array.isArray(listed) ? listed : listed.tables ?? []).filter((t) => (t.game ?? 'poker') === 'poker');
+  const res = await room(env, roomId).fetch('https://room/layout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roomId, name, tables: tables.map((t) => ({ tableId: t.tableId, name: t.name, game: t.game ?? 'poker', seats: t.config.seats, seated: t.seated })) }) });
+  return ((await res.json()) as { manifest: RoomManifest }).manifest;
+}
+
+/** The room's manifest and who is in it — a read, so a page can draw the lounge before the socket opens. */
+app.get('/rooms/:roomId', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  const roomId = c.req.param('roomId') ?? '';
+  const gate = await roomAdmission(c, roomId, session);
+  if (!gate.ok) return gate.response;
+  const manifest = await layoutRoom(c.env, roomId, gate.name, gate.clubId);
+  const r = await room(c.env, roomId).fetch('https://room/manifest');
+  const b = (await r.json()) as { people: RoomPerson[] };
+  return c.json({ manifest, people: b.people });
+});
+
+/** The body's socket. `?token=` like a table's; the room is re-laid-out on every entry so a new table is on a lamp. */
+app.get('/rooms/:roomId/ws', async (c) => {
+  if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') return c.json({ error: 'expected websocket upgrade' }, 426);
+  const session = await resolveSession(c.env, c.req.query('token'));
+  const roomId = c.req.param('roomId') ?? '';
+  const gate = await roomAdmission(c, roomId, session);
+  if (!gate.ok) return gate.response;
+  await layoutRoom(c.env, roomId, gate.name, gate.clubId);
+  const headers = new Headers({ Upgrade: 'websocket', 'x-player-id': session!.playerId, 'x-player-name': encodeURIComponent(session!.name) });
+  const agent = agentOf(session as never);
+  if (agent) headers.set('x-player-agent', agent);
+  return room(c.env, roomId).fetch('https://room/ws', { headers });
+});
+
 // ───────────────────────────────────────────────────────────────────────── the mission registry
 // docs/MISSION-REGISTRY.md. The registry is on chain; this is its OPERATOR: the public projection (the map,
 // the pickers), the return leg that admits a registration, the profile a consumer reads, the geocoder the

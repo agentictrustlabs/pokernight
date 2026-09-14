@@ -13,6 +13,7 @@ import { MissionRegisterPage } from './MissionRegisterPage';
 import { MissionsPage } from './MissionsPage';
 import { NewClubPage } from './NewClubPage';
 import { TableNewPage } from './TableNewPage';
+import { RoomPage } from './RoomPage';
 import { PlayPage } from './PlayPage';
 import { SignInPage } from './SignInPage';
 import { TablesPage } from './TablesPage';
@@ -172,6 +173,8 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
           </>
         ) : r.page === 'newClub' ? (
           <NewClubPage config={auth.config} />
+        ) : r.page === 'room' ? (
+          <RoomPage session={session} clubId={r.clubId ?? null} />
         ) : r.page === 'newTable' ? (
           <TableNewPage session={session} money={money} club={r.clubId ?? null} night={r.night ?? null} ready={ready} />
         ) : r.page === 'missions' ? (

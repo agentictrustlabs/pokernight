@@ -1,7 +1,10 @@
 # The Room — a 3D card room with people in it
 
-**Status:** specification, 2026-09-14. Nothing here is built. The hold'em board that exists
-(`components/Table.tsx`) stays exactly as it is; this is a **second way to sit at the same table**.
+**Status:** specification, 2026-09-14; **phase 1 steps 1–2 built the same day** — `SceneDO` (migration v6),
+`GET /rooms/:id` + `/rooms/:id/ws`, `lib/roomSocket.ts`, `components/room/Lounge.tsx` (built-in scenery, capsule
+bodies, walking, the follow camera, zones), `pages/RoomPage.tsx` at `#/hall` and `#/clubs/<id>/room`. Proven
+live: two people in the hall see each other, one walks to a table and both are told. The hold'em board that
+exists (`components/Table.tsx`) stays exactly as it is; this is a **second way to sit at the same table**.
 
 ## 0. What this decides (read first)
 
@@ -223,8 +226,11 @@ export type RoomServerMessage = { type: 'room'; manifest: RoomManifest; people: 
 
 ## 7. Open questions
 
-- **RealtimeKit per-participant subscription control** — confirm the SDK exposes subscribe/unsubscribe per
-  track and simulcast layer selection; if not, fall back to one meeting per table plus one for the floor.
+- ~~RealtimeKit per-participant subscription control~~ — **answered 2026-09-14**: `@cloudflare/realtimekit`
+  0.1.0 exposes `meeting.participants.setViewMode('MANUAL')` and `subscribe(peerIds, kinds)` /
+  `unsubscribe(peerIds, kinds)` per participant and per kind (`audio` | `video` | screenshare), plus
+  `setMaxActiveParticipantsCount`. The room subscribes by distance and by table with those. Simulcast layer
+  selection is not surfaced as an API; the preset's `maxVideoStreams` and the SFU's own layer choice bound it.
 - **VRM licensing** for stock bodies (CC-BY assets exist; commission four).
 - **Phones**: P1 ships desktop-first; the phone gets the flat board until a joystick and a 30 fps budget
   are proven.

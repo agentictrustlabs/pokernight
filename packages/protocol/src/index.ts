@@ -1179,3 +1179,55 @@ export function decodePokerActReply(parts: unknown): PokerActOutput | { error: s
   const a = PokerActOutputSchema.safeParse(r);
   return a.success ? a.data : { error: 'no valid poker.act output in reply' };
 }
+
+// ─────────────────────────────────────────────────────────────────────────── THE ROOM (docs/SPATIAL-ROOM.md)
+// A room is a place; a table is a thing in it. The room's envelope carries presence — who stands where, at
+// what — and nothing about cards: a table in the room is a `PokerTableDO` the person already knows how to
+// sit at, over its own socket. Nothing here is money.
+
+/** Somebody in the room: their agent and name, their body, where they stand, and which table's chair the TABLE says they are in. */
+export const RoomPersonSchema = z.object({
+  playerId: z.string(),
+  agent: z.string().optional(),
+  name: z.string(),
+  /** A body id from the room's manifest — a stock body and a palette, chosen by the person. */
+  body: z.string().max(40),
+  x: z.number(),
+  y: z.number(),
+  yaw: z.number(),
+  /** The anchor the person is in the zone of — a table id, `bar`, `fire`, `lectern` — or none. */
+  zone: z.string().nullable(),
+  seatedAt: z.object({ tableId: z.string(), seat: z.number().int() }).optional(),
+  /** What they last said, drawn as a bubble for a moment; kept nowhere. */
+  said: z.object({ text: z.string().max(140), at: z.number().int() }).optional(),
+});
+export type RoomPerson = z.infer<typeof RoomPersonSchema>;
+
+export const RoomAnchorSchema = z.object({ x: z.number(), y: z.number(), yaw: z.number(), radius: z.number().optional() });
+export type RoomAnchor = z.infer<typeof RoomAnchorSchema>;
+
+/** The room's manifest: which scene, where the anchors are, which tables stand at which anchors. */
+export const RoomManifestSchema = z.object({
+  roomId: z.string(),
+  name: z.string(),
+  /** The scenery: a built-in scene id today (`lounge`); an R2 key for a glTF later. */
+  scene: z.string(),
+  anchors: z.record(RoomAnchorSchema),
+  tables: z.array(z.object({ tableId: z.string(), name: z.string(), anchor: z.string(), game: z.string().optional(), seats: z.number().int(), seated: z.number().int() })),
+  bodies: z.array(z.string()),
+});
+export type RoomManifest = z.infer<typeof RoomManifestSchema>;
+
+export const RoomClientMessageSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('join'), body: z.string().max(40).optional() }),
+  z.object({ type: z.literal('pose'), x: z.number(), y: z.number(), yaw: z.number(), t: z.number() }),
+  z.object({ type: z.literal('say'), text: z.string().min(1).max(140) }),
+  z.object({ type: z.literal('ping') }),
+]);
+export type RoomClientMessage = z.infer<typeof RoomClientMessageSchema>;
+
+export type RoomServerMessage =
+  | { type: 'room'; manifest: RoomManifest; you: string; people: RoomPerson[] }
+  | { type: 'people'; upserts: RoomPerson[]; leaves: string[] }
+  | { type: 'zone'; zone: string | null }
+  | { type: 'error'; code: string; message: string };

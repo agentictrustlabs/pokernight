@@ -541,3 +541,11 @@ export function tableSocketUrl(tableId: string, token: string | null): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${proto}//${location.host}${API_BASE}${path}${q}`;
 }
+
+/** THE ROOM's socket (docs/SPATIAL-ROOM.md) — a body's presence, never a card. */
+export function roomSocketUrl(roomId: string, token: string): string {
+  const path = `/rooms/${encodeURIComponent(roomId)}/ws?token=${encodeURIComponent(token)}`;
+  if (/^https?:\/\//i.test(API_BASE)) return API_BASE.replace(/^http/i, 'ws') + path;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}${API_BASE}${path}`;
+}
