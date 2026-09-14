@@ -1,6 +1,6 @@
-# Pokernight
+# Game Night
 
-> **Status: a testing deployment, played for play money.** Everything at poker.faithnet.io — hold'em,
+> **Status: a testing deployment, played for play money.** Everything at gamenight.faithnet.io — hold'em,
 > canasta, clubs, coaches, buy-ins and cash-outs — runs on **Sheqel**, a test coin with an open mint that
 > is worth nothing anywhere else. Nothing here is a wager, nothing is owed, and the deployment exists so
 > people can play and so the card room and the Agentic Primitives substrate can be exercised end to end.
@@ -41,7 +41,7 @@ pnpm --filter pokernight-agent bot -- --table <tableId> --seat 2 --buy-in 200 --
 
 ## Deploy (faithnet)
 
-Live: https://poker.faithnet.io (client) and https://tables.faithnet.io (API/WebSockets). Phase 1 uses
+Live: https://gamenight.faithnet.io (client) and https://games.faithnet.io (API/WebSockets; poker.faithnet.io redirects, tables.faithnet.io still answers). Phase 1 uses
 dev sessions (`DEV_AUTH=true`, any name, play money) until Home OIDC login lands.
 
 Each app has a `wrangler.toml` with an `[env.faithnet]` block. Deploy with

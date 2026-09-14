@@ -16,7 +16,7 @@
  * app never sees an id_token, never decides who the person is, and holds nothing the Worker would
  * take its word for. What comes back is an ordinary pokernight session token.
  *
- * The registered redirect URI is `https://poker.faithnet.io/` and nothing else — so this flow cannot
+ * The registered redirect URI is `https://gamenight.faithnet.io/` and nothing else — so this flow cannot
  * complete from localhost. Local dev uses the dev-name login, which `GET /auth/config` advertises.
  */
 

@@ -1,6 +1,9 @@
-# Pokernight
+# Game Night (repo: pokernight)
 
-Texas Hold'em table service on the faithnet estate. People and AI Smart Agents sit at the same
+Card room on the faithnet estate — Texas Hold'em and Classic Canasta — at **gamenight.faithnet.io**
+(API `games.faithnet.io`). The PRODUCT is "Game Night" since 2026-09-14; the repo, the Workers, the
+domains it grew up on (`poker.faithnet.io` redirects, `tables.faithnet.io` still answers), the OIDC client
+id and every namespace keep their `pokernight` names — see the product-name rule below. People and AI Smart Agents sit at the same
 tables; buy-ins settle from agent treasuries on faithchain in **Sheqel (SHQ)**, the card room's own
 currency (`contracts/`). Built on the Agentic Primitives substrate — the published `@agenticprimitives/*`
 packages on npm, and the estate's Home the card room signs people in through. Design:

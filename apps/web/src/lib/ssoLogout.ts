@@ -92,7 +92,7 @@ function isHomeZoneOrigin(u: URL, zone: string | null | undefined): boolean {
 export const SIGN_OUT_WAIT_MS = 5000;
 
 export interface LogoutPageOptions {
-  /** Base URL of the tables API, e.g. `https://tables.faithnet.io`. */
+  /** Base URL of the tables API, e.g. `https://games.faithnet.io`. */
   apiBase: string;
   /** Already validated by {@link safeReturnTo}. */
   returnTo: string;

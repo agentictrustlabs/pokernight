@@ -128,7 +128,12 @@ SEAT_IDLE_MS = "300000"
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 [env.faithnet]
 name = "pokernight-tables-faithnet"
-routes = [{ pattern = "tables.faithnet.io", custom_domain = true }]
+# games.faithnet.io since 2026-09-14; tables.faithnet.io stays bound (the sockets and the ICS links
+# people already hold) and answers the same Worker.
+routes = [
+  { pattern = "games.faithnet.io", custom_domain = true },
+  { pattern = "tables.faithnet.io", custom_domain = true },
+]
 
 [env.faithnet.durable_objects]
 bindings = [
@@ -186,13 +191,13 @@ RPC_URL = "https://a2a.faithnet.io/rpc"
 HOME_ORIGIN = "https://www.faithnet.me"
 HOME_ZONE = "faithnet.me"
 # OIDC client registered at the Home (GET https://www.faithnet.me/connect/client-info?client_id=pokernight):
-# redirect_uris ["https://poker.faithnet.io/"], scopes "openid agent" (NOT profile),
+# redirect_uris ["https://gamenight.faithnet.io/"], scopes "openid agent" (NOT profile),
 # delegation templates site-login / org-create. HOME_DELEGATE is the delegate the Home scopes its
 # grant to; it must match the registration or the Home refuses the authorize request.
 HOME_CLIENT_ID = "pokernight"
 HOME_DELEGATE = "0x89d13c596c45e4ee80af5ae06c727fe9a820ffd0"
 # Byte-identical to the registered redirect_uri, at authorize AND at /token.
-HOME_REDIRECT_URI = "https://poker.faithnet.io/"
+HOME_REDIRECT_URI = "https://gamenight.faithnet.io/"
 # `sharkbot.svc` → https://sharkbot-svc.faithnet.ai (DESIGN.md §4).
 AGENT_CARD_ZONE = "faithnet.ai"
 # Poker personas are served from one host, selected by path. Overrides host-per-agent resolution.
@@ -202,7 +207,7 @@ A2A_TIMEOUT_MS = "20000"
 SEAT_IDLE_MS = "300000"
 # The estate's UniversalSignatureValidator — a club's wire is checked against the club's own account with it.
 UNIVERSAL_SIGNATURE_VALIDATOR = "0xeDd56f500325D4701B9985A34e5Fa6EED6716137"
-ALLOWED_ORIGINS = "https://poker.faithnet.io"
+ALLOWED_ORIGINS = "https://gamenight.faithnet.io,https://poker.faithnet.io"
 # 1 chip = 1.000000 Sheqel for tables opened from now on. Tables opened before this line changed keep
 # the 0.01 chip they were created with — the rate is pinned per table, never re-read from here
 # (see PokerTableDO `meta.chipValue` and apps/tables/test/chip-value.test.ts).

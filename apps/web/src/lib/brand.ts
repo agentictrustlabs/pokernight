@@ -9,7 +9,7 @@
  * be renamed at all.
  *
  * Separating the two is what makes the name a decision that can be revisited. Today it is
- * "Pokernight"; it may become something that stretches past one game. When it does, this file
+ * "Game Night" (2026-09-14; it was "Pokernight" until the second game arrived). When it changes, this file
  * changes and nothing is redeployed, nothing is re-consented, and no state is abandoned.
  *
  * WHAT LIVES HERE. Only what a person reads. A string that identifies this app to another system is
@@ -23,12 +23,12 @@
  */
 
 /** What the product calls itself, wherever a person reads it. */
-export const PRODUCT_NAME = 'Pokernight';
+export const PRODUCT_NAME = 'Game Night';
 
 /** The positioning line. Sits under the name in the topbar and on the sign-in page. */
 export const PRODUCT_TAGLINE = 'fellowship with a mission';
 
-/** The mark. A spade today; it belongs with the name rather than scattered through the markup. */
+/** The mark. A spade; it belongs with the name rather than scattered through the markup. */
 export const PRODUCT_MARK = '♠';
 
 /** `Pokernight · fellowship with a mission` — the two together, for a footer or a document title. */

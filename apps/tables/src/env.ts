@@ -185,7 +185,7 @@ export function allowedOrigins(env: Env): string[] {
  * API answers), so this needs no new configuration to be right on every deployment.
  */
 export function siteOrigin(env: Env): string {
-  return allowedOrigins(env)[0] ?? 'https://poker.faithnet.io';
+  return allowedOrigins(env)[0] ?? 'https://gamenight.faithnet.io';
 }
 
 /**

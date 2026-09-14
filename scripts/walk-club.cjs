@@ -7,7 +7,7 @@
  * as a root devDependency, which is why this is a `.cjs`.
  */
 const { chromium } = require('playwright');
-const SITE = 'https://poker.faithnet.io';
+const SITE = 'https://gamenight.faithnet.io';
 const OUT = require('node:os').tmpdir();
 async function signIn(browser, who) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, permissions: ['microphone', 'camera'] });

@@ -26,7 +26,7 @@ const flag = (name, fallback) => {
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback;
 };
 
-const SITE = (flag('site', 'https://poker.faithnet.io') || '').replace(/\/+$/, '');
+const SITE = (flag('site', 'https://gamenight.faithnet.io') || '').replace(/\/+$/, '');
 
 /**
  * Drive the Home's screens until the walk is back at the card room and settled: press "Allow" on each consent

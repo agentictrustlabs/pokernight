@@ -33,20 +33,31 @@ API_BASE = "http://localhost:8787"
 [env.faithnet]
 name = "pokernight-web-faithnet"
 main = "worker/index.ts"
-routes = [{ pattern = "poker.faithnet.io", custom_domain = true }]
+# GAME NIGHT lives at gamenight.faithnet.io (2026-09-14). The old host stays bound so nothing anyone
+# bookmarked breaks: the Worker answers it with a redirect to the same path on the new one (the hash
+# survives a redirect). Worker names, the client id and every namespace keep their `pokernight` names —
+# a rename is copy and DNS, never a migration (`src/lib/brand.ts`).
+routes = [
+  { pattern = "gamenight.faithnet.io", custom_domain = true },
+  { pattern = "poker.faithnet.io", custom_domain = true },
+]
 
 [env.faithnet.assets]
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/sso-logout", "/sso-logout/"]
+# `run_worker_first = true` so the Worker sees EVERY request and can redirect the old host before
+# an asset is served from it.
+run_worker_first = true
 
 [env.faithnet.vars]
 # Runtime, for the Worker: where the logout page posts the sign-out, and where the Home config is
 # read from. Mirrors VITE_API_BASE below, which is the BUILD-time value the SPA bundle carries.
-API_BASE = "https://tables.faithnet.io"
+API_BASE = "https://games.faithnet.io"
 # Build-time only (see header). Mirrored in .env.faithnet.
-VITE_API_BASE = "https://tables.faithnet.io"
+VITE_API_BASE = "https://games.faithnet.io"
+# The host the site answers at; any other host it is bound to redirects here.
+CANONICAL_ORIGIN = "https://gamenight.faithnet.io"
 # Home sign-in needs NO VITE_ var. The client reads GET /auth/config from the tables Worker at
 # runtime (client_id, Home origin, Home zone, delegate, redirect_uri, and whether dev auth is on), so
 # the same bundle serves localhost and production and flipping DEV_AUTH does not need a rebuild.

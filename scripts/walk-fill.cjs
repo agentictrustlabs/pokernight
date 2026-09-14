@@ -16,8 +16,8 @@
 const { chromium } = require('playwright');
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : d; };
-const SITE = (flag('site', 'https://poker.faithnet.io') || '').replace(/\/+$/, '');
-const API = (flag('api', 'https://tables.faithnet.io') || '').replace(/\/+$/, '');
+const SITE = (flag('site', 'https://gamenight.faithnet.io') || '').replace(/\/+$/, '');
+const API = (flag('api', 'https://games.faithnet.io') || '').replace(/\/+$/, '');
 const HEADED = args.includes('--headed');
 
 const tidy = (s) => s.replace(/\s+/g, ' ').trim();

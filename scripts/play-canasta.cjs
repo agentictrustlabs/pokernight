@@ -41,9 +41,9 @@ const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback;
 };
-const SITE = (flag('site', 'https://poker.faithnet.io') || '').replace(/\/+$/, '');
+const SITE = (flag('site', 'https://gamenight.faithnet.io') || '').replace(/\/+$/, '');
 /** Where the card room is. The site talks to this too; the tidy-up needs to reach it directly. */
-const API = (flag('api', 'https://tables.faithnet.io') || '').replace(/\/+$/, '');
+const API = (flag('api', 'https://games.faithnet.io') || '').replace(/\/+$/, '');
 const HEADED = args.includes('--headed');
 /** Play the person's own practice table, at full speed, with the coach holding the seat. */
 const PRACTICE = args.includes('--practice');

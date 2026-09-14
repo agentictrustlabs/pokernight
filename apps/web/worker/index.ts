@@ -26,6 +26,8 @@ export interface Env {
    * the Home config from it so there is one source of truth for which Home we belong to.
    */
   API_BASE?: string;
+  /** The one host this site answers at. A request on any other bound host is redirected to it. */
+  CANONICAL_ORIGIN?: string;
 }
 
 export const SSO_LOGOUT_PATH = '/sso-logout';
@@ -33,6 +35,11 @@ export const SSO_LOGOUT_PATH = '/sso-logout';
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    // THE OLD HOST REDIRECTS (2026-09-14, poker → gamenight). A bookmark keeps working; the Home's
+    // return leg never lands here because the registered redirect URI is the canonical origin.
+    if (env.CANONICAL_ORIGIN && url.origin !== env.CANONICAL_ORIGIN && !url.hostname.startsWith('localhost')) {
+      return Response.redirect(`${env.CANONICAL_ORIGIN}${url.pathname}${url.search}`, 301);
+    }
     if (url.pathname === SSO_LOGOUT_PATH || url.pathname === `${SSO_LOGOUT_PATH}/`) {
       return ssoLogout(url, env);
     }
