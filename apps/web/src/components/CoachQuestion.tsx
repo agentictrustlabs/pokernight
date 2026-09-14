@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from 'react';
 import type { AppSession } from '../lib/types';
-import { api } from '../lib/api';
+import { ApiError, api } from '../lib/api';
 import { readHomeSession, type AuthConfig } from '../lib/home';
 
 /** Where "asked" lives for an agent that cannot yet keep it: this browser, keyed by the agent. */
@@ -20,7 +20,7 @@ const ASKED_KEY = (agent: string, game: string) => `pokernight.coach.asked:${gam
 
 /** ASKED ONCE PER GAME: the hold'em question on arrival, the canasta one when a canasta table is first opened. */
 export function CoachQuestion({ session, config, game = 'poker' }: { session: AppSession | null; config: AuthConfig | null; game?: 'poker' | 'canasta' }) {
-  const [show, setShow] = useState<{ agent: string; advertises: boolean } | null>(null);
+  const [show, setShow] = useState<{ agent: string; advertises: boolean; nameless?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [settingUp, setSettingUp] = useState<string | null>(null);
   useEffect(() => {
@@ -45,6 +45,10 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
       : Promise.resolve();
     defaults.then(() => api.coachStatus(session.token, game))
       .then((r) => {
+        // NO NAME, NO COACH — and said so. The card room addresses a person's agent by its public name and
+        // nothing else; an email or phone home that never claimed one cannot be asked for advice, have its
+        // hands recorded, or consult a coach, whatever was hired at the Home. The Home now requires a name on
+        // the way in; a person who got here before that is told where to claim one.
         // OFFERED UNTIL THERE IS ONE. "Later" and "no" used to be kept for good; a person whose connect-time
         // defaults had failed then never saw the offer again and played on with the house coach, wondering.
         // A coach is the card room's default now, so the sheet stays until one is hired — a person who really
@@ -57,7 +61,13 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
         }
         setShow({ agent: r.agent, advertises: r.advertises !== false });
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        // NO NAME, NO COACH — and said so. The card room addresses a person's agent by its public name and
+        // nothing else; an email or phone home that never claimed one cannot be asked for advice, have its
+        // hands recorded, or consult a coach, whatever was hired at the Home. The Home now requires a name on
+        // the way in; a person who got here before that is told where to claim one.
+        if (alive && e instanceof ApiError && e.status === 404 && /could not find a name/i.test(e.message)) setShow({ agent: '', advertises: false, nameless: true });
+      });
     return () => {
       alive = false;
     };
@@ -84,6 +94,27 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
   const homeCoaches = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/coaches?game=${game}` : null;
   const gameLabel = game === 'canasta' ? 'canasta' : 'hold’em';
   const skills = game === 'canasta' ? ['canasta.advise', 'canasta.record', 'canasta.review', 'canasta.coach'] : ['poker.advise', 'poker.record', 'poker.review', 'poker.coach'];
+
+  if (show.nameless) {
+    const claim = config?.home.origin ? `${config.home.origin.replace(/\/$/, '')}/` : null;
+    return (
+      <div className="sheet-backdrop" role="presentation">
+        <div className="sheet coach-question" role="dialog" aria-modal="true" aria-labelledby="coachq-title">
+          <h2 id="coachq-title">Your agent needs a public name</h2>
+          <p>
+            The card room talks to your own agent by its name — that is how it asks for advice, records your hands, and
+            reaches the coach you hire. Your Home has not given your agent a public name yet, so none of that can happen:
+            the house coach answers for you, and nothing is remembered.
+          </p>
+          <p className="hint">Claim a name at your Home (one screen, once), then sign in here again — your coach comes with it.</p>
+          <div className="sheet-actions">
+            {claim ? <a className="button primary" href={claim} target="_blank" rel="noreferrer" onClick={() => setShow(null)}>Claim a name at my Home</a> : null}
+            <button type="button" onClick={() => setShow(null)}>Not now</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="sheet-backdrop" role="presentation">
