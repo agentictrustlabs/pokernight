@@ -24,7 +24,7 @@ import { createPublicClient, http, type Address, type Hex } from 'viem';
 import { hashDelegation } from '@agenticprimitives/delegation';
 import { checkSessionWireShape, wireToDelegation, wrapSessionSignature, type DelegationWireV1 } from '@agenticprimitives/a2a';
 import { callerAssertionDigest, requestBodyHash, sessionAuthorizationHeader, type CallerAssertionV1 } from '@agenticprimitives/a2a/standard';
-import { type MissionRef, occurrencesFrom, schedulingProblem, type ClubListing, type ClubMember, type ClubProfile, type ClubSchedule, type ClubStanding, type ClubSummary, type ClubView, type KnownPerson, type Night, type SetScheduleRequest } from '@pokernight/protocol';
+import { type MissionRef, type MissionVisit, type AddNightRequest, instantAt, isLocalTime, isTimezone, occurrencesFrom, schedulingProblem, type ClubListing, type ClubMember, type ClubProfile, type ClubSchedule, type ClubStanding, type ClubSummary, type ClubView, type KnownPerson, type Night, type SetScheduleRequest } from '@pokernight/protocol';
 import type { Env } from './env.js';
 
 export const CLUB_ID_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -163,7 +163,36 @@ export interface NightsRecord {
   /** THE GUEST of one night, where it diverges from the series' standing guest: a mission, or `null` for
    *  "none tonight". Absent means the schedule's default (`cr:ClubNight cr:guestMission`). */
   guests?: Record<string, MissionRef | null>;
+  /** THE VISIT of one night (cr:MissionVisit — at:Participation): which mission, who comes on its behalf, where
+   *  it stands; `null` for "no guest tonight"; absent means the series' standing guest. Supersedes `guests`,
+   *  which is read as a visit with no representative and status `invited`. */
+  visits?: Record<string, MissionVisit | null>;
+  /** ONE-TIME NIGHTS beside the series (cr:ClubNight with no producing schedule), keyed by `one:<id>`. */
+  oneOffs?: Record<string, OneOffNight>;
   updatedAt?: string;
+}
+
+export interface OneOffNight {
+  startsAt: number;
+  startLocal: string;
+  timezone: string;
+  localDate: string;
+  title?: string;
+  seatCap?: number;
+  game?: string;
+  createdBy: string;
+  createdAt: number;
+}
+
+/** Compose a one-off night from what the host asked for, or say what is wrong with it. */
+export function oneOffFrom(req: AddNightRequest, host: string, now = Date.now()): { ok: true; id: string; night: OneOffNight } | { ok: false; error: string } {
+  if (!isLocalTime(req.startLocal)) return { ok: false, error: 'the start must be a wall-clock time, HH:MM' };
+  if (!isTimezone(req.timezone)) return { ok: false, error: `"${req.timezone}" is not a time zone` };
+  const startsAt = instantAt(req.localDate as `${number}-${number}-${number}`, req.startLocal as `${number}:${number}`, req.timezone);
+  if (!Number.isFinite(startsAt)) return { ok: false, error: 'that date does not exist' };
+  if (startsAt < now - 3_600_000) return { ok: false, error: 'that night has already passed' };
+  const id = `one:${crypto.randomUUID().slice(0, 8)}`;
+  return { ok: true, id, night: { startsAt, startLocal: req.startLocal, timezone: req.timezone, localDate: req.localDate, ...(req.title ? { title: req.title } : {}), ...(req.seatCap ? { seatCap: req.seatCap } : {}), ...(req.game ? { game: req.game } : {}), createdBy: host, createdAt: now } };
 }
 
 /**
@@ -212,17 +241,40 @@ export function nightId(scheduleId: string, localDate: string): string {
 }
 
 /** This night's guest: the night's own word when it has one (a mission, or none), else the series' standing guest. */
-export function guestOf(schedule: ClubSchedule, record: NightsRecord | null, nightId: string): MissionRef | null {
-  const own = record?.guests?.[nightId];
+export function guestOf(schedule: ClubSchedule | null, record: NightsRecord | null, nightId: string): MissionRef | null {
+  return visitOf(schedule, record, nightId)?.mission ?? null;
+}
+
+/** This night's VISIT: the night's own word (a visit, or none), else the series' standing guest as an invited visit. */
+export function visitOf(schedule: ClubSchedule | null, record: NightsRecord | null, nightId: string): MissionVisit | null {
+  const own = record?.visits?.[nightId];
   if (own !== undefined) return own;
-  return schedule.defaults.mission ?? null;
+  const legacy = record?.guests?.[nightId];
+  if (legacy !== undefined) return legacy ? { mission: legacy, status: 'invited' } : null;
+  const standing = schedule?.defaults.mission;
+  return standing ? { mission: standing, status: 'invited' } : null;
 }
 
 /** The club's next nights: the rule's occurrences from now, with the exceptions the host recorded laid over. */
 export function nightsOf(club: string, schedule: ClubSchedule | null, record: NightsRecord | null, now = Date.now(), limit = HORIZON_NIGHTS): Night[] {
-  if (!schedule || schedule.status !== 'active') return [];
   const ex = record?.exceptions ?? {};
-  return occurrencesFrom(schedule, now, limit).map((o) => {
+  // ONE-TIME NIGHTS first — they exist whether or not there is a series — then the series' occurrences,
+  // merged by start. A one-off that has passed by more than a day is left out, like an occurrence would be.
+  const oneOffs: Night[] = Object.entries(record?.oneOffs ?? {})
+    .filter(([, o]) => o.startsAt >= now - 86_400_000)
+    .map(([id, o]) => {
+      const e = ex[id];
+      const visit = visitOf(schedule && schedule.status === 'active' ? schedule : null, record, id);
+      return {
+        nightId: id, club, startsAt: o.startsAt, startLocal: o.startLocal, timezone: o.timezone, localDate: o.localDate,
+        status: e?.status ?? 'scheduled', oneOff: true,
+        ...(o.title ? { title: o.title } : {}), ...(o.seatCap ? { seatCap: o.seatCap } : {}), ...(o.game ? { game: o.game } : {}),
+        ...(visit ? { mission: visit.mission, visit } : {}),
+        createdAt: o.createdAt, ...(e ? { cancelledAt: e.cancelledAt } : {}), ...(e?.reason ? { reason: e.reason } : {}),
+      };
+    });
+  if (!schedule || schedule.status !== 'active') return oneOffs.sort((a, b) => a.startsAt - b.startsAt).slice(0, limit);
+  const series: Night[] = occurrencesFrom(schedule, now, limit).map((o) => {
     const id = nightId(schedule.scheduleId, o.localDate);
     const e = ex[id];
     return {
@@ -237,12 +289,13 @@ export function nightsOf(club: string, schedule: ClubSchedule | null, record: Ni
       ...(schedule.defaults.title ? { title: schedule.defaults.title } : {}),
       ...(schedule.defaults.seatCap ? { seatCap: schedule.defaults.seatCap } : {}),
       ...(schedule.defaults.game ? { game: schedule.defaults.game } : {}),
-      ...(guestOf(schedule, record, id) ? { mission: guestOf(schedule, record, id)! } : {}),
+      ...(visitOf(schedule, record, id) ? { mission: visitOf(schedule, record, id)!.mission, visit: visitOf(schedule, record, id)! } : {}),
       createdAt: schedule.createdAt,
       ...(e ? { cancelledAt: e.cancelledAt } : {}),
       ...(e?.reason ? { reason: e.reason } : {}),
     };
   });
+  return [...oneOffs, ...series].sort((a, b) => a.startsAt - b.startsAt).slice(0, limit + oneOffs.length);
 }
 
 export function summaryOf(read: ClubRead): ClubSummary | null {
@@ -281,7 +334,9 @@ export async function clubViewFor(env: Env, club: string, agent: string, now = D
     roster,
     you: { standing: read.you.standing, because: read.you.because },
     schedule,
-    nights: nightsOf(read.club, schedule, read.nights, now),
+    // A REPRESENTATIVE'S EMAIL AND PHONE ARE THE HOST'S TO KEEP (cr:representedBy): a member sees who is coming
+    // by name, and how to reach them stays in the club's vault, read by its host alone.
+    nights: nightsOf(read.club, schedule, read.nights, now).map((n) => read.you!.standing === 'host' || !n.visit?.representative ? n : { ...n, visit: { ...n.visit, representative: { name: n.visit.representative.name, ...(n.visit.representative.agent ? { agent: n.visit.representative.agent } : {}) } } }),
   };
 }
 

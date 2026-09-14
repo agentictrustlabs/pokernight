@@ -270,6 +270,14 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   club, linked to the mission's page. A club's schedule carries a STANDING guest (`defaults.mission`) and the nights
   record a per-night one (`guests[nightId]`: a ref, or `null` for none) — a night's `mission` is derived (`guestOf`),
   never stored on the night. `components/MissionPicker.tsx` is the one control for all three.
+- **A NIGHT IS AN EVENT THAT HOSTS TABLES; A MISSION'S VISIT IS ITS PARTICIPATION** (2026-09-14,
+  `docs/MISSION-REGISTRY.md` §3.1). `cr:ClubNight ⊑ at:Event`; one-time nights live beside the series
+  (`NightsRecord.oneOffs`, `oneOffFrom`, `POST /clubs/:id/nights`) and `nightsOf` merges them by start; a night has
+  any number of tables of its ONE game (`CreateTableRequest.night` → `TableMeta.night`, game enforced, guest
+  inherited). `cr:MissionVisit ⊑ at:Participation` (`NightsRecord.visits`, `visitOf`; the old `guests` reads as an
+  invited visit): the mission, the representative (name · agent · email/phone — host-only, stripped for members
+  in `clubViewFor`), the status. OPENING A TABLE IS A PAGE (`#/tables/new`, `#/clubs/<id>/tables/new?night=`,
+  `pages/TableNewPage.tsx`) — the table and the stakes side by side; the two `<details>` forms are gone.
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must

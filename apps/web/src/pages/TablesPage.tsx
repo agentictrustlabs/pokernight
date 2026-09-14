@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import type { AppSession, CreateTableRequest, TableSummary } from '../lib/types';
+import type { AppSession, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { dualAmount, tableRate } from '../lib/money';
 import { SettlementTag } from '../components/SettlementTag';
 import { mayClose, seatsFree, stakeLabel } from '../lib/lobby';
-import { BOARDS, DRAWN_GAME, gameLabel, hasBoard } from '../lib/games';
-import { MissionPicker } from '../components/MissionPicker';
-import { HOME_HASH, MONEY_HASH } from '../lib/routes';
+import { gameLabel, hasBoard } from '../lib/games';
+import { newTableHash, HOME_HASH } from '../lib/routes';
 
 /**
  * TABLES — what is running, and a form to open something new.
@@ -51,11 +50,8 @@ export function TablesPage({
         session={session}
         {...(onChanged ? { onChanged } : {})}
       />
-      {/* Opening a table is a thing a host does, not a step in playing, so it is folded shut. */}
-      <details className="panel lobby-create">
-        <summary>Open your own table</summary>
-        <CreateTable session={session} money={money} club={null} ready={ready} />
-      </details>
+      {/* Opening a table is a thing a host does, not a step in playing — it has its own page. */}
+      <p className="lobby-create-link"><a className="button" href={newTableHash()}>+ Open your own table</a></p>
     </div>
   );
 }
@@ -204,167 +200,3 @@ export function TableList({
   );
 }
 
-export function CreateTable({
-  session,
-  money,
-  club,
-  ready = true,
-}: {
-  session: AppSession;
-  money: string;
-  club: string | null;
-  /**
-   * Whether this person could actually SIT at a money table — a treasury, some money in it, and a
-   * signed buy-in authority (`stakeStage(treasury) === 'ready'`).
-   *
-   * It does not gate the form. Opening a table for other people is a real thing a host does, and
-   * refusing them would be refusing that. What it does is stop the surprise: this select offered
-   * money settlement to everybody and said nothing, so somebody could open a table and then be
-   * refused the first seat at it — their own.
-   */
-  ready?: boolean;
-}) {
-  const [name, setName] = useState('');
-  /**
-   * WHICH GAME. This form opened poker tables and only poker tables for as long as poker was the
-   * only one, and kept doing so for a while after it was not — so the card room could deal canasta
-   * and nobody could ask it to. The list is the games this client has a BOARD for: opening a table
-   * nobody here can draw would be opening one nobody here can sit at.
-   */
-  const [game, setGame] = useState<string>(DRAWN_GAME);
-  /** THE GUEST, by registry entry id. The card room resolves it and stamps the ref; nothing is taken on our word. */
-  const [guest, setGuest] = useState<string | null>(null);
-  const [settlement, setSettlement] = useState<'play-money' | 'mandate-transfer'>('play-money');
-  const [seats, setSeats] = useState(6);
-  const [sb, setSb] = useState(1);
-  const [bb, setBb] = useState(2);
-  const [minBuy, setMinBuy] = useState(40);
-  const [maxBuy, setMaxBuy] = useState(200);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const poker = game === DRAWN_GAME;
-  // Canasta is four-handed partnership and played for score. It has no blinds, no buy-in and no
-  // seat count to choose, so the form does not ask for four numbers it would then have to discard.
-  const valid = name.trim().length > 0 && (!poker || (seats >= 2 && seats <= 9 && sb > 0 && bb >= sb && minBuy > 0 && maxBuy >= minBuy));
-
-  return (
-    <form
-      className="panel form"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!valid) return;
-        setBusy(true);
-        setErr(null);
-        const req: CreateTableRequest = {
-          name: name.trim(),
-          // A canasta table settles nothing — `canastaGame.staked` is false — so it is never
-          // opened in money whatever this control last said.
-          settlement: poker ? settlement : 'play-money',
-          game,
-          config: poker ? { seats, smallBlind: sb, bigBlind: bb, minBuyIn: minBuy, maxBuyIn: maxBuy } : {},
-          // The club whose page this form is on. The card room checks that this person is one of its
-          // hosts and refuses by name if they are not — the club is never taken on the client's word.
-          ...(club ? { club } : {}),
-          ...(guest ? { mission: guest } : {}),
-        };
-        try {
-          const t = await api.createTable(req, session.token);
-          location.hash = `#/t/${encodeURIComponent(t.tableId)}`;
-        } catch (ex) {
-          setErr(ex instanceof Error ? ex.message : String(ex));
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {/* No heading: this form only ever sits behind a `<details>` whose summary already says what it
-          opens, and two headings saying the same thing read as two different things. */}
-      {club ? (
-        <p className="hint">Only this club&rsquo;s members will see it, and only they can sit at it.</p>
-      ) : (
-        <p className="hint">Anyone signed in can see this one and sit at it. A club&rsquo;s own page opens a private one.</p>
-      )}
-      <label>
-        Name
-        <input type="text" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} placeholder="Tuesday night" />
-      </label>
-      <label>
-        Game
-        <select value={game} onChange={(e) => setGame(e.target.value)}>
-          {BOARDS.map((g) => (
-            <option key={g} value={g}>
-              {gameLabel(g)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Guest mission
-        <MissionPicker value={guest} onChange={(id) => setGuest(id ?? null)} />
-        <span className="hint">A registered mission, introduced at the table — its people join the talk. Optional.</span>
-      </label>
-      {!poker ? (
-        <p className="hint">
-          Four players in two partnerships — seats 1 and 3 against 2 and 4 — played to 5,000. No stakes: canasta is
-          played for score.
-        </p>
-      ) : null}
-      <label hidden={!poker}>
-        Seats
-        <select value={seats} onChange={(e) => setSeats(Number(e.target.value))}>
-          {[2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="pair" hidden={!poker}>
-        <label>
-          Small blind
-          <input type="number" min={1} value={sb} onChange={(e) => setSb(Number(e.target.value))} />
-        </label>
-        <label>
-          Big blind
-          <input type="number" min={1} value={bb} onChange={(e) => setBb(Number(e.target.value))} />
-        </label>
-      </div>
-      <div className="pair" hidden={!poker}>
-        <label>
-          Min buy-in
-          <input type="number" min={1} value={minBuy} onChange={(e) => setMinBuy(Number(e.target.value))} />
-        </label>
-        <label>
-          Max buy-in
-          <input type="number" min={1} value={maxBuy} onChange={(e) => setMaxBuy(Number(e.target.value))} />
-        </label>
-      </div>
-      <label hidden={!poker}>
-        Settlement
-        <select value={settlement} onChange={(e) => setSettlement(e.target.value as 'play-money' | 'mandate-transfer')}>
-          <option value="play-money">play money</option>
-          <option value="mandate-transfer">{money} (mandate transfer)</option>
-        </select>
-      </label>
-      {poker && settlement === 'mandate-transfer' && !ready ? (
-        <p className="hint form-warn">
-          You are not set up to take a seat at a money table yet. You can still open one for other people —{' '}
-          <a href={MONEY_HASH}>get set up</a> and you can sit at it too.
-        </p>
-      ) : null}
-      {poker && settlement === 'mandate-transfer' ? (
-        <p className="hint">
-          Buy-ins and cash-outs move {money} — this card room's own money — between each player's own account and the
-          house. Before a seat here, a player needs an account of their own, {money} in it, and to have authorised this
-          table to take the buy-in. A seat missing one of those is refused and told which, rather than quietly played
-          for nothing.
-        </p>
-      ) : null}
-      {err ? <div className="form-error">{err}</div> : null}
-      <button className="primary" type="submit" disabled={busy || !valid}>
-        {busy ? 'Opening…' : 'Open table'}
-      </button>
-    </form>
-  );
-}

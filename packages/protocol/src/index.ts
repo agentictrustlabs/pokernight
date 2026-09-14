@@ -196,6 +196,33 @@ export const MissionRefSchema = z.object({
 });
 export type MissionRef = z.infer<typeof MissionRefSchema>;
 
+/**
+ * A MISSION'S VISIT to a night — the reified participation (at:Participation → cr:MissionVisit): WHICH mission,
+ * WHO comes on its behalf (the representative — a person, by name, with their agent when they have one and how
+ * the host reaches them; host-visible, in the club's own vault, never public), and WHERE the visit stands.
+ */
+export const MissionRepresentativeSchema = z.object({
+  name: z.string().min(1).max(80),
+  /** The person's own agent name (`carol.me`) when they have one — how the card room could address them. */
+  agent: z.string().max(80).optional(),
+  email: z.string().max(120).optional(),
+  phone: z.string().max(40).optional(),
+});
+export type MissionRepresentative = z.infer<typeof MissionRepresentativeSchema>;
+
+export const MissionVisitStatusSchema = z.enum(['invited', 'confirmed', 'declined', 'attended']);
+export type MissionVisitStatus = z.infer<typeof MissionVisitStatusSchema>;
+
+export const MissionVisitSchema = z.object({
+  mission: MissionRefSchema,
+  representative: MissionRepresentativeSchema.optional(),
+  status: MissionVisitStatusSchema,
+  /** The host's own note about the visit — what the mission will bring, what to introduce. */
+  note: z.string().max(400).optional(),
+  updatedAt: z.number().int().optional(),
+});
+export type MissionVisit = z.infer<typeof MissionVisitSchema>;
+
 export const NightDefaultsSchema = z.object({
   /** What the night is called, when it is not just the club's name and a date. */
   title: z.string().max(64).optional(),
@@ -265,11 +292,37 @@ export const NightSchema = z.object({
   game: z.string().optional(),
   /** This night's guest — the series' standing guest unless the host named another, or none, for it. */
   mission: MissionRefSchema.optional(),
+  /** The guest's VISIT in full — who comes on its behalf and where it stands. `mission` is its short form. */
+  visit: MissionVisitSchema.optional(),
+  /** `true` for a night added by hand rather than produced by the schedule (its id is `one:<id>`). */
+  oneOff: z.boolean().optional(),
   createdAt: z.number().int(),
   cancelledAt: z.number().int().optional(),
   reason: z.string().optional(),
 });
 export type Night = z.infer<typeof NightSchema>;
+
+/** ADD A ONE-TIME NIGHT beside the series: a local date and time in a zone, and the night's own defaults. */
+export const AddNightRequestSchema = z.object({
+  /** `YYYY-MM-DD`, local to `timezone`. */
+  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  timezone: z.string().min(1).max(64),
+  title: z.string().max(64).optional(),
+  seatCap: z.number().int().min(2).max(90).optional(),
+  game: z.string().max(32).optional(),
+});
+export type AddNightRequest = z.infer<typeof AddNightRequestSchema>;
+
+/** NAME A NIGHT'S GUEST: the visit, or `null` for none tonight, or `inherit` to fall back to the series'. */
+export const SetVisitRequestSchema = z.object({
+  entryId: z.string().max(200).nullable().optional(),
+  representative: MissionRepresentativeSchema.optional(),
+  status: MissionVisitStatusSchema.optional(),
+  note: z.string().max(400).optional(),
+  inherit: z.boolean().optional(),
+});
+export type SetVisitRequest = z.infer<typeof SetVisitRequestSchema>;
 
 
 /** A club as somebody with standing in it sees it — ONE read of the club's agent. */
@@ -335,6 +388,9 @@ export const CreateTableRequestSchema = z.object({
   /** The table's guest, by registry entry id. Resolved against the registry (active entries only) and
    *  STAMPED on the table as a `MissionRef`, like the club and the chip rate. */
   mission: z.string().max(200).optional(),
+  /** THE NIGHT this table is one of (a club night has any number of tables of its one game). Requires `club`;
+   *  the game must be the night's, and the night's guest is the table's unless one is named here. */
+  night: z.string().max(80).optional(),
   /** @deprecated The pre-club name for {@link CreateTableRequestSchema.club}, kept for one release
    *  so nothing in flight breaks. It selected a lobby and was never validated or persisted. */
   circle: z.string().optional(),
@@ -397,6 +453,8 @@ export const TableSummarySchema = z.object({
   club: ClubIdSchema.optional(),
   /** The table's guest mission, pinned when it was created. */
   mission: MissionRefSchema.optional(),
+  /** The club night this table belongs to, pinned when it was created. */
+  night: z.string().optional(),
   /** That club's name at the instant the table was created. A label, not a lookup — a table whose
    *  club has been renamed still says what it was called on the night it was played. */
   clubName: z.string().max(64).optional(),

@@ -43,7 +43,7 @@
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
-import { type MissionRef,
+import { AddNightRequestSchema, SetVisitRequestSchema, type MissionRef,
   CreateTableRequestSchema,
   POKER_ACT_SKILL,
   SeatAgentRequestSchema,
@@ -106,7 +106,7 @@ import {
 } from './routes-treasury.js';
 import type { SessionRecord } from './session-do.js';
 import type { SeatAgentBody } from './table-do.js';
-import { CLUB_ID_RE, CLUB_WIRE_SKILLS, belongs, clubDelegateAddress, clubViewFor, knownPeople, myClubs, myInvitations, nightsOf, readClub, scheduleFrom, standingAt, storeClubWire, writeClubRecord } from './clubs.js';
+import { visitOf, oneOffFrom, CLUB_ID_RE, CLUB_WIRE_SKILLS, belongs, clubDelegateAddress, clubViewFor, knownPeople, myClubs, myInvitations, nightsOf, readClub, scheduleFrom, standingAt, storeClubWire, writeClubRecord } from './clubs.js';
 import { resolveAgentName } from './naming.js';
 import { gameFor } from './games.js';
 import { ensurePracticeTable, practiceTableId } from './practice.js';
@@ -968,28 +968,64 @@ app.put('/clubs/:clubId/schedule/guest', async (c) => {
   return c.json({ schedule, nights: nightsOf(gate.clubId, schedule, read.nights) });
 });
 
+/**
+ * ONE NIGHT'S VISIT (cr:MissionVisit — the reified participation of a mission in the night): which mission, who
+ * comes on its behalf, where it stands. `inherit` falls back to the series' standing guest; `entryId: null` is
+ * "no guest tonight"; anything else names or updates the visit. Kept on the club's nights record at its Home.
+ */
 app.put('/clubs/:clubId/nights/:nightId/guest', async (c) => {
   const gate = await clubHost(c);
   if ('refused' in gate) return gate.refused;
   const nightId = decodeURIComponent(c.req.param('nightId') ?? '');
-  const body = (await c.req.json().catch(() => ({}))) as { entryId?: string | null; inherit?: boolean };
+  const parsed = SetVisitRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  const body = parsed.data;
   const read = await readClub(c.env, gate.clubId, gate.agent);
   if (!read) return c.json({ error: 'no such club' }, 404);
   const schedule = read.schedule && read.schedule.status === 'active' ? read.schedule : null;
   const night = nightsOf(gate.clubId, schedule, read.nights).find((n) => n.nightId === nightId);
   if (!night) return c.json({ error: 'no such night' }, 404);
+  const visits = { ...(read.nights?.visits ?? {}) };
   const guests = { ...(read.nights?.guests ?? {}) };
-  if (body.inherit) delete guests[nightId];
-  else if (body.entryId) {
-    const found = await activeMission(c.env, body.entryId);
-    if (!found) return c.json({ error: 'that mission is not in the registry, or is not active' }, 400);
-    guests[nightId] = found;
-  } else guests[nightId] = null;
-  const record = { ...(read.nights ?? {}), guests };
+  delete guests[nightId]; // the old shape gives way to the visit
+  if (body.inherit) delete visits[nightId];
+  else if (body.entryId === null) visits[nightId] = null;
+  else {
+    const current = visitOf(schedule, read.nights, nightId);
+    const mission = body.entryId ? await activeMission(c.env, body.entryId) : current?.mission ?? null;
+    if (!mission) return c.json({ error: body.entryId ? 'that mission is not in the registry, or is not active' : 'name a mission first' }, 400);
+    const same = current && current.mission.entryId === mission.entryId;
+    visits[nightId] = {
+      mission,
+      ...(body.representative ? { representative: body.representative } : same && current.representative ? { representative: current.representative } : {}),
+      status: body.status ?? (same ? current.status : 'invited'),
+      ...(body.note !== undefined ? (body.note ? { note: body.note } : {}) : same && current.note ? { note: current.note } : {}),
+      updatedAt: Date.now(),
+    };
+  }
+  const record = { ...(read.nights ?? {}), guests, visits };
   const w = await writeClubRecord(c.env, gate.clubId, 'nights', record);
   if (!w.ok) return c.json({ error: w.error }, w.status as 502);
   const after = nightsOf(gate.clubId, schedule, record).find((n) => n.nightId === nightId);
   return c.json({ night: after ?? night });
+});
+
+/** ADD A ONE-TIME NIGHT beside the series — an occasion the rule did not produce (cr:ClubNight, no schedule). */
+app.post('/clubs/:clubId/nights', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const parsed = AddNightRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  const made = oneOffFrom(parsed.data, gate.agent);
+  if (!made.ok) return c.json({ error: made.error }, 400);
+  const read = await readClub(c.env, gate.clubId, gate.agent);
+  if (!read) return c.json({ error: 'no such club' }, 404);
+  const record = { ...(read.nights ?? {}), oneOffs: { ...(read.nights?.oneOffs ?? {}), [made.id]: made.night } };
+  const w = await writeClubRecord(c.env, gate.clubId, 'nights', record);
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  const schedule = read.schedule && read.schedule.status === 'active' ? read.schedule : null;
+  const night = nightsOf(gate.clubId, schedule, record).find((n) => n.nightId === made.id);
+  return c.json({ night, nights: nightsOf(gate.clubId, schedule, record) }, 201);
 });
 
 app.delete('/clubs/:clubId/schedule', async (c) => {
@@ -1153,9 +1189,26 @@ app.post('/tables', async (c) => {
     }
     clubName = read.profile?.name;
   }
+  // THE NIGHT this table is one of: a club night has any number of tables of its ONE game, so the night's game
+  // is the table's, and the night's guest is the table's unless one is named here.
+  let nightId: string | undefined;
+  let nightGuest: MissionRef | undefined;
+  if (parsed.data.night) {
+    if (!clubId) return c.json({ error: 'a night belongs to a club — name the club too' }, 400);
+    const agent = agentOf(session);
+    const read = agent ? await readClub(c.env, clubId, agent) : null;
+    const schedule = read?.schedule && read.schedule.status === 'active' ? read.schedule : null;
+    const night = read ? nightsOf(clubId, schedule, read.nights).find((n) => n.nightId === parsed.data.night) : undefined;
+    if (!night) return c.json({ error: 'no such night at this club' }, 404);
+    if (night.status === 'cancelled' || night.status === 'skipped') return c.json({ error: `that night is ${night.status}` }, 400);
+    const game = parsed.data.game ?? 'poker';
+    if (night.game && night.game !== game) return c.json({ error: `${night.title ?? 'that night'} plays ${night.game} — every table of a night deals the night's one game` }, 400);
+    nightId = night.nightId;
+    nightGuest = night.mission;
+  }
   // THE GUEST: a registered mission, named by entry id and resolved against the registry — active entries
   // only — then stamped on the table as a ref, exactly like the club (docs/MISSION-REGISTRY.md §3).
-  let guest: MissionRef | undefined;
+  let guest: MissionRef | undefined = nightGuest;
   if (parsed.data.mission) {
     const found = await activeMission(c.env, parsed.data.mission);
     if (!found) return c.json({ error: 'that mission is not in the registry, or is not active' }, 400);
@@ -1165,7 +1218,7 @@ app.post('/tables', async (c) => {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     // WHO OPENED IT travels with the request, so the table can let them close it again.
-    body: JSON.stringify({ ...parsed.data, createdBy: session.playerId, ...(clubId ? { club: clubId, clubName } : {}), ...(guest ? { guest } : {}) }),
+    body: JSON.stringify({ ...parsed.data, createdBy: session.playerId, ...(clubId ? { club: clubId, clubName } : {}), ...(guest ? { guest } : {}), ...(nightId ? { night: nightId } : {}) }),
   });
   return passthrough(res);
 });

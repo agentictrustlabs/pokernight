@@ -3,9 +3,9 @@ import type { AppSession, ClubView, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { Roster } from '../components/ClubDetail';
 import { Nights } from '../components/Nights';
-import { CreateTable, TableList } from './TablesPage';
+import { TableList } from './TablesPage';
 import { canOpenTable, noTablesLine } from '../lib/clubs';
-import { HOME_HASH, TABLES_HASH } from '../lib/routes';
+import { newTableHash, HOME_HASH, TABLES_HASH } from '../lib/routes';
 import type { AuthConfig } from '../lib/home';
 import { clubScope } from '../lib/huddle';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
@@ -173,7 +173,7 @@ export function ClubPage({
       />
       {/* WHEN, before WHO. A member arriving at a club wants to know if there is a game and when it is;
           the roster is the thing they cannot act on. */}
-      <Nights clubId={clubId} session={session} host={host} schedule={view.schedule} nights={view.nights} onChanged={() => void loadView()} />
+      <Nights clubId={clubId} session={session} host={host} schedule={view.schedule} nights={view.nights} tables={tables} onChanged={() => void loadView()} />
       <Roster
         view={view}
         session={session}
@@ -194,10 +194,7 @@ export function ClubPage({
         }}
       />
       {host ? (
-        <details className="panel lobby-create" open={tables !== null && tables.length === 0}>
-          <summary>Open a table for {view.name}</summary>
-          <CreateTable session={session} money={money} club={clubId} ready={ready} />
-        </details>
+        <p className="lobby-create-link"><a className="button" href={newTableHash(clubId)}>+ Open a table for {view.name}</a></p>
       ) : null}
     </div>
   );

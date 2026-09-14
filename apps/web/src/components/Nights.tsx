@@ -1,11 +1,11 @@
-import { useCallback, useState } from 'react';
-import type { AppSession, ClubSchedule, Night } from '../lib/types';
+import { useCallback, useEffect, useState } from 'react';
+import type { AppSession, ClubSchedule, MissionVisitStatus, Night, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { nextNight, nightWhen, scheduleLine, type Recurrence } from '../lib/nights';
 import { WEEKDAY_LABELS, WEEKDAY_ORDER } from '../lib/nightsForm';
 import { BOARDS, DRAWN_GAME, gameBlurb, gameLabel } from '../lib/games';
 import { MissionPicker } from './MissionPicker';
-import { missionHash } from '../lib/routes';
+import { missionHash, newTableHash } from '../lib/routes';
 
 /**
  * WHEN THIS CLUB MEETS, on the club's page.
@@ -17,17 +17,22 @@ import { missionHash } from '../lib/routes';
  * A night carries the CLUB's zone, and the reader may be somewhere else. `nightWhen` gives both and
  * the second only when they differ — see `lib/nights.ts` for why that is not optional.
  */
-export function Nights({ clubId, session, host, schedule, nights, onChanged }: { clubId: string; session: AppSession; host: boolean;
+export function Nights({ clubId, session, host, schedule, nights, tables, onChanged }: { clubId: string; session: AppSession; host: boolean;
   /** From the club's own read — the rule and the nights derived from it — so this costs no second call. */
-  schedule: ClubSchedule | null; nights: Night[]; onChanged: () => void }) {
+  schedule: ClubSchedule | null; nights: Night[];
+  /** The club's live tables, so a night can list its own (`TableSummary.night`). */
+  tables?: TableSummary[] | null;
+  onChanged: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
   // A change is read back from the club's agent by whoever owns the view; this only asks for it.
   const load = useCallback(async () => { setErr(null); onChanged(); }, [onChanged]);
 
   const now = Date.now();
   const next = nextNight(nights, now);
   const rest = (nights ?? []).filter((n) => n !== next && n.startsAt >= now);
+  const tablesOf = (n: Night) => (tables ?? []).filter((t) => t.night === n.nightId);
 
   return (
     <section className="panel nights">
@@ -35,18 +40,18 @@ export function Nights({ clubId, session, host, schedule, nights, onChanged }: {
       {err ? <div className="form-error">{err}</div> : null}
 
       {next ? (
-        <NextNight night={next} now={now} />
+        <NextNight night={next} now={now} clubId={clubId} session={session} host={host} tables={tablesOf(next)} onChanged={load} />
       ) : (
         <p className="hint">
           {/* Two different silences, and a member should not be told to fix the one they cannot. */}
-          {schedule ? 'Nothing is coming up.' : host ? 'This club has no nights yet. Set when it meets and they appear here.' : 'No nights are scheduled yet. A host sets them.'}
+          {schedule ? 'Nothing is coming up.' : host ? 'This club has no nights yet. Set when it meets, or add a one-time night, and they appear here.' : 'No nights are scheduled yet. A host sets them.'}
         </p>
       )}
 
       {rest.length > 0 ? (
         <ul className="night-list">
           {rest.map((n) => (
-            <NightRow key={n.nightId} night={n} now={now} clubId={clubId} session={session} host={host} onChanged={load} inherited={schedule?.defaults.mission ?? null} />
+            <NightRow key={n.nightId} night={n} now={now} clubId={clubId} session={session} host={host} tables={tablesOf(n)} onChanged={load} inherited={schedule?.defaults.mission ?? null} />
           ))}
         </ul>
       ) : null}
@@ -86,11 +91,15 @@ export function Nights({ clubId, session, host, schedule, nights, onChanged }: {
               void load();
             }}
           />
+        ) : adding ? (
+          <OneOffForm clubId={clubId} session={session} defaultGame={schedule?.defaults.game ?? DRAWN_GAME} defaultZone={schedule?.timezone} onDone={() => { setAdding(false); void load(); }} onCancel={() => setAdding(false)} />
         ) : (
           <div className="row">
             <button type="button" onClick={() => setEditing(true)}>
               {schedule ? 'Change when it meets' : 'Set when it meets'}
             </button>
+            {/* A ONE-TIME NIGHT beside the series — an occasion the rule did not produce. */}
+            <button type="button" onClick={() => setAdding(true)}>Add a one-time night</button>
             {schedule ? (
               <button
                 type="button"
@@ -115,8 +124,8 @@ export function Nights({ clubId, session, host, schedule, nights, onChanged }: {
   );
 }
 
-/** The one a member actually came for, said as a sentence rather than shown as a row. */
-function NextNight({ night, now }: { night: Night; now: number }) {
+/** The one a member actually came for, said as a sentence rather than shown as a row — with its guest and its tables. */
+function NextNight({ night, now, clubId, session, host, tables, onChanged }: { night: Night; now: number; clubId: string; session: AppSession; host: boolean; tables: TableSummary[]; onChanged: () => void }) {
   const w = nightWhen(night, now);
   return (
     <div className="next-night">
@@ -124,10 +133,11 @@ function NextNight({ night, now }: { night: Night; now: number }) {
         <strong>{night.title ?? 'Next night'}</strong> — {w.day} at {w.time}
         <span className="tag">{w.phrase}</span>
         {night.game ? <span className="tag">{gameLabel(night.game)}</span> : null}
-        {night.mission ? <a className="tag guest" href={missionHash(night.mission.entryId)}>♦ guest: {night.mission.name}</a> : null}
+        {night.oneOff ? <span className="tag">one-time</span> : null}
       </p>
       {/* The reader's own clock, only when it says something different. */}
       {w.alsoYours ? <p className="hint">Where you are, that is {w.alsoYours}.</p> : null}
+      <NightDetail night={night} clubId={clubId} session={session} host={host} tables={tables} onChanged={onChanged} open />
     </div>
   );
 }
@@ -135,67 +145,173 @@ function NextNight({ night, now }: { night: Night; now: number }) {
 /** What the picker shows for one night: `undefined` = the series' guest; `null` = none; else the entry id.
  *  A night whose guest equals the series' is read as inheriting, since the record says nothing for it. */
 function nightGuestValue(night: Night, inherited: { entryId: string } | null | undefined): string | null | undefined {
-  if (night.mission && inherited && night.mission.entryId === inherited.entryId) return undefined;
+  if (night.mission && inherited && night.mission.entryId === inherited.entryId && !night.visit?.representative) return undefined;
   if (!night.mission && !inherited) return undefined;
   return night.mission?.entryId ?? null;
 }
 
-function NightRow({
-  night,
-  now,
-  clubId,
-  session,
-  host,
-  onChanged,
-  inherited,
-}: {
-  night: Night;
-  now: number;
-  clubId: string;
-  session: AppSession;
-  host: boolean;
-  onChanged: () => void;
-  /** The series' standing guest, so the row can say "the series' guest" by name. */
-  inherited?: { entryId: string; name: string } | null;
-}) {
+const VISIT_WORDS: Record<MissionVisitStatus, string> = { invited: 'invited', confirmed: 'confirmed', declined: 'declined', attended: 'attended' };
+
+/**
+ * ONE NIGHT'S DETAIL — its visit and its tables (cr:ClubNight: cr:hasVisit, cr:hostsTable).
+ *
+ * The VISIT is the mission's participation in the night: which mission, who comes on its behalf, where it
+ * stands. A host names the mission from the registry, writes the representative (a person, by name, with
+ * how to reach them — the host's to keep) and moves the status; a member sees the mission and the name.
+ * The TABLES are the night's own — any number, all of its one game — and the host opens another from here.
+ */
+function NightDetail({ night, clubId, session, host, tables, onChanged, open = false, inherited }: { night: Night; clubId: string; session: AppSession; host: boolean; tables: TableSummary[]; onChanged: () => void; open?: boolean; inherited?: { entryId: string; name: string } | null }) {
+  const [show, setShow] = useState(open);
+  const v = night.visit;
+  const off = night.status === 'cancelled' || night.status === 'skipped';
+  // The representative form, host only, kept in local state until saved.
+  const [repName, setRepName] = useState(v?.representative?.name ?? '');
+  const [repEmail, setRepEmail] = useState(v?.representative?.email ?? '');
+  const [repAgent, setRepAgent] = useState(v?.representative?.agent ?? '');
+  const [status, setStatus] = useState<MissionVisitStatus>(v?.status ?? 'invited');
+  const [note, setNote] = useState(v?.note ?? '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { setRepName(v?.representative?.name ?? ''); setRepEmail(v?.representative?.email ?? ''); setRepAgent(v?.representative?.agent ?? ''); setStatus(v?.status ?? 'invited'); setNote(v?.note ?? ''); }, [v?.mission.entryId, v?.representative?.name, v?.representative?.email, v?.representative?.agent, v?.status, v?.note]);
+
+  const save = async (patch: { entryId?: string | null; inherit?: boolean }) => {
+    setBusy(true); setErr(null);
+    try {
+      const rep = repName.trim() ? { name: repName.trim(), ...(repEmail.trim() ? { email: repEmail.trim() } : {}), ...(repAgent.trim() ? { agent: repAgent.trim() } : {}) } : undefined;
+      await api.setNightVisit(clubId, night.nightId, { ...patch, ...(patch.inherit || patch.entryId === null ? {} : { ...(rep ? { representative: rep } : {}), status, note }) }, session.token);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'The visit could not be saved.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const summary = (
+    <p className="night-visit-line">
+      {v ? <><a className="tag guest" href={missionHash(v.mission.entryId)}>♦ {v.mission.name}</a> <span className="hint">{VISIT_WORDS[v.status]}{v.representative ? ` · ${v.representative.name}${v.representative.agent ? ` (${v.representative.agent})` : ''} attending` : ''}</span></> : <span className="hint">No guest{night.oneOff ? '' : ' this night'}.</span>}
+      {tables.length ? <span className="hint"> · {tables.length === 1 ? '1 table' : `${tables.length} tables`}</span> : null}
+      {!open ? <button type="button" className="link-button" onClick={() => setShow((x) => !x)}>{show ? 'Less' : 'Details'}</button> : null}
+    </p>
+  );
+  if (!show) return summary;
+  return (
+    <div className="night-detail">
+      {summary}
+      {host && !off ? (
+        <div className="night-visit-form">
+          <label className="row">
+            <span>Guest</span>
+            <MissionPicker
+              value={nightGuestValue(night, inherited)}
+              allowInherit={!!inherited || !night.oneOff}
+              inheritLabel={inherited ? `Series’ guest (${inherited.name})` : 'Series’ guest (none)'}
+              onChange={(entryId) => void save(entryId === undefined ? { inherit: true } : { entryId })}
+              disabled={busy}
+            />
+          </label>
+          {v ? (
+            <>
+              <div className="pair">
+                <label>Who is coming<input value={repName} onChange={(e) => setRepName(e.target.value)} placeholder="Dana Ruiz" /></label>
+                <label>Their agent, if they have one<input value={repAgent} onChange={(e) => setRepAgent(e.target.value)} placeholder="dana.me" /></label>
+              </div>
+              <div className="pair">
+                <label>Email<input value={repEmail} onChange={(e) => setRepEmail(e.target.value)} inputMode="email" placeholder="dana@hope.example" /><span className="hint">Yours to keep — members see the name only.</span></label>
+                <label>Standing<select value={status} onChange={(e) => setStatus(e.target.value as MissionVisitStatus)}>{(Object.keys(VISIT_WORDS) as MissionVisitStatus[]).map((k) => <option key={k} value={k}>{VISIT_WORDS[k]}</option>)}</select></label>
+              </div>
+              <label>Note<input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What they will bring, what to introduce" maxLength={400} /></label>
+              <div className="row"><button type="button" disabled={busy} onClick={() => void save({})}>{busy ? 'Saving…' : 'Save the visit'}</button></div>
+            </>
+          ) : null}
+          {err ? <div className="form-error">{err}</div> : null}
+        </div>
+      ) : v?.note && host ? <p className="hint">{v.note}</p> : null}
+      <div className="night-tables">
+        {tables.length ? (
+          <ul>
+            {tables.map((t) => <li key={t.tableId}><a href={`#/t/${encodeURIComponent(t.tableId)}`}>{t.name}</a> <span className="hint">{t.seated}/{t.config.seats} seated{t.mission ? ` · ♦ ${t.mission.name}` : ''}</span></li>)}
+          </ul>
+        ) : <p className="hint">No tables open for this night yet.</p>}
+        {host && !off ? <a className="button small" href={newTableHash(clubId, night.nightId)}>+ Open a table for this night</a> : null}
+      </div>
+    </div>
+  );
+}
+
+function NightRow({ night, now, clubId, session, host, tables, onChanged, inherited }: { night: Night; now: number; clubId: string; session: AppSession; host: boolean; tables: TableSummary[]; onChanged: () => void; inherited?: { entryId: string; name: string } | null }) {
   const w = nightWhen(night, now);
   const off = night.status === 'cancelled' || night.status === 'skipped';
   return (
     <li className={off ? 'night off' : 'night'}>
-      <span className="night-when">
-        {w.day} at {w.time}
-      </span>
-      {off ? <span className="tag">{night.status}</span> : <span className="hint">{w.phrase}</span>}
-      {night.reason ? <span className="hint">{night.reason}</span> : null}
-      {/* THIS NIGHT'S GUEST: the series' unless the host names another, or none, for it. */}
-      {!off && night.mission && !host ? <a className="night-guest-link" href={missionHash(night.mission.entryId)}>♦ {night.mission.name}</a> : null}
-      {host && !off ? (
-        <MissionPicker
-          value={nightGuestValue(night, inherited)}
-          allowInherit
-          inheritLabel={inherited ? `Series’ guest (${inherited.name})` : 'Series’ guest (none)'}
-          onChange={async (entryId) => {
-            const body = entryId === undefined ? { inherit: true } : { entryId };
-            await api.setNightGuest(clubId, night.nightId, body, session.token).catch(() => undefined);
-            onChanged();
-          }}
-        />
-      ) : null}
-      {host && !off ? (
-        <button
-          type="button"
-          className="link-button"
-          onClick={async () => {
-            // Called OFF, not taken out of the series: a host removing one occasion is telling the
-            // people who were coming something, and `skip` is the quieter word for the other case.
-            await api.cancelNight(clubId, night.nightId, {}, session.token).catch(() => undefined);
-            onChanged();
-          }}
-        >
-          Call it off
-        </button>
-      ) : null}
+      <div className="night-head">
+        <span className="night-when">{w.day} at {w.time}</span>
+        {off ? <span className="tag">{night.status}</span> : <span className="hint">{w.phrase}</span>}
+        {night.title ? <span className="hint">{night.title}</span> : null}
+        {night.oneOff ? <span className="tag">one-time</span> : null}
+        {night.reason ? <span className="hint">{night.reason}</span> : null}
+        {host && !off ? (
+          <button
+            type="button"
+            className="link-button"
+            onClick={async () => {
+              // Called OFF, not taken out of the series: a host removing one occasion is telling the
+              // people who were coming something, and `skip` is the quieter word for the other case.
+              await api.cancelNight(clubId, night.nightId, {}, session.token).catch(() => undefined);
+              onChanged();
+            }}
+          >
+            Call it off
+          </button>
+        ) : null}
+      </div>
+      {!off ? <NightDetail night={night} clubId={clubId} session={session} host={host} tables={tables} onChanged={onChanged} inherited={inherited} /> : null}
     </li>
+  );
+}
+
+/** A ONE-TIME NIGHT: a date, a time, what it is called, what it plays. The zone comes from the series or the browser. */
+function OneOffForm({ clubId, session, defaultGame, defaultZone, onDone, onCancel }: { clubId: string; session: AppSession; defaultGame: string; defaultZone?: string; onDone: () => void; onCancel: () => void }) {
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('19:00');
+  const [zone, setZone] = useState(defaultZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC');
+  const [title, setTitle] = useState('');
+  const [game, setGame] = useState(defaultGame);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <form
+      className="schedule-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!date || busy) return;
+        setBusy(true); setErr(null);
+        try {
+          await api.addNight(clubId, { localDate: date, startLocal: time, timezone: zone, ...(title.trim() ? { title: title.trim() } : {}), game }, session.token);
+          onDone();
+        } catch (ex) {
+          setErr(ex instanceof ApiError ? ex.message : 'That night could not be added.');
+          setBusy(false);
+        }
+      }}
+    >
+      <div className="pair">
+        <label>Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></label>
+        <label>At<input type="time" value={time} onChange={(e) => setTime(e.target.value)} required /></label>
+      </div>
+      <label>What it is called<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Harvest night" maxLength={64} /></label>
+      <label>
+        What you play
+        <select value={game} onChange={(e) => setGame(e.target.value)}>{BOARDS.map((g) => <option key={g} value={g}>{gameLabel(g)}</option>)}</select>
+        <span className="hint">{gameBlurb(game)}</span>
+      </label>
+      <label>Time zone<input value={zone} onChange={(e) => setZone(e.target.value)} /></label>
+      {err ? <div className="form-error">{err}</div> : null}
+      <div className="row">
+        <button className="primary" type="submit" disabled={busy || !date}>{busy ? 'Adding…' : 'Add the night'}</button>
+        <button type="button" className="link-button" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
   );
 }
 
@@ -251,7 +367,7 @@ function ScheduleForm({
               startLocal: time,
               timezone: zone,
               recurrence: { kind: 'weekly', weekdays: days as never, ...(interval === 2 ? { interval: 2 as const } : {}) },
-              defaults: { game },
+              defaults: { game, ...(current?.defaults.mission ? { mission: current.defaults.mission } : {}) },
             },
             session.token,
           );

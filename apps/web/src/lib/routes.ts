@@ -32,6 +32,8 @@ export type Route =
   | { page: 'newClub' }
   | { page: 'money' }
   /** THE MISSIONS (docs/MISSION-REGISTRY.md): the map of registered missions, registering one, and one mission. */
+  /** Opening a table — its own page. With a club it is private to the club; with a night it is one of the night's. */
+  | { page: 'newTable'; clubId?: string; night?: string }
   | { page: 'missions' }
   | { page: 'newMission' }
   | { page: 'mission'; entryId: string }
@@ -72,6 +74,12 @@ export const ABOUT_HASH = '#/about';
 /** Starting a club. */
 export const NEW_CLUB_HASH = '#/clubs/new';
 
+/** Opening a table: a pickup one, or a club's (for one of its nights, when `night` is given). */
+export function newTableHash(clubId?: string | null, night?: string | null): string {
+  const base = clubId ? `#/clubs/${encodeURIComponent(clubId)}/tables/new` : '#/tables/new';
+  return night ? `${base}?night=${encodeURIComponent(night)}` : base;
+}
+
 /** The missions: the map, and registering one. */
 export const MISSIONS_HASH = '#/missions';
 export const NEW_MISSION_HASH = '#/missions/new';
@@ -96,6 +104,12 @@ export function route(hash: string): Route {
   if (join?.[1]) return { page: 'join', clubId: join[1].toLowerCase() };
   // `new` is checked BEFORE the id, and a club id is a UUID, so the two can never be confused.
   if (/^\/clubs\/new\/?$/.test(path)) return { page: 'newClub' };
+  const clubTable = /^\/clubs\/([^/?#]+)\/tables\/new\/?$/.exec(path);
+  if (clubTable?.[1]) {
+    const night = new URLSearchParams(hash.split('?')[1] ?? '').get('night');
+    return { page: 'newTable', clubId: decodeURIComponent(clubTable[1]), ...(night ? { night } : {}) };
+  }
+  if (/^\/tables\/new\/?$/.test(path)) return { page: 'newTable' };
   // A club id and nothing else. `#/clubs` with no id is not a directory and never will be — a club
   // you are not in is indistinguishable from one that does not exist — so it falls through to Play.
   const club = /^\/clubs\/([^/?#]+)/.exec(path);

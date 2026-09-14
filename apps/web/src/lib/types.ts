@@ -24,6 +24,8 @@ export type {
   ClubSummary,
   ClubView,
   ClubSchedule,
+  MissionVisit,
+  MissionVisitStatus,
   Night,
   NightStatus,
   KnownPerson,

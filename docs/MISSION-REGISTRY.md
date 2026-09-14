@@ -115,6 +115,22 @@ it, and gives its people a seat at the table's talk. Two places, every game:
 
 `MissionRef = { entryId, org, name }` — enough to show, and to look the rest up.
 
+### 3.1 A night is an event; a mission's visit is its participation (2026-09-14)
+
+In the card-room ontology a **club night is an `at:Event`** (`cr:ClubNight ⊑ at:Event ⊑ at:Activity`): a
+scheduled, bounded occurrence with participants — produced by the series, or **added by hand as a one-time
+night** (`cardroom.club.nights` → `oneOffs[one:<id>]`, `POST /clubs/:id/nights`). A night **hosts any number
+of tables of its one game** (`cr:hostsTable`; `CreateTableRequest.night`, the table stamped with the night,
+the night's game enforced, the night's guest the table's unless another is named).
+
+A mission's presence at a night is a **`cr:MissionVisit ⊑ at:Participation`** — the reified "who, in what
+role, with what status": `cr:visitingMission` (the `cr:Mission`), `cr:representedBy` (the individual attending
+on its behalf — an `at:Person` by name, their agent when they have one, and how the host reaches them),
+`cr:visitStatus` (invited · confirmed · declined · attended), a note. Kept per night in the club's own vault
+(`cardroom.club.nights` → `visits[nightId]`; `null` = no guest tonight; absent = the series' standing guest as
+an invited visit). A representative's email and phone are the host's to keep: `clubViewFor` strips them for
+every other member. `PUT /clubs/:id/nights/:nightId/guest` takes the visit (`SetVisitRequest`).
+
 ## 4. Other registries
 
 The projection reads ONE registry today. `MISSION_REGISTRIES` (env) may later name others — a

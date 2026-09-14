@@ -1,4 +1,6 @@
 import type {
+  AddNightRequest,
+  SetVisitRequest,
   ClubListing,
   ClubSchedule,
   ClubView,
@@ -466,8 +468,12 @@ export const api = {
   /** THE GUEST: the series' standing guest, or one night's (a mission, none, or back to the series'). */
   setScheduleGuest: (clubId: string, entryId: string | null, token: string) =>
     request<{ schedule: ClubSchedule; nights: Night[] }>(`/clubs/${encodeURIComponent(clubId)}/schedule/guest`, { method: 'PUT', body: JSON.stringify({ entryId }) }, token),
-  setNightGuest: (clubId: string, nightId: string, body: { entryId?: string | null; inherit?: boolean }, token: string) =>
+  /** ONE NIGHT'S VISIT (cr:MissionVisit): the mission, who comes on its behalf, where it stands — or none, or the series'. */
+  setNightVisit: (clubId: string, nightId: string, body: SetVisitRequest, token: string) =>
     request<{ night: Night }>(`/clubs/${encodeURIComponent(clubId)}/nights/${encodeURIComponent(nightId)}/guest`, { method: 'PUT', body: JSON.stringify(body) }, token),
+  /** A ONE-TIME NIGHT beside the series. */
+  addNight: (clubId: string, body: AddNightRequest, token: string) =>
+    request<{ night: Night; nights: Night[] }>(`/clubs/${encodeURIComponent(clubId)}/nights`, { method: 'POST', body: JSON.stringify(body) }, token),
   cancelNight: (clubId: string, nightId: string, body: { reason?: string; skip?: boolean }, token: string) =>
     request<{ night: Night }>(
       `/clubs/${encodeURIComponent(clubId)}/nights/${encodeURIComponent(nightId)}/cancel`,

@@ -5850,3 +5850,156 @@ details.log-panel > .log { margin-top: 0.5rem; }
   text-decoration: none;
   font-size: 0.85rem;
 }
+
+/* OPENING A TABLE — its own page: the table and the stakes side by side, the action below. */
+.table-new {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+.table-new-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.table-new-col label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+.table-new-col label .hint {
+  margin: 0;
+  font-weight: 400;
+}
+.table-new-col input,
+.table-new-col select {
+  font: inherit;
+  font-weight: 400;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.table-new-col .pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+.eyebrow-h {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.table-new-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+@media (max-width: 760px) {
+  .table-new {
+    grid-template-columns: 1fr;
+  }
+}
+.lobby-create-link {
+  margin: 0;
+}
+.lobby-create-link .button {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--felt-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.lobby-create-link .button:hover {
+  background: var(--felt-soft);
+  border-color: var(--felt);
+}
+
+/* A NIGHT'S DETAIL — its visit and its tables, folded under the row. */
+.night-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.night-visit-line {
+  margin: 0.2rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.night-detail {
+  margin: 0.4rem 0 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border-left: 3px solid var(--brass);
+  background: var(--gold-soft);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.night-visit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.night-visit-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.night-visit-form label.row {
+  flex-direction: row;
+  align-items: center;
+}
+.night-visit-form label .hint {
+  margin: 0;
+  font-weight: 400;
+}
+.night-visit-form input,
+.night-visit-form select {
+  font: inherit;
+  font-weight: 400;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.night-visit-form .pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.night-tables ul {
+  list-style: none;
+  margin: 0 0 0.4rem;
+  padding: 0;
+}
+.night-tables .button.small {
+  display: inline-block;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--felt-ink);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.night.off .night-head {
+  opacity: 0.7;
+}

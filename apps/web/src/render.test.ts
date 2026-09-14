@@ -709,7 +709,7 @@ describe('a club’s nights', () => {
 
   it('tells a member and a host different things when there are none, and never tells a member to fix it', () => {
     expect(renderToStaticMarkup(nights(false))).toContain('A host sets them');
-    expect(renderToStaticMarkup(nights(true))).toContain('Set when it meets and they appear here');
+    expect(renderToStaticMarkup(nights(true))).toContain('Set when it meets, or add a one-time night');
   });
 
   it('leads with Nights, which is what a member came to find out', () => {
