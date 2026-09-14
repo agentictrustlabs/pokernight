@@ -44,8 +44,10 @@ describe('whether the card room can name itself', () => {
 describe('the authorization it sends', () => {
   const raw = JSON.stringify({ jsonrpc: '2.0', id: '1', method: 'SendMessage', params: {} });
 
-  it('is nothing for the house’s own personas, which ask nobody’s name', async () => {
-    expect(await houseAuthorization(env(), 'https://agents.faithnet.io/sharkbot.svc/api/a2a', 'SendMessage', raw)).toBeNull();
+  it('names the house to its own personas too — their door admits only the house now (2026-09-13)', async () => {
+    const header = await houseAuthorization(env(), 'https://agents.faithnet.io/sharkbot.svc/api/a2a', 'SendMessage', raw);
+    expect(header).not.toBeNull();
+    expect(parseSessionAuthorization(header)?.audience).toBe('https://agents.faithnet.io');
   });
 
   it('is nothing when unconfigured, so a Home refuses by name rather than this guessing', async () => {

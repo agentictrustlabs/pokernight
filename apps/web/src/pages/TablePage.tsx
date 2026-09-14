@@ -20,6 +20,7 @@ import { useCues } from '../lib/useCues';
 import { OtherGame } from '../components/OtherGame';
 import { Table } from '../components/Table';
 import { drawsGame } from '../lib/games';
+import { CoachQuestion } from '../components/CoachQuestion';
 import { Toast } from '../components/Toast';
 import { PokerCoach, type Arrangement } from '../components/PokerCoach';
 import { useLeaveTable } from '../lib/useLeaveTable';
@@ -51,6 +52,7 @@ export function TablePage({
   session,
   config,
   onSignOut,
+  onSetUp,
 }: {
   tableId: string;
   /**
@@ -65,6 +67,8 @@ export function TablePage({
   /** `GET /auth/config`, so the set-up card can send a player to their own Home and back. */
   config: AuthConfig | null;
   onSignOut: () => void;
+  /** Round the Home's connect ceremony again — the road to a coach for an agent that has none set up. */
+  onSetUp?: () => void;
 }) {
   const [state, setState] = useState<TableState>(initialState);
   const [tableName, setTableName] = useState<string | null>(null);
@@ -420,6 +424,9 @@ export function TablePage({
         ) : null}
       </div>
       <Toast error={state.error} onDismiss={onDismiss} />
+      {/* WANT A HOLD'EM COACH? Asked here as well as on arrival, because this is where "the house coach" is
+          read and where the person notices they have no Bob. */}
+      <CoachQuestion session={session} config={config} game="poker" onSetUp={onSetUp} />
     </>
   );
 }

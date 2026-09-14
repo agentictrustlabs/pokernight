@@ -19,7 +19,7 @@ import { readHomeSession, type AuthConfig } from '../lib/home';
 const ASKED_KEY = (agent: string, game: string) => `pokernight.coach.asked:${game === 'poker' ? '' : `${game}:`}${agent.toLowerCase()}`;
 
 /** ASKED ONCE PER GAME: the hold'em question on arrival, the canasta one when a canasta table is first opened. */
-export function CoachQuestion({ session, config, game = 'poker' }: { session: AppSession | null; config: AuthConfig | null; game?: 'poker' | 'canasta' }) {
+export function CoachQuestion({ session, config, game = 'poker', onSetUp }: { session: AppSession | null; config: AuthConfig | null; game?: 'poker' | 'canasta'; onSetUp?: () => void }) {
   const [show, setShow] = useState<{ agent: string; advertises: boolean; nameless?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [settingUp, setSettingUp] = useState<string | null>(null);
@@ -55,9 +55,11 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
         // does not want one says "no thanks" each visit, which is one tap.
         if (!alive || !r.agent || r.coach !== null) return;
         // An agent WITHOUT the card-room skills cannot keep the answer in its person's vault yet, so the
-        // browser keeps it until it can — and the sheet says what the agent is missing.
+        // browser keeps it until it can. Only "don't ask again" is honoured from there: "not now" used to be
+        // kept for good too, so one tap on a bad evening meant the house coach on every hand after it, and no
+        // offer ever again (2026-09-13).
         if (r.advertises === false) {
-          try { if (localStorage.getItem(ASKED_KEY(r.agent, game))) return; } catch { /* ask anyway */ }
+          try { if ((localStorage.getItem(ASKED_KEY(r.agent, game)) ?? '').startsWith('no@')) return; } catch { /* ask anyway */ }
         }
         setShow({ agent: r.agent, advertises: r.advertises !== false });
       })
@@ -106,9 +108,10 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
             reaches the coach you hire. Your Home has not given your agent a public name yet, so none of that can happen:
             the house coach answers for you, and nothing is remembered.
           </p>
-          <p className="hint">Claim a name at your Home (one screen, once), then sign in here again — your coach comes with it.</p>
+          <p className="hint">Your Home asks for the name on the way in (one screen, once) and sets your coach up in the same trip; you come straight back here.</p>
           <div className="sheet-actions">
-            {claim ? <a className="button primary" href={claim} target="_blank" rel="noreferrer" onClick={() => setShow(null)}>Claim a name at my Home</a> : null}
+            {onSetUp ? <button type="button" className="primary" onClick={() => { setShow(null); onSetUp(); }}>Name my agent at my Home</button>
+              : claim ? <a className="button primary" href={claim} target="_blank" rel="noreferrer" onClick={() => setShow(null)}>Claim a name at my Home</a> : null}
             <button type="button" onClick={() => setShow(null)}>Not now</button>
           </div>
         </div>
@@ -126,7 +129,16 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
           to your vault — under a grant you sign, and nothing else — and advises you in its own name, on its own tokens.
           You pick one per game at your Home, and you can fire it there any time.
         </p>
-        {!show.advertises ? (
+        {/* ONE TRIP, NOT A RECIPE. The Home's connect ceremony puts the card room's skills on the agent, names
+            its default coach and has the person approve the study grant — so an agent missing any of it is sent
+            round that ceremony, not to a Capabilities page with four skill ids to type in. */}
+        {onSetUp ? (
+          <p className="hint">
+            {show.advertises
+              ? <>Your Home sets one up in a single trip — {game === 'canasta' ? 'Carol’s canasta coach' : 'Bob’s hold’em coach'} by default, under a study grant you approve — and brings you straight back.</>
+              : <>Your agent does not have the card room’s skills on its card yet ({skills.map((sk, i) => <span key={sk}><code>{sk}</code>{i < skills.length - 1 ? ', ' : ''}</span>)}). Your Home adds them, hires {game === 'canasta' ? 'Carol’s canasta coach' : 'Bob’s hold’em coach'} under a study grant you approve, and brings you straight back — one trip. Until then the house coach answers for you.</>}
+          </p>
+        ) : !show.advertises ? (
           <p className="hint">
             First, your agent needs the card room’s skills on its card — at your Home, under{' '}
             {homeCaps ? <a href={homeCaps} target="_blank" rel="noreferrer">Capabilities</a> : 'Capabilities'}, add{' '}
@@ -134,7 +146,11 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
           </p>
         ) : null}
         <div className="sheet-actions">
-          {homeCoaches ? (
+          {onSetUp ? (
+            <button type="button" className="primary" disabled={busy} onClick={() => { setShow(null); onSetUp(); }}>
+              Set up my coach at my Home
+            </button>
+          ) : homeCoaches ? (
             <a
               className="button primary"
               href={homeCoaches}
@@ -144,6 +160,9 @@ export function CoachQuestion({ session, config, game = 'poker' }: { session: Ap
             >
               Choose a coach at my Home
             </a>
+          ) : null}
+          {onSetUp && homeCoaches && show.advertises ? (
+            <a className="link-button" href={homeCoaches} target="_blank" rel="noreferrer" onClick={() => void answer('hired')}>or choose a different coach</a>
           ) : null}
           <button type="button" disabled={busy} onClick={() => void answer('later')}>
             Not now

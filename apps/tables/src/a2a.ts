@@ -219,7 +219,7 @@ export type ActResult = { ok: true; output: ActOutput } | { ok: false; error: st
  * one is asking. What comes back is an opaque action; the table validates it against the game that
  * asked, because that is the only thing that can tell a legal move from a malformed one.
  */
-export async function callAct(base: string, input: ActInput, timeoutMs: number): Promise<ActResult> {
+export async function callAct(base: string, input: ActInput, timeoutMs: number, deployment?: Env): Promise<ActResult> {
   const url = a2aUrl(base, A2A_JSONRPC_PATH);
   const body = {
     jsonrpc: '2.0',
@@ -229,12 +229,17 @@ export async function callAct(base: string, input: ActInput, timeoutMs: number):
       message: { messageId: crypto.randomUUID(), role: 'user', parts: encodeActParts(input) },
     },
   };
+  // A TURN IS NAMED TOO (2026-09-13): the house personas' door admits only the house now, so the table
+  // signs the exact bytes it sends, as it does for a person's agent. Unsigned when the deployment holds
+  // no wire — a dev table asking a dev persona, whose door is open.
+  const raw = JSON.stringify(body);
+  const authorization = deployment ? await houseAuthorization(deployment, url, A2A_SEND_MESSAGE, raw) : null;
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json', accept: 'application/json', ...(authorization ? { authorization } : {}) },
+      body: raw,
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {

@@ -45,7 +45,11 @@ export function isHouseUrl(env: Env, url: string): boolean {
  * only "refused".
  */
 export async function houseAuthorization(env: Env, url: string, method: string, raw: string): Promise<string | null> {
-  if (!houseCallerConfigured(env) || isHouseUrl(env, url)) return null;
+  // THE HOUSE PERSONAS ARE NAMED TO AS WELL (2026-09-13): their door admits only the house now, so a turn
+  // sent to `agents.faithnet.io` carries the same assertion a person's agent gets. `isHouseUrl` stays for
+  // a dev deployment with no wire, where the door is open and the header would be noise.
+  if (!houseCallerConfigured(env)) return null;
+  void isHouseUrl;
   let wire: DelegationWireV1;
   try {
     wire = JSON.parse(env.HOUSE_A2A_WIRE as string) as DelegationWireV1;

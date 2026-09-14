@@ -1,0 +1,13 @@
+# SECURITY HEADERS for every asset poker.faithnet.io serves (Workers Assets reads this file). The session
+# lives in browser storage, so the one thing that must not happen here is a script the site did not ship
+# running on this origin: script-src is the site itself and nothing inline. Styles are inline (Vite) and
+# from Google Fonts; connections go to the card room, the Home's two hosts, and Cloudflare RealtimeKit
+# for the huddle (its media servers are named by wildcard because the SDK picks them at call time).
+# Cloudflare's Web Analytics beacon is the one script not ours, and it is named exactly.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: mediastream:; connect-src 'self' https://cloudflareinsights.com https://tables.faithnet.io wss://tables.faithnet.io https://www.faithnet.me https://*.faithnet.me https://a2a.faithnet.io https://*.cloudflare.com wss://*.cloudflare.com https://*.realtime.cloudflare.com wss://*.realtime.cloudflare.com https://*.dyte.io wss://*.dyte.io; worker-src 'self' blob:; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self' https://www.faithnet.me https://*.faithnet.me; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=63072000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()

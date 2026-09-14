@@ -390,6 +390,20 @@ export function App() {
       .finally(() => setBusy(false));
   }, [login]);
 
+  /**
+   * THE ONE ROAD TO A COACH is the Home's own connect ceremony: on a plain sign-in the Home puts the card
+   * room's skills on the person's agent, names the default coach in their playbook and has them approve
+   * the study grant — idempotently, so a person who already has all of it signs nothing. A person whose
+   * agent is missing any of that is sent round that road again rather than to a Capabilities page with a
+   * list of skill ids to type in. Their display name is kept; `select_account` lets them pick themselves.
+   */
+  const setUpAtHome = useCallback(() => {
+    if (!config) return;
+    startHomeSignIn(config, session?.name ?? '')
+      .then((url) => { location.href = url; })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, [config, session]);
+
   const signInWithHome = useCallback((name?: string) => {
     if (!config) return;
     setBusy(true);
@@ -474,7 +488,7 @@ export function App() {
     return huddled(
       <div className="app">
         <CardDefs />
-        <TableRoute tableId={r.tableId} practice={r.practice === true} session={session} config={config} onSignOut={signOut} />
+        <TableRoute tableId={r.tableId} practice={r.practice === true} session={session} config={config} onSignOut={signOut} onSetUp={setUpAtHome} />
       </div>
     );
   }
@@ -518,6 +532,11 @@ export function App() {
           {r.page === 'signin' || !session ? <SignInPage auth={auth} onLogin={login} /> : <Room r={r} session={session} auth={auth} onLogin={login} moneyStamp={moneyStamp} />}
         </div>
       )}
+      {/* WANT A HOLD'EM COACH? The sheet existed from the day the question did (ca49c53) and was never
+          rendered — imported here, mounted nowhere — so a person whose Home had not set a coach up saw "the
+          house coach" on every hand and was offered nothing (2026-09-13, "does not get bob the coach"). A
+          table page (returned above) mounts its own game's sheet. */}
+      {session && r.page !== 'signin' ? <CoachQuestion session={session} config={config} game="poker" onSetUp={setUpAtHome} /> : null}
     </div>
   );
 }

@@ -51,6 +51,7 @@ export function CanastaPage({
   session,
   config = null,
   onSignOut,
+  onSetUp,
 }: {
   tableId: string;
   /** The Home this card room trusts — where a coach is hired. */
@@ -69,6 +70,8 @@ export function CanastaPage({
   practice?: boolean;
   session: AppSession | null;
   onSignOut: () => void;
+  /** Round the Home's connect ceremony again — the road to a coach for an agent that has none set up. */
+  onSetUp?: () => void;
 }) {
   const [state, setState] = useState<CanastaTableState>(initialCanastaState);
   const [tableName, setTableName] = useState<string | null>(null);
@@ -481,7 +484,7 @@ export function CanastaPage({
       <Toast error={state.error} onDismiss={onDismiss} />
       {/* WANT A CANASTA COACH? Asked once, the first time a canasta table is opened — the hold'em question is
           asked on arrival; a coach knows one game, so each game asks for itself. */}
-      <CoachQuestion session={session} config={config} game="canasta" />
+      <CoachQuestion session={session} config={config} game="canasta" onSetUp={onSetUp} />
     </>
   );
 }

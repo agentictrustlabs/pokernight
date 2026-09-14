@@ -19,7 +19,8 @@
     "@pokernight/protocol": "workspace:*",
     "viem": "^2.52.2",
     "@pokernight/canasta-agent": "workspace:*",
-    "@pokernight/canasta": "workspace:*"
+    "@pokernight/canasta": "workspace:*",
+    "@agenticprimitives/delegation": "1.0.0-alpha.24"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.8.0",

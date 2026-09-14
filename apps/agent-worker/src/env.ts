@@ -18,6 +18,20 @@ export interface Env {
 
   /** SECRET. Absent is fine: the `claude` strategy logs once and plays the rules baseline. */
   ANTHROPIC_API_KEY?: string;
+  /**
+   * ADMISSION (2026-09-13). Set all of these and the A2A door admits ONLY the card room's house agent: an
+   * `A2A-Session` assertion over the house wire (delegator = HOUSE_SERVICE_SA), verified against the house
+   * account's ERC-1271 through the estate's validator, unrevoked at the DelegationManager, pinned by the
+   * enforcers. Leave them unset (local dev, tests) and the door is open, as it was in phase 2 — and says so
+   * once in the log. Never enable a language-model persona on a deployment with the door open.
+   */
+  RPC_URL?: string;
+  CHAIN_ID?: string;
+  UNIVERSAL_SIGNATURE_VALIDATOR?: string;
+  DELEGATION_MANAGER?: string;
+  TIMESTAMP_ENFORCER?: string;
+  ALLOWED_METHODS_ENFORCER?: string;
+  HOUSE_SERVICE_SA?: string;
 }
 
 /** Effort levels the Messages API accepts; anything else falls back to "low". */

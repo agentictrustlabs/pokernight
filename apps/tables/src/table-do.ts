@@ -2008,7 +2008,7 @@ export class PokerTableDO extends DurableObject<Env> {
     }
     let result;
     try {
-      result = await callAct(base, input, budget);
+      result = await callAct(base, input, budget, this.env);
     } finally {
       this.inFlightTurns.delete(key);
     }

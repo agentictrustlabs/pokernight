@@ -69,6 +69,15 @@ export interface Env {
    * Everything else about a club is done AS the club under its wire (`clubs.ts`).
    */
   CLUB_ROSTER_SECRET?: string;
+  /**
+   * RATE LIMITS (Workers Rate Limiting binding). `RL_SESSION` is per session (or IP when there is none) across
+   * the club, auth and me routes and the socket upgrade — the routes that cost a Home round-trip; `RL_AUTH` is
+   * tighter, per IP, on sign-in. A limiter that is not bound (local dev, tests) limits nothing.
+   */
+  RL_SESSION?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  RL_AUTH?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  /** "off" only in the test runner (vitest.config.ts). */
+  RATE_LIMITS?: string;
   /** The wires clubs signed for this card room, keyed `wire:<club agent>` — the one thing kept about a club. */
   CLUB_WIRES?: KVNamespace;
   /** The estate's UniversalSignatureValidator — how a club's wire is checked against the club's own account. */

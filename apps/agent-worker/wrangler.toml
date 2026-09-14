@@ -43,6 +43,14 @@ name = "pokernight-agent-worker-faithnet"
 routes = [{ pattern = "agents.faithnet.io", custom_domain = true }]
 
 [env.faithnet.vars]
+# ADMISSION (src/admission.ts): with these set, only the card room's house agent may drive a persona.
+RPC_URL = "https://a2a.faithnet.io/rpc"
+CHAIN_ID = "34348"
+UNIVERSAL_SIGNATURE_VALIDATOR = "0xeDd56f500325D4701B9985A34e5Fa6EED6716137"
+DELEGATION_MANAGER = "0x710cb1bF08C234Df397e0910331e0A29710EF4F7"
+TIMESTAMP_ENFORCER = "0x73A7B878168b7DE48677617179A8bE894f0Dfe96"
+ALLOWED_METHODS_ENFORCER = "0xdBb2E47793393C499efB0f3fcbf6Ca8669791a41"
+HOUSE_SERVICE_SA = "0x0347e808a0bB7a7a7086a29d853E799f351C04DD"
 AGENT_CARD_ZONE = "faithnet.ai"
 PUBLIC_ORIGIN = "https://agents.faithnet.io"
 DEFAULT_STRATEGY = "rules"

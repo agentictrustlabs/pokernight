@@ -163,12 +163,35 @@ export interface NightsRecord {
   updatedAt?: string;
 }
 
+/**
+ * A TEN-SECOND MEMO, per (club, person), in the isolate. A club page reads its club several times on one
+ * load (the view, the tables' gate, the huddle, the socket) and each read was a round-trip to the Home;
+ * ten seconds is shorter than any decision a host makes and long enough that one screen is one read.
+ * A write to the club (`writeClubRecord`) forgets the memo, so the host sees their own change at once.
+ */
+const READ_MEMO = new Map<string, { at: number; value: Promise<ClubRead | null> }>();
+const READ_MEMO_MS = 10_000;
+
 export async function readClub(env: Env, club: string, agent?: string | null): Promise<ClubRead | null> {
-  const out = await actAsClub(env, club, 'club.read', agent ? { agent: lc(agent) } : {});
-  if (!out.ok) return null;
-  const d = out.data as unknown as ClubRead;
-  if (!d || typeof d !== 'object') return null;
-  return { ...d, roster: Array.isArray(d.roster) ? d.roster : [] };
+  const key = `${lc(club)}|${agent ? lc(agent) : ''}`;
+  const hit = READ_MEMO.get(key);
+  if (hit && Date.now() - hit.at < READ_MEMO_MS) return hit.value;
+  const value = (async () => {
+    const out = await actAsClub(env, club, 'club.read', agent ? { agent: lc(agent) } : {});
+    if (!out.ok) return null;
+    const d = out.data as unknown as ClubRead;
+    if (!d || typeof d !== 'object') return null;
+    return { ...d, roster: Array.isArray(d.roster) ? d.roster : [] };
+  })();
+  READ_MEMO.set(key, { at: Date.now(), value });
+  value.then((v) => { if (v === null) READ_MEMO.delete(key); }, () => READ_MEMO.delete(key));
+  if (READ_MEMO.size > 500) for (const [k, v] of READ_MEMO) if (Date.now() - v.at >= READ_MEMO_MS) READ_MEMO.delete(k);
+  return value;
+}
+
+/** Forget every memo of one club — after a write, so the writer reads their own change. */
+export function forgetClub(club: string): void {
+  for (const k of READ_MEMO.keys()) if (k.startsWith(`${lc(club)}|`)) READ_MEMO.delete(k);
 }
 
 /** The host: the steward who founded the club, as its profile records (their STANDING is still derived by
@@ -272,7 +295,9 @@ export function belongs(standing: ClubStanding): boolean {
 /* -------------------------------------------------------------- writing it */
 
 export async function writeClubRecord(env: Env, club: string, record: 'profile' | 'schedule' | 'nights', value: unknown): Promise<ClubAct> {
-  return actAsClub(env, club, 'club.write', { record, value });
+  const out = await actAsClub(env, club, 'club.write', { record, value });
+  forgetClub(club);
+  return out;
 }
 
 /** Compose the schedule record from what the host asked for, or say what is wrong with it. */

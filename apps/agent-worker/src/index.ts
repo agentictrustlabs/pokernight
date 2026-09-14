@@ -18,6 +18,7 @@ import { createStandardA2aServer } from '@agenticprimitives/a2a/standard';
 import { A2A_AGENT_CARD_PATH, A2A_JSONRPC_PATH, agentNameToHost } from '@pokernight/protocol';
 import { buildCard, cardFor, endpointFor } from './card.js';
 import type { Env } from './env.js';
+import { housePrincipal } from './admission.js';
 import { createPokerActExecutor } from './executor.js';
 import { createCanastaActExecutor } from './canasta-executor.js';
 import {
@@ -44,6 +45,7 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 }
 
 function a2aServer(resolution: Resolution, env: Env, url: URL) {
+  const principal = housePrincipal(env);
   return createStandardA2aServer({
     card: cardFor(resolution, env, url),
     // ONE EXECUTOR PER GAME. They share the envelope — one data part in, one out, a message and not
@@ -62,15 +64,10 @@ function a2aServer(resolution: Resolution, env: Env, url: URL) {
         : createPokerAdviseExecutor(resolution.persona),
       createKeepsNothingExecutor(resolution.persona),
     ),
-    // PHASE 2: NO ADMISSION. `principal` is deliberately omitted, so every caller is admitted and
-    // `ctx.principal` is null. That is safe only while a seat cannot move money.
-    //
-    // PHASE 3 SEAM: when a seat can spend, wire the house's identity in here —
-    //   import { sessionWirePrincipal } from '@agenticprimitives/a2a/standard';
-    //   principal: sessionWirePrincipal({ /* verifier deps */ }),
-    // A request that resolves to nobody then gets a 401 before any method runs, and the executor can
-    // check `ctx.principal.agent` against the A2A grant the owner issued for `poker.act`
-    // (`buildA2aGrantCaveats` + `skillSelector('poker.act')`, docs/DESIGN.md §6).
+    // ADMISSION: the house, and nobody else, on a deployment that names the chain (`admission.ts`). A request
+    // that resolves to nobody gets a 401 before any method runs. Unconfigured (dev, tests) the door is open,
+    // as it was in phase 2, and the log says so once.
+    ...(principal ? { principal } : {}),
   });
 }
 

@@ -126,6 +126,44 @@ const corsMiddleware = cors({
   maxAge: 600,
 });
 
+/**
+ * RATE LIMITS, at the door. Nothing here is expensive on its own, but a club read is a round-trip to the Home
+ * (four vault reads and a standing derivation) and a sign-in is a code exchange there — so one browser in a
+ * loop was one person's Home doing sustained work for a stranger. Keyed by SESSION where there is one (a
+ * person, not a NAT), by IP otherwise; sign-in by IP. The limiter is a Workers binding; absent (dev, tests)
+ * it limits nothing. A refusal is 429 with `retry-after`, and says which door.
+ */
+const RATE_LIMITED = /^\/(clubs|auth|me|people|practice|coaches)(\/|$)|^\/tables\/[^/]+\/(ws|advice|review|adviser)$/;
+app.use('*', async (c, next) => {
+  const path = c.req.path;
+  // `RATE_LIMITS = "off"` is for the test runner, where every request shares one address and the suite
+  // would limit itself. Never set on a deployment.
+  if (c.env.RATE_LIMITS === 'off' || !RATE_LIMITED.test(path)) return next();
+  const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+  if (path.startsWith('/auth/')) {
+    const ok = c.env.RL_AUTH ? (await c.env.RL_AUTH.limit({ key: `auth:${ip}` }).catch(() => ({ success: true }))).success : true;
+    if (!ok) return c.json({ error: 'too many sign-in attempts from this address — try again in a minute' }, 429, { 'retry-after': '60' });
+    return next();
+  }
+  const token = sessionToken(c.req.raw) ?? c.req.query('token') ?? '';
+  const key = token ? `s:${token.slice(-24)}` : `ip:${ip}`;
+  const ok = c.env.RL_SESSION ? (await c.env.RL_SESSION.limit({ key }).catch(() => ({ success: true }))).success : true;
+  if (!ok) return c.json({ error: 'slow down — this card room answers a person, not a loop; try again in a few seconds' }, 429, { 'retry-after': '10' });
+  return next();
+});
+
+// SECURITY HEADERS on every answer. The API serves JSON to one origin; these cost nothing and close the
+// sniffing, framing and downgrade doors the browser would otherwise leave open.
+app.use('*', async (c, next) => {
+  await next();
+  if (c.req.header('upgrade')?.toLowerCase() === 'websocket') return;
+  c.res.headers.set('strict-transport-security', 'max-age=63072000; includeSubDomains');
+  c.res.headers.set('x-content-type-options', 'nosniff');
+  c.res.headers.set('x-frame-options', 'DENY');
+  c.res.headers.set('referrer-policy', 'no-referrer');
+  if (!c.res.headers.has('cache-control')) c.res.headers.set('cache-control', 'no-store');
+});
+
 // THE HOME'S OWN CALLS. The `service-agent-wire` ceremony runs in the host's browser AT THE HOME and asks this
 // card room, cross-origin, for its signing key and hands the signed wire back (`/admin/*`). Those two routes
 // admit the Home's origin and nothing else does; the page's own origin is the ordinary allowlist below.
@@ -486,9 +524,14 @@ async function tableActSkill(env: Env, tableId: string): Promise<string> {
 
 /** The club a table belongs to, from the table's own record. `undefined` for a pickup table. */
 async function tableClub(env: Env, tableId: string): Promise<string | undefined> {
+  return (await tableMeta(env, tableId))?.club;
+}
+
+/** The table's own record of whose it is: its club (if any) and, for a practice table, its owner. */
+async function tableMeta(env: Env, tableId: string): Promise<{ club?: string; practiceFor?: string } | null> {
   const res = await table(env, tableId).fetch('https://table/summary');
-  if (!res.ok) return undefined;
-  return ((await res.json()) as { club?: string }).club;
+  if (!res.ok) return null;
+  return (await res.json()) as { club?: string; practiceFor?: string };
 }
 
 
@@ -1045,7 +1088,12 @@ app.post('/tables/:id/reset', async (c) => {
 app.get('/tables/:id', async (c) => {
   const res = await table(c.env, c.req.param('id')).fetch('https://table/view');
   if (!res.ok) return passthrough(res);
-  const view = (await res.json()) as { club?: string };
+  const view = (await res.json()) as { club?: string; practiceFor?: string };
+  // A PRACTICE TABLE IS NOT A PUBLIC ROOM. Its id is derived from its owner's address, so anyone who knew the
+  // address could have watched them practise — cards redacted, but that they were there, and their stack,
+  // was not. A signed-in person may still look (the owner brings friends to their own table: the tests seat
+  // three); a stranger with a computed id gets the same 404 a club gives.
+  if (view.practiceFor && !(await resolveSession(c.env, sessionToken(c.req.raw)))) return c.json({ error: 'no such table' }, 404);
   const gate = await clubGate(c, view.club);
   return gate ?? c.json(view as Record<string, unknown>);
 });
@@ -1265,12 +1313,17 @@ app.get('/me/coach', async (c) => {
       const session = await resolveSession(c.env, sessionToken(c.req.raw));
       const home = session && 'address' in session ? (session as { address?: string; agentName?: string }) : null;
       const agentName = (home?.address ? await nameOfAgent(c.env, home.address) : null) ?? (home?.agentName && looksLikeAgentName(home.agentName) ? home.agentName : null);
+      console.log(`[me/coach] ${game} ${agentName ?? 'nameless'}: no skills on the card`);
       return c.json({ agent: agentName, coach: null, asked: null, advertises: false, note: me.error, game });
     }
+    // WHY A PERSON HAS NO COACH is the commonest question at the door, so the answer is in the tail (no
+    // secrets: a game, a status and the reason the card room gave).
+    console.log(`[me/coach] ${game} ${me.status}: ${me.error}`);
     return c.json({ error: me.error, coach: null, asked: null, agent: null, game }, me.status as 400);
   }
   const r = await callCoachStatus(me.endpoint, { skill: CARD_ROOM_SKILLS[game].coach }, a2aTimeoutMs(c.env), c.env);
-  if (!r.ok) return c.json({ error: r.error, coach: null, asked: null, agent: me.agentName, game }, 502);
+  if (!r.ok) { console.log(`[me/coach] ${game} ${me.agentName}: status refused — ${r.error}`); return c.json({ error: r.error, coach: null, asked: null, agent: me.agentName, game }, 502); }
+  console.log(`[me/coach] ${game} ${me.agentName}: coach ${r.output.coach ?? 'none'} grant ${r.output.hasGrant ? 'yes' : 'no'}`);
   return c.json({ ...r.output, agent: me.agentName, advertises: true, game });
 });
 
@@ -1632,7 +1685,10 @@ app.get('/tables/:id/ws', async (c) => {
   // SEAT ADMISSION, decided here and not in the table. The Worker verifies the caller and derives
   // their standing at the club; the object is handed the answer. A stranger cannot sit at a club
   // table, and cannot spectate one either — watching a private game is being at it.
-  const clubId = await tableClub(c.env, c.req.param('id'));
+  const meta = await tableMeta(c.env, c.req.param('id'));
+  const clubId = meta?.club;
+  // The same rule as the view: a practice table's socket needs a signed-in person.
+  if (meta?.practiceFor && !session) return c.json({ error: 'no such table' }, 404);
   if (clubId) {
     const agent = session ? agentOf(session) : null;
     const answer = agent ? await standingAt(c.env, clubId, agent) : null;

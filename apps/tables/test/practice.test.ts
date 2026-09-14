@@ -40,7 +40,7 @@ describe('your practice table', () => {
     expect(a.tableId).toBe(b.tableId);
     expect(b.tableId).toBe(c.tableId);
     // …and the table really is there, dealing what was asked for.
-    const detail = (await (await SELF.fetch(`http://tables.test/tables/${a.tableId}`)).json()) as { game?: string };
+    const detail = (await (await SELF.fetch(`http://tables.test/tables/${a.tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as { game?: string };
     expect(detail.game).toBe('canasta');
   });
 
@@ -64,7 +64,7 @@ describe('your practice table', () => {
   it('settles nothing, whatever the game normally does', async () => {
     const { token } = await devSession('practice unstaked');
     const { tableId } = (await (await practice(token, 'poker')).json()) as { tableId: string };
-    const detail = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as { settlement: string };
+    const detail = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as { settlement: string };
     expect(detail.settlement).toBe('play-money');
   });
 
@@ -116,7 +116,7 @@ describe('dealing again', () => {
     const playing = await until(
       'the round to deal',
       async () =>
-        (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as { view: { roundNo: number; seats: unknown[] } },
+        (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as { view: { roundNo: number; seats: unknown[] } },
       (v) => v.view.roundNo > 0,
     );
     expect(playing.view.seats).toHaveLength(4);
@@ -127,7 +127,7 @@ describe('dealing again', () => {
     const after = await until(
       'the reset to land',
       async () =>
-        (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
+        (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
           view: { roundNo: number; scores: Record<string, number>; seats: unknown[] };
         },
       (v) => v.view.scores[0] === 0 && v.view.scores[1] === 0,
@@ -161,7 +161,7 @@ describe('the pace of a practice table', () => {
     const { token } = await devSession('pace mine');
     const { tableId } = (await (await practice(token)).json()) as { tableId: string };
     expect((await setPace(tableId, 4000, token)).status).toBe(200);
-    const detail = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as { paceMs?: number };
+    const detail = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as { paceMs?: number };
     expect(detail.paceMs).toBe(4000);
   });
 
@@ -197,7 +197,7 @@ describe('the pace of a practice table', () => {
     const { tableId } = (await (await practice(token)).json()) as { tableId: string };
     await setPace(tableId, 3400, token);
     await SELF.fetch(`http://tables.test/tables/${tableId}/reset`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
-    const detail = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as { paceMs?: number };
+    const detail = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as { paceMs?: number };
     expect(detail.paceMs).toBe(3400);
   });
 });
@@ -219,8 +219,10 @@ describe('pausing a practice table', () => {
       body: JSON.stringify({ paused }),
     });
 
-  const detail = async (id: string) =>
-    (await (await SELF.fetch(`http://tables.test/tables/${id}`)).json()) as {
+  // A practice table answers only a signed-in person now (2026-09-13): the id is derived from the owner's
+  // address, and a stranger who computed it could watch. The seats are still open to whoever is invited.
+  const detail = async (id: string, token?: string) =>
+    (await (await SELF.fetch(`http://tables.test/tables/${id}`, token ? { headers: { authorization: `Bearer ${token}` } } : {})).json()) as {
       paused?: boolean;
       view: { actionDeadline: number | null };
     };
@@ -228,11 +230,11 @@ describe('pausing a practice table', () => {
   it('says so, and says so again when it starts', async () => {
     const { token } = await devSession('pause says');
     const { tableId } = (await (await practice(token)).json()) as { tableId: string };
-    expect((await detail(tableId)).paused).toBeUndefined();
+    expect((await detail(tableId, token)).paused).toBeUndefined();
     expect((await pause(tableId, true, token)).status).toBe(200);
-    expect((await detail(tableId)).paused).toBe(true);
+    expect((await detail(tableId, token)).paused).toBe(true);
     await pause(tableId, false, token);
-    expect((await detail(tableId)).paused).toBeUndefined();
+    expect((await detail(tableId, token)).paused).toBeUndefined();
   });
 
   it('is idempotent, so a double press is not a bug', async () => {
@@ -240,7 +242,7 @@ describe('pausing a practice table', () => {
     const { tableId } = (await (await practice(token)).json()) as { tableId: string };
     await pause(tableId, true, token);
     expect((await pause(tableId, true, token)).status).toBe(200);
-    expect((await detail(tableId)).paused).toBe(true);
+    expect((await detail(tableId, token)).paused).toBe(true);
   });
 
   it('is nobody else’s to press, and not a thing an ordinary table does', async () => {
@@ -275,7 +277,7 @@ describe('pausing a practice table', () => {
     // dealt and a seat is on the clock, and how long that takes depends on what else is running.
     const before = await until(
       'a clock to be running',
-      () => detail(tableId),
+      () => detail(tableId, token),
       (d) => d.view.actionDeadline != null,
     );
 
@@ -284,7 +286,7 @@ describe('pausing a practice table', () => {
     await sleep(held);
     await pause(tableId, false, token);
 
-    const after = await detail(tableId);
+    const after = await detail(tableId, token);
     // The deadline moved FORWARD by roughly the pause. Letting it run would mean every pause cost
     // somebody their turn, which is the opposite of what a learner needs.
     const moved = (after.view.actionDeadline ?? 0) - (before.view.actionDeadline ?? 0);
@@ -316,7 +318,7 @@ describe('resetting while the table is mid-round', () => {
     }
     await sleep(1800);
 
-    const playing = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
+    const playing = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
       view: { roundNo: number; stock: number };
     };
     expect(playing.view.roundNo, 'no round was running to interrupt').toBeGreaterThan(0);
@@ -330,7 +332,7 @@ describe('resetting while the table is mid-round', () => {
     // Straight after the reset the table holds NO ROUND AT ALL. That is the property: whatever was
     // in flight a moment ago belongs to a game that no longer exists, and cannot be applied to one
     // that does — which is what "the other players don't stop" looked like from a chair.
-    const cleared = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
+    const cleared = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
       view: { roundNo: number; scores: Record<string, number>; toAct: number | null };
     };
     expect(cleared.view.roundNo, 'the old round survived the reset').toBe(0);
@@ -340,7 +342,7 @@ describe('resetting while the table is mid-round', () => {
 
     // …and it deals again by itself, because the four of them are still sitting there.
     await sleep(3000);
-    const dealt = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
+    const dealt = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
       view: { roundNo: number; seats: unknown[] };
     };
     expect(dealt.view.seats, 'the reset emptied the table').toHaveLength(4);
@@ -379,7 +381,7 @@ describe('what a pause actually stops', () => {
     await sleep(300);
 
     // Whoever is on the clock, their own move is refused BY NAME while the table holds.
-    const state = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
+    const state = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
       view: { roundNo: number; toAct: number | null };
     };
     const seat = state.view.toAct ?? 0;
@@ -395,7 +397,7 @@ describe('what a pause actually stops', () => {
       body: JSON.stringify({ paused: false }),
     });
     await sleep(400);
-    const after = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
+    const after = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
       view: { roundNo: number; toAct: number | null };
     };
     const seat2 = after.view.toAct ?? 0;
@@ -446,7 +448,7 @@ describe('carrying on after a long pause', () => {
 
     // It deals within the ordinary start delay, not the pause's length on top of it.
     await sleep(3000);
-    const after = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as {
+    const after = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
       view: { roundNo: number };
     };
     expect(after.view.roundNo, 'the table never dealt after carrying on').toBeGreaterThan(0);
@@ -469,7 +471,7 @@ describe('dealing again picks up the game’s current defaults', () => {
     expect((await reset(tableId, token)).status).toBe(200);
 
     // The deadline is set when a turn starts, so the proof is the config the round was built from.
-    const view = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`)).json()) as { view: { turnMs?: number } };
+    const view = (await (await SELF.fetch(`http://tables.test/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as { view: { turnMs?: number } };
     // Not every view reports it; what must hold either way is that the reset succeeded and the table
     // is playable. The turn length itself is pinned in `packages/canasta`'s own tests.
     expect(view.view).toBeDefined();

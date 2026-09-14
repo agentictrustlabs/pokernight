@@ -31,6 +31,7 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - `apps/web`          Vite + React client.
 - `apps/agent`        reference WebSocket bot (`pnpm --filter pokernight-agent bot`).
 - `apps/agent-worker` Cloudflare Worker hosting the A2A agent personas (`poker.act`, standard profile).
+  Its door admits the house service agent and nobody else (`src/admission.ts`; chain vars in `wrangler.toml`).
 
 ## Rules
 - Money in the engine is chips (integers). Chip → asset conversion is the ledger's job only.
@@ -177,7 +178,15 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   be three panels down. The hold'em page has the same bar (seat, stack, sit out / back in, leave).
   **A NEW PERSON ARRIVES READY TO PLAY**: the Home's connect-time defaults make them a money account when
   they have none (`CLIENT_DEFAULTS.pokernight.treasury`), and `App.tsx` runs `quick-start` once on
-  arrival (find + seed the play coin, no signature) — what is left is the buy-in mandate, theirs to sign. The canasta coach card hands up `CanastaArrangement`; `VoiceSettings` is exported
+  arrival (find + seed the play coin, no signature) — what is left is the buy-in mandate, theirs to sign.
+  **THE ROAD TO A COACH IS THE HOME'S CONNECT CEREMONY, AND THE OFFER IS A SHEET THAT IS ACTUALLY MOUNTED**
+  (2026-09-13). The same ceremony puts the four card-room skills on the agent, names Bob/Carol in the playbook
+  and has the person approve the study grant, idempotently — so `CoachQuestion`'s one button for an agent
+  with no coach, no skills or no name is `onSetUp` = `startHomeSignIn` again, never a Capabilities page with
+  skill ids to type. The hold'em sheet was imported in `ca49c53` and rendered nowhere for a day: anybody whose
+  defaults had not run saw "the house coach" on every hand and was offered nothing. It mounts in `App.tsx`
+  for every page and in `TablePage` for the table; only "don't ask again" is kept. Walk it with the scratch
+  `sheet-branch.cjs` (stubs `/me/coach` for the three states) and `home-road2.cjs` (the real door, as Elena). The canasta coach card hands up `CanastaArrangement`; `VoiceSettings` is exported
   from `Coach.tsx` and lives on the Table tab.
   **THE HOLD'EM SIDE IS TWO THINGS: the coach card and one panel of tabs.** `PokerCoach` is about THE
   HAND — mode, wait, advice, move, whose voice in one line — and hands everything else up
@@ -253,7 +262,10 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   `HOUSE_A2A_SESSION_KEY`; `pnpm verify:house-wire` checks it on chain the way a Home will). Never the
   custodian key itself: `treasury.ts` says that key signs userOpHashes and nothing else, and a wire is
   revocable on chain without a redeploy. `house-caller.ts` signs the EXACT bytes sent, the method, the
-  host and the moment; the house's own personas get no header, because they ask nobody's name.
+  host and the moment — for the house's own personas too, since 2026-09-13: the agent worker ADMITS ONLY THE
+  HOUSE (`apps/agent-worker/src/admission.ts`, the house service agent on a session wire), so an unsigned
+  `poker.act` gets 401 and a bot never moves. EVERY A2A call site signs (`callAct` was the one that did not,
+  and every practice table sat at "toAct 3" until it did); a failed wire check is never memoised.
   A message goes WHERE THE CARD SAYS (`messageUrlFromCard`): a Home agent answers at the estate's edge
   (`edge…/api/a2a/<name>`) and refuses its own host with `gateway_assertion_required`. Proven live:
   `pnpm ask:as-house alice-me.faithnet.ai "…"` — Alice's agent answered through her playbook.

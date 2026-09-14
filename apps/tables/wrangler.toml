@@ -64,6 +64,19 @@ deleted_classes = ["ClubDO", "ClubIndexDO"]
 binding = "CLUB_WIRES"
 id = "e8fd7d1531324551a74655bb622dab58"
 
+# Rate limits (Workers Rate Limiting). Per session on the routes that cost a Home round-trip; per IP on sign-in.
+[[unsafe.bindings]]
+name = "RL_SESSION"
+type = "ratelimit"
+namespace_id = "3101"
+simple = { limit = 60, period = 10 }
+
+[[unsafe.bindings]]
+name = "RL_AUTH"
+type = "ratelimit"
+namespace_id = "3102"
+simple = { limit = 20, period = 60 }
+
 # Local dev (Anvil on :8545, Vite on :5173). There is no dev login: sign in through a Home.
 [vars]
 CHAIN_ID = "31337"
@@ -144,6 +157,18 @@ deleted_classes = ["ClubDO", "ClubIndexDO"]
 [[env.faithnet.kv_namespaces]]
 binding = "CLUB_WIRES"
 id = "e8fd7d1531324551a74655bb622dab58"
+
+[[env.faithnet.unsafe.bindings]]
+name = "RL_SESSION"
+type = "ratelimit"
+namespace_id = "3101"
+simple = { limit = 60, period = 10 }
+
+[[env.faithnet.unsafe.bindings]]
+name = "RL_AUTH"
+type = "ratelimit"
+namespace_id = "3102"
+simple = { limit = 20, period = 60 }
 
 [env.faithnet.vars]
 # Coach SERVICES for hire (each a Smart Agent somebody custodies, advertising poker.advise). The hiring is

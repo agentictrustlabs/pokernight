@@ -21,6 +21,8 @@ export default defineWorkersConfig({
             // A minute of silence. Long enough that a seat taken during a test is never idle by
             // accident — the success case has to age the seat deliberately, which is the point.
             SEAT_IDLE_MS: '60000',
+            // The suite shares one address and would rate-limit itself; the limiter is exercised by its own test.
+            RATE_LIMITS: 'off',
           },
         },
       },

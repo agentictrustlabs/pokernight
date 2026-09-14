@@ -26,6 +26,7 @@ export function TableRoute({
   session,
   config,
   onSignOut,
+  onSetUp,
 }: {
   tableId: string;
   /** Set the table up on arrival — a seat, the other three filled, the coach on. */
@@ -33,6 +34,8 @@ export function TableRoute({
   session: AppSession | null;
   config: AuthConfig | null;
   onSignOut: () => void;
+  /** Round the Home's connect ceremony again — the road to a coach for an agent that has none set up. */
+  onSetUp?: () => void;
 }) {
   const [game, setGame] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
@@ -76,8 +79,8 @@ export function TableRoute({
   }
 
   if (game === null) return <div className="page"><p className="hint">Opening the table…</p></div>;
-  if (game === 'canasta') return <CanastaPage tableId={tableId} practice={practice} session={session} config={config} onSignOut={onSignOut} />;
-  if (drawsGame(game)) return <TablePage tableId={tableId} practice={practice} session={session} config={config} onSignOut={onSignOut} />;
+  if (game === 'canasta') return <CanastaPage tableId={tableId} practice={practice} session={session} config={config} onSignOut={onSignOut} onSetUp={onSetUp} />;
+  if (drawsGame(game)) return <TablePage tableId={tableId} practice={practice} session={session} config={config} onSignOut={onSignOut} onSetUp={onSetUp} />;
 
   return (
     <div className="page">
