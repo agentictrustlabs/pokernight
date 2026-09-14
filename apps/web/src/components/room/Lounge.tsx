@@ -26,7 +26,7 @@ export interface LoungeProps {
   onZone?: (zone: string | null) => void;
 }
 
-interface BodyHandle { entity: pc.Entity; target: pc.Vec3; yaw: number }
+interface BodyHandle { figure: Figure; entity: pc.Entity; target: pc.Vec3; yaw: number; last: pc.Vec3; speed: number }
 interface Plate { id: string; kind: 'name' | 'table' | 'anchor' | 'bubble'; text: string; sub?: string; world: pc.Vec3; you?: boolean; x?: number; y?: number; visible?: boolean }
 
 export function Lounge({ socket, state, onZone }: LoungeProps) {
@@ -35,7 +35,7 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
   const app = useRef<pc.Application | null>(null);
   const bodies = useRef(new Map<string, BodyHandle>());
   const scenery = useRef<pc.Entity | null>(null);
-  const me = useRef<{ entity: pc.Entity; pos: pc.Vec3; yaw: number; goal: pc.Vec3 | null } | null>(null);
+  const me = useRef<{ figure: Figure; entity: pc.Entity; pos: pc.Vec3; yaw: number; goal: pc.Vec3 | null } | null>(null);
   const keys = useRef(new Set<string>());
   const [plates, setPlates] = useState<Plate[]>([]);
   const plateRef = useRef<Map<string, Plate>>(new Map());
@@ -102,19 +102,25 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
           const d = new pc.Vec3().sub2(m.goal, m.pos); d.y = 0;
           if (d.length() < 0.1) m.goal = null; else { d.normalize(); m.pos.x += d.x * WALK_SPEED * dt; m.pos.z += d.z * WALK_SPEED * dt; m.yaw = Math.atan2(d.x, d.z); moved = true; }
         }
-        m.pos.x = Math.max(-10, Math.min(10, m.pos.x)); m.pos.z = Math.max(-10, Math.min(10, m.pos.z));
+        // The walls are at ±11; a body stops a step short, and the camera never leaves the room.
+        m.pos.x = Math.max(-9.5, Math.min(9.5, m.pos.x)); m.pos.z = Math.max(-9.5, Math.min(9.5, m.pos.z));
+        m.figure.animate(dt, moved ? WALK_SPEED : 0);
         m.entity.setPosition(m.pos);
         const cur = m.entity.getEulerAngles().y * Math.PI / 180;
         m.entity.setEulerAngles(0, (cur + (m.yaw - cur) * Math.min(1, dt * 10)) * 180 / Math.PI, 0);
         if (moved) socket.pose(m.pos.x, m.pos.z, m.yaw);
-        const behind = new pc.Vec3(m.pos.x - Math.sin(m.yaw) * 5.5, 4.2, m.pos.z - Math.cos(m.yaw) * 5.5);
+        const behind = new pc.Vec3(Math.max(-10.5, Math.min(10.5, m.pos.x - Math.sin(m.yaw) * 5.5)), 4.2, Math.max(-10.5, Math.min(10.5, m.pos.z - Math.cos(m.yaw) * 5.5)));
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
         camera.lookAt(m.pos.x, 1.2, m.pos.z);
       }
       // the others ease toward their last pose
       for (const b of bodies.current.values()) {
         const p = b.entity.getPosition();
+        const before = b.last.copy(p);
         b.entity.setPosition(p.lerp(p, b.target, Math.min(1, dt * 8)));
+        const stepped = b.entity.getPosition().distance(before) / Math.max(dt, 1e-3);
+        b.speed += (stepped - b.speed) * Math.min(1, dt * 10);
+        b.figure.animate(dt, b.speed);
         const cur = b.entity.getEulerAngles().y * Math.PI / 180;
         b.entity.setEulerAngles(0, (cur + (b.yaw - cur) * Math.min(1, dt * 8)) * 180 / Math.PI, 0);
       }
@@ -185,14 +191,14 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
       const isMe = p.playerId === state.you;
       if (isMe) {
         if (!me.current) {
-          const e = capsule(a, p.body); e.setPosition(p.x, 0, p.y); e.setEulerAngles(0, p.yaw * 180 / Math.PI, 0); a.root.addChild(e);
-          me.current = { entity: e, pos: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, goal: null };
+          const f = new Figure(p.body); const e = f.entity; e.setPosition(p.x, 0, p.y); e.setEulerAngles(0, p.yaw * 180 / Math.PI, 0); a.root.addChild(e);
+          me.current = { figure: f, entity: e, pos: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, goal: null };
         }
         plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: `${p.name} · you`, world: me.current.entity.getPosition().clone().add(new pc.Vec3(0, 2.05, 0)), you: true });
         continue;
       }
       let b = bodies.current.get(p.playerId);
-      if (!b) { const e = capsule(a, p.body); e.setPosition(p.x, 0, p.y); a.root.addChild(e); b = { entity: e, target: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw }; bodies.current.set(p.playerId, b); }
+      if (!b) { const f = new Figure(p.body); const e = f.entity; e.setPosition(p.x, 0, p.y); a.root.addChild(e); b = { figure: f, entity: e, target: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, last: new pc.Vec3(p.x, 0, p.y), speed: 0 }; bodies.current.set(p.playerId, b); }
       b.target.set(p.x, 0, p.y); b.yaw = p.yaw;
       // The agent under the name only when it IS a name — an address says nothing to anyone.
       plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: p.name, ...(p.agent && p.agent.includes('.') ? { sub: p.agent } : {}), world: b.target.clone().add(new pc.Vec3(0, 2.05, 0)) });
@@ -232,18 +238,57 @@ function keyOf(key: number): 'up' | 'down' | 'left' | 'right' | null {
   return null;
 }
 
-/** A body: a capsule in the palette, a head, two eyes — the stand-in for a VRM humanoid on the same pose. */
-function capsule(a: pc.Application, body: string): pc.Entity {
-  void a;
-  const [r, g, b] = BODY_COLOURS[body] ?? [0.5, 0.5, 0.5];
-  const m = new pc.StandardMaterial(); m.diffuse = new pc.Color(r, g, b); m.update();
-  const skin = new pc.StandardMaterial(); skin.diffuse = new pc.Color(0.95, 0.90, 0.80); skin.update();
-  const ink = new pc.StandardMaterial(); ink.diffuse = new pc.Color(0.11, 0.14, 0.13); ink.update();
-  const e = new pc.Entity('body');
-  const torso = new pc.Entity('torso'); torso.addComponent('render', { type: 'capsule', material: m, castShadows: true }); torso.setLocalPosition(0, 0.9, 0); torso.setLocalScale(0.64, 0.8, 0.64); e.addChild(torso);
-  const head = new pc.Entity('head'); head.addComponent('render', { type: 'sphere', material: skin, castShadows: true }); head.setLocalPosition(0, 1.72, 0); head.setLocalScale(0.52, 0.52, 0.52); e.addChild(head);
-  for (const x of [0.09, -0.09]) { const eye = new pc.Entity('eye'); eye.addComponent('render', { type: 'sphere', material: ink }); eye.setLocalPosition(x, 1.76, 0.22); eye.setLocalScale(0.07, 0.07, 0.07); e.addChild(eye); }
-  return e;
+/**
+ * A FIGURE — an articulated body built from primitives: hips, torso, head, two arms hinged at the shoulder,
+ * two legs hinged at the hip. `Figure.animate(dt, speed)` swings the limbs in a walk cycle scaled by how fast
+ * the body is moving, and settles into an idle — a breath, a slow look about — when it stands. A glTF body
+ * from the PlayCanvas editor takes the same place with the same interface; this is the stand-in that moves.
+ */
+export class Figure {
+  readonly entity: pc.Entity;
+  private readonly hips: pc.Entity;
+  private readonly torso: pc.Entity;
+  private readonly head: pc.Entity;
+  private readonly arms: [pc.Entity, pc.Entity];
+  private readonly legs: [pc.Entity, pc.Entity];
+  private phase = 0;
+  private gait = 0; // 0 standing … 1 walking, eased
+  private idle = Math.random() * 6;
+  constructor(body: string) {
+    const [r, g, b] = BODY_COLOURS[body] ?? [0.5, 0.5, 0.5];
+    const cloth = mat(r, g, b); const dark = mat(r * 0.55, g * 0.55, b * 0.55); const skin = mat(0.95, 0.90, 0.80); const ink = mat(0.11, 0.14, 0.13); const hair = mat(0.2, 0.14, 0.1);
+    const e = new pc.Entity('figure'); this.entity = e;
+    const hips = new pc.Entity('hips'); hips.setLocalPosition(0, 0.98, 0); e.addChild(hips); this.hips = hips;
+    const torso = part('box', cloth, [0, 0.36, 0], [0.46, 0.62, 0.26]); hips.addChild(torso); this.torso = torso;
+    const neck = part('cylinder', skin, [0, 0.72, 0], [0.16, 0.12, 0.16]); hips.addChild(neck);
+    const head = new pc.Entity('head'); head.setLocalPosition(0, 0.9, 0); hips.addChild(head); this.head = head;
+    head.addChild(part('sphere', skin, [0, 0, 0], [0.34, 0.36, 0.34]));
+    head.addChild(part('sphere', hair, [0, 0.08, -0.03], [0.35, 0.28, 0.35]));
+    for (const x of [0.07, -0.07]) head.addChild(part('sphere', ink, [x, 0.03, 0.155], [0.05, 0.05, 0.04]));
+    const arm = (side: 1 | -1) => { const pivot = new pc.Entity('arm'); pivot.setLocalPosition(side * 0.31, 0.62, 0); hips.addChild(pivot); pivot.addChild(part('capsule', cloth, [0, -0.28, 0], [0.13, 0.30, 0.13])); pivot.addChild(part('sphere', skin, [0, -0.6, 0], [0.12, 0.12, 0.12])); return pivot; };
+    const leg = (side: 1 | -1) => { const pivot = new pc.Entity('leg'); pivot.setLocalPosition(side * 0.12, 0.02, 0); hips.addChild(pivot); pivot.addChild(part('capsule', dark, [0, -0.45, 0], [0.16, 0.46, 0.16])); pivot.addChild(part('box', ink, [0, -0.93, 0.05], [0.16, 0.08, 0.28])); return pivot; };
+    this.arms = [arm(1), arm(-1)]; this.legs = [leg(1), leg(-1)];
+  }
+  /** `speed` in m/s this frame. */
+  animate(dt: number, speed: number): void {
+    const walking = Math.min(1, speed / 2.2);
+    this.gait += (walking - this.gait) * Math.min(1, dt * 8);
+    this.idle += dt;
+    if (this.gait > 0.02) this.phase += dt * (6 + 4 * this.gait);
+    else this.phase += (Math.round(this.phase / Math.PI) * Math.PI - this.phase) * Math.min(1, dt * 6); // settle the stride
+    const swing = Math.sin(this.phase) * 32 * this.gait;
+    this.legs[0].setLocalEulerAngles(swing, 0, 0); this.legs[1].setLocalEulerAngles(-swing, 0, 0);
+    this.arms[0].setLocalEulerAngles(-swing * 0.8, 0, 8); this.arms[1].setLocalEulerAngles(swing * 0.8, 0, -8);
+    // the bob of a step, the breath of standing, a slow look around
+    const bob = Math.abs(Math.sin(this.phase)) * 0.045 * this.gait + Math.sin(this.idle * 1.6) * 0.008 * (1 - this.gait);
+    this.hips.setLocalPosition(0, 0.98 + bob, 0);
+    this.torso.setLocalEulerAngles(3 * this.gait, 0, 0);
+    this.head.setLocalEulerAngles(0, Math.sin(this.idle * 0.5) * 18 * (1 - this.gait), 0);
+  }
+}
+function mat(r: number, g: number, b: number): pc.StandardMaterial { const m = new pc.StandardMaterial(); m.diffuse = new pc.Color(r, g, b); m.update(); return m; }
+function part(type: string, material: pc.StandardMaterial, pos: [number, number, number], scale: [number, number, number]): pc.Entity {
+  const e = new pc.Entity(type); e.addComponent('render', { type, material, castShadows: true, receiveShadows: false }); e.setLocalPosition(...pos); e.setLocalScale(...scale); return e;
 }
 
 export type { RoomPerson };
