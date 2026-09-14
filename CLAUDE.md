@@ -2,7 +2,8 @@
 
 Texas Hold'em table service on the faithnet estate. People and AI Smart Agents sit at the same
 tables; buy-ins settle from agent treasuries on faithchain in **Sheqel (SHQ)**, the card room's own
-currency (`contracts/`). Built on the Agentic Primitives substrate (`~/agenticprimitives`). Design:
+currency (`contracts/`). Built on the Agentic Primitives substrate — the published `@agenticprimitives/*`
+packages on npm, and the estate's Home the card room signs people in through. Design:
 `docs/DESIGN.md` (read it before changing architecture). The adviser's whole journey — skill file →
 corpus → registry → compiled playbook → vault → a hand's advice on the screen → the memory after —
 with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
@@ -10,7 +11,7 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 ## Layout
 - `contracts`         the card room's OWN contracts, and only those: `AppCurrency` (a parameterised
   ERC-20) and `Sheqel`, its Poker Night deployment. Foundry, no submodules, no dependencies.
-  `pnpm test:contracts` · `pnpm deploy:sheqel`. Platform contracts stay in `~/agenticprimitives`.
+  `pnpm test:contracts` · `pnpm deploy:sheqel`. Platform contracts come from `@agenticprimitives/contracts`.
 - `packages/table-game` the PORT a game implements to be hostable. Types only; never learns a game exists.
 - `packages/deal`     the seed, its sha256 commitment, and the seeded shuffle. Belongs to no game.
 - `packages/engine`   pure NLHE engine + `pokerGame`, its adapter. No I/O, no timers, no randomness
@@ -257,16 +258,15 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   (`edge…/api/a2a/<name>`) and refuses its own host with `gateway_assertion_required`. Proven live:
   `pnpm ask:as-house alice-me.faithnet.ai "…"` — Alice's agent answered through her playbook.
   A PERSON'S AGENT ADVISES THROUGH THE HOME'S `playbook.answer` TOOL (`master` in
-  `~/agenticprimitives`, deployed to `demo-a2a-faithnet` 2026-09-11): the Home's harness is a tool
+  the Home, 2026-09-11): the Home's harness is a tool
   planner, and that is the one tool that answers a question of judgement over material the message
   carried, listed only for a skill the agent's `atl:capabilities` advertises. The advice request
   therefore carries the answer's SHAPE in its data part (`adviseAnswerShape`) — the answering step at
   a Home reads the data, not the text. Putting the four skills on a demo person's card is
-  `~/agenticprimitives/scripts/add-cardroom-skills.mts <handle>` then `rebuild-card-release.mts` +
-  `republish-card-record.mts`. A Home run takes ~14 s against the 20 s A2A limit; a miss falls back
+  the Home operator's `add-cardroom-skills`, `rebuild-card-release` and `republish-card-record` scripts. A Home run takes ~14 s against the 20 s A2A limit; a miss falls back
   to the house coach and the panel says so.
   **THE PERSON'S AGENT CONSULTS A COACH SERVICE; IT GENERATES NOTHING ITSELF** (2026-09-12,
-  `~/agenticprimitives/apps/demo-a2a/src/card-room.ts`; the story with diagrams is
+  the Home's `card-room` module; the story with diagrams is
   `docs/ARCHITECTURE-ADVISER.md`). The table addresses ONE agent per seat — the person's own
   (`alice.me`) — and never learns the coach's endpoint. On `poker.advise` that agent runs no model: it
   reads the specialist its playbook names for the skill (`{capability:'poker.advise', executor:
@@ -352,8 +352,8 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   you drew being marked in your hand.)
 - `pnpm play:canasta` (plays a WHOLE GAME of canasta against the three house bots through the live
   site, signed in as one of the Home's demo people — the real door, not a dev session. `--site` to
-  point it elsewhere, `--headed` to watch. Playwright lives at `~/node_modules` and is required by
-  absolute path, which is why the script is `.cjs`.)
+  point it elsewhere, `--headed` to watch. Playwright is a root devDependency — `pnpm exec playwright
+  install chromium` once — required rather than imported, which is why the script is `.cjs`.)
 - `pnpm mint:house-wire [--days 90] [--rotate]` (the custodian signs, ONCE and offline, the narrow
   delegation the card room uses to name itself to a person's own agent. Writes the session key to
   `.house-a2a-session.json` — gitignored, mode 0600 — and prints the wire; both become Worker secrets.)
@@ -369,8 +369,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   The custodian key goes to `.house-key.json` — gitignored, mode 0600, never printed.)
 
 ## Agentic Primitives linkage
-`apps/tables`, `apps/agent` and `apps/agent-worker` depend on `@agenticprimitives/*` via `link:../../../agenticprimitives/packages/<name>`
-(the local checkout at `~/agenticprimitives`, NOT the npm alpha). Those packages resolve from their `dist/`
-folders, so after pulling platform changes run `pnpm -r build` (or the package's build) in `~/agenticprimitives`.
-`viem` is a peer of all of them and is declared in each consuming app. Deployment addresses come from
-`@agenticprimitives/contracts/deployments/faithchain`; never copy addresses into packages/*.
+`apps/tables`, `apps/agent`, `apps/agent-worker`, `apps/web` and `packages/treasury` depend on the PUBLISHED
+`@agenticprimitives/*` packages from npm, pinned to exact versions (`0.0.0-alpha.22` for `a2a` and
+`payments`, `1.0.0-alpha.24` for the rest, `connect-client` `1.0.0-alpha.14` at the time of writing). This
+repository is public and links to no private checkout: bump the pins when the platform publishes, then
+`pnpm install`, `pnpm typecheck`, `pnpm test`. `viem` is a peer of all of them and is declared in each
+consuming app. Deployment addresses come from `@agenticprimitives/contracts/deployments/faithchain`; never
+copy addresses into packages/*. The estate's Home (sign-in, agents, vaults, the coach services, club
+workspaces) is operated separately; what this card room needs of it is documented where it is used.

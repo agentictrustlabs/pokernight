@@ -18,7 +18,7 @@
  * asserting something false.
  */
 
-const { chromium } = require('/home/barb/node_modules/playwright');
+const { chromium } = require('playwright');
 const HOME = 'https://www.faithnet.me';
 const POKER = 'https://poker.faithnet.io';
 const WHO = process.argv.slice(2).find((a) => !a.startsWith('--')) || 'alice';

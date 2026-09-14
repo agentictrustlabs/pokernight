@@ -1,6 +1,6 @@
 # Home-side setup for Pokernight
 
-What lives in the estate's Home (`~/agenticprimitives/apps/demo-sso-next`, deployed to Vercel as
+What lives in the estate's Home (the estate's Home, deployed to Vercel as
 www.faithnet.me) rather than in this repo. Only the Home's operator can change any of it.
 
 Verified against the live Home on 2026-09-08:

@@ -11,8 +11,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@agenticprimitives/a2a": "link:../../../agenticprimitives/packages/a2a",
-    "@agenticprimitives/types": "link:../../../agenticprimitives/packages/types",
+    "@agenticprimitives/a2a": "0.0.0-alpha.22",
+    "@agenticprimitives/types": "1.0.0-alpha.24",
     "@pokernight/agent-kit": "workspace:*",
     "@pokernight/engine": "workspace:*",
     "@pokernight/protocol": "workspace:*",

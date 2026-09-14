@@ -26,15 +26,14 @@
  * It retires the table it made, so repeated runs do not fill a real lobby with dead games. That
  * needs `OPERATOR_TOKEN` in the environment; without one the table is left and the run says so.
  *
- * PLAYWRIGHT LIVES OUTSIDE THIS REPO, at ~/node_modules, and is required by absolute path with
- * `require` rather than imported: an ESM `import from 'playwright'` inside this project resolves
- * against the project and fails. That is why this file is `.cjs`.
+ * Playwright is a root devDependency (`pnpm exec playwright install chromium` once), required with
+ * `require` rather than imported — which is why this file is `.cjs`.
  *
  * The player it drives is deliberately naive — draw, lay anything legal, discard the last card. It
  * is exercising the SCREEN, not playing well; the bots are the ones with a strategy.
  */
 
-const PLAYWRIGHT = '/home/barb/node_modules/playwright';
+const PLAYWRIGHT = 'playwright';
 const { chromium } = require(PLAYWRIGHT);
 
 const args = process.argv.slice(2);

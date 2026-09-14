@@ -15,9 +15,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@agenticprimitives/agent-account": "link:../../../agenticprimitives/packages/agent-account",
-    "@agenticprimitives/delegation": "link:../../../agenticprimitives/packages/delegation",
-    "@agenticprimitives/payments": "link:../../../agenticprimitives/packages/payments",
+    "@agenticprimitives/agent-account": "1.0.0-alpha.24",
+    "@agenticprimitives/delegation": "1.0.0-alpha.24",
+    "@agenticprimitives/payments": "0.0.0-alpha.20",
     "@pokernight/ledger": "workspace:*",
     "viem": "^2.52.2"
   },

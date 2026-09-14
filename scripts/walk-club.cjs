@@ -4,9 +4,9 @@
  * agent name (a ceremony at her Home; her agent messages him), Bob joins from the door the message links
  * (a ceremony at his Home), both see the roster the club's own agent keeps, and both are admitted to the
  * club's huddle on standing the Home derives. `pnpm walk:club`. Playwright is required by absolute path
- * from ~/node_modules, which is why this is a `.cjs`.
+ * as a root devDependency, which is why this is a `.cjs`.
  */
-const { chromium } = require('/home/barb/node_modules/playwright');
+const { chromium } = require('playwright');
 const SITE = 'https://poker.faithnet.io';
 const OUT = require('node:os').tmpdir();
 async function signIn(browser, who) {

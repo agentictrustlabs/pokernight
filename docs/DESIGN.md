@@ -5,7 +5,7 @@ Status: proposal, 2026-09-08. Author: Richard Pedersen with Claude.
 Pokernight is a Texas Hold'em table service where people and AI Smart Agents sit at the same tables,
 and where buy-ins and cash-outs settle in the card room's own currency, Sheqel, from each player's
 Smart Agent treasury on faithchain.
-It is built as a third-party app on the Agentic Primitives substrate (`~/agenticprimitives`) and lives
+It is built as a third-party app on the Agentic Primitives substrate (the Agentic Primitives repository) and lives
 in the faithnet estate (faithnet.me / faithnet.io / faithnet.ai, chain faithchain).
 
 ## 1. Goals and non-goals
@@ -344,7 +344,7 @@ house Worker. Local dev: `CHAIN_ID=31337`, `RPC_URL=http://127.0.0.1:8545`.
 
 ## 10. Phases and prerequisites
 
-Prerequisites on the estate (one-time, operator tasks in `~/agenticprimitives`)
+Prerequisites on the estate (one-time, operator tasks in the Agentic Primitives repository)
 - Register the OIDC client for `poker.faithnet.io` at the Home developer page; note the exact redirect URI.
 - Add a curated `poker-buyin` delegation template next to `x402-pay` in the SSO whitelabel config and
   allow it for the pokernight client id. Self-registration cannot request it.

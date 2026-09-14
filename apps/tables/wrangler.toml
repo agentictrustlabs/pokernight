@@ -204,7 +204,7 @@ LEGACY_CHIP_VALUE = "10000"
 # than about whatever this variable is pointed at today.
 ASSET = "0xa14E4a9447607c1233DcE34dB6Ead47C094f6141"
 ASSET_SYMBOL = "SHQ"
-# Contract addresses (phase 3): copy from ~/agenticprimitives/packages/contracts/deployments-faithchain.json
+# Contract addresses (phase 3): copy from @agenticprimitives/contracts (deployments/faithchain)
 # (keys: entryPoint, agentAccountFactory, delegationManager, paymentEnforcer, digestBindingEnforcer,
 # paymentReceiptRegistry). HOUSE_SA / HOUSE_DELEGATE come from the pokernight.treasury Smart Agent
 # provisioned as an operator prerequisite (DESIGN.md §10).

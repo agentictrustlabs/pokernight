@@ -320,10 +320,10 @@ night. Once or twice a week at a time that suits you"; "Invite a mission to host
 asked, the table opens itself on time, and the season keeps its own score" — and `Landing.tsx:201-206`
 (`MISSION_ACTIONS`: Learn / Ask / Stay connected / Give). None of the five has an implementation.
 
-- unclear: whether `~/agenticprimitives` already exports the `MessageEnvelopeV1` / `ActionCardV1` rail
+- unclear: whether the Agentic Primitives repository already exports the `MessageEnvelopeV1` / `ActionCardV1` rail
   §8.1 depends on. Proved only that pokernight imports no `@agenticprimitives/fabric` package (0 hits
   across `apps` and `packages`, `package.json`s included). To settle it, read
-  `~/agenticprimitives/packages/fabric/src/index.ts`.
+  `@agenticprimitives/fabric`.
 
 ---
 

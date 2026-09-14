@@ -209,7 +209,7 @@ flowchart TB
         S3 --> S5
         S4 --> S5
     end
-    subgraph AP["~/agenticprimitives  (the Home)"]
+    subgraph AP["the estate's Home (Agentic Primitives)"]
         A0["card-room.ts<br/>the turn: consult · record · forward;<br/>the grant, verified; the study, read"]
         A1["playbook.answer<br/>the coach's model call, over her study"]
         A2["studygrant.put / list / revoke<br/>on the person's own object"]
@@ -325,10 +325,10 @@ only a second *rule book*:
 | The archetypes | `~/skills/archetypes/holdem-coach/SKILL.md`, `holdem-coach-bob/SKILL.md`, `person-steward/SKILL.md` |
 | The model of the game | `~/skills/ontology/texas-holdem.{ttl,clusters.ttl,data.ttl}` (§8b COACHING) |
 | Registering the archetypes | `~/skills/scripts/register-holdem-coach-bob.mjs`, `publish-ontology-skills.mjs` |
-| Chartering and binding, at the Home | `~/agenticprimitives/scripts/charter-coach.mts`, `bind-coach-specialist.mts`, `seed-cardroom-style.mts`, `add-cardroom-skills.mts` |
-| The turn: consult, record, forward; the grant | `~/agenticprimitives/apps/demo-a2a/src/card-room.ts` (+ `test/card-room.test.ts`) |
-| The coach answering over her study | `~/agenticprimitives/apps/demo-a2a/src/playbook-answer.ts` |
-| The grant on the person's object; the vault's refusal | `~/agenticprimitives/apps/demo-a2a/src/interactions-do.ts` (`studygrant.*`, `internal.coordination.vaultWrite`) |
+| Chartering and binding, at the Home | the Home operator's `charter-coach`, `bind-coach-specialist.mts`, `seed-cardroom-style.mts`, `add-cardroom-skills.mts` |
+| The turn: consult, record, forward; the grant | the Home's `card-room` module (and its tests) |
+| The coach answering over her study | the Home's `playbook-answer` module |
+| The grant on the person's object; the vault's refusal | the Home's interactions object (`studygrant.*`, `internal.coordination.vaultWrite`) |
 | The read, the counts, the charts | `packages/agent-kit/src/{explain,observe,preflop-chart,postflop-chart}.ts` |
 | The table asking, recording, forwarding | `apps/tables/src/table-do.ts` (`/advice`, `/review`, `askAdviser`, `recordWithAdvisers`), `apps/tables/src/a2a.ts` |
 | Signing as the house | `apps/tables/src/house-caller.ts` |

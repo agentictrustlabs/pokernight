@@ -10,7 +10,7 @@
  *
  *   node scripts/walk-round-end.cjs [--site …] [--api …] [--headed]
  */
-const { chromium } = require('/home/barb/node_modules/playwright');
+const { chromium } = require('playwright');
 const args = process.argv.slice(2);
 const flag = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : d; };
 const SITE = (flag('site', 'https://poker.faithnet.io') || '').replace(/\/+$/, '');

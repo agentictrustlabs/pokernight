@@ -121,7 +121,7 @@ What the web app does **not** do:
 
 ## 4. Two layers both called "skill"
 
-The estate keeps these apart (ADR-0050 in `~/agenticprimitives`). Mixing the words is how a
+The estate keeps these apart (ADR-0050 in the Agentic Primitives repository). Mixing the words is how a
 playbook gets treated as authority, or a card skill gets treated as style.
 
 ```

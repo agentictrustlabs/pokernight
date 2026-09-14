@@ -59,7 +59,7 @@ The club is a `.workspace` agent. The reasoning is worth writing down, because t
 close and the estate supports both.
 
 The Agentic Primitives naming grammar
-(`~/agenticprimitives/packages/agent-naming/src/constants.ts`) admits ten typed suffixes, and both
+(`@agenticprimitives/agent-naming`) admits ten typed suffixes, and both
 are among them:
 
 ```
@@ -147,7 +147,7 @@ one of its inputs.
 ## 4. What the substrate already gives us
 
 The most valuable output of this design work is knowing exactly which parts are free. Verified
-first-hand against `~/agenticprimitives` at 2026-09-09.
+first-hand against the Agentic Primitives repository at 2026-09-09.
 
 | What we need | Substrate artifact | Status |
 |---|---|---|
@@ -1090,7 +1090,7 @@ about that path is special-cased — it is the same skill his browser calls.
 
 ## 14. What has to change outside this repository
 
-Four things, all in `~/agenticprimitives`, none of them large. They are listed in the order they block
+Four things, all in the Agentic Primitives repository, none of them large. They are listed in the order they block
 work.
 
 **1. Four delegation templates on the `pokernight` client.** Today

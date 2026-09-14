@@ -14,7 +14,7 @@ import { hashDelegation } from '@agenticprimitives/delegation';
 import { wireToDelegation, checkSessionWireShape } from '@agenticprimitives/a2a';
 import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
 const wire = JSON.parse(readFileSync(process.argv[2]!, 'utf8'));
-const house = JSON.parse(readFileSync('/home/barb/pokernight/house.faithchain.json', 'utf8'));
+const house = JSON.parse(readFileSync(new URL('../house.faithchain.json', import.meta.url), 'utf8'));
 const d = wireToDelegation(wire);
 const c = CONTRACTS as unknown as Record<string, string>;
 const digest = hashDelegation(d, house.chainId, house.contracts.delegationManager);

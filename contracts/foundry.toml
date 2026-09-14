@@ -1,4 +1,4 @@
-# The card room's own contracts. Modelled on ~/agenticprimitives/packages/contracts/foundry.toml,
+# The card room's own contracts. Modelled on the Agentic Primitives contracts package's foundry.toml,
 # but deliberately dependency-free: `lib/` is empty and `src/Sheqel.sol` imports nothing, so this
 # project compiles from a clean checkout with no submodules and no npm install.
 #

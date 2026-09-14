@@ -14,10 +14,10 @@
  * is what that limitation was waiting for. So every run now walks the whole road — create, land on it,
  * find it in the rail, close it — and leaves the rail exactly as it found it.
  *
- * Playwright lives at ~/node_modules and is required by absolute path, which is why this is `.cjs`.
+ * Playwright is a root devDependency, required rather than imported, which is why this is `.cjs`.
  */
 
-const PLAYWRIGHT = '/home/barb/node_modules/playwright';
+const PLAYWRIGHT = 'playwright';
 const { chromium } = require(PLAYWRIGHT);
 
 const args = process.argv.slice(2);

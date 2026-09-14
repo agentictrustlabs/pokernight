@@ -12,7 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@agenticprimitives/a2a": "link:../../../agenticprimitives/packages/a2a",
+    "@agenticprimitives/a2a": "0.0.0-alpha.22",
     "@anthropic-ai/sdk": "^0.124.0",
     "@pokernight/agent-kit": "workspace:*",
     "@pokernight/engine": "workspace:*",

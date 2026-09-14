@@ -12,7 +12,7 @@
     "deploy": "test -n \"$WRANGLER_ENV\" || (echo 'set WRANGLER_ENV=faithnet' && exit 1); vite build --mode $WRANGLER_ENV && wrangler deploy --env $WRANGLER_ENV"
   },
   "dependencies": {
-    "@agenticprimitives/connect-client": "link:../../../agenticprimitives/packages/connect-client",
+    "@agenticprimitives/connect-client": "1.0.0-alpha.14",
     "@cloudflare/realtimekit-react": "0.1.0",
     "@pokernight/engine": "workspace:*",
     "@pokernight/protocol": "workspace:*",
