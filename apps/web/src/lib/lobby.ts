@@ -30,6 +30,8 @@ export interface TableDetail {
   clubName?: string;
   /** The table's guest mission, pinned when it was opened (docs/MISSION-REGISTRY.md §3). */
   mission?: { entryId: string; org: string; name: string };
+  /** The club night this table was opened for, pinned when it was opened. */
+  night?: string;
   /** Whose practice table it is, if it is one. Absent on every ordinary table. */
   practiceFor?: string;
   /** How long an agent's answer waits before it lands, in ms. A practice table's own setting. */

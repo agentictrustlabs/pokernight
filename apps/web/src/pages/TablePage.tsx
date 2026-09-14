@@ -11,7 +11,8 @@ import { TableSocket, dismissError, initialState, reduce, setConnection, type Ta
 import { Identity } from '../components/Identity';
 import { SettlementTag } from '../components/SettlementTag';
 import { Brand } from '../components/Brand';
-import { missionHash, clubHash } from '../lib/routes';
+import { GuestDrawer } from '../components/GuestDrawer';
+import { clubHash } from '../lib/routes';
 import { useClubScope } from '../lib/useClubScope';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { SoundToggle } from '../components/SoundToggle';
@@ -76,6 +77,9 @@ export function TablePage({
   const [club, setClub] = useState<{ id: string; name: string } | null>(null);
   /** THE GUEST — the mission this table was opened for, shown beside the club and linked to its page. */
   const [guest, setGuest] = useState<{ entryId: string; name: string } | null>(null);
+  /** The club night this table was opened for, so the guest's flyout can say who came on the mission's behalf. */
+  const [night, setNight] = useState<string | null>(null);
+  const [guestOpen, setGuestOpen] = useState(false);
   const clubScope_ = useClubScope(club, session?.token ?? null);
   const [settlement, setSettlement] = useState<string>('play-money');
   /**
@@ -136,6 +140,7 @@ export function TablePage({
         setTableName(detail.name ?? null);
         setClub(detail.club && detail.clubName ? { id: detail.club, name: detail.clubName } : null);
         setGuest(detail.mission ? { entryId: detail.mission.entryId, name: detail.mission.name } : null);
+        setNight(detail.night ?? null);
         setMine(detail.practiceFor != null && detail.practiceFor === session?.playerId);
         setPaused(detail.paused === true);
         // Known either way: a table that reports no pace is one running the deployment's default.
@@ -322,9 +327,9 @@ export function TablePage({
           ) : null}
           {/* THE GUEST TONIGHT, named where the table is named — a mission is introduced, never seated. */}
           {guest ? (
-            <a className="tag guest" href={missionHash(guest.entryId)} title="Tonight's guest — a registered mission">
+            <button type="button" className="tag guest" onClick={() => setGuestOpen(true)} title="Tonight's guest — a registered mission. Who they are, and who is here for them.">
               ♦ {guest.name}
-            </a>
+            </button>
           ) : null}
           {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}
           {club ? <HuddleAffordance scope={clubScope_} scopeName={club.name} compact /> : null}
@@ -430,6 +435,7 @@ export function TablePage({
         </aside>
         ) : null}
       </div>
+      <GuestDrawer open={guestOpen} onClose={() => setGuestOpen(false)} guest={guest} club={club} night={night} session={session} />
       <Toast error={state.error} onDismiss={onDismiss} />
       {/* WANT A HOLD'EM COACH? Asked here as well as on arrival, because this is where "the house coach" is
           read and where the person notices they have no Bob. */}

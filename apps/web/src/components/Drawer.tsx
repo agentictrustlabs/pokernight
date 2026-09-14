@@ -5,7 +5,9 @@ import { useEffect, type ReactNode } from 'react';
  * so going into one thing (a night, an invitation) never scrolls the page away from where the person was.
  * Escape and the backdrop close it; on a phone it takes the whole width.
  */
-export function Drawer({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: ReactNode }) {
+export function Drawer({ open, title, onClose, children, modal = true }: { open: boolean; title: string; onClose: () => void; children: ReactNode;
+  /** `false` — no backdrop: the page behind stays live (a guest's details beside a hand still being dealt). */
+  modal?: boolean }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -14,8 +16,8 @@ export function Drawer({ open, title, onClose, children }: { open: boolean; titl
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="drawer-backdrop" onClick={onClose} role="presentation">
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+    <div className={modal ? 'drawer-backdrop' : 'drawer-backdrop drawer-aside'} onClick={modal ? onClose : undefined} role="presentation">
+      <aside className="drawer" role={modal ? 'dialog' : 'complementary'} aria-modal={modal ? 'true' : undefined} aria-label={title} onClick={(e) => e.stopPropagation()}>
         <header className="drawer-head">
           <h2>{title}</h2>
           <button type="button" className="quiet small" onClick={onClose} aria-label="Close">✕</button>

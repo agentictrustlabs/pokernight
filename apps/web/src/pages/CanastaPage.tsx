@@ -16,7 +16,8 @@ import {
 import { Identity } from '../components/Identity';
 import { useLeaveTable } from '../lib/useLeaveTable';
 import { Brand } from '../components/Brand';
-import { missionHash, clubHash } from '../lib/routes';
+import { GuestDrawer } from '../components/GuestDrawer';
+import { clubHash } from '../lib/routes';
 import { useClubScope } from '../lib/useClubScope';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { fillOutcome, seatsToFill, type FillPlan } from '../lib/fillSeats';
@@ -88,6 +89,9 @@ export function CanastaPage({
   const [club, setClub] = useState<{ id: string; name: string } | null>(null);
   /** THE GUEST — the mission this table was opened for, shown beside the club and linked to its page. */
   const [guest, setGuest] = useState<{ entryId: string; name: string } | null>(null);
+  /** The club night this table was opened for, so the guest's flyout can say who came on the mission's behalf. */
+  const [night, setNight] = useState<string | null>(null);
+  const [guestOpen, setGuestOpen] = useState(false);
   const clubScope_ = useClubScope(club, session?.token ?? null);
   /** How long each agent's move waits before it lands. Read from the table, changed by the slider. */
   const [pace, setPace] = useState(3500);
@@ -130,6 +134,7 @@ export function CanastaPage({
         setMine(d.practiceFor != null && d.practiceFor === session?.playerId);
         setClub(d.club && d.clubName ? { id: d.club, name: d.clubName } : null);
         setGuest(d.mission ? { entryId: d.mission.entryId, name: d.mission.name } : null);
+        setNight(d.night ?? null);
         if (typeof d.paceMs === 'number') setPace(d.paceMs);
         // Known either way: a table that reports no pace is one running the deployment's default, and
         // the slider may write to that from here on.
@@ -335,9 +340,9 @@ export function CanastaPage({
           ) : null}
           {/* THE GUEST TONIGHT, named where the table is named — a mission is introduced, never seated. */}
           {guest ? (
-            <a className="tag guest" href={missionHash(guest.entryId)} title="Tonight's guest — a registered mission">
+            <button type="button" className="tag guest" onClick={() => setGuestOpen(true)} title="Tonight's guest — a registered mission. Who they are, and who is here for them.">
               ♦ {guest.name}
-            </a>
+            </button>
           ) : null}
           {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}
           {club ? <HuddleAffordance scope={clubScope_} scopeName={club.name} compact /> : null}
@@ -491,6 +496,7 @@ export function CanastaPage({
       <Toast error={state.error} onDismiss={onDismiss} />
       {/* WANT A CANASTA COACH? Asked once, the first time a canasta table is opened — the hold'em question is
           asked on arrival; a coach knows one game, so each game asks for itself. */}
+      <GuestDrawer open={guestOpen} onClose={() => setGuestOpen(false)} guest={guest} club={club} night={night} session={session} />
       <CoachQuestion session={session} config={config} game="canasta" onSetUp={onSetUp} />
     </>
   );
