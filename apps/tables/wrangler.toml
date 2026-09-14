@@ -37,6 +37,7 @@ bindings = [
   { name = "TABLES", class_name = "PokerTableDO" },
   { name = "LOBBIES", class_name = "LobbyDO" },
   { name = "SESSIONS", class_name = "SessionDO" },
+  { name = "MISSIONS", class_name = "MissionRegistryDO" },
 ]
 
 # Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
@@ -59,6 +60,11 @@ new_sqlite_classes = ["ClubDO", "ClubIndexDO"]
 [[migrations]]
 tag = "v4"
 deleted_classes = ["ClubDO", "ClubIndexDO"]
+
+# THE MISSION REGISTRY's operator store (docs/MISSION-REGISTRY.md §2): entries, receipts, the log.
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["MissionRegistryDO"]
 
 [[kv_namespaces]]
 binding = "CLUB_WIRES"
@@ -140,6 +146,7 @@ bindings = [
   { name = "TABLES", class_name = "PokerTableDO" },
   { name = "LOBBIES", class_name = "LobbyDO" },
   { name = "SESSIONS", class_name = "SessionDO" },
+  { name = "MISSIONS", class_name = "MissionRegistryDO" },
 ]
 
 [[env.faithnet.migrations]]
@@ -158,6 +165,10 @@ new_sqlite_classes = ["ClubDO", "ClubIndexDO"]
 [[env.faithnet.migrations]]
 tag = "v4"
 deleted_classes = ["ClubDO", "ClubIndexDO"]
+
+[[env.faithnet.migrations]]
+tag = "v5"
+new_sqlite_classes = ["MissionRegistryDO"]
 
 [[env.faithnet.kv_namespaces]]
 binding = "CLUB_WIRES"
@@ -207,6 +218,10 @@ A2A_TIMEOUT_MS = "20000"
 SEAT_IDLE_MS = "300000"
 # The estate's UniversalSignatureValidator — a club's wire is checked against the club's own account with it.
 UNIVERSAL_SIGNATURE_VALIDATOR = "0xeDd56f500325D4701B9985A34e5Fa6EED6716137"
+# THE MISSION REGISTRY (docs/MISSION-REGISTRY.md): the operator agent the house custodies (house.faithchain.json)
+# and the estate's AgentRegistryBase. The operator's wire is the secret MISSIONS_REGISTRY_WIRE.
+MISSIONS_REGISTRY_SA = "0x1cfD1174167f4e946d016E86E7d58C5e601c74C0"
+AGENT_REGISTRY_BASE = "0x0Be172F1b5cfD1d084CEc2cF2Af0A0cE9023Deb1"
 ALLOWED_ORIGINS = "https://gamenight.faithnet.io,https://poker.faithnet.io"
 # 1 chip = 1.000000 Sheqel for tables opened from now on. Tables opened before this line changed keep
 # the 0.01 chip they were created with — the rate is pinned per table, never re-read from here

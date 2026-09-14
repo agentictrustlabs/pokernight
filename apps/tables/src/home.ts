@@ -271,6 +271,8 @@ export interface HomeWorkspacePayload {
   person?: string;
   purpose?: string;
   delegation?: unknown;
+  /** An org-create that ended with the org LISTED in the mission registry carries the Home's outcome here. */
+  registry?: unknown;
 }
 
 async function exchangeAtHome(
@@ -432,6 +434,34 @@ export async function completeCharterCeremony(env: Env, req: HomeAuthRequest, no
     ...(token.org?.orgName ? { agentName: token.org.orgName } : {}),
     ...(token.org?.delegation ? { stewardship: token.org.delegation } : {}),
   };
+}
+
+export interface HomeMissionResult {
+  identity: HomeIdentity;
+  /** The organization the Home chose or created, lowercased, and what it named it. */
+  org: string;
+  orgName?: string;
+  /** The registry outcome, exactly as the Home handed it back — verified by the operator, never trusted. */
+  registry: unknown;
+}
+
+/**
+ * Finish the org-create that REGISTERS A MISSION (`docs/MISSION-REGISTRY.md`). The same exchange as the
+ * charter; what must come back is an organization AND the registry outcome — an org-create that reached
+ * `/token` without one means the listing did not happen, and saying "registered" then would be a lie the
+ * map repeats.
+ */
+export async function completeMissionCeremony(env: Env, req: HomeAuthRequest, now = Date.now()): Promise<HomeMissionResult> {
+  if (!isAllowedHomeOrigin(env, req.authOrigin)) {
+    throw new HomeAuthError(`home origin "${req.authOrigin}" is not a trusted issuer for this deployment`);
+  }
+  if (!req.nonce) throw new HomeAuthError('id_token nonce does not match the authorisation request');
+  const token = await exchangeAtHome(env, req);
+  const identity = await verifyHomeIdToken(env, req.authOrigin, token.idToken, req.nonce, now);
+  const org = (token.org?.orgAgent ?? '').trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(org)) throw new HomeAuthError('your Home completed the ceremony but named no organization');
+  if (!token.org?.registry || typeof token.org.registry !== 'object') throw new HomeAuthError('your Home created the organization but did not list it in the registry — nothing was registered');
+  return { identity, org, ...(token.org.orgName ? { orgName: token.org.orgName } : {}), registry: token.org.registry };
 }
 
 /** The template that HIRES A COACH at the person's Home: names the coach service as the specialist for

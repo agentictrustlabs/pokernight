@@ -8,6 +8,9 @@ import type { TreasuryView } from '../lib/treasury';
 import { stakeStage } from '../lib/stake';
 import { ClubPage } from './ClubPage';
 import { MoneyPage } from './MoneyPage';
+import { MissionPage } from './MissionPage';
+import { MissionRegisterPage } from './MissionRegisterPage';
+import { MissionsPage } from './MissionsPage';
 import { NewClubPage } from './NewClubPage';
 import { PlayPage } from './PlayPage';
 import { SignInPage } from './SignInPage';
@@ -160,6 +163,12 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
           </>
         ) : r.page === 'newClub' ? (
           <NewClubPage config={auth.config} />
+        ) : r.page === 'missions' ? (
+          <MissionsPage />
+        ) : r.page === 'newMission' ? (
+          <MissionRegisterPage session={session} config={auth.config} />
+        ) : r.page === 'mission' ? (
+          <MissionPage entryId={r.entryId} />
         ) : r.page === 'club' ? (
           <ClubPage clubId={r.clubId} session={session} config={auth.config} money={money} ready={ready} onChanged={loadClubs} />
         ) : (

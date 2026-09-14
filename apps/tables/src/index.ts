@@ -68,6 +68,9 @@ import {
 } from '@pokernight/protocol';
 import { agentKindFromCard, callCoachStatus, callReview, fetchAgentCard, hasActSkill, messageUrlFromCard, resolveAgentBase } from './a2a.js';
 import { addressOfAgent, advertisedOnChain, looksLikeAgentName, nameOfAgent } from './naming.js';
+import { MISSION_REGISTRY_ID, missionRegistryProfile, orgOfEntryId } from '@pokernight/missions';
+import { admitMission, missionRegistryConfigured, operatorAgentId, receiptFor, receiptHashOf, verifyOperatorReceipt, type MissionEnrolmentPayload } from './missions.js';
+import type { RegistrationReceiptV1 } from '@agenticprimitives/registry-kit';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
 import { a2aReviewTimeoutMs, a2aTimeoutMs, allowedOrigins, siteOrigin, type Env } from './env.js';
 import { OPERATOR_HEADER, checkOperator } from './operator.js';
@@ -79,6 +82,7 @@ import {
   cleanProfileName,
   completeCharterCeremony,
   completeCoachCeremony,
+  completeMissionCeremony,
   completeDemoSignIn,
   completeHomeSignIn,
   completeMandateCeremony,
@@ -110,6 +114,7 @@ import { feedPlayer, feedToken } from './feed-token.js';
 
 export { PokerTableDO } from './table-do.js';
 export { LobbyDO } from './lobby-do.js';
+export { MissionRegistryDO } from './missions.js';
 export { SessionDO } from './session-do.js';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -133,7 +138,7 @@ const corsMiddleware = cors({
  * person, not a NAT), by IP otherwise; sign-in by IP. The limiter is a Workers binding; absent (dev, tests)
  * it limits nothing. A refusal is 429 with `retry-after`, and says which door.
  */
-const RATE_LIMITED = /^\/(clubs|auth|me|people|practice|coaches)(\/|$)|^\/tables\/[^/]+\/(ws|advice|review|adviser)$/;
+const RATE_LIMITED = /^\/(clubs|auth|me|people|practice|coaches|geo)(\/|$)|^\/missions\/enrol$|^\/tables\/[^/]+\/(ws|advice|review|adviser)$/;
 app.use('*', async (c, next) => {
   const path = c.req.path;
   // `RATE_LIMITS = "off"` is for the test runner, where every request shares one address and the suite
@@ -596,6 +601,114 @@ app.get('/clubs', async (c) => {
 
 /** The clubs this person has been invited to and not joined: the host's agent told them at their Home, and the
  *  rail says so here too, with the door. */
+// ───────────────────────────────────────────────────────────────────────── the mission registry
+// docs/MISSION-REGISTRY.md. The registry is on chain; this is its OPERATOR: the public projection (the map,
+// the pickers), the return leg that admits a registration, the profile a consumer reads, the geocoder the
+// register form uses. The operator's store is one Durable Object.
+
+function missions(env: Env) {
+  return env.MISSIONS.get(env.MISSIONS.idFromName(MISSION_REGISTRY_ID));
+}
+
+/** The registry's own profile (spec 279 §3.1) — what it admits and how, for anybody. */
+app.get('/missions/registry', (c) => {
+  const operator = missionRegistryConfigured(c.env) ? operatorAgentId(c.env) : '';
+  return c.json({ ...missionRegistryProfile(operator), chainId: Number(c.env.CHAIN_ID), registryAddress: c.env.AGENT_REGISTRY_BASE ?? null, configured: missionRegistryConfigured(c.env) });
+});
+
+/** Every registered mission, projected for the map — coarse points per the ceiling, no contact, ever. */
+app.get('/missions', async (c) => {
+  const r = await missions(c.env).fetch('https://do/list');
+  return c.json(await r.json());
+});
+
+/** The mission's receipt alone, so a consumer can verify it. Registered BEFORE the one-mission route: the
+ *  entry id carries a slash, so the generic route would swallow `/receipt` as part of the id. */
+app.get('/missions/:entryId{.+?}/receipt', async (c) => {
+  const entryId = c.req.param('entryId') ?? '';
+  const r = await missions(c.env).fetch(`https://do/entry?id=${encodeURIComponent(entryId)}`);
+  if (!r.ok) return c.json({ error: 'no such mission' }, 404);
+  const b = (await r.json()) as { receipt: RegistrationReceiptV1 | null };
+  // `?verify=1` — the card room checks its own operator's signature the way any consumer would, and says so.
+  const verification = b.receipt && c.req.query('verify') === '1' ? await verifyOperatorReceipt(c.env, b.receipt) : undefined;
+  return c.json({ receipt: b.receipt, operator: operatorAgentId(c.env), howToVerify: 'session-key scheme: unwrap the operator wire from proof.signature, check it on chain (delegator = operator, ERC-1271 over the delegation digest, not revoked), then ECDSA over receiptDigest(hashReceiptBody(receipt)) must recover the wire\'s delegate', ...(verification ? { verification } : {}) });
+});
+
+/** One mission: its listing, the operator's receipt, and its lifecycle events. */
+app.get('/missions/:entryId{.+?}', async (c) => {
+  const entryId = c.req.param('entryId') ?? '';
+  if (!orgOfEntryId(entryId)) return c.json({ error: 'no such mission' }, 404);
+  const r = await missions(c.env).fetch(`https://do/entry?id=${encodeURIComponent(entryId)}`);
+  return c.json(await r.json(), r.status as 200);
+});
+
+/**
+ * THE RETURN LEG of the org-create that registers a mission. The browser did the front half at the Home;
+ * this exchanges the code, checks the identity against the session, then runs the admission pipeline —
+ * every hash against the chain's entry, the covenant's signature against the steward's agent — and signs
+ * a receipt as the registry operator. A registration that fails admission is refused by name and nothing
+ * is projected: the chain may hold the entry, and the map will not show it until the checks pass.
+ */
+app.post('/missions/enrol', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  if (!missionRegistryConfigured(c.env)) return c.json({ error: 'this card room operates no mission registry' }, 503);
+  const parsed = HomeAuthRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'bad request', issues: parsed.error.issues }, 400);
+  let result;
+  try {
+    result = await completeMissionCeremony(c.env, parsed.data);
+  } catch (e) {
+    if (e instanceof HomeAuthError) return c.json({ error: e.reason }, 401);
+    console.error('mission enrol', e);
+    return c.json({ error: 'the registration could not be completed' }, 401);
+  }
+  if (homePlayerId(result.identity.address) !== session.playerId) return c.json({ error: 'that ceremony was run by somebody else' }, 403);
+  const payload = result.registry as MissionEnrolmentPayload;
+  const admission = await admitMission(c.env, payload, result.identity.address);
+  if ('error' in admission) return c.json({ error: `the registration could not be read — ${admission.error}` }, 400);
+  if (!admission.ok) {
+    console.log(`[missions] refused ${payload.entryId}: ${admission.failed.map((f) => `${f.check}: ${f.reason}`).join('; ')}`);
+    return c.json({ error: `the registration did not pass admission — ${admission.failed.map((f) => f.reason).join('; ')}`, failed: admission.failed }, 422);
+  }
+  const receipt = await receiptFor(c.env, admission, payload);
+  const receiptHash = await receiptHashOf(receipt);
+  // The confidential contact came back on the org payload only because the Home put it in the org's vault
+  // first; it goes into the operator's store and nowhere public.
+  const contact = typeof (payload as unknown as { contact?: unknown }).contact === 'string' ? (payload as unknown as { contact: string }).contact : null;
+  const r = await missions(c.env).fetch('https://do/admit', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ presence: admission.presence, covenant: admission.covenant, orgName: admission.orgName ?? result.orgName ?? null, contact, receipt, receiptHash, expiresAt: payload.expiresAt, act: payload.act, ...(payload.txHash ? { txHash: payload.txHash } : {}) }),
+  });
+  const b = (await r.json()) as { listing: unknown };
+  console.log(`[missions] ${payload.act} ${payload.entryId} (${admission.orgName ?? 'nameless'}) — ${admission.verified.length} verified, ${admission.notVerified.length} not verified`);
+  return c.json({ ok: true, listing: b.listing, receipt, act: payload.act }, 201);
+});
+
+/**
+ * THE GEOCODER for the register form — Photon (komoot), proxied so the browser's CSP names one origin and
+ * the key of the person typing never reaches a third party as a referer. Signed-in people only, and
+ * rate-limited with everything else that costs a round trip.
+ */
+app.get('/geo/search', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const q = (c.req.query('q') ?? '').trim().slice(0, 120);
+  if (q.length < 2) return c.json({ places: [] });
+  const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8_000) }).catch(() => null);
+  if (!res || !res.ok) return c.json({ error: 'the geocoder did not answer' }, 502);
+  const g = (await res.json()) as { features?: Array<{ geometry?: { coordinates?: [number, number] }; properties?: Record<string, string> }> };
+  const places = (g.features ?? []).flatMap((f) => {
+    const p = f.properties ?? {};
+    const [lng, lat] = f.geometry?.coordinates ?? [];
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !p.countrycode) return [];
+    const label = [p.name, p.city && p.city !== p.name ? p.city : null, p.state, p.country].filter(Boolean).join(', ');
+    return [{ label, country: String(p.countrycode).toUpperCase(), lat, lng, kind: p.osm_value ?? p.type ?? '' }];
+  });
+  return c.json({ places });
+});
+
 app.get('/clubs/invitations', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);

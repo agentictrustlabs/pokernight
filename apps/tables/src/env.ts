@@ -1,4 +1,5 @@
 import type { LobbyDO } from './lobby-do.js';
+import type { MissionRegistryDO } from './missions.js';
 import type { SessionDO } from './session-do.js';
 import type { PokerTableDO } from './table-do.js';
 
@@ -6,6 +7,8 @@ import type { PokerTableDO } from './table-do.js';
 export interface Env {
   TABLES: DurableObjectNamespace<PokerTableDO>;
   LOBBIES: DurableObjectNamespace<LobbyDO>;
+  /** THE MISSION REGISTRY's operator store: entries, receipts, the hash-chained log (`missions.ts`). */
+  MISSIONS: DurableObjectNamespace<MissionRegistryDO>;
   /** One instance per playerId; holds the server-side half of a Home session (see session-do.ts). */
   SESSIONS: DurableObjectNamespace<SessionDO>;
   /** One instance per club; holds its roster and answers standing (see club-do.ts). */
@@ -82,6 +85,11 @@ export interface Env {
   CLUB_WIRES?: KVNamespace;
   /** The estate's UniversalSignatureValidator — how a club's wire is checked against the club's own account. */
   UNIVERSAL_SIGNATURE_VALIDATOR?: string;
+  /** The registry operator agent (`house.faithchain.json → missionsRegistrySa`) and the registry contract. */
+  MISSIONS_REGISTRY_SA?: string;
+  AGENT_REGISTRY_BASE?: string;
+  /** SECRET — the operator's session wire to the house session key (`mint:house-wire --as registry`). */
+  MISSIONS_REGISTRY_WIRE?: string;
   /** The Home's A2A worker origin the browser talks to for huddles — `https://a2a.faithnet.io` (`/config` carries it). */
   HOME_A2A_ORIGIN?: string;
   /**

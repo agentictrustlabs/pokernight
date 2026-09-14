@@ -5617,3 +5617,189 @@ details.log-panel > .log { margin-top: 0.5rem; }
   background: #f8e3df;
   color: var(--danger);
 }
+
+/* ------------------------------------------------------------- the missions */
+/* THE MISSIONS (docs/MISSION-REGISTRY.md): the map leads, brass marks on it, the list beside; the register form
+   is the presence in the order the map shows it; a mission's page reads the receipt line by line. */
+.mission-panel {
+  padding: 0;
+  overflow: hidden;
+}
+.mission-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+.mission-toolbar .hint {
+  margin: 0;
+}
+.mission-map {
+  width: 100%;
+  background: var(--felt-soft);
+  z-index: 0; /* Leaflet's panes are positioned; the sheets and the topbar must still sit above them */
+}
+.mission-map .leaflet-tooltip {
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+}
+.mission-legend {
+  margin: 0;
+  padding: 0.6rem 1rem 0.8rem;
+}
+.mission-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.mission-list li {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) 2fr;
+  gap: 0.2rem 1rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: var(--radius);
+  border-left: 3px solid transparent;
+}
+.mission-list li.on {
+  background: var(--felt-soft);
+  border-left-color: var(--brass);
+}
+.mission-name {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--ink);
+}
+.mission-name::before {
+  content: '♦';
+  margin-right: 0.4rem;
+  color: var(--brass);
+}
+.mission-place {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+.mission-blurb {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+@media (max-width: 720px) {
+  .mission-list li {
+    grid-template-columns: 1fr;
+  }
+}
+.mission-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  max-width: 720px;
+}
+.mission-form h2 {
+  margin: 0.6rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.mission-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+.mission-form label .hint {
+  margin: 0;
+  font-weight: 400;
+}
+.mission-form input,
+.mission-form textarea {
+  font: inherit;
+  font-weight: 400;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.mission-form label.check {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-weight: 400;
+}
+.mission-form label.check input {
+  margin-top: 0.25rem;
+}
+.mission-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+@media (max-width: 620px) {
+  .mission-two {
+    grid-template-columns: 1fr;
+  }
+}
+.mission-hits {
+  list-style: none;
+  margin: -0.4rem 0 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.mission-hits button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  padding: 0.5rem 0.65rem;
+}
+.mission-hits li:last-child button {
+  border-bottom: 0;
+}
+.mission-hits button:hover {
+  background: var(--felt-soft);
+}
+.mission-ceiling {
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--gold-soft);
+  border: 1px solid var(--brass);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.mission-ceiling p {
+  margin: 0;
+}
+.mission-detail p {
+  margin: 0 0 0.6rem;
+}
+.mission-checks {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.mission-checks .ok {
+  color: var(--felt-ink);
+}
+.mission-checks .bad {
+  color: var(--danger);
+}
+.mission-checks .skip {
+  color: var(--ink-soft);
+}

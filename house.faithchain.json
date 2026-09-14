@@ -8,7 +8,8 @@
   "houseTreasurySa": "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671",
   "salts": {
     "service": "pokernight.house.service.v1",
-    "treasury": "pokernight.house.treasury.v1"
+    "treasury": "pokernight.house.treasury.v1",
+    "missionsRegistry": "pokernight.missions.registry.v1"
   },
   "contracts": {
     "entryPoint": "0xf7855250B3363AB7649B10957d8908A9AFcdD4B5",
@@ -17,7 +18,8 @@
     "delegationManager": "0x710cb1bF08C234Df397e0910331e0A29710EF4F7",
     "paymentReceiptRegistry": "0x5FfDd6186C1bBc4628187B1c4C1fDaA39F870d43",
     "sheqel": "0xa14E4a9447607c1233DcE34dB6Ead47C094f6141",
-    "_assetNote": "`sheqel` is THE settlement asset — Poker Night's own and only coin (contracts/src/Sheqel.sol, 6 decimals, open mint), pointed at by ASSET in apps/tables/wrangler.toml. faithchain MockUSDC used to be listed here as `asset`; it is gone, along with LEGACY_ASSET and every table that settled in it. One currency, no conversion."
+    "_assetNote": "`sheqel` is THE settlement asset — Poker Night's own and only coin (contracts/src/Sheqel.sol, 6 decimals, open mint), pointed at by ASSET in apps/tables/wrangler.toml. faithchain MockUSDC used to be listed here as `asset`; it is gone, along with LEGACY_ASSET and every table that settled in it. One currency, no conversion.",
+    "agentRegistryBase": "0x0Be172F1b5cfD1d084CEc2cF2Af0A0cE9023Deb1"
   },
   "provisionedAt": "2026-09-08T17:39:07.024Z",
   "personaIdentitySa": "0x52b28B0AF0f0e52378651a156A43Cf1044966976",
@@ -25,5 +27,9 @@
   "_custody": "Custodied by the Home demo persona `pokersite` (Poker Site — Pokernight), not a key the site invented.",
   "sheqelDeployTx": "0x291c759fa9b23c9a3b1f55cb29bdfd669c718133a42a21d53ef69f6851554f30",
   "sheqelDeployedAt": "2026-09-09T02:28:44.666Z",
-  "sheqelSeedTx": "0x869aa7cb2286d9609e4d9b611dad1c1d3c41af60d71e4c4501662bcad6c923ce"
+  "sheqelSeedTx": "0x869aa7cb2286d9609e4d9b611dad1c1d3c41af60d71e4c4501662bcad6c923ce",
+  "missionsRegistrySa": "0x1cfD1174167f4e946d016E86E7d58C5e601c74C0",
+  "missionsRegistryId": "urn:ap:registry:gamenight-missions",
+  "missionsRegistryProvisionedAt": "2026-09-14T13:22:12.843Z",
+  "_missionsRegistry": "The registry operator (controller of urn:ap:registry:gamenight-missions on AgentRegistryBase), custodied by the house custodian. docs/MISSION-REGISTRY.md."
 }

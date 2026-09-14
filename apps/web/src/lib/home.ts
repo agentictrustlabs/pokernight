@@ -180,6 +180,11 @@ export function takeChooseNextTime(store: StorageLike | null = sessionStore()): 
 /** Which club the charter now returning is for. The Home carries no app state of ours, so the club
  *  id has to survive the round trip on this origin, next to the stash it belongs with. */
 export const CHARTER_CLUB_KEY = 'pokernight.home.charter.club';
+/** The MISSION REGISTRATION trip (docs/MISSION-REGISTRY.md): an org-create at the Home that ends with the
+ *  organization listed. The draft rides the authorize URL; what is stashed here is the PKCE half and the
+ *  draft's name, so the return leg can say what was registered. */
+export const MISSION_STASH_KEY = 'pokernight.home.mission';
+export const MISSION_DRAFT_KEY = 'pokernight.home.mission.draft';
 export const COACH_STASH_KEY = 'pokernight.home.coach';
 export const COACH_NAME_KEY = 'pokernight.home.coach.name';
 
@@ -937,6 +942,71 @@ export function takeCharterClub(store: StorageLike | null = sessionStore()): { n
 }
 
 /** Consume a return leg belonging to the CHARTER ceremony, told apart by its own `state`. */
+/**
+ * REGISTER A MISSION: send the steward to their Home with the org-create template, purpose `mission`, and the
+ * registration itself (`registry_entry`, base64url JSON — presence, affirmed clauses, contact). The Home
+ * chooses or creates the organization, has the steward sign the covenant, has the organization sign its own
+ * registry entry, and returns; the card room's return leg (`POST /missions/enrol`) verifies and admits.
+ */
+export interface MissionDraft {
+  name: string;
+  blurb: string;
+  website: string;
+  languages: string[];
+  place: { label: string; country: string; lat: number; lng: number; precise: boolean };
+  clauseIds: string[];
+  contact: string;
+}
+export async function startMissionRegistration(config: AuthConfig, draft: MissionDraft, store: StorageLike | null = sessionStore()): Promise<string> {
+  if (!config.home.clientId || !config.home.origin) throw new Error('This deployment has no Home configured.');
+  if (!isAllowedHomeOrigin(config.home.zone, config.home.origin)) {
+    throw new Error(`Refusing to send you to ${config.home.origin}: it is not a trusted Home for this site.`);
+  }
+  const client = homeClient(config);
+  const pkce = await generatePkce();
+  const stash: ConnectStash = { name: '', state: randomB64url(16), authOrigin: config.home.origin, codeVerifier: pkce.verifier, nonce: randomB64url(16) };
+  if (!writeStash(store, stash, MISSION_STASH_KEY)) {
+    throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the mission cannot be registered.');
+  }
+  try { store?.setItem(MISSION_DRAFT_KEY, JSON.stringify({ name: draft.name })); } catch { /* the return leg still completes */ }
+  const url = new URL(client.buildAuthorizeUrl({ authOrigin: stash.authOrigin, state: stash.state, nonce: stash.nonce, codeChallenge: pkce.challenge, agentName: '', template: 'org-create' }));
+  url.searchParams.set('org_base', draft.name);
+  url.searchParams.set('org_purpose', 'mission');
+  const entry = { presence: { name: draft.name, blurb: draft.blurb, website: draft.website, languages: draft.languages, place: draft.place }, clauseIds: draft.clauseIds, contact: draft.contact };
+  const bytes = new TextEncoder().encode(JSON.stringify(entry));
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  url.searchParams.set('registry_entry', btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
+  const home = readHomeSession(store);
+  if (home) url.hash = `session=${encodeURIComponent(home)}`;
+  else url.searchParams.set('prompt', 'select_account');
+  return url.toString();
+}
+
+export function takeMissionCallback(store: StorageLike | null = sessionStore()): CallbackOutcome {
+  if (callbackConsumed) return { status: 'none' };
+  const cb = parseCallback(location.href);
+  if (!cb || cb.kind === 'error') return { status: 'none' };
+  const stash = readStash(store, MISSION_STASH_KEY);
+  if (!stash || stash.state !== cb.state) return { status: 'none' };
+  const outcome = consumeCallback(location.href, store, MISSION_STASH_KEY);
+  if (outcome.status === 'none') return outcome;
+  callbackConsumed = true;
+  clearStash(store, MISSION_STASH_KEY);
+  try { history.replaceState(null, '', stripAuthParams(location.href)); } catch { /* not a reason to fail */ }
+  return outcome;
+}
+
+export function takeMissionDraftName(store: StorageLike | null = sessionStore()): string | null {
+  try {
+    const raw = store?.getItem(MISSION_DRAFT_KEY);
+    store?.removeItem(MISSION_DRAFT_KEY);
+    return raw ? ((JSON.parse(raw) as { name?: string }).name ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function takeCharterCallback(store: StorageLike | null = sessionStore()): CallbackOutcome {
   if (callbackConsumed) return { status: 'none' };
   const cb = parseCallback(location.href);

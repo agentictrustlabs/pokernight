@@ -40,10 +40,18 @@ const args = process.argv.slice(2);
 const flag = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 && args[i + 1] && !args[i + 1]!.startsWith('--') ? args[i + 1]! : d; };
 const DAYS = Number(flag('days', '90'));
 const ROTATE = args.includes('--rotate');
+// `--as registry`: the SAME session key, delegated by the MISSION REGISTRY's operator agent instead of the
+// house service agent — how the card room signs registration receipts and the lifecycle log AS the registry
+// (docs/MISSION-REGISTRY.md §2). Secret `MISSIONS_REGISTRY_WIRE`.
+const AS = flag('as', 'house');
+if (AS !== 'house' && AS !== 'registry') throw new Error('--as must be house or registry');
 
 const house = JSON.parse(readFileSync(resolve(REPO, 'house.faithchain.json'), 'utf8')) as {
-  chainId: number; houseServiceSa: Address; houseCustodian: Address; contracts: { delegationManager: Address };
+  chainId: number; houseServiceSa: Address; missionsRegistrySa?: Address; houseCustodian: Address; contracts: { delegationManager: Address };
 };
+const delegatorSa = AS === 'registry' ? house.missionsRegistrySa : house.houseServiceSa;
+if (!delegatorSa) throw new Error('house.faithchain.json names no missionsRegistrySa — run provision:missions-registry first');
+const SECRET_NAME = AS === 'registry' ? 'MISSIONS_REGISTRY_WIRE' : 'HOUSE_A2A_WIRE';
 const deployments = CONTRACTS as unknown as Record<string, string>;
 const enforcers = { timestamp: deployments.timestampEnforcer as Address, allowedMethods: deployments.allowedMethodsEnforcer as Address };
 if (!enforcers.timestamp || !enforcers.allowedMethods) throw new Error('deployments-faithchain.json names no timestamp/allowedMethods enforcer');
@@ -73,7 +81,7 @@ const now = Math.floor(Date.now() / 1000);
 const validUntil = now + DAYS * 86_400;
 const salt = BigInt(`0x${Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')}`);
 const leaf: Delegation = {
-  delegator: house.houseServiceSa,
+  delegator: delegatorSa,
   delegate: session.address,
   authority: ROOT_AUTHORITY,
   caveats: [
@@ -89,13 +97,13 @@ const digest = hashDelegation(leaf, house.chainId, house.contracts.delegationMan
 leaf.signature = await custodian.sign({ hash: digest });
 const wire = delegationToWire(leaf);
 
-console.error(`house service agent  ${house.houseServiceSa}`);
+console.error(`${AS === 'registry' ? 'registry operator   ' : 'house service agent '} ${delegatorSa}`);
 console.error(`session key          ${session.address}  (${ROTATE || !hadKey ? 'new' : 'reused'} — ${sessionFile})`);
 console.error(`pinned to            ${STANDARD_SURFACE_SKILL}`);
 console.error(`valid until          ${new Date(validUntil * 1000).toISOString()} (${DAYS} days)`);
 console.error('');
 console.error('Now:');
 console.error(`  cd apps/tables && wrangler secret put HOUSE_A2A_SESSION_KEY --env faithnet   # paste privateKey from ${sessionFile}`);
-console.error('  cd apps/tables && wrangler secret put HOUSE_A2A_WIRE --env faithnet          # paste the line below');
+console.error(`  cd apps/tables && wrangler secret put ${SECRET_NAME} --env faithnet          # paste the line below`);
 console.error('');
 console.log(JSON.stringify(wire));

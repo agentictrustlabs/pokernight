@@ -230,6 +230,23 @@ export interface HomeSessionResponse extends Session {
 
 /** What the browser hands the Worker on the return leg. The Worker trusts none of it as identity —
  *  it exchanges the code and verifies the id_token itself. */
+/** One registered mission as the map and the pickers see it. */
+import type { MissionListing } from '@pokernight/missions';
+export type { MissionListing };
+export interface MissionReceipt {
+  receiptId: string;
+  registryId: string;
+  entryId: string;
+  subjectAgent: string;
+  name?: string;
+  verified: Array<{ check: string; ref: string; at: string }>;
+  failed: Array<{ check: string; reason: string; at: string }>;
+  notVerified: Array<{ check: string; reason: string }>;
+  admittedAt: string;
+  expiresAt?: string;
+  proof: { signer: string; scheme: string; signature: string };
+}
+
 export interface HomeAuthBody {
   code: string;
   codeVerifier: string;
@@ -303,6 +320,18 @@ export const api = {
    */
   charterClub: (body: HomeAuthBody, token: string) =>
     request<{ clubId: string; agentName?: string; idToken: string }>('/clubs/charter', { method: 'POST', body: JSON.stringify(body) }, token),
+  /**
+   * THE MISSION REGISTRY (docs/MISSION-REGISTRY.md): the public projection (no session), one mission with its
+   * receipt and events, the return leg of the registration ceremony, and the geocoder the register form uses.
+   */
+  missions: () => request<{ missions: MissionListing[] }>('/missions'),
+  mission: (entryId: string) =>
+    request<{ listing: MissionListing; receipt: MissionReceipt | null; events: Array<{ kind: string; occurredAt: string; sequence: string }> }>(`/missions/${encodeURIComponent(entryId)}`),
+  missionRegistry: () => request<{ registryId: string; name: string; description: string; chainId: number; registryAddress: string | null; operatorAgent: string; configured: boolean }>('/missions/registry'),
+  enrolMission: (body: HomeAuthBody, token: string) =>
+    request<{ ok: true; listing: MissionListing; receipt: MissionReceipt; act: 'registered' | 'renewed' }>('/missions/enrol', { method: 'POST', body: JSON.stringify(body) }, token),
+  geocode: (q: string, token: string) =>
+    request<{ places: Array<{ label: string; country: string; lat: number; lng: number; kind: string }> }>(`/geo/search?q=${encodeURIComponent(q)}`, {}, token),
   foundClub: (clubId: string, body: { name: string; games?: string[] }, token: string) =>
     request<ClubView>(`/clubs/${encodeURIComponent(clubId)}/found`, { method: 'POST', body: JSON.stringify(body) }, token),
   /** Whom a host means — `carol.me` or an address — resolved on chain so the invitation can name the agent. */

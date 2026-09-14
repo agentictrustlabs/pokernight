@@ -250,6 +250,20 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   Home bearer here), and passes the join's `authToken` through once. `components/huddle/` —
   `ClubHuddleProvider` (owns the call above every page), `ClubHuddleDock`, `HuddleAffordance` on the club page
   and in a club table's top bar.
+- **A MISSION IS A REGISTERED ORGANIZATION, AND THE REGISTRY IS A KIT-BUILT ONE** (2026-09-14,
+  `docs/MISSION-REGISTRY.md`). `urn:ap:registry:gamenight-missions` on the estate's `AgentRegistryBase`,
+  controlled by a registry operator agent the house custodies (`house.faithchain.json → missionsRegistrySa`,
+  `pnpm provision:missions-registry`; its wire to the house session key is `MISSIONS_REGISTRY_WIRE`,
+  `pnpm mint:house-wire --as registry`). A mission REGISTERS ITSELF: the register form (`#/missions/new`)
+  sends the steward to their Home with `org-create` + `org_purpose=mission` + `registry_entry`; the Home
+  chooses or creates the org, has the steward sign the three-clause covenant, has the ORG sign its own
+  `registerEntry` (RB-01), writes presence/covenant/contact to the org's vault, and returns everything on
+  the `org` payload; `POST /missions/enrol` runs the admission pipeline (`src/missions.ts` — every hash
+  against the chain's entry, the covenant against the steward's agent) and signs a receipt AS THE
+  OPERATOR into `MissionRegistryDO` (entries, receipts, a hash-chained log). The map shows only what the
+  COUNTRY CEILING allows (`@pokernight/missions` `displayPoint`, ported from Gather27's table — `~/engage`
+  is the worked example and is touched by nothing here). A mission is a standing presence, never an event.
+  Nothing on the hop is Gather27's: not its workspace, not its records.
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must

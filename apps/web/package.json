@@ -15,12 +15,15 @@
     "@agenticprimitives/connect-client": "1.0.0-alpha.14",
     "@cloudflare/realtimekit-react": "0.1.0",
     "@pokernight/engine": "workspace:*",
+    "@pokernight/missions": "workspace:*",
     "@pokernight/protocol": "workspace:*",
+    "leaflet": "1.9.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@pokernight/canasta": "workspace:*",
+    "@types/leaflet": "1.9.12",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

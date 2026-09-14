@@ -31,6 +31,10 @@ export type Route =
   /** Starting one. Its own page rather than a form folded into the rail. */
   | { page: 'newClub' }
   | { page: 'money' }
+  /** THE MISSIONS (docs/MISSION-REGISTRY.md): the map of registered missions, registering one, and one mission. */
+  | { page: 'missions' }
+  | { page: 'newMission' }
+  | { page: 'mission'; entryId: string }
   /**
    * The front page, as a page rather than as a state.
    *
@@ -68,6 +72,13 @@ export const ABOUT_HASH = '#/about';
 /** Starting a club. */
 export const NEW_CLUB_HASH = '#/clubs/new';
 
+/** The missions: the map, and registering one. */
+export const MISSIONS_HASH = '#/missions';
+export const NEW_MISSION_HASH = '#/missions/new';
+export function missionHash(entryId: string): string {
+  return `#/missions/${encodeURIComponent(entryId)}`;
+}
+
 /** One club's page. The one place that builds a club URL, so the shape is stated once. */
 export function clubHash(clubId: string): string {
   return `#/clubs/${encodeURIComponent(clubId)}`;
@@ -89,6 +100,10 @@ export function route(hash: string): Route {
   // you are not in is indistinguishable from one that does not exist — so it falls through to Play.
   const club = /^\/clubs\/([^/?#]+)/.exec(path);
   if (club?.[1]) return { page: 'club', clubId: decodeURIComponent(club[1]) };
+  if (/^\/missions\/new\/?$/.test(path)) return { page: 'newMission' };
+  const mission = /^\/missions\/([^/?#]+)/.exec(path);
+  if (mission?.[1]) return { page: 'mission', entryId: decodeURIComponent(mission[1]) };
+  if (/^\/missions\/?$/.test(path)) return { page: 'missions' };
   if (/^\/about\/?$/.test(path)) return { page: 'about' };
   if (/^\/tables\/?$/.test(path)) return { page: 'tables' };
   if (/^\/money\/?$/.test(path)) return { page: 'money' };

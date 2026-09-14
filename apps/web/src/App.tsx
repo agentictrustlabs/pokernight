@@ -7,6 +7,8 @@ import {
   askToChooseNextTime,
   startHomeSignIn,
   takeCharterCallback,
+  takeMissionCallback,
+  takeMissionDraftName,
   takeCoachCallback,
   takeMembershipCallback,
   takeMembershipLeg,
@@ -22,7 +24,7 @@ import {
 } from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
-import { HOME_HASH, clubHash, goTo, route, takeReturn } from './lib/routes';
+import { HOME_HASH, clubHash, goTo, missionHash, route, takeReturn } from './lib/routes';
 import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
 import { Brand } from './components/Brand';
 import { PRODUCT_MARK } from './lib/brand';
@@ -296,6 +298,34 @@ export function App() {
     }
     setNotice(leg.leg === 'invite' ? 'Invited at your Home — your agent has told them, and they can join from the link it sent.' : 'You are a member of this club at your Home now.');
     goTo(clubHash(leg.clubId));
+  }, []);
+
+  /**
+   * The return leg of REGISTERING A MISSION (docs/MISSION-REGISTRY.md): the Home chose or created the
+   * organization, had the steward sign the covenant and the organization sign its entry; the Worker exchanges
+   * the code, checks every hash against the chain, and admits — or refuses by name. Then the mission's page.
+   */
+  useEffect(() => {
+    const outcome = takeMissionCallback();
+    if (outcome.status !== 'signed-in') {
+      if (outcome.status === 'error') setError(outcome.message);
+      return;
+    }
+    const draftName = takeMissionDraftName();
+    const current = sessionRef.current;
+    if (!current) {
+      setError('Your Home registered the mission, but this browser is no longer signed in — sign in and it will be on the map.');
+      return;
+    }
+    setBusy(true);
+    api
+      .enrolMission({ code: outcome.code, codeVerifier: outcome.codeVerifier, authOrigin: outcome.authOrigin, nonce: outcome.nonce, state: outcome.state }, current.token)
+      .then((r) => {
+        setNotice(r.act === 'renewed' ? `${r.listing.name} is renewed in the registry — its listing is current again.` : `${r.listing.name} is registered — on the map, and available to invite.`);
+        goTo(missionHash(r.listing.entryId));
+      })
+      .catch((e: unknown) => setError(e instanceof ApiError ? `${draftName ?? 'The mission'} was not admitted — ${e.message}` : `Could not finish registering ${draftName ?? 'the mission'}.`))
+      .finally(() => setBusy(false));
   }, []);
 
   /**

@@ -9,11 +9,11 @@ const CLUBS = [
 
 describe('the rail that is yours wherever you are', () => {
   it('puts Play first, because being dealt a hand is what somebody came for', () => {
-    expect(yourRail(route('#/')).map((i) => i.key)).toEqual(['play', 'tables', 'money']);
+    expect(yourRail(route('#/')).map((i) => i.key)).toEqual(['play', 'tables', 'missions', 'money']);
   });
 
   it('marks exactly one row as where you are, on every route it has a row for', () => {
-    for (const hash of ['#/', '#/tables', '#/money']) {
+    for (const hash of ['#/', '#/tables', '#/missions', '#/money']) {
       expect(yourRail(route(hash)).filter((i) => i.here)).toHaveLength(1);
     }
   });

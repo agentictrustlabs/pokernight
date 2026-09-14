@@ -1,0 +1,17 @@
+{
+  "name": "@pokernight/missions",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The mission registry's domain: what a mission says about itself (its presence), the covenant it affirms, the country ceilings that bound where it may be shown, and the registry's own profile. Pure; no I/O.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": { "@noble/hashes": "^1.8.0" },
+  "devDependencies": { "typescript": "^5.6.3", "vitest": "^3.2.4" }
+}
