@@ -30,6 +30,19 @@ const POLL_MS = 5000;
  * about money is the one thing not allowed. The club list is read here too, because the rail draws it on
  * every page.
  */
+/** The page's name, the way the landing says its own: an eyebrow in brass, a title, one line under it. */
+function PageHead({ eyebrow, title, lede }: { eyebrow: string; title: string; lede?: string }) {
+  return (
+    <header className="page-head">
+      <div>
+        <span className="eyebrow">{eyebrow}</span>
+        <h1>{title}</h1>
+      </div>
+      {lede ? <p className="lede">{lede}</p> : null}
+    </header>
+  );
+}
+
 export function Room({
   r,
   session,
@@ -136,9 +149,15 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
       <Rail r={r} clubs={clubs} invitations={invitations} />
       <main className="room-main">
         {r.page === 'tables' ? (
-          <TablesPage session={session} tables={tables} err={err} money={money} ready={ready} onChanged={reload} />
+          <>
+            <PageHead eyebrow="Tables" title="What is running" lede="Open tables anyone can join. A club's own tables are on the club's page." />
+            <TablesPage session={session} tables={tables} err={err} money={money} ready={ready} onChanged={reload} />
+          </>
         ) : r.page === 'money' ? (
-          <MoneyPage session={session} config={auth.config} treasury={treasury} treasuryErr={treasuryErr} tables={tables} onChanged={loadTreasury} />
+          <>
+            <PageHead eyebrow="Your money" title="Buy-ins and cash-outs" lede="In Sheqels — the card room's own coin, held in your money account at your Home. A practice table needs none of it." />
+            <MoneyPage session={session} config={auth.config} treasury={treasury} treasuryErr={treasuryErr} tables={tables} onChanged={loadTreasury} />
+          </>
         ) : r.page === 'newClub' ? (
           <NewClubPage config={auth.config} />
         ) : r.page === 'club' ? (

@@ -32,14 +32,18 @@ export function PlayPage({ session }: { session: AppSession }) {
 }
 
 /** What each practice table is FOR, in the words of somebody who does not know the game yet. */
-const PITCH: Record<string, { title: string; blurb: string; cta: string }> = {
+const PITCH: Record<string, { title: string; blurb: string; cta: string; suit: string; kicker: string }> = {
   canasta: {
+    suit: '♣',
+    kicker: 'Classic canasta · with a coach',
     title: 'Learn canasta',
     blurb:
       'Your own table, with three of the house players and somebody talking you through every move — what to draw, what to keep, and why a three is worth putting down. Leave whenever you like; it is still here, and one press deals a new game.',
     cta: 'Deal me in',
   },
   poker: {
+    suit: '♠',
+    kicker: 'Texas hold’em · play money',
     title: 'Play hold’em against the house',
     blurb:
       'Your own table and the house players, for play money. No buy-in, no authorisation, nothing to set up — it is the same engine the money tables run, so what works here works there.',
@@ -57,11 +61,19 @@ const PITCH: Record<string, { title: string; blurb: string; cta: string }> = {
 function PracticeCard({ session, game }: { session: AppSession; game: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const pitch = PITCH[game] ?? { title: `Play ${gameLabel(game)}`, blurb: 'Your own table, with the house players.', cta: 'Deal me in' };
+  const pitch = PITCH[game] ?? { title: `Play ${gameLabel(game)}`, blurb: 'Your own table, with the house players.', cta: 'Deal me in', suit: '♦', kicker: 'play money' };
 
   return (
     <section className={`panel play-card play-${game}`}>
-      <h2>{pitch.title}</h2>
+      {/* The felt band: the game's suit, what kind of table this is, and its name — the landing's hero, per game. */}
+      <div className="play-band">
+        <span className="play-suit" aria-hidden="true">{pitch.suit}</span>
+        <div>
+          <span className="play-kicker">{pitch.kicker}</span>
+          <h2>{pitch.title}</h2>
+        </div>
+      </div>
+      <div className="play-body">
       <p className="hint">{pitch.blurb}</p>
       {err ? <div className="form-error">{err}</div> : null}
       <button
@@ -84,6 +96,7 @@ function PracticeCard({ session, game }: { session: AppSession; game: string }) 
       >
         {busy ? 'Dealing…' : pitch.cta}
       </button>
+      </div>
     </section>
   );
 }

@@ -623,7 +623,7 @@ describe('the left rail', () => {
   it('marks the club whose page you are on as the current page, for a screen reader too', () => {
     const html = rail([{ clubId: 'c1', name: 'Thursday Night' }], '#/clubs/c1');
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain('sidenav-row on');
+    expect(html).toMatch(/sidenav-row( club)? on/);
   });
 
   it('carries a way to the front page, which otherwise has none once you are signed in', () => {

@@ -15,7 +15,7 @@ import {
 } from '../lib/canastaSocket';
 import { Identity } from '../components/Identity';
 import { useLeaveTable } from '../lib/useLeaveTable';
-import { PRODUCT_NAME } from '../lib/brand';
+import { Brand } from '../components/Brand';
 import { clubHash } from '../lib/routes';
 import { useClubScope } from '../lib/useClubScope';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
@@ -318,9 +318,7 @@ export function CanastaPage({
   return (
     <>
       <div className="topbar">
-        <a className="brand" href="#/">
-          {PRODUCT_NAME}
-        </a>
+        <Brand />
         <span className="meta">
           <strong>{tableName ?? tableId}</strong>
           <span className="tag">canasta</span>

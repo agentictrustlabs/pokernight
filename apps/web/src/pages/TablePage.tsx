@@ -10,7 +10,7 @@ import { stakeStage } from '../lib/stake';
 import { TableSocket, dismissError, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
 import { Identity } from '../components/Identity';
 import { SettlementTag } from '../components/SettlementTag';
-import { PRODUCT_NAME } from '../lib/brand';
+import { Brand } from '../components/Brand';
 import { clubHash } from '../lib/routes';
 import { useClubScope } from '../lib/useClubScope';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
@@ -306,9 +306,7 @@ export function TablePage({
   return (
     <>
       <div className="topbar">
-        <a className="brand" href="#/">
-          {PRODUCT_NAME}
-        </a>
+        <Brand />
         <span className="meta">
           <strong>{tableName ?? tableId}</strong>
           {club ? (

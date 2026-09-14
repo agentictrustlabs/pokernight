@@ -24,7 +24,8 @@ import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
 import { HOME_HASH, clubHash, goTo, route, takeReturn } from './lib/routes';
 import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
-import { PRODUCT_NAME } from './lib/brand';
+import { Brand } from './components/Brand';
+import { PRODUCT_MARK } from './lib/brand';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
 import { NewBuild } from './components/NewBuild';
@@ -68,6 +69,8 @@ export function App() {
   const [config, setConfig] = useState<AuthConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The page loaded with a Home callback in the address bar — a sign-in is about to finish. */
+  const arrivingRef = useRef(/[?&](code|error)=/.test(location.search));
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [personas, setPersonas] = useState<DemoPersona[]>([]);
@@ -387,7 +390,7 @@ export function App() {
       .catch((e: unknown) =>
         setError(e instanceof ApiError ? `Your Home signed you in, but the card room would not accept it — ${e.message}` : 'Could not finish signing in.'),
       )
-      .finally(() => setBusy(false));
+      .finally(() => { arrivingRef.current = false; setBusy(false); });
   }, [login]);
 
   /**
@@ -471,9 +474,7 @@ export function App() {
       <div className="app">
         <CardDefs />
         <div className="topbar">
-          <a className="brand" href="#/">
-            {PRODUCT_NAME}
-          </a>
+          <Brand />
           <span className="spacer" />
           <span className="meta">{session ? <Identity session={session} onSignOut={signOut} /> : null}</span>
         </div>
@@ -496,15 +497,18 @@ export function App() {
   // The front page, on two roads: the front door for a visitor with no session, and `#/about` for
   // anybody — which is the only way a signed-in reader can get at the product explanation at all.
   const showLanding = (r.page === 'home' && !session) || r.page === 'about';
+  // ARRIVING: the Home has handed the person back and the card room has not accepted them yet. The
+  // front door used to flash in that gap — hero, pitch, "Sign in" — and then vanish under the room
+  // (2026-09-14, "we flash the home page when we finally connect"). Known before the first paint from
+  // the address bar (the code is still in it), and kept while the return leg is in flight.
+  const arriving = !session && (busy || arrivingRef.current);
 
   return huddled(
     <div className="app">
       <CardDefs />
       <NewBuild />
       <div className="topbar">
-        <a className="brand" href="#/">
-          {PRODUCT_NAME}
-        </a>
+        <Brand />
         <span className="spacer" />
         <span className="meta">
           {session ? (
@@ -512,7 +516,7 @@ export function App() {
           ) : (
             <>
               <span>card room · test money</span>
-              {r.page === 'signin' ? null : <a href="#/signin">Sign in</a>}
+              {r.page === 'signin' || arriving ? null : <a href="#/signin">Sign in</a>}
             </>
           )}
         </span>
@@ -525,7 +529,15 @@ export function App() {
           <button type="button" className="link-button" onClick={() => { setError(null); setNotice(null); }}>dismiss</button>
         </div>
       ) : null}
-      {showLanding ? (
+      {arriving ? (
+        <div className="arriving" role="status" aria-live="polite">
+          <div>
+            <span className="arriving-mark" aria-hidden="true">{PRODUCT_MARK}</span>
+            <p>{error ?? 'Your Home has signed you in — taking your seat…'}</p>
+            {error ? <p><a href="#/signin" onClick={() => { arrivingRef.current = false; }}>Sign in</a></p> : null}
+          </div>
+        </div>
+      ) : showLanding ? (
         <Landing auth={auth} onLogin={login} session={session} />
       ) : (
         <div className="page">

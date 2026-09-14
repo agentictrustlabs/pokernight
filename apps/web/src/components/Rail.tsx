@@ -60,12 +60,13 @@ export function Rail({ r, clubs, invitations = [] }: { r: Route; clubs: readonly
             <ul className="sidenav-group">
               {club.clubs.map((i) => (
                 <li key={i.key}>
-                  <Row item={i} />
+                  <Row item={i} club />
                 </li>
               ))}
             </ul>
+            {/* A DOOR, NOT A FOOTNOTE: this is the one action the rail carries, and it says what it starts. */}
             <a className="sidenav-add" href="#/clubs/new">
-              Start another
+              Start another club
             </a>
           </>
         )}
@@ -95,9 +96,10 @@ export function Rail({ r, clubs, invitations = [] }: { r: Route; clubs: readonly
   );
 }
 
-function Row({ item }: { item: NavItem }) {
+function Row({ item, club = false }: { item: NavItem; club?: boolean }) {
+  const cls = `sidenav-row${club ? ' club' : ''}${item.here ? ' on' : ''}`;
   return (
-    <a className={item.here ? 'sidenav-row on' : 'sidenav-row'} href={item.hash} aria-current={item.here ? 'page' : undefined}>
+    <a className={cls} href={item.hash} aria-current={item.here ? 'page' : undefined}>
       <span className="sidenav-label">{item.label}</span>
       {item.sub ? <span className="sidenav-sub">{item.sub}</span> : null}
     </a>

@@ -96,7 +96,7 @@ export function TableList({
       {tables == null ? (
         <p className="hint">Loading…</p>
       ) : tables.length === 0 ? (
-        <p className="hint">{empty ?? <>No tables are open. Open one below, or <a href={HOME_HASH}>deal yourself a hand</a> against the house.</>}</p>
+        empty ? <p className="hint">{empty}</p> : <p className="room-quiet"><span>The room is quiet — nobody has opened a table. Open one below, or <a href={HOME_HASH}>deal yourself a hand</a> against the house.</span></p>
       ) : (
         <div className="tables-wrap">
           <table className="tables">
