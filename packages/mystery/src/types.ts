@@ -37,6 +37,21 @@ export interface Venue {
  * them until exactly one person is left. `archetype` is the skills-estate archetype this role is played from
  * (`docs/MYSTERY-NIGHT.md` §5); the written `lines` are what a character says when no model is asked.
  */
+/**
+ * A FACE, as parameters rather than a picture.
+ *
+ * Eight people in a room have to be told apart at a glance, and a drawn portrait per part would be eight
+ * assets to ship, license and redraw for the next title. These are the few dials that make a face
+ * recognisable — and they are CONTENT, authored with the part, so a new title's cast looks like itself.
+ */
+export interface Look {
+  /** Hex, all four: skin, hair, the collar under the chin, and the disc behind the head. */
+  skin: string; hair: string; wear: string; accent: string;
+  hairStyle: 'short' | 'long' | 'bun' | 'cap' | 'bald' | 'curls';
+  facial?: 'moustache' | 'beard' | 'stubble';
+  accessory?: 'glasses' | 'veil' | 'scarf' | 'goggles' | 'pearls';
+}
+
 export interface Role {
   id: RoleId;
   name: string;
@@ -44,6 +59,7 @@ export interface Role {
   /** What this character would rather nobody knew. Theirs alone, and never a clue about the murder. */
   secret: string;
   archetype: string;
+  look: Look;
   traits: string[];
   canBeKiller: boolean;
   lines: { greet: string; probe: string; deny: string; accuse: string; mourn: string; found: string };
@@ -86,6 +102,15 @@ export interface Title {
   evidencePerDeath: number;
   /** How long the accusations last. */
   accusationMinutes: number;
+  /**
+   * HOW FAR INTO AN ACT A MURDER BECOMES POSSIBLE, as a fraction of it.
+   *
+   * A killing ten seconds after the doors open is not a mystery, it is an accident of scheduling: nobody has
+   * been anywhere, nobody has anything to lie about, and the act it should have shaped is over before it
+   * started. The chance opens once the act has been played for a while — for the player who is the killer
+   * and for an agent who is, by the same rule.
+   */
+  murderAfter: number;
 }
 
 export type Phase = 'act' | 'interlude' | 'accusations' | 'revealed';
@@ -114,14 +139,21 @@ export interface Casting {
 
 export interface Death { victim: RoleId; room: RoomId; prop: PropId; act: number; evidence: ClueId[]; found: ClueId[]; at: number }
 
+/**
+ * WHAT YOU HEARD, YOU HEARD.
+ *
+ * Every event that happens in a room carries the people who were IN it at the time. Redacting on where
+ * somebody is NOW hides the first act from them the moment they walk through a door — a transcript that
+ * un-remembers itself. `saw` is small (a cast is eight) and it is the only way the history is stable.
+ */
 export type MysteryEvent =
-  | { type: 'said'; at: number; by: RoleId; room: RoomId; text: string; via: Operator }
+  | { type: 'said'; at: number; by: RoleId; room: RoomId; text: string; via: Operator; saw?: RoleId[] }
   | { type: 'whispered'; at: number; by: RoleId; to: RoleId; room: RoomId; text: string }
-  | { type: 'moved'; at: number; who: RoleId; from: RoomId; to: RoomId }
+  | { type: 'moved'; at: number; who: RoleId; from: RoomId; to: RoomId; saw?: RoleId[] }
   | { type: 'found'; at: number; who: RoleId; clue: ClueId; room: RoomId }
-  | { type: 'shared'; at: number; by: RoleId; to: RoleId | null; clue: ClueId; room: RoomId }
-  | { type: 'claimed'; at: number; by: RoleId; kind: 'alibi' | 'testimony'; about: RoleId; text: string; room: RoomId }
-  | { type: 'accused'; at: number; by: RoleId; against: RoleId; clues: ClueId[]; room: RoomId | null }
+  | { type: 'shared'; at: number; by: RoleId; to: RoleId | null; clue: ClueId; room: RoomId; saw?: RoleId[] }
+  | { type: 'claimed'; at: number; by: RoleId; kind: 'alibi' | 'testimony'; about: RoleId; text: string; room: RoomId; saw?: RoleId[] }
+  | { type: 'accused'; at: number; by: RoleId; against: RoleId; clues: ClueId[]; room: RoomId | null; saw?: RoleId[] }
   | { type: 'died'; at: number; victim: RoleId; room: RoomId; act: number }
   | { type: 'cue'; at: number; text: string; by: 'house' | 'director' }
   | { type: 'act'; at: number; act: number; phase: Phase; deadline: number | null }
@@ -149,7 +181,17 @@ export interface MysteryState {
   killer: RoleId;
   /** THE RULE THE DRAW RAN UNDER, declared before the seed was spent and published at the reveal. */
   killerRule: KillerRule;
+  /**
+   * HOW LONG THE NIGHT IS, as a multiplier on the acts the title authored.
+   *
+   * The act lengths are content — an evening at the Belvedere is an evening — but somebody with twenty
+   * minutes should still get a whole mystery rather than the first third of one. It is in the state
+   * because a replay of this night has to run at the length this night ran at.
+   */
+  pace: number;
   act: number;
+  /** When the act on the clock began, so "a while into it" is a thing the engine can answer. */
+  actStartedAt: number;
   phase: Phase;
   deadline: number | null;
   where: Record<RoleId, RoomId>;
@@ -168,7 +210,7 @@ export interface MysteryState {
 export interface Refusal { ok: false; code: string; reason: string }
 export type Applied = { ok: true; state: MysteryState; events: MysteryEvent[] } | Refusal;
 
-export interface ViewPerson { role: RoleId; name: string; operator: Operator; agent: string; alive: boolean }
+export interface ViewPerson { role: RoleId; name: string; operator: Operator; agent: string; alive: boolean; look: Look }
 export interface ViewClue { id: ClueId; kind: 'fact' | 'evidence'; text: string; public: boolean }
 
 export interface MysteryView {
@@ -178,15 +220,17 @@ export interface MysteryView {
   act: number;
   actName: string;
   objective: string;
+  /** What the night is running at: 1 is the evening the title was written for. */
+  pace: number;
   phase: Phase;
   deadline: number | null;
   seedCommit: string;
   you: {
-    role: RoleId; name: string; blurb: string; secret: string; alive: boolean;
+    role: RoleId; name: string; blurb: string; secret: string; alive: boolean; look: Look;
     /** Only ever true in the killer's own view. */
     killer: boolean;
-    /** The killer's opportunity this act, in their view alone. */
-    opportunity?: { room: RoomId; prop: PropId; propName: string };
+    /** The killer's opportunity this act, in their view alone — and whether the night is old enough yet. */
+    opportunity?: { room: RoomId; prop: PropId; propName: string; ready: boolean; readyAt: number };
   } | null;
   room: {
     id: RoomId; name: string; blurb: string;

@@ -132,10 +132,10 @@ describe('what the engine refuses', () => {
     expect(apply(s, TITLE, VENUE, s.killer, { type: 'murder', victim: notKiller, prop: 'knife-block' }, T0, 'human')).toMatchObject({ ok: false });
   });
 
-  it('lets the killer kill when they are alone with somebody, where the act allows it', () => {
+  it('lets the killer kill when they are alone with somebody, where the act allows it and the act is old enough', () => {
     let s = start();
-    // wind the night on to act 2, where the kitchen is a chance
-    s = { ...s, act: 2, phase: 'act', deadline: T0 + 60_000 };
+    // wind the night on to act 2, where the kitchen is a chance, and far enough into it for one
+    s = { ...s, act: 2, phase: 'act', actStartedAt: T0 - 20 * 60_000, deadline: T0 + 60_000 };
     const victim = s.cast.find((c) => c.role !== s.killer)!.role;
     s = { ...s, where: { ...s.where, [s.killer]: 'kitchen', [victim]: 'kitchen' } };
     for (const c of s.cast) if (c.role !== s.killer && c.role !== victim) s.where[c.role] = 'lobby';
@@ -176,5 +176,57 @@ describe('who the seed may land on is decided before it is spent', () => {
 
   it('the rule cannot change what the seed already drew — same seed, same rule, same killer', () => {
     expect(open('any', ['chef'], 5).killer).toBe(open('any', ['chef'], 5).killer);
+  });
+});
+
+describe('a short night is a whole night', () => {
+  it('runs every act, both deaths and the reveal at a quarter of the length', () => {
+    const seedHex = seedFrom(11);
+    let state = openStaging({ title: TITLE, venue: VENUE, cast: castOf(), seedHex, seedCommit: 'x', now: T0, pace: 0.25 });
+    expect(state.deadline! - T0).toBe(Math.round(TITLE.acts[0]!.minutes * 60_000 * 0.25));
+    let now = T0;
+    for (let i = 0; i < 4000 && state.phase !== 'revealed'; i++) {
+      now += 4000;
+      state = tick(state, TITLE, VENUE, now).state;
+    }
+    expect(state.phase).toBe('revealed');
+    expect(state.deaths).toHaveLength(2);
+    // and it took about a quarter of an evening, not an evening
+    const minutes = (state.endedAt! - state.startedAt) / 60_000;
+    expect(minutes).toBeLessThan(20);
+    expect(minutes).toBeGreaterThan(10);
+  });
+});
+
+describe('what you heard, you heard', () => {
+  it('keeps a line in your transcript after you have walked out of the room', () => {
+    let s = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor']), seedHex: seedFrom(21), seedCommit: 'x', now: T0 });
+    const said = apply(s, TITLE, VENUE, 'chef', { type: 'say', text: 'The soup is at eight, whatever else happens.' }, T0, 'agent');
+    expect(said.ok).toBe(true);
+    if (!said.ok) return;
+    s = said.state;
+    const heard = () => viewFor(s, TITLE, VENUE, 'doctor').transcript.filter((e) => e.type === 'said' && e.text.startsWith('The soup')).length;
+    expect(heard()).toBe(1);
+    const moved = apply(s, TITLE, VENUE, 'doctor', { type: 'move', room: 'lounge' }, T0 + 1000, 'human');
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) return;
+    s = moved.state;
+    expect(heard()).toBe(1); // still theirs — they were standing there when it was said
+    // and somebody who was never in the room never hears it, whatever room they end up in
+    const elsewhere = viewFor(s, TITLE, VENUE, 'chef');
+    expect(elsewhere.transcript.some((e) => e.type === 'said' && e.by === 'chef')).toBe(true);
+  });
+
+  it('a chance does not open at the door: the killer is refused until the act has been played', () => {
+    let s = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor']), seedHex: seedFrom(22), seedCommit: 'x', now: T0, killerRule: 'doctor' });
+    const actTwo = Math.round(TITLE.acts[0]!.minutes * 60_000) + 26_000;
+    s = { ...s, act: 2, phase: 'act', actStartedAt: T0 + actTwo, deadline: T0 + actTwo + TITLE.acts[1]!.minutes * 60_000 };
+    const victim = s.cast.find((c) => c.role !== s.killer)!.role;
+    s = { ...s, where: { ...s.where, [s.killer]: 'kitchen', [victim]: 'kitchen' } };
+    for (const c of s.cast) if (c.role !== s.killer && c.role !== victim) s.where[c.role] = 'lobby';
+    const early = apply(s, TITLE, VENUE, s.killer, { type: 'murder', victim, prop: 'knife-block' }, T0 + actTwo + 10_000, 'human');
+    expect(early).toMatchObject({ ok: false, code: 'too-soon' });
+    const later = apply(s, TITLE, VENUE, s.killer, { type: 'murder', victim, prop: 'knife-block' }, T0 + actTwo + TITLE.acts[1]!.minutes * 60_000 * 0.6, 'human');
+    expect(later.ok).toBe(true);
   });
 });

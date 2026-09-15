@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { MysteryEvent, MysteryView } from '@pokernight/mystery';
+import { chooseAction, TITLES, type MysteryAction, type MysteryEvent, type MysteryView } from '@pokernight/mystery';
 import type { AppSession } from '../lib/types';
 import { mysteryApi } from '../lib/api';
 import { MysterySocket, type MysteryClientState } from '../lib/mysterySocket';
+import { castVoicesOn, hushCast, sayAs, setCastVoicesOn, voicesAvailable } from '../lib/castVoices';
 import { HOME_HASH } from '../lib/routes';
+import { Face } from '../components/mystery/Face';
 import { Identity } from '../components/Identity';
 import { Brand } from '../components/Brand';
 
@@ -23,6 +25,12 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
   const redraw = useMemo(() => () => bump((n) => n + 1), []);
   const [line, setLine] = useState('');
   const [busy, setBusy] = useState(false);
+  const [voices, setVoices] = useState(() => castVoicesOn());
+  /** Who is talking right now, so the room can show it — cleared a few seconds after their line lands. */
+  const [speaking, setSpeaking] = useState<string | null>(null);
+  const speakingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** How far down the transcript the voice has read, so a reconnect does not say the whole night again. */
+  const spoken = useRef<number>(-1);
 
   useEffect(() => {
     if (!session) return;
@@ -33,6 +41,30 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
 
   const st: MysteryClientState | null = sock.current?.state ?? null;
   const view = st?.view ?? null;
+
+  /**
+   * THE CAST, OUT LOUD. Only what is NEW, only what somebody else said, and never your own typing read back
+   * at you. The house's cues are read too, in the low slow voice, because an act opening is a voice-over.
+   */
+  useEffect(() => {
+    if (!view) return;
+    const t = view.transcript;
+    if (spoken.current < 0) { spoken.current = t.length; return; } // arriving mid-night says nothing
+    for (let i = spoken.current; i < t.length; i++) {
+      const e = t[i];
+      if (!e) continue;
+      if (e.type === 'said' && e.by !== view.you?.role) {
+        sayAs(e.by, e.text);
+        // THE ROOM SHOWS WHO IS TALKING: their face lights and its mouth moves while the line is theirs.
+        setSpeaking(e.by);
+        if (speakingTimer.current) clearTimeout(speakingTimer.current);
+        speakingTimer.current = setTimeout(() => setSpeaking(null), Math.min(6000, 1200 + e.text.length * 55));
+      } else if (e.type === 'cue') sayAs('house', e.text);
+      else if (e.type === 'died') sayAs('house', `${view.cast.find((c) => c.role === e.victim)?.name ?? 'somebody'} is dead.`);
+    }
+    spoken.current = t.length;
+  }, [view?.transcript.length, view]);
+  useEffect(() => () => { hushCast(); if (speakingTimer.current) clearTimeout(speakingTimer.current); }, []);
 
   if (!session) return <div className="panel"><p className="hint">Sign in to play.</p></div>;
 
@@ -47,6 +79,16 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
         </span>
         <span className="spacer" />
         <span className="meta">
+          {voicesAvailable() ? (
+            <button
+              type="button"
+              className={`tag seat-tag${voices ? ' out' : ''}`}
+              title={voices ? 'The cast is being read aloud' : 'Have the cast read aloud'}
+              onClick={() => { const on = !voices; setVoices(on); setCastVoicesOn(on); }}
+            >
+              {voices ? 'voices on' : 'voices off'}
+            </button>
+          ) : null}
           {view && view.phase !== 'revealed' ? (
             <button type="button" className="tag seat-tag" onClick={() => sock.current?.pause(!(st?.staging?.paused === true))}>
               {st?.staging?.paused ? 'Carry on' : 'Hold the night'}
@@ -68,7 +110,7 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
               setBusy(true);
               try { await mysteryApi.solo({ title: view.title, role: view.you?.role, restart: true }, session.token); location.reload(); } finally { setBusy(false); }
             }} busy={busy} /> : null}
-            <Transcript view={view} />
+            <Transcript view={view} speaking={speaking} />
             {view.phase !== 'revealed' ? (
               <form
                 className="mystery-say"
@@ -79,12 +121,12 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
               </form>
             ) : null}
             {st?.error ? <div className="form-error">{st.error}</div> : null}
-            <Room view={view} act={(a) => sock.current?.act(a)} />
+            <Room view={view} act={(a) => sock.current?.act(a)} speaking={speaking} />
           </main>
           <aside className="mystery-side">
-            <You view={view} />
+            <You view={view} act={(a) => sock.current?.act(a)} />
             <Clues view={view} act={(a) => sock.current?.act(a)} />
-            <Cast view={view} act={(a) => sock.current?.act(a)} />
+            <Cast view={view} act={(a) => sock.current?.act(a)} speaking={speaking} />
           </aside>
         </div>
       )}
@@ -105,7 +147,7 @@ function Clock({ deadline, paused }: { deadline: number | null; paused: boolean 
 }
 
 /** WHERE YOU ARE, and everything you can do about it: the people, the things, the doors. */
-function Room({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
+function Room({ view, act, speaking }: { view: MysteryView; act: (a: unknown) => void; speaking: string | null }) {
   const [whisper, setWhisper] = useState<{ to: string; text: string } | null>(null);
   const room = view.room;
   if (!room) return null;
@@ -131,6 +173,7 @@ function Room({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
           <ul className="mystery-people">
             {room.people.map((p) => (
               <li key={p.role}>
+                <Face look={p.look} name={p.name} size={44} speaking={speaking === p.role} dead={!p.alive} />
                 <strong>{p.name}</strong>
                 <span className="tag">{p.operator === 'human' ? 'a person' : 'played by an agent'}</span>
                 {playing ? <button type="button" className="small" onClick={() => act({ type: 'alibi', for: p.role })}>They were with me</button> : null}
@@ -186,20 +229,75 @@ function Room({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
   );
 }
 
+/**
+ * WHAT YOUR CHARACTER WOULD DO — the understudy, reading over your shoulder.
+ *
+ * It is the SAME policy the characters nobody is playing are run on, given your own view and nothing else:
+ * so it can only suggest what you could have thought of, which is the coach's rule (`docs/HOLDEM-COACH.md`)
+ * applied to a story. In P2 this becomes your character's own agent answering `mystery.consult` from its
+ * archetype at your Home; the button, and what it may see, do not change.
+ */
+function saying(a: MysteryAction, view: MysteryView): string {
+  const who = (r: string) => view.cast.find((c) => c.role === r)?.name ?? r;
+  const room = (id: string) => (view.rooms.find((r) => r.id === id)?.name ?? 'the next room').replace(/^The /, 'the ');
+  switch (a.type) {
+    case 'move': return `Go through to ${room(a.room)} — there is nothing more for you in this one.`;
+    case 'examine': return `Look at ${view.room?.props.find((p) => p.id === a.prop)?.name ?? 'that'}. Nobody has, and it is right there.`;
+    case 'search': return 'Search this room properly. A death leaves more than one thing behind.';
+    case 'share': return 'Tell them what you found. Nothing you keep to yourself can be checked against anybody else.';
+    case 'say': return `Say something: "${a.text}"`;
+    case 'testify': return `Put ${who(a.about)} on the spot about where they were.`;
+    case 'alibi': return `Say ${who(a.for)} was with you — true or not, it is on the record now.`;
+    case 'accuse': return `Name ${who(a.against)}, on what you are holding.`;
+    case 'murder': return `Your chance, and it will not come again this act: ${who(a.victim)} is alone with you.`;
+    case 'whisper': return `Say it to ${who(a.to)} alone.`;
+    default: return 'Wait, and listen.';
+  }
+}
+
 /** WHO YOU ARE. The secret is yours; so, for exactly one person all night, is the other thing. */
-function You({ view }: { view: MysteryView }) {
+function You({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
+  const [idea, setIdea] = useState<{ action: MysteryAction; text: string } | null>(null);
   const you = view.you;
   if (!you) return <section className="panel"><h3 className="eyebrow-h">Watching</h3><p className="hint">You are not in this story — you see the public half of it.</p></section>;
   return (
     <section className={`panel mystery-you${you.killer ? ' killer' : ''}`}>
       <span className="eyebrow">Your part</span>
-      <h2>{you.name}</h2>
+      <div className="mystery-you-head">
+        <Face look={you.look} name={you.name} size={64} dead={!you.alive} />
+        <h2>{you.name}</h2>
+      </div>
       <p>{you.blurb}</p>
       <p className="mystery-secret"><strong>Nobody knows:</strong> {you.secret}</p>
       {you.killer ? (
         <p className="mystery-killer-note"><strong>It was you.</strong> Nobody else is told this, tonight or ever — the seed said so before the night began, and the reveal will prove it. Take your chance when the room is right, and lie well.</p>
       ) : null}
       {!you.alive ? <p className="hint">You are dead. You may still be heard, which is generous.</p> : null}
+      {you.alive && view.phase !== 'revealed' ? (
+        <div className="mystery-understudy">
+          <button
+            type="button"
+            className="small"
+            onClick={() => {
+              const lines = TITLES[view.title]?.roles.find((r) => r.id === you.role)?.lines;
+              const move = lines ? chooseAction(view, lines, Math.floor(Date.now() / 3000)) : null;
+              setIdea(move ? { action: move.action, text: saying(move.action, view) } : null);
+            }}
+          >
+            What would {you.name.split(' ').slice(-1)[0]} do?
+          </button>
+          {idea ? (
+            <div className="mystery-idea">
+              <p>{idea.text}</p>
+              <div className="row wrap">
+                <button type="button" className="primary" onClick={() => { act(idea.action); setIdea(null); }}>Do that</button>
+                <button type="button" className="small" onClick={() => setIdea(null)}>My own way</button>
+              </div>
+              <p className="hint">Your understudy reads what you can see and nothing else — the same eyes, the same clue book.</p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -240,7 +338,7 @@ function Clues({ view, act }: { view: MysteryView; act: (a: unknown) => void }) 
 }
 
 /** THE CAST, and — when it is time — the one thing the night is for. */
-function Cast({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
+function Cast({ view, act, speaking }: { view: MysteryView; act: (a: unknown) => void; speaking: string | null }) {
   const [pick, setPick] = useState<string>('');
   const open = view.phase === 'accusations' || (view.phase === 'act' && view.act >= 3);
   return (
@@ -249,6 +347,7 @@ function Cast({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
       <ul>
         {view.cast.map((p) => (
           <li key={p.role} className={p.alive ? '' : 'dead'}>
+            <Face look={p.look} name={p.name} size={28} speaking={speaking === p.role} dead={!p.alive} />
             <strong>{p.name}</strong>
             <span className="hint">{p.role === view.you?.role ? 'you' : p.operator === 'human' ? 'a person' : 'an agent'}{p.alive ? '' : ' · dead'}</span>
           </li>
@@ -272,32 +371,49 @@ function Cast({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
 }
 
 /** WHAT YOU HEARD AND SAW, in order. Everything else about the night happened to somebody else. */
-function Transcript({ view }: { view: MysteryView }) {
+function Transcript({ view, speaking }: { view: MysteryView; speaking: string | null }) {
   const end = useRef<HTMLDivElement | null>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [view.transcript.length]);
   const name = (role: string) => view.cast.find((c) => c.role === role)?.name ?? role;
   // A clue arrives as an id; the words for it are in the book you are holding.
   const clue = (id: string) => view.clues.find((c) => c.id === id)?.text ?? 'something worth keeping';
-  const room = (id: string) => view.rooms.find((r) => r.id === id)?.name ?? 'the next room';
+  // "…through to The lounge" is how a name written for a heading reads inside a sentence; this is the fix.
+  const room = (id: string) => {
+    const n = view.rooms.find((r) => r.id === id)?.name ?? 'the next room';
+    return n.charAt(0).toLowerCase() + n.slice(1);
+  };
   return (
     <section className="panel mystery-transcript" aria-live="polite">
-      {view.transcript.map((e, i) => <Line key={`${e.at}:${i}`} e={e} name={name} clue={clue} room={room} you={view.you?.role ?? null} />)}
+      {view.transcript.map((e, i) => <Line key={`${e.at}:${i}`} e={e} name={name} clue={clue} room={room} cast={view.cast} speaking={speaking} you={view.you?.role ?? null} />)}
       <div ref={end} />
     </section>
   );
 }
 
-function Line({ e, name, clue, room, you }: { e: MysteryEvent; name: (r: string) => string; clue: (id: string) => string; room: (id: string) => string; you: string | null }) {
+function Line({ e, name, clue, room, cast, speaking, you }: {
+  e: MysteryEvent; name: (r: string) => string; clue: (id: string) => string; room: (id: string) => string;
+  cast: MysteryView['cast']; speaking: string | null; you: string | null;
+}) {
+  /** A line somebody said gets their face beside it — that is the difference between a room and a log. */
+  const said = (role: string, body: React.ReactNode, cls: string) => {
+    const who = cast.find((c) => c.role === role);
+    return (
+      <div className={`m-line ${cls}`}>
+        {who ? <Face look={who.look} name={who.name} size={34} speaking={speaking === role} dead={!who.alive} /> : null}
+        <p><strong>{role === you ? 'You' : name(role)}</strong> {body}</p>
+      </div>
+    );
+  };
   switch (e.type) {
     case 'cue': return <p className="m-cue">{e.text}</p>;
     case 'act': return <p className="m-act">{e.phase === 'interlude' ? 'The house holds its breath.' : e.phase === 'accusations' ? 'Time to name somebody.' : `Act ${e.act}`}</p>;
-    case 'said': return <p className="m-said"><strong>{e.by === you ? 'You' : name(e.by)}:</strong> {e.text}</p>;
-    case 'whispered': return <p className="m-whisper"><strong>{e.by === you ? 'You' : name(e.by)}</strong> {e.by === you ? `whisper to ${name(e.to)}` : 'whispers'}: {e.text}</p>;
+    case 'said': return said(e.by, <span className="m-words">{e.text}</span>, 'm-said');
+    case 'whispered': return said(e.by, <span className="m-words">{e.by === you ? `(to ${name(e.to)}) ` : '(quietly) '}{e.text}</span>, 'm-whisper');
     case 'moved': return <p className="m-move">{e.who === you ? `You go through to ${room(e.to)}.` : `${name(e.who)} goes through to ${room(e.to)}.`}</p>;
     case 'found': return <p className="m-found"><strong>You find:</strong> {clue(e.clue)}</p>;
-    case 'shared': return <p className="m-shared"><strong>{e.by === you ? 'You tell' : `${name(e.by)} tells`}</strong> {e.to ? name(e.to) : 'the room'}: {clue(e.clue)}</p>;
-    case 'claimed': return <p className="m-claim"><strong>{e.by === you ? 'You' : name(e.by)}:</strong> {e.text} <span className="tag">a claim</span></p>;
-    case 'accused': return <p className="m-accused"><strong>{e.by === you ? 'You accuse' : `${name(e.by)} accuses`}</strong> {name(e.against)}.</p>;
+    case 'shared': return said(e.by, <>tells {e.to ? (e.to === you ? 'you' : name(e.to)) : 'the room'}: <span className="m-words">{clue(e.clue)}</span></>, 'm-shared');
+    case 'claimed': return said(e.by, <><span className="m-words">{e.text}</span> <span className="tag">a claim</span></>, 'm-claim');
+    case 'accused': return said(e.by, <>{e.by === you ? 'accuse' : 'accuses'} <strong>{name(e.against)}</strong>.</>, 'm-accused');
     case 'died': return <p className="m-died"><strong>{name(e.victim)} is dead</strong>, in {room(e.room)}.</p>;
     case 'revealed': return <p className="m-act">The seed is published.</p>;
     default: return null;

@@ -20,8 +20,16 @@ import type {
 
 /** How long the house holds the room between acts. Long enough to read what happened, short enough to hurt. */
 export const INTERLUDE_MS = 25_000;
+/** An act's length: what the title authored, at the pace this night is running. */
+export const actMs = (minutes: number, pace: number): number => Math.max(20_000, Math.round(minutes * 60_000 * pace));
 
 const no = (code: string, reason: string): Refusal => ({ ok: false, code, reason });
+
+/** When this act's chance opens: a while in, so the killing shapes the act rather than ending it at the door. */
+export function chanceOpensAt(state: MysteryState, title: Title): number {
+  const act = actOf(title, state.act);
+  return state.actStartedAt + Math.round(actMs(act.minutes, state.pace) * Math.max(0, Math.min(0.9, title.murderAfter)));
+}
 
 export function roleOf(title: Title, id: RoleId): Role | undefined { return title.roles.find((r) => r.id === id); }
 export function roomOf(venue: Venue, id: RoomId) { return venue.rooms.find((r) => r.id === id); }
@@ -116,9 +124,12 @@ export function openStaging(args: {
   title: Title; venue: Venue; cast: Casting[]; seedHex: string; seedCommit: string; now: number;
   /** Stated BEFORE the seed is spent, so the commitment still proves nobody chose after the night began. */
   killerRule?: KillerRule;
+  /** A multiplier on the title's act lengths; 1 is the evening it was written for. */
+  pace?: number;
 }): MysteryState {
   const { title, venue, cast, seedHex, seedCommit, now } = args;
   const killerRule: KillerRule = args.killerRule ?? 'any';
+  const pace = Math.max(0.05, Math.min(2, args.pace ?? 1));
   const seed = hexToBytes(seedHex);
   const canKill = cast.filter((c) => roleOf(title, c.role)?.canBeKiller);
   const shuffled = seededShuffle(canKill, seed);
@@ -142,11 +153,11 @@ export function openStaging(args: {
   for (const c of cast) { where[c.role] = act0.opens[0] ?? venue.spawn; knows[c.role] = []; examined[c.role] = []; }
   const state: MysteryState = {
     title: title.id, venue: venue.id, seedCommit, seedHex,
-    cast, killer: killer.role, killerRule, act: 1, phase: 'act', deadline: now + act0.minutes * 60_000,
+    cast, killer: killer.role, killerRule, pace, act: 1, actStartedAt: now, phase: 'act', deadline: now + actMs(act0.minutes, pace),
     where, knows, examined, publicClues: [], deaths: [], claims: [], accusations: [],
     log: [
       { type: 'cue', at: now, text: act0.opening, by: 'house' },
-      { type: 'act', at: now, act: 1, phase: 'act', deadline: now + act0.minutes * 60_000 },
+      { type: 'act', at: now, act: 1, phase: 'act', deadline: now + actMs(act0.minutes, pace) },
     ],
     startedAt: now, endedAt: null,
   };
@@ -219,12 +230,13 @@ export function tick(state: MysteryState, title: Title, venue: Venue, now: numbe
   if (s.phase === 'interlude') {
     if (s.act >= title.acts.length) {
       s.phase = 'accusations';
-      s.deadline = now + title.accusationMinutes * 60_000;
+      s.deadline = now + actMs(title.accusationMinutes, s.pace);
     } else {
       s.act += 1;
       s.phase = 'act';
+      s.actStartedAt = now;
       const next = actOf(title, s.act);
-      s.deadline = now + next.minutes * 60_000;
+      s.deadline = now + actMs(next.minutes, s.pace);
       // A room the act has not opened is a room nobody is standing in: everyone still in one is moved.
       for (const r of aliveRoles(s)) if (!next.opens.includes(s.where[r] ?? '')) s.where[r] = next.opens[0] ?? venue.spawn;
       events.push(...push(s, { type: 'cue', at: now, text: next.opening, by: 'house' }));
@@ -256,14 +268,15 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       if (s.phase !== 'act') return no('not-now', 'Nobody is walking anywhere just now.');
       if (!act.opens.includes(action.room)) return no('closed', 'That part of the hotel is not open.');
       if (!adjacent(venue, here, action.room)) return no('no-door', 'There is no door from here to there.');
+      const witnesses = [...new Set([role, ...peopleIn(s, here), ...peopleIn(s, action.room)])];
       s.where[role] = action.room;
-      events.push(...push(s, { type: 'moved', at: now, who: role, from: here, to: action.room }));
+      events.push(...push(s, { type: 'moved', at: now, who: role, from: here, to: action.room, saw: witnesses }));
       break;
     }
     case 'say': {
       const text = action.text.trim().slice(0, 280);
       if (!text) return no('empty', 'Say something.');
-      events.push(...push(s, { type: 'said', at: now, by: role, room: here, text, via }));
+      events.push(...push(s, { type: 'said', at: now, by: role, room: here, text, via, saw: peopleIn(s, here) }));
       break;
     }
     case 'whisper': {
@@ -301,7 +314,7 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       const recipients = to ? [to] : peopleIn(s, here).filter((r) => r !== role);
       for (const r of recipients) if (!(s.knows[r] ?? []).includes(action.clue)) s.knows[r] = [...(s.knows[r] ?? []), action.clue];
       if (!to && !s.publicClues.includes(action.clue)) s.publicClues = [...s.publicClues, action.clue];
-      events.push(...push(s, { type: 'shared', at: now, by: role, to, clue: action.clue, room: here }));
+      events.push(...push(s, { type: 'shared', at: now, by: role, to, clue: action.clue, room: here, saw: to ? [role, to] : peopleIn(s, here) }));
       break;
     }
     case 'testify':
@@ -314,7 +327,7 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       if (!text) return no('empty', 'Say what you saw.');
       // A CLAIM IS A CLAIM. Nothing checks it, and nothing ever will: lying is the game.
       s.claims = [...s.claims, { by: role, kind: action.type === 'alibi' ? 'alibi' : 'testimony', about, text, at: now }];
-      events.push(...push(s, { type: 'claimed', at: now, by: role, kind: action.type === 'alibi' ? 'alibi' : 'testimony', about, text, room: here }));
+      events.push(...push(s, { type: 'claimed', at: now, by: role, kind: action.type === 'alibi' ? 'alibi' : 'testimony', about, text, room: here, saw: peopleIn(s, here) }));
       break;
     }
     case 'accuse': {
@@ -324,7 +337,7 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       if (action.against === role) return no('yourself', 'Confessing is not accusing.');
       const clues = action.clues.filter((c) => (s.knows[role] ?? []).includes(c));
       s.accusations = [...s.accusations.filter((a) => a.by !== role), { by: role, against: action.against, clues, at: now }];
-      events.push(...push(s, { type: 'accused', at: now, by: role, against: action.against, clues, room: s.phase === 'accusations' ? null : here }));
+      events.push(...push(s, { type: 'accused', at: now, by: role, against: action.against, clues, room: s.phase === 'accusations' ? null : here, saw: peopleIn(s, here) }));
       break;
     }
     case 'murder': {
@@ -333,6 +346,7 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       if (s.deaths.length >= 2) return no('enough', 'Two is enough for one night.');
       const chance = (act.opportunities ?? []).find((o) => o.room === here && o.prop === action.prop);
       if (!chance) return no('no-chance', 'Not here, and not with that.');
+      if (now < chanceOpensAt(s, title)) return no('too-soon', 'Not yet. The night is young and everybody is still counting heads.');
       const present = peopleIn(s, here);
       if (!present.includes(action.victim)) return no('not-here', 'They are not in this room.');
       if (present.length !== 2) return no('not-alone', 'Not while somebody else is in the room.');
@@ -372,23 +386,32 @@ export function parseAction(raw: unknown): { ok: true; action: MysteryAction } |
  */
 export function redactEvent(state: MysteryState, ev: MysteryEvent, role: RoleId | null): MysteryEvent | null {
   const here = role ? state.where[role] : null;
+  // WHO WAS THERE AT THE TIME, when the event recorded it. Falling back to "where they are now" is what an
+  // old event has to be judged by, and it is why `saw` exists at all.
+  const witnessed = (e: MysteryEvent & { saw?: RoleId[]; room?: RoomId | null }): boolean => {
+    if (role === null) return true;
+    if (e.saw) return e.saw.includes(role);
+    return e.room === here;
+  };
   switch (ev.type) {
     case 'cue': case 'act': case 'died': case 'revealed': return ev;
     case 'found': return ev.who === role ? ev : null;
     case 'whispered': return role && (ev.by === role || ev.to === role) ? ev : null;
-    case 'moved': return role === null || ev.from === here || ev.to === here || ev.who === role ? ev : null;
-    case 'accused': return ev.room === null || role === null || ev.room === here || ev.by === role ? ev : null;
-    case 'said': case 'shared': case 'claimed': return role === null || ev.room === here || ev.by === role ? ev : null;
+    case 'moved': return role === null || ev.who === role || witnessed(ev) ? ev : null;
+    case 'accused': return ev.room === null || role === null || ev.by === role || witnessed(ev) ? ev : null;
+    case 'said': case 'shared': case 'claimed': return role === null || ev.by === role || witnessed(ev) ? ev : null;
     default: return null;
   }
 }
 
 function personView(state: MysteryState, title: Title, role: RoleId): ViewPerson {
   const c = state.cast.find((x) => x.role === role);
+  const r = roleOf(title, role);
   return {
-    role, name: roleOf(title, role)?.name ?? role,
+    role, name: r?.name ?? role,
     operator: c?.operator ?? 'agent', agent: c?.agent ?? '',
     alive: !isDead(state, role),
+    look: r?.look ?? { skin: '#d8b08a', hair: '#3b2f2a', wear: '#2b333a', accent: '#5b6b74', hairStyle: 'short' },
   };
 }
 
@@ -405,12 +428,12 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
   const oppProp = opp ? roomOf(venue, opp.room)?.props.find((p) => p.id === opp.prop) : undefined;
   return {
     title: title.id, titleName: title.name, venue: venue.id,
-    act: state.act, actName: act.name, objective: act.objective,
+    act: state.act, actName: act.name, objective: act.objective, pace: state.pace,
     phase: state.phase, deadline: state.deadline, seedCommit: state.seedCommit,
     you: me && role ? {
-      role, name: me.name, blurb: me.blurb, secret: me.secret, alive: !isDead(state, role),
+      role, name: me.name, blurb: me.blurb, secret: me.secret, alive: !isDead(state, role), look: me.look,
       killer: role === state.killer,
-      ...(opp && oppProp ? { opportunity: { room: opp.room, prop: opp.prop, propName: oppProp.name } } : {}),
+      ...(opp && oppProp ? { opportunity: { room: opp.room, prop: opp.prop, propName: oppProp.name, ready: Date.now() >= chanceOpensAt(state, title), readyAt: chanceOpensAt(state, title) } } : {}),
     } : null,
     room: room && here ? {
       id: here, name: room.name, blurb: room.blurb,

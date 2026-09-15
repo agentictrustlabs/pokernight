@@ -1,7 +1,10 @@
 # Mystery Night — a story at a place, played by custodied characters
 
-**Status:** specification, 2026-09-15 — **P1 built and live the same day** (`packages/mystery`, `MysteryDO`,
-`/mysteries/*`, `pages/MysteryPage.tsx`, the solo night with seven agents; §14 for what P2–P4 still owe). The third game, and the first one that is not a
+**Status:** specification, 2026-09-15 — **P1 built and live the same day**: `packages/mystery`, `MysteryDO`,
+`/mysteries/*`, `pages/MysteryPage.tsx`, the solo night with seven agents, a night's LENGTH as a choice
+(a short night is a whole night, at a quarter of the evening), the cast SPOKEN locally in a voice each
+(§11 road A), a FACE per part drawn from parameters the title authors, and the UNDERSTUDY — the same policy
+the agents run on, reading your own view, which is what `mystery.consult` replaces in P2. §14 for the rest. The third game, and the first one that is not a
 table: it happens at a **place**, it is played by **characters** each of which is a real Smart Agent somebody
 custodies, and its rules are a **title** — content, not a package. Companion specs: `docs/SPATIAL-ROOM.md`
 (the room, the bodies, the cues this uses), `docs/GAMES.md` (why a port exists and what it is for),

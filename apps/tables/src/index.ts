@@ -676,13 +676,13 @@ app.get('/mysteries', (c) => c.json({
 app.post('/mysteries/solo', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const body = (await c.req.json().catch(() => ({}))) as { title?: string; role?: string; restart?: boolean; killer?: 'chance' | 'me' };
+  const body = (await c.req.json().catch(() => ({}))) as { title?: string; role?: string; restart?: boolean; killer?: 'chance' | 'me'; pace?: 'short' | 'full' };
   const title = body.title ?? DEFAULT_TITLE;
   if (!TITLES[title]) return c.json({ error: `no such mystery: ${title}` }, 404);
   const stagingId = await soloStagingId(session.playerId, title);
   const res = await staging(c.env, stagingId).fetch('https://staging/open', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ stagingId, owner: session.playerId, ownerName: session.name, title, role: body.role, restart: body.restart === true, killer: body.killer === 'me' ? 'me' : 'chance' }),
+    body: JSON.stringify({ stagingId, owner: session.playerId, ownerName: session.name, title, role: body.role, restart: body.restart === true, killer: body.killer === 'me' ? 'me' : 'chance', pace: body.pace === 'short' ? 'short' : 'full' }),
   });
   if (!res.ok) return c.json({ error: ((await res.json()) as { error?: string }).error ?? 'could not open the night' }, 400);
   return c.json((await res.json()) as unknown);

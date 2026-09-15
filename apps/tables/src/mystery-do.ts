@@ -23,7 +23,7 @@ import {
 import type { Env } from './env.js';
 
 interface Attachment { playerId: string; name: string }
-interface Meta { stagingId: string; owner: string; ownerName: string; title: string; role: RoleId }
+interface Meta { stagingId: string; owner: string; ownerName: string; title: string; role: RoleId; pace?: 'short' | 'full' }
 
 /** How long a character played by an agent is held back, so the room can read what it said. */
 const PACE_MS = 3_200;
@@ -59,7 +59,7 @@ export class MysteryDO extends DurableObject<Env> {
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'POST' && url.pathname === '/open') {
-      const b = (await request.json()) as { stagingId: string; owner: string; ownerName: string; title: string; role?: RoleId; restart?: boolean; killer?: 'chance' | 'me' };
+      const b = (await request.json()) as { stagingId: string; owner: string; ownerName: string; title: string; role?: RoleId; restart?: boolean; killer?: 'chance' | 'me'; pace?: 'short' | 'full' };
       const pair = stagingOf(b.title);
       if (!pair) return json({ error: `no such mystery: ${b.title}` }, 404);
       const { title, venue } = pair;
@@ -67,7 +67,8 @@ export class MysteryDO extends DurableObject<Env> {
       // asks for another. The practice table's rule: derived, reusable, and thrown away on request.
       // ASKING FOR ANOTHER PART IS ASKING FOR ANOTHER NIGHT — you cannot be recast inside a story that has
       // already drawn its killer, so a different part starts the evening again rather than ignoring you.
-      const wantsOther = !!b.role && !!this.meta && this.meta.role !== b.role;
+      const wantsOther = (!!b.role && !!this.meta && this.meta.role !== b.role)
+        || (!!b.pace && !!this.meta && (this.meta.pace ?? 'full') !== b.pace);
       if (this.state && !b.restart && !wantsOther && this.state.phase !== 'revealed') return json({ ok: true, staging: this.summary() });
       const role = title.roles.find((r) => r.id === b.role)?.id ?? title.roles[0]!.id;
       const cast: Casting[] = title.roles.map((r) => (
@@ -79,8 +80,14 @@ export class MysteryDO extends DurableObject<Env> {
       const seedHex = bytesToHex(seed);
       // WHO THE SEED MAY LAND ON, said before it is spent: the whole cast by default — a solo player who was
       // always the murderer would never once get a mystery — or this player, if they asked for that night.
-      this.state = openStaging({ title, venue, cast, seedHex, seedCommit: seedCommit(seed), now: Date.now(), killerRule: b.killer === 'me' ? role : 'any' });
-      this.meta = { stagingId: b.stagingId, owner: b.owner, ownerName: b.ownerName, title: title.id, role };
+      // A SHORT NIGHT IS A WHOLE NIGHT. Somebody with twenty minutes gets all three acts, both deaths and
+      // the reveal, at a quarter of the length the title was written for — not the first act and a wall.
+      this.state = openStaging({
+        title, venue, cast, seedHex, seedCommit: seedCommit(seed), now: Date.now(),
+        killerRule: b.killer === 'me' ? role : 'any',
+        pace: b.pace === 'short' ? 0.25 : 1,
+      });
+      this.meta = { stagingId: b.stagingId, owner: b.owner, ownerName: b.ownerName, title: title.id, role, pace: b.pace === 'short' ? 'short' : 'full' };
       this.paused = false;
       this.lastMoved = {};
       this.save();

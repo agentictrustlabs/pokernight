@@ -578,7 +578,7 @@ export interface StagingSummary {
 export const mysteryApi = {
   titles: () => request<{ titles: MysteryTitleSummary[] }>('/mysteries'),
   /** YOUR OWN NIGHT: the same one each time you ask, until you ask for another (`restart`). */
-  solo: (body: { title?: string; role?: string; restart?: boolean; killer?: 'chance' | 'me' }, token: string) =>
+  solo: (body: { title?: string; role?: string; restart?: boolean; killer?: 'chance' | 'me'; pace?: 'short' | 'full' }, token: string) =>
     request<{ ok: boolean; staging: StagingSummary }>('/mysteries/solo', { method: 'POST', body: JSON.stringify(body) }, token),
   read: (stagingId: string, token: string) =>
     request<{ staging: StagingSummary; view: unknown }>(`/mysteries/${encodeURIComponent(stagingId)}`, {}, token),

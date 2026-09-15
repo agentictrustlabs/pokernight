@@ -45,6 +45,7 @@ function MysteryCard({ session }: { session: AppSession }) {
   const [titles, setTitles] = useState<MysteryTitleSummary[] | null>(null);
   const [role, setRole] = useState('');
   const [killer, setKiller] = useState<'chance' | 'me'>('chance');
+  const [pace, setPace] = useState<'short' | 'full'>('short');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
@@ -64,6 +65,15 @@ function MysteryCard({ session }: { session: AppSession }) {
       </div>
       <div className="play-body">
         <p className="hint">{title ? title.blurb : 'A story at a place, with a cast who talk back.'}</p>
+        {title ? (
+          <label className="mystery-part">
+            How long you have
+            <select value={pace} onChange={(e) => setPace(e.target.value as 'short' | 'full')}>
+              <option value="short">A short night — three acts in about twenty minutes</option>
+              <option value="full">The whole evening — an hour at the Belvedere</option>
+            </select>
+          </label>
+        ) : null}
         {title ? (
           <label className="mystery-part">
             Tonight
@@ -93,7 +103,7 @@ function MysteryCard({ session }: { session: AppSession }) {
             if (!title) return;
             setBusy(true); setErr(null);
             try {
-              const r = await mysteryApi.solo({ title: title.id, killer, ...(role ? { role } : {}) }, session.token);
+              const r = await mysteryApi.solo({ title: title.id, killer, pace, ...(role ? { role } : {}) }, session.token);
               goTo(mysteryHash(r.staging.stagingId));
             } catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false); }
           }}

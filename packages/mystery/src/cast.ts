@@ -55,7 +55,7 @@ export function chooseAction(view: MysteryView, lines: CastLines, tick: number):
   if (view.phase !== 'act' || !room) return null;
 
   // 2. You are the one taking chances, and the room is empty but for one.
-  if (you.killer && you.opportunity && room.people.length === 1 && room.people[0] && view.deaths.length < 2) {
+  if (you.killer && you.opportunity?.ready && room.people.length === 1 && room.people[0] && view.deaths.length < 2) {
     return { action: { type: 'murder', victim: room.people[0].role, prop: you.opportunity.prop } };
   }
 
