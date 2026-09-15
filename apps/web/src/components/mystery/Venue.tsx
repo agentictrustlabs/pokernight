@@ -44,6 +44,8 @@ export interface VenueProps {
 
 const BODIES = SKIN_WORDS;
 const HEAD = 1.86;
+/** Metres a second, the same amble the card room's lounge walks at. */
+const WALK_SPEED = 3.4;
 
 export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, speaking, act, onPerson }, ref) {
   const host = useRef<HTMLDivElement | null>(null);
@@ -68,12 +70,17 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
   const speakingRef = useRef(speaking); speakingRef.current = speaking;
   const [plates, setPlates] = useState<Array<{ id: string; text: string; sub?: string; x: number; y: number; kind: string }>>([]);
   /** A walk to a thing, and what to do when we get there. */
-  const errand = useRef<{ prop: string; at: number } | null>(null);
+  const errand = useRef<{ prop: string; at: number; to: pc.Vec3 } | null>(null);
   /** Set by the scene so the handle can reach the same two walks the picture uses. */
   const walkers = useRef<{ toProp: (prop: string) => boolean; toDoor: (room: string) => boolean } | null>(null);
   const hover = useRef<string | null>(null);
   /** How big the room being drawn is, so the camera stands back by its size rather than by a guess. */
   const roomSize = useRef(8);
+  /** The room this body has already been placed in, so entering one is done once. */
+  const arrived = useRef<string | null>(null);
+  /** Where your own body is walking to. YOUR body is moved by this controller, not eased by the avatar. */
+  const goal = useRef<pc.Vec3 | null>(null);
+  const keys = useRef(new Set<'up' | 'down' | 'left' | 'right'>());
 
   // ── the application, once ──
   useEffect(() => {
@@ -195,10 +202,14 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       const p = props.current.get(prop);
       const me = viewRef.current.you ? bodies.current.get(viewRef.current.you.role) : null;
       if (!p || !me || errand.current) return false;
-      errand.current = { prop, at: Date.now() };
       // stand a step short of it, facing it, so the body is beside the thing rather than inside it
       const d = Math.hypot(p.at.x, p.at.z) || 1;
-      me.walkTo(p.at.x - (p.at.x / d) * 1.1, p.at.z - (p.at.z / d) * 1.1, Math.atan2(p.at.x, p.at.z));
+      const to = new pc.Vec3(p.at.x - (p.at.x / d) * 1.1, 0, p.at.z - (p.at.z / d) * 1.1);
+      // ARRIVAL IS MEASURED AGAINST WHERE YOU WERE WALKING, not against the thing: the body stops a step
+      // short of it on purpose, so testing the prop's own position meant arriving never happened.
+      errand.current = { prop, at: Date.now(), to };
+      goal.current = to;
+      void me;
       light(`prop:${prop}`);
       return true;
     };
@@ -207,7 +218,8 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       const me = viewRef.current.you ? bodies.current.get(viewRef.current.you.role) : null;
       if (!door || !me || goingTo.current) return false;
       goingTo.current = { room, at: Date.now() };
-      me.walkTo(door.at.x * 0.8, door.at.z * 0.8, Math.atan2(door.at.x, door.at.z));
+      goal.current = new pc.Vec3(door.at.x * 0.86, 0, door.at.z * 0.86);
+      void me;
       light(`door:${room}`);
       return true;
     };
@@ -216,7 +228,17 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
     a.mouse!.on(pc.EVENT_MOUSEDOWN, (e: pc.MouseEvent) => {
       if (e.button !== pc.MOUSEBUTTON_LEFT) return;
       const hit = pick(e.x, e.y, camera);
-      if (!hit) return;
+      if (!hit) {
+        // A CLICK ON THE FLOOR IS A PLACE TO GO, exactly as in the card room's lounge.
+        const from = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.nearClip);
+        const to = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.farClip);
+        const floor = new pc.Vec3();
+        if (new pc.Plane(pc.Vec3.UP, 0).intersectsRay(new pc.Ray(from, to.sub(from).normalize()), floor)) {
+          const plan = BELVEDERE_PLAN[viewRef.current.room?.id ?? ''];
+          if (plan && Math.abs(floor.x) < plan.w && Math.abs(floor.z) < plan.d) { errand.current = null; goingTo.current = null; goal.current = new pc.Vec3(floor.x, 0, floor.z); }
+        }
+        return;
+      }
       if (hit.kind === 'prop') { if (!toProp(hit.id)) actRef.current({ type: 'examine', prop: hit.id }); }
       else if (hit.kind === 'door') {
         /**
@@ -230,6 +252,39 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
     });
 
     // the camera sits behind and above your own body, looking across the room
+    /**
+     * YOUR OWN BODY IS WALKED, NOT EASED. `ParticipantAvatar` in `direct` mode expects its controller to move
+     * it — that is how the card room's lounge walks — and the venue was setting a target nothing read, so
+     * pressing "examine the register" moved the STATE and left the body standing. Everybody else's body is
+     * `follow` and eases to where the staging says they are.
+     */
+    const stride = (dt: number): void => {
+      const v = viewRef.current;
+      const me = v.you ? bodies.current.get(v.you.role) : null;
+      if (!me) return;
+      const plan = BELVEDERE_PLAN[v.room?.id ?? ''];
+      const k = keys.current;
+      let dx = 0; let dz = 0;
+      if (k.has('up')) dz += 1; if (k.has('down')) dz -= 1; if (k.has('left')) dx -= 1; if (k.has('right')) dx += 1;
+      if (dx || dz) {
+        goal.current = null;
+        const len = Math.hypot(dx, dz); dx /= len; dz /= len;
+        const cp = camera.getPosition();
+        const heading = Math.atan2(cp.x - me.pos.x, cp.z - me.pos.z) + Math.PI;
+        const fx = Math.sin(heading) * dz + Math.cos(heading) * dx;
+        const fz = Math.cos(heading) * dz - Math.sin(heading) * dx;
+        me.pos.x += fx * WALK_SPEED * dt; me.pos.z += fz * WALK_SPEED * dt;
+        me.face(Math.atan2(fx, fz));
+      } else if (goal.current) {
+        const d = new pc.Vec3().sub2(goal.current, me.pos); d.y = 0;
+        if (d.length() < 0.12) goal.current = null;
+        else { d.normalize(); me.pos.x += d.x * WALK_SPEED * dt; me.pos.z += d.z * WALK_SPEED * dt; me.face(Math.atan2(d.x, d.z)); }
+      } else return;
+      // inside the walls, whatever was asked
+      if (plan) { me.pos.x = Math.max(-plan.w + 0.6, Math.min(plan.w - 0.6, me.pos.x)); me.pos.z = Math.max(-plan.d + 0.6, Math.min(plan.d - 0.6, me.pos.z)); }
+      me.moved();
+    };
+
     a.on('update', (dt: number) => {
       // LOOKING INTO THE ROOM, NOT AT THE FLOOR: back from the near wall and well above head height, aimed at
       // the middle of it — the arrival view the card room's lounge had to learn too.
@@ -242,16 +297,26 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       const z = -Math.cos(cc.yaw) * dist;
       camera.setPosition(x, 2.6 + size * 0.16 + cc.pitch * 5, z - size * 0.28);
       camera.lookAt(0, 0.95, size * 0.04);
+      stride(dt);
       for (const [role, b] of bodies.current) { b.talking(speakingRef.current === role); b.update(dt); }
-      // …and when the walk to a thing is done, look at it.
+      /**
+       * A WALK ENDS WHEN THE BODY ARRIVES, not when a stopwatch says so. Timing it meant the act fired while
+       * the body was still crossing the room — which looks exactly like the teleport this was built to
+       * replace. The deadline stays as a backstop, because a body that cannot reach its goal must not strand
+       * the player in a room they asked to leave.
+       */
+      const me = viewRef.current.you ? bodies.current.get(viewRef.current.you.role) : null;
+      const near = (t: pc.Vec3): boolean => !!me && Math.hypot(me.pos.x - t.x, me.pos.z - t.z) < 0.9;
       const err = errand.current;
-      if (err && Date.now() - err.at > 950) { errand.current = null; actRef.current({ type: 'examine', prop: err.prop }); }
-      // …and when the walk to the door is done, go through it.
+      if (err && (near(err.to) || Date.now() - err.at > 6000)) { errand.current = null; actRef.current({ type: 'examine', prop: err.prop }); }
       const going = goingTo.current;
-      if (going && Date.now() - going.at > 1100) {
-        goingTo.current = null;
-        cameFrom.current = viewRef.current.room?.id ?? null;
-        actRef.current({ type: 'move', room: going.room });
+      if (going) {
+        const d = doors.current.get(going.room);
+        if (!d || near(d.at) || Date.now() - going.at > 6000) {
+          goingTo.current = null;
+          cameFrom.current = viewRef.current.room?.id ?? null;
+          actRef.current({ type: 'move', room: going.room });
+        }
       }
     });
 
@@ -319,6 +384,19 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       shell.current = root;
       roomSize.current = Math.max(plan.w, plan.d);
       buildRoom(a, k, root, plan, roomId, props.current, doors.current, viewRef.current);
+      /**
+       * WALKING IN HAPPENS HERE, with the doors, because the doors have only just been built. Putting it in
+       * the people effect raced the scene: that effect can run before the room exists, and a door you cannot
+       * look up is a door you cannot come through.
+       */
+      const mine = viewRef.current.you ? bodies.current.get(viewRef.current.you.role) : null;
+      if (mine && arrived.current !== roomId) {
+        const back = cameFrom.current ? doors.current.get(cameFrom.current) : null;
+        mine.stand();
+        if (back) { mine.place(back.at.x * 0.85, back.at.z * 0.85, Math.atan2(-back.at.x, -back.at.z)); goal.current = new pc.Vec3(0, 0, -2.2); }
+        else mine.place(0, -2.2, 0);
+      }
+      arrived.current = roomId;
     });
     return () => { cancelled = true; };
   }, [roomId]);
@@ -336,7 +414,11 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       const mine = role === view.you?.role;
       let b = bodies.current.get(role);
       if (!b) {
-        b = new ParticipantAvatar(lib, BODIES[Math.abs(hash(role)) % BODIES.length]!, mine ? 'direct' : 'follow');
+        // WHAT THE PART WEARS is the title's choice; a hash of the name is what it was before, and it dressed
+        // the chef in the heiress's plum.
+        const look = view.cast.find((c) => c.role === role)?.look;
+        const wears = look?.body && BODIES.includes(look.body) ? look.body : BODIES[Math.abs(hash(role)) % BODIES.length]!;
+        b = new ParticipantAvatar(lib, wears, mine ? 'direct' : 'follow');
         a.root.addChild(b.entity);
         /**
          * YOU COME IN THROUGH THE DOOR YOU CAME THROUGH. Standing somebody in the middle of a room they have
@@ -344,17 +426,16 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
          * the room you left, and walks from there to where it stands. Arriving at the start of the night, or
          * from nowhere in particular, you are simply by the camera.
          */
-        const back = cameFrom.current ? doors.current.get(cameFrom.current) : null;
-        if (mine && back) { b.place(back.at.x * 0.85, back.at.z * 0.85, Math.atan2(-back.at.x, -back.at.z)); b.walkTo(0, -2.2, 0); }
+        const back = mine && cameFrom.current ? doors.current.get(cameFrom.current) : null;
+        if (back) { b.place(back.at.x * 0.85, back.at.z * 0.85, Math.atan2(-back.at.x, -back.at.z)); goal.current = new pc.Vec3(0, 0, -2.2); }
         else b.place(mine ? 0 : spot[0], mine ? -2.2 : spot[1], mine ? 0 : Math.atan2(-spot[0], -spot[1]));
         bodies.current.set(role, b);
       } else if (!mine) {
         b.stand();
         b.walkTo(spot[0], spot[1], Math.atan2(-spot[0], -spot[1]));
       }
+      // YOUR OWN BODY SURVIVES THE ROOM CHANGE and is walked in by the room's own effect, where the doors are.
     });
-    // Whatever room this is, it is now the one to come back from.
-    if (view.room?.id) cameFrom.current = cameFrom.current && doors.current.has(cameFrom.current) ? cameFrom.current : null;
     for (const [role, b] of [...bodies.current]) if (!seen.has(role)) { b.destroy(); bodies.current.delete(role); }
   }, [roomId, view.room?.people.map((p) => p.role).join(','), view.you?.role]);
 

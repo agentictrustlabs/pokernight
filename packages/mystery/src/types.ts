@@ -47,6 +47,13 @@ export interface Venue {
 export interface Look {
   /** Hex, all four: skin, hair, the collar under the chin, and the disc behind the head. */
   skin: string; hair: string; wear: string; accent: string;
+  /**
+   * WHAT THEY WEAR IN THE ROOM — one of the body library's outfits (`SKIN_WORDS`: oak, slate, brass, rose,
+   * moss, ink), chosen by the TITLE rather than by a hash of the part's name, so the concierge is in
+   * something dark and the chef is not in the heiress's plum. Six outfits and eight parts means two share;
+   * a per-character outfit is a new 140-byte swatch (docs/AVATARS.md) and not a code change.
+   */
+  body?: string;
   hairStyle: 'short' | 'long' | 'bun' | 'cap' | 'bald' | 'curls';
   facial?: 'moustache' | 'beard' | 'stubble';
   accessory?: 'glasses' | 'veil' | 'scarf' | 'goggles' | 'pearls';
