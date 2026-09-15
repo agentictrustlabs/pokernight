@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as pc from 'playcanvas';
 import type { RoomManifest, RoomPerson } from '@pokernight/protocol';
 import type { RoomSocket, RoomState } from '../../lib/roomSocket';
+import { Portrait } from '../huddle/Portrait';
 
 /**
  * THE LOUNGE — the scene, on PlayCanvas (docs/SPATIAL-ROOM.md §3.1, phase 1 steps 1–2; PlayCanvas chosen
@@ -27,7 +28,7 @@ export interface LoungeProps {
 }
 
 interface BodyHandle { figure: Figure; entity: pc.Entity; target: pc.Vec3; yaw: number; last: pc.Vec3; speed: number; seated: boolean }
-interface Plate { id: string; kind: 'name' | 'table' | 'anchor' | 'bubble'; text: string; sub?: string; world: pc.Vec3; you?: boolean; x?: number; y?: number; visible?: boolean }
+interface Plate { id: string; kind: 'name' | 'table' | 'anchor' | 'bubble'; text: string; sub?: string; world: pc.Vec3; you?: boolean; /** whose face hangs on the plate, when the huddle has one */ face?: string; x?: number; y?: number; visible?: boolean }
 
 export function Lounge({ socket, state, onZone }: LoungeProps) {
   const host = useRef<HTMLDivElement | null>(null);
@@ -213,14 +214,14 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
           me.current = { figure: f, entity: e, pos: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, goal: null, seated: null };
         }
         me.current.seated = chair;
-        plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: `${p.name} · you`, world: me.current.entity.getPosition().clone().add(new pc.Vec3(0, 2.05, 0)), you: true });
+        plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: `${p.name} · you`, face: p.name, world: me.current.entity.getPosition().clone().add(new pc.Vec3(0, 2.05, 0)), you: true });
         continue;
       }
       let b = bodies.current.get(p.playerId);
       if (!b) { const f = new Figure(p.body); const e = f.entity; e.setPosition(p.x, 0, p.y); a.root.addChild(e); b = { figure: f, entity: e, target: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, last: new pc.Vec3(p.x, 0, p.y), speed: 0, seated: false }; bodies.current.set(p.playerId, b); }
       if (chair) { b.target.copy(chair.at); b.yaw = chair.yaw; b.seated = true; } else { b.target.set(p.x, 0, p.y); b.yaw = p.yaw; b.seated = false; }
       // The agent under the name only when it IS a name — an address says nothing to anyone.
-      plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: p.name, ...(p.agent && p.agent.includes('.') ? { sub: p.agent } : {}), world: b.target.clone().add(new pc.Vec3(0, 2.05, 0)) });
+      plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: p.name, face: p.name, ...(p.agent && p.agent.includes('.') ? { sub: p.agent } : {}), world: b.target.clone().add(new pc.Vec3(0, 2.05, 0)) });
       const said = p.said && Date.now() - p.said.at < 8000 ? p.said.text : null;
       if (said) plateRef.current.set(`bubble:${p.playerId}`, { id: `bubble:${p.playerId}`, kind: 'bubble', text: said, world: b.target.clone().add(new pc.Vec3(0, 2.5, 0)) }); else plateRef.current.delete(`bubble:${p.playerId}`);
     }
@@ -252,6 +253,7 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
       <div className="lounge-overlay" aria-hidden="true">
         {plates.filter((p) => p.visible).map((p) => (
           <div key={p.id} className={`lounge-plate lounge-plate-${p.kind}${p.you ? ' lounge-plate-you' : ''}`} style={{ left: p.x, top: p.y }}>
+            {p.face ? <Portrait name={p.face} size="plate" /> : null}
             <span>{p.text}</span>{p.sub ? <small>{p.sub}</small> : null}
           </div>
         ))}

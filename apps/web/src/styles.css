@@ -6456,3 +6456,29 @@ button.tag.guest {
     height: 60vh;
   }
 }
+
+/* ── A portrait at the seat: the huddle's face where the monogram was (components/huddle/Portrait.tsx) ── */
+.portrait { position: relative; margin: 0; display: grid; place-items: center; }
+.portrait-seat { width: 32px; height: 32px; }
+.portrait-seat video, .portrait-seat .portrait-initial {
+  width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+  background: color-mix(in srgb, var(--seat-hue) 18%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--seat-hue) 40%, var(--rule));
+}
+.portrait .portrait-initial {
+  display: grid; place-items: center; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--seat-hue, var(--felt-soft)) 78%, var(--ink));
+}
+.portrait.mine video { transform: scaleX(-1); }
+.portrait.speaking video, .portrait.speaking .portrait-initial { outline: 3px solid var(--live-on); outline-offset: 1px; }
+/* the mic dot: lit when the mic is open, dark when it is not — a face at a seat says "you can talk to me" */
+.portrait-mic { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: #6b6b6b; border: 1.5px solid var(--surface); }
+.portrait-mic.on { background: var(--live-on); }
+/* over a body in the room: a larger ring hung on the name plate */
+.portrait-plate { width: 56px; height: 56px; margin-bottom: 3px; }
+.portrait-plate video, .portrait-plate .portrait-initial {
+  width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+  background: #2c3a33; border: 2px solid #d9b26a; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.portrait-plate .portrait-initial { color: #f4f2ea; font-size: 1.2rem; }
+.portrait-plate .portrait-mic { width: 12px; height: 12px; right: 1px; bottom: 1px; border-color: #1c2420; }

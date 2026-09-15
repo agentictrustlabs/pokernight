@@ -141,6 +141,11 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/** The huddle if a provider is above — null where there is none (a board rendered on its own, a test). */
+export function useClubHuddleMaybe(): HuddleCtx | null {
+  return useContext(Ctx);
+}
+
 export function useClubHuddle(): HuddleCtx {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useClubHuddle must be used within <ClubHuddleProvider>');

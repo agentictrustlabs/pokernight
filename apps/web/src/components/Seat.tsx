@@ -7,6 +7,7 @@ import { strategyWords } from '../lib/whoIsWho';
 import { Card } from './Card';
 import { ChipStack } from './ChipStack';
 import { TurnClock } from './TurnClock';
+import { Portrait } from './huddle/Portrait';
 
 /** Initials for the monogram avatar: "Alice" → "A", "Ada L" → "AL". */
 export function monogram(name: string): string {
@@ -146,9 +147,12 @@ export function Seat(p: SeatProps) {
 
       <div className="seat-top">
         <span className="avatar-wrap">
-          <span className="avatar" aria-hidden="true">
-            {monogram(p.name)}
-          </span>
+          {/* The huddle's face where the monogram was, when this player is in it (Portrait); the monogram otherwise. */}
+          {isAgent ? (
+            <span className="avatar" aria-hidden="true">{monogram(p.name)}</span>
+          ) : (
+            <Portrait name={p.name} size="seat" fallback={<span className="avatar" aria-hidden="true">{monogram(p.name)}</span>} />
+          )}
           {p.toAct ? <TurnClock deadline={p.deadline} totalMs={p.timeoutMs} now={p.now} /> : null}
           {puck ? (
             <span className={`puck ${puck.t.toLowerCase()}`} title={puck.title} aria-label={puck.title}>

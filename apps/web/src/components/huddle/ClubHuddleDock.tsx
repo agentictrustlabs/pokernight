@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useDraggable } from '../../lib/useDraggable';
 import { RealtimeKitProvider, useRealtimeKitSelector } from '@cloudflare/realtimekit-react';
 import { useClubHuddle } from './ClubHuddleProvider';
+import { useFaceVideo } from './Portrait';
 import type { HuddleScope } from '../../lib/huddle';
 
 type Tracked = {
@@ -40,31 +41,7 @@ function ParticipantAudio({ p }: { p: Tracked }) {
 
 /** A face: a participant's camera on a <video> when it is on, their initial when it is not. */
 function Face({ p, mine, speaking }: { p: Tracked; mine?: boolean; speaking: boolean }) {
-  const ref = useRef<HTMLVideoElement>(null);
-  const [on, setOn] = useState(!!p.videoEnabled);
-  useEffect(() => {
-    const el = ref.current;
-    // PLAY IS ASKED FOR MORE THAN ONCE. Firefox in particular will attach a stream to a <video> that is not
-    // yet visible and then sit on the first frame — black — until something calls play() again; a remote
-    // track also arrives MUTED (no frames yet) and unmutes when the first frame lands. So play() is asked at
-    // attach, when the metadata loads, when the track unmutes, and when the element is shown.
-    const kick = () => { if (el && el.srcObject) void el.play().catch(() => undefined); };
-    const attach = (track?: MediaStreamTrack, enabled?: boolean) => {
-      setOn(!!enabled && !!track);
-      if (!el) return;
-      if (enabled && track) {
-        el.srcObject = new MediaStream([track]);
-        track.addEventListener('unmute', kick);
-        kick();
-      } else el.srcObject = null;
-    };
-    attach(p.videoTrack, p.videoEnabled);
-    el?.addEventListener('loadedmetadata', kick);
-    const onVideo = (payload: unknown) => { const x = payload as { videoEnabled: boolean; videoTrack: MediaStreamTrack }; attach(x.videoTrack, x.videoEnabled); };
-    p.on('videoUpdate', onVideo);
-    return () => { p.off('videoUpdate', onVideo); el?.removeEventListener('loadedmetadata', kick); if (el) el.srcObject = null; };
-  }, [p]);
-  useEffect(() => { if (on && ref.current?.srcObject) void ref.current.play().catch(() => undefined); }, [on]);
+  const { ref, on } = useFaceVideo(p);
   return (
     <figure className={`huddle-face${speaking ? ' speaking' : ''}${mine ? ' mine' : ''}${on ? ' video' : ''}`} title={mine ? `${p.name} (you)` : p.name}>
       <video ref={ref} autoPlay playsInline muted style={on ? undefined : { display: 'none' }} />
