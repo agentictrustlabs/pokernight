@@ -102,3 +102,21 @@ describe('a night of your own', () => {
     expect(tb.view.reveal).toBeNull();
   });
 });
+
+describe('a club\'s mystery night', () => {
+  it('refuses to plan one to somebody with no standing at the club', async () => {
+    const me = await devSession('stranger-at-the-door');
+    const r = await SELF.fetch('http://tables.test/clubs/0x00000000000000000000000000000000000000ff/mystery', {
+      method: 'POST', headers: { authorization: `Bearer ${me.token}`, 'content-type': 'application/json' }, body: JSON.stringify({}),
+    });
+    // no club, or no standing in it: the same answer, because they are the same to somebody outside
+    expect([403, 404]).toContain(r.status);
+  });
+
+  it('refuses a part and the curtain to somebody who is not signed in', async () => {
+    const a = await SELF.fetch('http://tables.test/mysteries/whatever/cast', { method: 'POST' });
+    expect(a.status).toBe(401);
+    const b = await SELF.fetch('http://tables.test/mysteries/whatever/curtain', { method: 'POST' });
+    expect(b.status).toBe(401);
+  });
+});

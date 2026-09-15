@@ -588,3 +588,18 @@ export const mysteryApi = {
 export function mysterySocketUrl(stagingId: string, token: string): string {
   return `${socketBase()}/mysteries/${encodeURIComponent(stagingId)}/ws?token=${encodeURIComponent(token)}`;
 }
+
+/** A CLUB'S MYSTERY NIGHT — the parts, who has taken them, and the two acts of the host's own. */
+export interface StagedPart { role: string; name: string; blurb: string; look: unknown; takenBy: string | null; takenById: string | null; operator: 'human' | 'agent' }
+export const clubMystery = {
+  read: (clubId: string, token: string, title?: string) =>
+    request<{ staging: (StagingSummary & { club?: string; host?: string }) | null; cast: StagedPart[]; host: boolean; view?: unknown }>(
+      `/clubs/${encodeURIComponent(clubId)}/mystery${title ? `?title=${encodeURIComponent(title)}` : ''}`, {}, token,
+    ),
+  plan: (clubId: string, body: { title?: string; night?: string; pace?: 'short' | 'full'; restart?: boolean }, token: string) =>
+    request<{ ok: boolean; staging: StagingSummary; cast: StagedPart[] }>(`/clubs/${encodeURIComponent(clubId)}/mystery`, { method: 'POST', body: JSON.stringify(body) }, token),
+  take: (stagingId: string, role: string | null, token: string) =>
+    request<{ ok: boolean; cast: StagedPart[] }>(`/mysteries/${encodeURIComponent(stagingId)}/cast`, { method: 'POST', body: JSON.stringify({ role }) }, token),
+  curtain: (stagingId: string, token: string) =>
+    request<{ ok: boolean; staging: StagingSummary }>(`/mysteries/${encodeURIComponent(stagingId)}/curtain`, { method: 'POST', body: JSON.stringify({}) }, token),
+};

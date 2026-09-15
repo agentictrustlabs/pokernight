@@ -3,6 +3,7 @@ import type { AppSession, ClubView, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
 import { About, People } from '../components/ClubDetail';
 import { Nights } from '../components/Nights';
+import { MysteryNight } from '../components/MysteryNight';
 import { TableList } from './TablesPage';
 import { canOpenTable, noTablesLine } from '../lib/clubs';
 import { newTableHash, roomHash, HOME_HASH, TABLES_HASH } from '../lib/routes';
@@ -59,7 +60,7 @@ export function ClubPage({
    */
   const [retired, setRetired] = useState<string | null>(null);
   const [tables, setTables] = useState<TableSummary[] | null>(null);
-  const [tab, setTab] = useState<'nights' | 'tables' | 'people' | 'about'>('nights');
+  const [tab, setTab] = useState<'nights' | 'tables' | 'mystery' | 'people' | 'about'>('nights');
   const [err, setErr] = useState<string | null>(null);
 
   const loadView = useCallback(async () => {
@@ -163,9 +164,9 @@ export function ClubPage({
         </div>
       </header>
       <nav className="side-tabs club-tabs" role="tablist" aria-label="The club">
-        {(['nights', 'tables', 'people', 'about'] as const).map((t) => (
+        {(['nights', 'tables', 'mystery', 'people', 'about'] as const).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} className={`side-tab${tab === t ? ' on' : ''}`} onClick={() => setTab(t)}>
-            {t === 'nights' ? `Nights${view.nights.length ? ` · ${view.nights.length}` : ''}` : t === 'tables' ? `Tables${openTables ? ` · ${openTables}` : ''}` : t === 'people' ? `People · ${view.roster.length}` : 'About'}
+            {t === 'nights' ? `Nights${view.nights.length ? ` · ${view.nights.length}` : ''}` : t === 'tables' ? `Tables${openTables ? ` · ${openTables}` : ''}` : t === 'mystery' ? 'Mystery' : t === 'people' ? `People · ${view.roster.length}` : 'About'}
           </button>
         ))}
       </nav>
@@ -192,6 +193,10 @@ export function ClubPage({
             )
           }
         />
+      ) : tab === 'mystery' ? (
+        // A MYSTERY IS NOT A TABLE, so it is not in the tables tab: it is a night the club stages, cast
+        // before it begins, and played in a place rather than at a felt (docs/MYSTERY-NIGHT.md).
+        <MysteryNight clubId={clubId} session={session} host={host} />
       ) : tab === 'people' ? (
         <People view={view} session={session} config={config} onChanged={() => { void loadView(); onChanged(); }} />
       ) : (

@@ -547,7 +547,14 @@ night one that opens a staging instead of tables. `CreateTableRequest` gains not
 | **P1 — the table read** (3 weeks) | `packages/mystery` (engine, `belvedere-snowfall`, `alpine-belvedere`), `MysteryDO`, the 2D place page, the title's written lines only, an all-agent cast on rules | A solo night played end to end in the browser; a headless all-agent staging replays byte-identically from (seed, log); the solvability property passes over 500 seeds |
 | **P2 — the cast** (3 weeks) | The `mystery` skills context, role archetypes, `mystery.act` / `mystery.consult`, the villain service and the sealed brief, agent voices (road A), the prompter | A solo night where the seven characters answer in their own voices, the killer is drawn and committed, and the reveal verifies against the commitment |
 | **P3 — the resort** (3 weeks) | The venue in 3D on the room's own pieces, five rooms as scenes, doorways, bodies for the cast, cues, huddle per room (or the club's, panned) | The same night played in 3D with voice; a second person joins mid-act and both see the same room |
-| **P4 — the company** (open) | `.cast` chartering at the Home, invitations from a night, multi-human casting, the director service with pre-roll and budget, character memory across stagings, road B faces | A club night with three humans and five agents; a character that remembers the last time it met you |
+| **P4 — the company** (open) | `.cast` chartering at the Home, invitations from a night, the director service with pre-roll and budget, character memory across stagings, road B faces | A character that remembers the last time it met you |
+
+**Built ahead of its phase (2026-09-15): a CLUB'S mystery night.** A host sets one up on the club's own page
+(`POST /clubs/:id/mystery`, the staging id derived from club + night + title so nothing keeps an index); the
+club's people take parts one at a time (`POST /mysteries/:id/cast`, standing checked per request); the host
+raises the curtain (`/curtain`), whatever nobody took is played by the house, and the draw runs under
+`human` — a party is better when somebody at the table has to lie. Proven live: Alice hosts, Bob takes a
+part, both walk into the same hotel, Alice is the killer and Bob is not told.
 
 ## 15. Open questions and dependencies
 

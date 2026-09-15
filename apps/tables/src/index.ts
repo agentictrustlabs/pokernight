@@ -688,6 +688,89 @@ app.post('/mysteries/solo', async (c) => {
   return c.json((await res.json()) as unknown);
 });
 
+/**
+ * A CLUB'S MYSTERY NIGHT: the host sets one up, the club's people take parts, the host raises the curtain.
+ *
+ * The id is derived from the club and the night, like a practice table's is from its owner — so the club's
+ * page can find tonight's staging without anything keeping an index of stagings, and asking twice is asking
+ * about the same night.
+ */
+async function clubStagingId(club: string, night: string | undefined, title: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`${MYSTERY_NS}:club:${club.toLowerCase()}:${night ?? 'open'}:${title}`);
+  const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return [h.slice(0, 8), h.slice(8, 12), `4${h.slice(13, 16)}`, `${((parseInt(h[16] as string, 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}`, h.slice(20, 32)].join('-');
+}
+
+/** Standing at the club this night belongs to: a member may take a part, and only the host raises the curtain. */
+async function clubStanding(c: Context<{ Bindings: Env }>, club: string, session: { playerId: string; name: string } | null): Promise<{ ok: true; host: boolean; name: string } | { ok: false; response: Response }> {
+  if (!session) return { ok: false, response: c.json({ error: 'unauthenticated' }, 401) };
+  const agent = agentOf(session as never);
+  const read = agent ? await readClub(c.env, club, agent) : null;
+  if (!read || !read.you || !belongs(read.you.standing)) return { ok: false, response: c.json({ error: 'no such club' }, 404) };
+  return { ok: true, host: read.you.standing === 'host', name: read.profile?.name ?? 'the club' };
+}
+
+/** SET ONE UP (host): the night exists, in casting, and its parts are open. */
+app.post('/clubs/:clubId/mystery', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  const club = (c.req.param('clubId') ?? '').toLowerCase();
+  const standing = await clubStanding(c, club, session);
+  if (!standing.ok) return standing.response;
+  if (!standing.host) return c.json({ error: 'the host sets the night up' }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { title?: string; night?: string; pace?: 'short' | 'full'; restart?: boolean };
+  const title = body.title ?? DEFAULT_TITLE;
+  if (!TITLES[title]) return c.json({ error: `no such mystery: ${title}` }, 404);
+  const stagingId = await clubStagingId(club, body.night, title);
+  const res = await staging(c.env, stagingId).fetch('https://staging/plan', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stagingId, club, night: body.night, title, host: session!.playerId, hostName: session!.name, pace: body.pace, restart: body.restart === true }),
+  });
+  return c.json((await res.json()) as unknown, res.ok ? 200 : 400);
+});
+
+/** WHAT IS ON at this club — the staging it has planned, if it has one, with every part and who has it. */
+app.get('/clubs/:clubId/mystery', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  const club = (c.req.param('clubId') ?? '').toLowerCase();
+  const standing = await clubStanding(c, club, session);
+  if (!standing.ok) return standing.response;
+  const title = c.req.query('title') ?? DEFAULT_TITLE;
+  const night = c.req.query('night') ?? undefined;
+  const stagingId = await clubStagingId(club, night, title);
+  const res = await staging(c.env, stagingId).fetch(`https://staging/view?playerId=${encodeURIComponent(session!.playerId)}`);
+  if (!res.ok) return c.json({ staging: null, cast: [], host: standing.host }, 200);
+  const body = (await res.json()) as Record<string, unknown>;
+  return c.json({ ...body, host: standing.host });
+});
+
+/** TAKE A PART (a member), or give it up with `role: null`. */
+app.post('/mysteries/:stagingId/cast', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const st = staging(c.env, c.req.param('stagingId') ?? '');
+  const read = await st.fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}`);
+  const club = read.ok ? ((await read.json()) as { staging?: { club?: string } }).staging?.club : undefined;
+  if (!club) return c.json({ error: 'no such night' }, 404);
+  const standing = await clubStanding(c, club, session);
+  if (!standing.ok) return standing.response;
+  const body = (await c.req.json().catch(() => ({}))) as { role?: string | null };
+  const res = await st.fetch('https://staging/cast', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: session.playerId, name: session.name, role: body.role ?? null }),
+  });
+  return c.json((await res.json()) as unknown, res.ok ? 200 : 409);
+});
+
+/** RAISE THE CURTAIN (the host): the parts nobody took are played by the house, and the seed is spent. */
+app.post('/mysteries/:stagingId/curtain', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const res = await staging(c.env, c.req.param('stagingId') ?? '').fetch('https://staging/curtain', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ by: session.playerId }),
+  });
+  return c.json((await res.json()) as unknown, res.ok ? 200 : 403);
+});
+
 /** The staging as this person sees it — their character's view, or a watcher's. */
 app.get('/mysteries/:stagingId', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));

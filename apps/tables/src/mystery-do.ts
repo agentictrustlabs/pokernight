@@ -23,7 +23,12 @@ import {
 import type { Env } from './env.js';
 
 interface Attachment { playerId: string; name: string }
-interface Meta { stagingId: string; owner: string; ownerName: string; title: string; role: RoleId; pace?: 'short' | 'full' }
+interface Meta {
+  stagingId: string; owner: string; ownerName: string; title: string; role: RoleId; pace?: 'short' | 'full';
+  /** A CLUB'S NIGHT rather than a night of your own: who may take a part is the club's roster, and it waits
+   *  in `casting` until the host says the curtain is up. A solo night has neither. */
+  club?: string; night?: string; casting?: boolean;
+}
 
 /** How long a character played by an agent is held back, so the room can read what it said. */
 const PACE_MS = 3_200;
@@ -36,6 +41,8 @@ export class MysteryDO extends DurableObject<Env> {
   private paused = false;
   private pausedAt = 0;
   private lastMoved: Record<string, number> = {};
+  /** Who has taken which part while a club's night is casting. Empty for a night of your own. */
+  private taken: Record<string, { role: RoleId; name: string }> = {};
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -45,14 +52,15 @@ export class MysteryDO extends DurableObject<Env> {
         if (r.k === 'state') this.state = JSON.parse(r.v) as MysteryState;
         if (r.k === 'meta') this.meta = JSON.parse(r.v) as Meta;
         if (r.k === 'paused') this.paused = r.v === '1';
+        if (r.k === 'taken') this.taken = JSON.parse(r.v) as Record<string, { role: RoleId; name: string }>;
       }
     });
   }
 
   private save(): void {
     this.ctx.storage.sql.exec(
-      `INSERT OR REPLACE INTO kv (k, v) VALUES ('state', ?), ('meta', ?), ('paused', ?)`,
-      JSON.stringify(this.state), JSON.stringify(this.meta), this.paused ? '1' : '0',
+      `INSERT OR REPLACE INTO kv (k, v) VALUES ('state', ?), ('meta', ?), ('paused', ?), ('taken', ?)`,
+      JSON.stringify(this.state), JSON.stringify(this.meta), this.paused ? '1' : '0', JSON.stringify(this.taken),
     );
   }
 
@@ -94,10 +102,70 @@ export class MysteryDO extends DurableObject<Env> {
       await this.arm();
       return json({ ok: true, staging: this.summary() });
     }
+    /**
+     * A CLUB'S MYSTERY. Created by the host and left in CASTING: the cast is the club's people, taking parts
+     * one at a time, and nothing is drawn — not the killer, not a clue — until the host says the curtain is
+     * up. That is the difference between a night of your own (opened on the spot) and a night people come to.
+     */
+    if (request.method === 'POST' && url.pathname === '/plan') {
+      const b = (await request.json()) as { stagingId: string; club: string; night?: string; title: string; host: string; hostName: string; pace?: 'short' | 'full'; restart?: boolean };
+      const pair = stagingOf(b.title);
+      if (!pair) return json({ error: `no such mystery: ${b.title}` }, 404);
+      if (this.state && !b.restart) return json({ ok: true, staging: this.summary(), cast: this.castList() });
+      this.state = null;
+      this.taken = {};
+      this.meta = {
+        stagingId: b.stagingId, owner: b.host, ownerName: b.hostName, title: pair.title.id,
+        role: pair.title.roles[0]!.id, pace: b.pace === 'short' ? 'short' : 'full',
+        club: b.club, ...(b.night ? { night: b.night } : {}), casting: true,
+      };
+      this.save();
+      return json({ ok: true, staging: this.summary(), cast: this.castList() });
+    }
+    /** A PART, TAKEN. One per person, given up by taking another, and refused once the night has begun. */
+    if (request.method === 'POST' && url.pathname === '/cast') {
+      const b = (await request.json()) as { playerId: string; name: string; role: RoleId | null };
+      if (!this.meta?.casting) return json({ error: 'this night is not casting' }, 409);
+      const pair = stagingOf(this.meta.title);
+      if (!pair) return json({ error: 'no such mystery' }, 404);
+      if (b.role === null) { delete this.taken[b.playerId]; this.save(); return json({ ok: true, cast: this.castList() }); }
+      if (!pair.title.roles.some((r) => r.id === b.role)) return json({ error: 'no such part' }, 404);
+      const heldByAnother = Object.entries(this.taken).some(([id, t]) => id !== b.playerId && t.role === b.role);
+      if (heldByAnother) return json({ error: 'somebody has already taken that part' }, 409);
+      this.taken[b.playerId] = { role: b.role, name: b.name };
+      this.save();
+      return json({ ok: true, cast: this.castList() });
+    }
+    /** CURTAIN UP: the parts nobody took are played by the house, and the seed is spent. */
+    if (request.method === 'POST' && url.pathname === '/curtain') {
+      const b = (await request.json()) as { by: string };
+      if (!this.meta?.casting) return json({ error: 'this night has already begun' }, 409);
+      if (this.meta.owner !== b.by) return json({ error: 'the host raises the curtain' }, 403);
+      const pair = stagingOf(this.meta.title);
+      if (!pair) return json({ error: 'no such mystery' }, 404);
+      const cast: Casting[] = pair.title.roles.map((r) => {
+        const person = Object.entries(this.taken).find(([, t]) => t.role === r.id);
+        return person
+          ? { role: r.id, agent: person[0], name: person[1].name || r.name, custodian: person[0], operator: 'human' as const, playerId: person[0] }
+          : { role: r.id, agent: `${r.id}.cast`, name: r.name, custodian: 'house', operator: 'agent' as const };
+      });
+      const seed = randomSeed();
+      // A PARTY WANTS SOMEBODY AT THE TABLE TO HAVE TO LIE, so a club's night draws over the people in it.
+      this.state = openStaging({
+        title: pair.title, venue: pair.venue, cast, seedHex: bytesToHex(seed), seedCommit: seedCommit(seed),
+        now: Date.now(), killerRule: 'human', pace: this.meta.pace === 'short' ? 0.25 : 1,
+      });
+      this.meta = { ...this.meta, casting: false };
+      this.save();
+      await this.arm();
+      return json({ ok: true, staging: this.summary() });
+    }
     if (request.method === 'GET' && url.pathname === '/view') {
       const playerId = url.searchParams.get('playerId') ?? '';
-      if (!this.state) return json({ error: 'no such night' }, 404);
-      return json({ staging: this.summary(), view: this.viewOf(playerId) });
+      // A NIGHT BEING CAST IS A NIGHT. It has no state yet — no killer, no clue, nothing drawn — but it has
+      // parts and people who have taken them, and the club's page is asking about exactly that.
+      if (!this.state && !this.meta) return json({ error: 'no such night' }, 404);
+      return json({ staging: this.summary(), view: this.state ? this.viewOf(playerId) : null, cast: this.castList() });
     }
     if (url.pathname === '/ws') {
       if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json({ error: 'expected websocket upgrade' }, 426);
@@ -126,13 +194,34 @@ export class MysteryDO extends DurableObject<Env> {
   }
 
   private summary() {
+    const m = this.meta;
+    if (!m) return null;
     const s = this.state;
-    if (!s || !this.meta) return null;
     return {
-      stagingId: this.meta.stagingId, title: s.title, venue: s.venue, role: this.meta.role,
-      act: s.act, phase: s.phase, deadline: s.deadline, seedCommit: s.seedCommit, paused: this.paused,
-      startedAt: s.startedAt, endedAt: s.endedAt,
+      stagingId: m.stagingId, title: m.title, venue: s?.venue ?? stagingOf(m.title)?.venue.id ?? '', role: m.role,
+      act: s?.act ?? 0, phase: m.casting ? 'casting' : s?.phase ?? 'casting',
+      deadline: s?.deadline ?? null, seedCommit: s?.seedCommit ?? '', paused: this.paused,
+      startedAt: s?.startedAt ?? 0, endedAt: s?.endedAt ?? null,
+      ...(m.club ? { club: m.club } : {}), ...(m.night ? { night: m.night } : {}),
+      host: m.owner, pace: m.pace ?? 'full',
     };
+  }
+
+  /** Every part, and who has taken it — what a club's page shows while the night is being cast. */
+  private castList() {
+    const m = this.meta;
+    const pair = m ? stagingOf(m.title) : null;
+    if (!m || !pair) return [];
+    return pair.title.roles.map((r) => {
+      const person = Object.entries(this.taken).find(([, t]) => t.role === r.id);
+      const playing = this.state?.cast.find((c) => c.role === r.id);
+      return {
+        role: r.id, name: r.name, blurb: r.blurb, look: r.look,
+        takenBy: person ? person[1].name : playing?.operator === 'human' ? playing.name : null,
+        takenById: person ? person[0] : playing?.playerId ?? null,
+        operator: person || playing?.operator === 'human' ? 'human' : 'agent',
+      };
+    });
   }
 
   override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
