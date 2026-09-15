@@ -23,15 +23,20 @@ import {
   decodeDirectReply, decodeSceneReply, encodeDirectParts, encodeSceneParts,
   type DirectInput, type DirectOutput, type SceneInput, type SceneOutput,
 } from '@pokernight/protocol';
-import { a2aUrl, fetchAgentCard, hasActSkill, resolveAgentBase } from './a2a.js';
+import { a2aUrl, fetchAgentCard, hasActSkill, messageUrlFromCard, replyParts, resolveAgentBase } from './a2a.js';
 import { houseAuthorization } from './house-caller.js';
 import type { Env } from './env.js';
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-/** One signed JSON-RPC `message/send`, and whatever parts come back. Never throws. */
-async function send(base: string, id: string, parts: unknown[], timeoutMs: number, env?: Env): Promise<{ ok: true; parts: unknown } | { ok: false; error: string }> {
-  const url = a2aUrl(base, A2A_JSONRPC_PATH);
+/**
+ * One signed JSON-RPC `message/send`, and whatever parts come back. Never throws.
+ *
+ * A MESSAGE GOES WHERE THE CARD SAYS. A Home agent answers at the estate's EDGE (`edge…/api/a2a/<name>`) and
+ * refuses its own host with a 401 — which is exactly what this road did until it read the endpoint off the
+ * card instead of building one from the zone. `url` is therefore passed in, taken from the card.
+ */
+async function send(url: string, id: string, parts: unknown[], timeoutMs: number, env?: Env): Promise<{ ok: true; parts: unknown } | { ok: false; error: string }> {
   const raw = JSON.stringify({
     jsonrpc: '2.0', id, method: A2A_SEND_MESSAGE,
     params: { message: { messageId: crypto.randomUUID(), role: 'user', parts } },
@@ -51,19 +56,19 @@ async function send(base: string, id: string, parts: unknown[], timeoutMs: numbe
   try { payload = await res.json(); } catch { return { ok: false, error: `reply from ${url} is not JSON` }; }
   const envp = payload as { error?: { code?: number; message?: string }; result?: unknown };
   if (envp?.error) return { ok: false, error: `JSON-RPC error ${envp.error.code ?? '?'}: ${envp.error.message ?? 'unknown'}` };
-  const result = envp?.result as { message?: { parts?: unknown }; parts?: unknown; artifacts?: Array<{ parts?: unknown }> } | undefined;
-  const parts2 = result?.message?.parts ?? result?.parts ?? result?.artifacts?.[0]?.parts;
-  if (!parts2) return { ok: false, error: 'reply carried no message parts' };
+  // A Home answers with a TASK and a persona with a message; one reader knows both (`replyParts`).
+  const parts2 = replyParts(envp?.result);
+  if (!parts2.length) return { ok: false, error: `reply carried no message parts: ${JSON.stringify(envp?.result ?? {}).slice(0, 220)}` };
   return { ok: true, parts: parts2 };
 }
 
 /** Does this agent play a part at all? Asked of its own card, once per call, never memoised into a lie. */
-export async function playsCharacters(env: Env, agentName: string, timeoutMs: number): Promise<{ ok: true; base: string } | { ok: false; error: string }> {
+export async function playsCharacters(env: Env, agentName: string, timeoutMs: number): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const base = resolveAgentBase(env, agentName);
   const card = await fetchAgentCard(base, timeoutMs);
   if (!card.ok) return { ok: false, error: card.error };
   if (!hasActSkill(card.card, MYSTERY_ACT_SKILL)) return { ok: false, error: `${agentName} does not advertise ${MYSTERY_ACT_SKILL}` };
-  return { ok: true, base };
+  return { ok: true, url: messageUrlFromCard(card.card, base) };
 }
 
 export type SceneResult = { ok: true; output: SceneOutput; agent: string } | { ok: false; error: string };
@@ -72,10 +77,12 @@ export type SceneResult = { ok: true; output: SceneOutput; agent: string } | { o
 export async function askCharacter(env: Env, agentName: string, input: SceneInput, timeoutMs: number): Promise<SceneResult> {
   const road = await playsCharacters(env, agentName, Math.min(timeoutMs, 6_000));
   if (!road.ok) return road;
-  const sent = await send(road.base, `${input.stagingId}:${input.act}:${input.role}`, encodeSceneParts(input), timeoutMs, env);
+  const sent = await send(road.url, `${input.stagingId}:${input.act}:${input.role}`, encodeSceneParts(input), timeoutMs, env);
   if (!sent.ok) return sent;
   const decoded = decodeSceneReply(sent.parts);
-  if ('error' in decoded) return { ok: false, error: decoded.error };
+  // WHAT IT ACTUALLY SAID, when it did not say it in the shape — the only thing that tells you whether to fix
+  // the ask, the playbook or the reader.
+  if ('error' in decoded) return { ok: false, error: `${decoded.error}: ${JSON.stringify(sent.parts).slice(0, 400)}` };
   return { ok: true, output: decoded, agent: agentName };
 }
 
@@ -90,10 +97,13 @@ export type DirectResult = { ok: true; output: DirectOutput; agent: string } | {
  */
 export async function askDirector(env: Env, agentName: string, input: DirectInput, timeoutMs: number): Promise<DirectResult> {
   const base = resolveAgentBase(env, agentName);
-  const sent = await send(base, `${input.stagingId}:${input.act}:${input.phase}`, encodeDirectParts(input), timeoutMs, env);
+  // The director's endpoint comes off its card too; a Home agent refuses its own host.
+  const card = await fetchAgentCard(base, Math.min(timeoutMs, 6_000));
+  const url = card.ok ? messageUrlFromCard(card.card, base) : a2aUrl(base, A2A_JSONRPC_PATH);
+  const sent = await send(url, `${input.stagingId}:${input.act}:${input.phase}`, encodeDirectParts(input), timeoutMs, env);
   if (!sent.ok) return sent;
   const decoded = decodeDirectReply(sent.parts);
-  if ('error' in decoded) return { ok: false, error: decoded.error };
+  if ('error' in decoded) return { ok: false, error: `${decoded.error}: ${JSON.stringify(sent.parts).slice(0, 400)}` };
   return { ok: true, output: decoded, agent: agentName };
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { chooseAction, TITLES, type MysteryAction, type MysteryEvent, type MysteryView } from '@pokernight/mystery';
 import type { AppSession } from '../lib/types';
 import { mysteryApi } from '../lib/api';
@@ -6,6 +6,13 @@ import { MysterySocket, type MysteryClientState } from '../lib/mysterySocket';
 import { castVoicesOn, hushCast, sayAs, setCastVoicesOn, voicesAvailable } from '../lib/castVoices';
 import { HOME_HASH } from '../lib/routes';
 import { Face } from '../components/mystery/Face';
+/** THE ROOM, DRAWN — a separate chunk, like the lounge: the engine never loads for somebody reading the page. */
+const Venue = lazy(() => import('../components/mystery/Venue').then((m) => ({ default: m.Venue })));
+/** Can this browser draw it at all? Asked once, of a throwaway canvas whose context is released at once. */
+function canDraw(): boolean {
+  if (typeof document === 'undefined') return false;
+  try { const c = document.createElement('canvas'); const gl = (c.getContext('webgl2') || c.getContext('webgl')) as WebGLRenderingContext | null; if (!gl) return false; gl.getExtension('WEBGL_lose_context')?.loseContext(); return true; } catch { return false; }
+}
 import { Identity } from '../components/Identity';
 import { Brand } from '../components/Brand';
 
@@ -24,10 +31,13 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
   const [, bump] = useState(0);
   const redraw = useMemo(() => () => bump((n) => n + 1), []);
   const [line, setLine] = useState('');
+  const [whisperTo, setWhisperTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [voices, setVoices] = useState(() => castVoicesOn());
   /** Who is talking right now, so the room can show it — cleared a few seconds after their line lands. */
   const [speaking, setSpeaking] = useState<string | null>(null);
+  const [webgl] = useState<boolean>(() => canDraw());
+  const [drawn, setDrawn] = useState<boolean>(() => { try { return localStorage.getItem('pokernight.mystery.flat') !== '1'; } catch { return true; } });
   const speakingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** How far down the transcript the voice has read, so a reconnect does not say the whole night again. */
   const spoken = useRef<number>(-1);
@@ -80,6 +90,16 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
         </span>
         <span className="spacer" />
         <span className="meta">
+          {webgl ? (
+            <button
+              type="button"
+              className={`tag seat-tag${drawn ? ' out' : ''}`}
+              onClick={() => { const on = !drawn; setDrawn(on); try { localStorage.setItem('pokernight.mystery.flat', on ? '0' : '1'); } catch { /* this tab only */ } }}
+              title={drawn ? 'Hide the room and read it instead' : 'Draw the room'}
+            >
+              {drawn ? 'the room' : 'the words'}
+            </button>
+          ) : null}
           {voicesAvailable() ? (
             <button
               type="button"
@@ -111,6 +131,13 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
               setBusy(true);
               try { await mysteryApi.solo({ title: view.title, role: view.you?.role, restart: true }, session.token); location.reload(); } finally { setBusy(false); }
             }} busy={busy} /> : null}
+            {/* THE PICTURE FIRST, the words under it: a mystery is watched and listened to, and read when
+                you want to go back over what somebody said. */}
+            {webgl && drawn && view.room ? (
+              <Suspense fallback={<div className="venue venue-loading"><p className="hint">Walking in…</p></div>}>
+                <Venue view={view} speaking={speaking} act={(a) => sock.current?.act(a)} onPerson={(role) => setWhisperTo(role)} />
+              </Suspense>
+            ) : null}
             <Transcript view={view} speaking={speaking} />
             {view.phase !== 'revealed' ? (
               <form
@@ -122,7 +149,7 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
               </form>
             ) : null}
             {st?.error ? <div className="form-error">{st.error}</div> : null}
-            <Room view={view} act={(a) => sock.current?.act(a)} speaking={speaking} />
+            <Room view={view} act={(a) => sock.current?.act(a)} speaking={speaking} whisperTo={whisperTo} onWhisperTo={setWhisperTo} />
           </main>
           <aside className="mystery-side">
             <You view={view} act={(a) => sock.current?.act(a)} />
@@ -148,8 +175,10 @@ function Clock({ deadline, paused }: { deadline: number | null; paused: boolean 
 }
 
 /** WHERE YOU ARE, and everything you can do about it: the people, the things, the doors. */
-function Room({ view, act, speaking }: { view: MysteryView; act: (a: unknown) => void; speaking: string | null }) {
+function Room({ view, act, speaking, whisperTo, onWhisperTo }: { view: MysteryView; act: (a: unknown) => void; speaking: string | null; whisperTo?: string | null; onWhisperTo?: (r: string | null) => void }) {
   const [whisper, setWhisper] = useState<{ to: string; text: string } | null>(null);
+  // CLICKING SOMEBODY IN THE ROOM opens the same line you would open from the list under it.
+  useEffect(() => { if (whisperTo) setWhisper({ to: whisperTo, text: '' }); }, [whisperTo]);
   const room = view.room;
   if (!room) return null;
   const playing = view.phase === 'act';
@@ -186,7 +215,7 @@ function Room({ view, act, speaking }: { view: MysteryView; act: (a: unknown) =>
                 {whisper?.to === p.role ? (
                   <form
                     className="mystery-whisper"
-                    onSubmit={(e) => { e.preventDefault(); const t = whisper.text.trim(); if (t) { act({ type: 'whisper', to: p.role, text: t }); setWhisper(null); } }}
+                    onSubmit={(e) => { e.preventDefault(); const t = whisper.text.trim(); if (t) { act({ type: 'whisper', to: p.role, text: t }); setWhisper(null); onWhisperTo?.(null); } }}
                   >
                     <input autoFocus value={whisper.text} maxLength={280} placeholder={`Just to ${p.name}`} onChange={(e) => setWhisper({ to: p.role, text: e.target.value })} />
                     <button type="submit" className="small">Say it quietly</button>

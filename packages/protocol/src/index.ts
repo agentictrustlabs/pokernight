@@ -1360,21 +1360,30 @@ export function decodeDirectReply(parts: unknown): DirectOutput | { error: strin
   return decodeShaped(parts, (c) => DirectOutputSchema.safeParse(c));
 }
 
+/**
+ * FIND THE ANSWER IN WHATEVER CAME BACK.
+ *
+ * `kind` IS NOT RELIED ON. A Home's parts arrive as bare `{text}` or `{data}` objects with no `kind` at all,
+ * and requiring one threw away a perfectly good answer from a person's own agent — in character, with an
+ * action, exactly as asked. What matters is whether a part HOLDS the shape: an object that has it, or text
+ * with JSON somewhere in it (a model that wrapped its object in prose or a fence is still answering).
+ */
 function decodeShaped<T>(parts: unknown, check: (c: unknown) => { success: true; data: T } | { success: false }): T | { error: string } {
   if (!Array.isArray(parts)) return { error: 'reply has no parts' };
+  const candidates: unknown[] = [];
   for (const part of parts) {
     if (!part || typeof part !== 'object') continue;
     const p = part as { kind?: string; data?: unknown; text?: string };
-    let candidate: unknown;
-    if (p.kind === 'data' && p.data && typeof p.data === 'object') {
+    if (p.data && typeof p.data === 'object') {
       const d = p.data as Record<string, unknown>;
-      candidate = 'cue' in d || 'say' in d || 'action' in d ? d : d['output'];
-    } else if (p.kind === 'text' && typeof p.text === 'string') {
-      // A model that wrapped its JSON in prose or a fence is still answering; find the object.
-      const m = /\{[\s\S]*\}/.exec(p.text);
-      if (!m) continue;
-      try { candidate = JSON.parse(m[0]); } catch { continue; }
+      candidates.push('cue' in d || 'say' in d || 'action' in d ? d : d['output']);
     }
+    if (typeof p.text === 'string') {
+      const m = /\{[\s\S]*\}/.exec(p.text);
+      if (m) { try { candidates.push(JSON.parse(m[0])); } catch { /* prose, not an answer */ } }
+    }
+  }
+  for (const candidate of candidates) {
     if (!candidate) continue;
     const r = check(candidate);
     if (r.success) return r.data;

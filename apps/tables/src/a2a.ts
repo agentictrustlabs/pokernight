@@ -481,7 +481,12 @@ export async function callAdvise(base: string, input: AdviseInput, timeoutMs: nu
  * `{ message }` for a synchronous reply, but a server that insists on a task is still usable:
  * its status message and artifacts carry the same parts.
  */
-function replyParts(result: unknown): unknown[] {
+/**
+ * EVERY SHAPE A REPLY COMES IN. A Home answers with a TASK (`status.message.parts`, or artifacts); a persona
+ * answers with a message. Exported because Mystery Night asks the same agents the same way and a second
+ * hand-rolled extractor is a second thing to get wrong — it did, with "reply carried no message parts".
+ */
+export function replyParts(result: unknown): unknown[] {
   const out: unknown[] = [];
   const push = (p: unknown): void => {
     if (Array.isArray(p)) out.push(...p);
@@ -490,7 +495,7 @@ function replyParts(result: unknown): unknown[] {
   const r = result as Record<string, unknown>;
   push((r.message as { parts?: unknown })?.parts);
   push(r.parts);
-  const task = r.task as { status?: { message?: { parts?: unknown } }; artifacts?: Array<{ parts?: unknown }> } | undefined;
+  const task = (r.task ?? r) as { status?: { message?: { parts?: unknown } }; artifacts?: Array<{ parts?: unknown }> } | undefined;
   push(task?.status?.message?.parts);
   for (const a of task?.artifacts ?? []) push(a?.parts);
   return out;

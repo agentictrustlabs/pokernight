@@ -341,4 +341,4 @@ HOUSE_DELEGATE = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # each thinks at its own Home. An agent whose card does not advertise `mystery.act` is not asked at all and
 # the house's rules play that part, so this list is a preference, never a dependency.
 MYSTERY_CAST_AGENTS = "alice.me,bob.me,carol.me,dave.me,elena.me,nathan.me,david.me"
-MYSTERY_DIRECTOR = "carol.me"
+MYSTERY_DIRECTOR = "alice.me"

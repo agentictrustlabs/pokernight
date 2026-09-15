@@ -403,6 +403,9 @@ export class MysteryDO extends DurableObject<Env> {
         const permanent = /does not advertise|card unreachable|not an A2A agent card|is not JSON/.test(out.error);
         const misses = (this.misses[role] ?? 0) + 1;
         this.misses[role] = misses;
+        // EVERY MISS IS SAID, not just the last one: "the part went quiet" is not a diagnosis, and the reason
+        // an agent could not answer is the only thing that tells you whether to fix a card, a skill or a wire.
+        console.warn(`[mystery] ${agent} missed ${role} (${misses}): ${out.error}`);
         if (permanent || misses >= 3) {
           if (!this.mute.has(role)) { this.mute.set(role, out.error); console.warn(`[mystery] ${role} is played by the house from here: ${out.error}`); }
           const cur0 = this.state;
