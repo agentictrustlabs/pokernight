@@ -71,7 +71,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   /** THE DEALER at each table — a body standing at the ring's gap, whose hands the cards come from. */
   const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3; deck: pc.Entity }>());
   /** cards in the air: from the dealer's hand to their place on the felt, one after another */
-  const flights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; yawFrom: number; yawTo: number; t: number; delay: number }>>([]);
+  const flights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; yawFrom: number; yawTo: number; t: number; delay: number; tilt?: number }>>([]);
   /** which cards were already on the felt last time, so only the NEW ones are dealt (keyed by hand) */
   const dealt = useRef<{ handNo: number; ids: Set<string> }>({ handNo: -1, ids: new Set() });
   const feltSig = useRef('');
@@ -113,6 +113,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       graphicsDeviceOptions: { antialias: true, powerPreference: 'high-performance' },
     });
     a.setCanvasFillMode(pc.FILLMODE_NONE);
+    // AT THE SCREEN'S OWN RESOLUTION. PlayCanvas renders at 1× unless told otherwise, and on a HiDPI monitor
+    // that blurred every pip on the felt while the smooth bodies hid it — "the people look clear, the cards do not".
+    a.graphicsDevice.maxPixelRatio = Math.min(2, window.devicePixelRatio || 1);
     a.setCanvasResolution(pc.RESOLUTION_AUTO);
     const size = () => { const r = host.current?.getBoundingClientRect(); if (r) a.resizeCanvas(Math.floor(r.width), Math.floor(r.height)); };
     size();
@@ -212,7 +215,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         const p = new pc.Vec3().lerp(f.from, f.to, e); p.y += Math.sin(e * Math.PI) * 0.22;
         f.entity.setPosition(p);
         // a spin on the way — one turn — and the card's own yaw when it lands; a pitch that levels out
-        f.entity.setEulerAngles((1 - e) * 35, (f.yawFrom + (f.yawTo - f.yawFrom + 2 * Math.PI) * e) * 180 / Math.PI, 0);
+        f.entity.setEulerAngles((1 - e) * 35 + e * (f.tilt ?? 0), (f.yawFrom + (f.yawTo - f.yawFrom + 2 * Math.PI) * e) * 180 / Math.PI, 0);
       }
       flights.current = flights.current.filter((f) => f.t < 1);
       for (const f of chipFlights.current) { f.t = Math.min(1, f.t + dt / 0.3); const e = 1 - (1 - f.t) * (1 - f.t); const p = new pc.Vec3().lerp(f.from, f.to, e); p.y += Math.sin(e * Math.PI) * 0.12; f.entity.setLocalPosition(p); }
@@ -434,20 +437,20 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     // each seat's own stack sits just in front of its cards; its street bet is pushed a third of the way to the middle
     for (const seat of v.seats) {
       const ang = (seat.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
-      if (seat.stack > 0) ch.pile(seat.stack, cx + sx * 1.02, H, cz + sz * 1.02, fresh, 0.06);
+      { const px = Math.cos(ang), pz = -Math.sin(ang); if (seat.stack > 0) ch.pile(seat.stack, cx + sx * 1.18 + px * 0.42, H, cz + sz * 1.18 + pz * 0.42, fresh, 0.08); }
       const bet = seat.inHand?.streetBet ?? 0;
       if (bet > 0) {
-        const bx = cx + sx * 0.6, bz = cz + sz * 0.6;
+        const px = Math.cos(ang), pz = -Math.sin(ang); const bx = cx + sx * 0.78 + px * 0.42, bz = cz + sz * 0.78 + pz * 0.42;
         const { entity, top } = ch.pile(bet, bx, H, bz, fresh);
         // NEW chips this street fly in from where the seat sits — "throwing out chips"
         const was = pushed.current.get(seat.seat) ?? 0;
-        if (bet > was) { const from = new pc.Vec3(cx + sx * 1.02, H + 0.06, cz + sz * 1.02); chipFlights.current.push({ entity, from, to: entity.getLocalPosition().clone(), t: 0, delay: 0 }); entity.setLocalPosition(from); }
+        if (bet > was) { const from = new pc.Vec3(cx + sx * 1.18 + px * 0.42, H + 0.06, cz + sz * 1.18 + pz * 0.42); chipFlights.current.push({ entity, from, to: entity.getLocalPosition().clone(), t: 0, delay: 0 }); entity.setLocalPosition(from); }
         pushed.current.set(seat.seat, bet);
         void top;
       } else pushed.current.set(seat.seat, 0);
     }
     const pot = (v.hand?.pots.reduce((s2, p) => s2 + p.amount, 0) ?? 0);
-    if (pot > 0) ch.pile(pot, cx, H, cz - 0.28, fresh, 0.06);
+    { const yourAng = (you.seatedAt.seat / t.seats) * Math.PI * 2; const rx = Math.cos(yourAng), rz = -Math.sin(yourAng); if (pot > 0) ch.pile(pot, cx + rx * 1.05, H, cz + rz * 1.05, fresh, 0.08); }
     // a new hand clears what was pushed
     if (chipHand.current !== (v.hand?.handNo ?? -1)) { pushed.current.clear(); chipHand.current = v.hand?.handNo ?? -1; }
     chipRoot.current?.destroy(); chipRoot.current = fresh; chipSig.current = sig;
@@ -485,21 +488,24 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     if (dealt.current.handNo !== handNo) dealt.current = { handNo, ids: new Set() };
     const dealer = dealers.current.get(board.tableId);
     let n = 0;
-    const lay = (id: string, code: string | null, x: number, z: number, yaw: number, lift: number) => {
+    // the community row is propped toward YOUR chair — this is your own felt; each seat sees its own
+    const tiltToward = (e: pc.Entity, ang: number) => { e.setLocalEulerAngles(-22, (ang + Math.PI) * 180 / Math.PI, 0); };
+    const lay = (id: string, code: string | null, x: number, z: number, yaw: number, lift: number): pc.Entity => {
       const e = d.card(code, x, H, z, yaw, root, lift);
       if (dealer && !dealt.current.ids.has(id)) {
         // it starts in the dealer's hand and arrives in order; the dealer reaches for the deck once per round of dealing
         const to = e.getPosition().clone(); e.setPosition(dealer.hand);
         const delay = n * 0.16;
-        flights.current.push({ entity: e, from: dealer.hand.clone(), to, yawFrom: dealer.avatar.yaw, yawTo: yaw, t: 0, delay });
+        flights.current.push({ entity: e, from: dealer.hand.clone(), to, yawFrom: dealer.avatar.yaw, yawTo: yaw, t: 0, delay, tilt: id.startsWith('board:') ? -22 : 0 });
         // the dealing arm flicks as each card leaves — scheduled to match this card's delay
         window.setTimeout(() => dealer.avatar.dealFlick(), delay * 1000);
         n++;
       }
       dealt.current.ids.add(id);
+      return e;
     };
     if (v.hand) {
-      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.31; lay(`board:${i}`, c, cx + rx * o, cz + rz * o, yourAng + Math.PI, i * 0.0005); });
+      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.36; const e = lay(`board:${i}`, c, cx + rx * o, cz + rz * o, yourAng + Math.PI, 0.03 + i * 0.0005); e.setLocalScale(0.063 * 5.2, 1, 0.088 * 5.2); tiltToward(e, yourAng); });
     }
     for (const seat of v.seats) {
       if (!seat.inHand || seat.inHand.folded) continue;

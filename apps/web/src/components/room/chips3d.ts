@@ -14,7 +14,7 @@ const DENOMS: Array<{ v: number; c: [number, number, number] }> = [
   { v: 5, c: [0.85, 0.16, 0.16] },    // red
   { v: 1, c: [0.95, 0.95, 0.93] },    // white
 ];
-const CHIP_H = 0.009, CHIP_R = 0.026; // a touch oversized so a stack reads from the chair
+const CHIP_H = 0.013, CHIP_R = 0.04; // oversized like the cards: a stack must read from across the felt
 
 export class Chips3D {
   private mats = new Map<number, pc.StandardMaterial>();
