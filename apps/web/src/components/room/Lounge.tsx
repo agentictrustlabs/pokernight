@@ -31,6 +31,7 @@ const HOLE_R = 1.05; // a seat's own cards, from the centre — far enough in th
 const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
 const deckSide = new pc.StandardMaterial();
+const chairLit = new pc.StandardMaterial();
 const hatFelt = new pc.StandardMaterial();
 const hatBand = new pc.StandardMaterial();
 const CHAIR_PIECE = 'loungeChair'; // a padded armchair at the felt, not a kitchen chair
@@ -99,6 +100,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const botPlate = useRef(new Map<string, string>());
   /** Every chair in the room, by table and seat, with whether somebody is in it — from the manifest. */
   const chairs = useRef<Array<{ tableId: string; seat: number; at: pc.Vec3; yaw: number; taken: boolean }>>([]);
+  /** every chair's own entity, so the one somebody is walking to can change colour */
+  const chairEntities = useRef(new Map<string, pc.Entity>());
+  /** the chair currently lit, and the materials it had before */
+  const litChair = useRef<{ key: string; restore: Array<[pc.MeshInstance, pc.Material]> } | null>(null);
   /** House bots in chairs — bodies for occupants no person in the room owns. */
   const bots = useRef(new Map<string, ParticipantAvatar>());
   const keys = useRef(new Set<string>());
@@ -165,8 +170,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // A CLICK NEAR A FREE CHAIR is "sit there": walk to it and, on arrival, ask the table for the seat.
       let best: (typeof chairs.current)[number] | null = null; let bd = 0.9;
       for (const ch of chairs.current) { if (ch.taken) continue; const d = Math.hypot(ch.at.x - hit.x, ch.at.z - hit.z); if (d < bd) { bd = d; best = ch; } }
-      if (best && !me.current.avatar.seated) { me.current.goal = best.at.clone(); me.current.heading = { tableId: best.tableId, seat: best.seat, yaw: best.yaw }; }
-      else { me.current.goal = new pc.Vec3(hit.x, 0, hit.z); me.current.heading = null; }
+      if (best && !me.current.avatar.seated) { me.current.goal = best.at.clone(); me.current.heading = { tableId: best.tableId, seat: best.seat, yaw: best.yaw }; lightChair(`${best.tableId}:${best.seat}`); }
+      else { me.current.goal = new pc.Vec3(hit.x, 0, hit.z); me.current.heading = null; lightChair(null); }
     });
     a.on('update', (dt: number) => {
       lastDt = dt;
@@ -190,6 +195,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         if (k.has('up')) dz += 1; if (k.has('down')) dz -= 1; if (k.has('left')) dx -= 1; if (k.has('right')) dx += 1;
         let moved = false;
         if (dx || dz) {
+          if (m.heading) lightChair(null);
           m.heading = null;
           const len = Math.hypot(dx, dz); dx /= len; dz /= len;
           const cp = camera.getPosition();
@@ -217,11 +223,14 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         }
         av.moved(); av.update(dt);
         if (moved) socket.pose(pos.x, pos.z, av.yaw);
-        const cc = camCtl.current; const cy = av.yaw + cc.yaw; const dist = 5.5 * cc.zoom, up = Math.max(1.5, (4.2 + cc.pitch * 4) * cc.zoom);
+        // A PERSON'S OWN VIEW OF THE ROOM. The camera used to sit 4.2 m up and stare at the body, so walking in
+        // meant looking down at the floor: you could not see the room you had just entered, or who was in it.
+        // Just over the shoulder at head height, aimed ACROSS the room, shows the place instead of the carpet.
+        const cc = camCtl.current; const cy = av.yaw + cc.yaw; const dist = 3.6 * cc.zoom, up = Math.max(1.3, (2.35 + cc.pitch * 3.5) * cc.zoom);
         const behind = new pc.Vec3(Math.max(-10.5, Math.min(10.5, pos.x - Math.sin(cy) * dist)), up, Math.max(-10.5, Math.min(10.5, pos.z - Math.cos(cy) * dist)));
         if (!camSettled.current) { camera.setPosition(behind); camSettled.current = true; }
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
-        camera.lookAt(pos.x, 1.2, pos.z);
+        camera.lookAt(pos.x + Math.sin(cy) * 4.5, 1.45, pos.z + Math.cos(cy) * 4.5);
       }
       if (m) m.avatar.talking(isSpeaking(m.name));
       // the others ease toward their last pose; mouths move for whoever the huddle hears
@@ -261,10 +270,11 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     deck.current = new Deck3D(a);
     chips.current = new Chips3D(a);
     deckSide.diffuse = new pc.Color(0.92, 0.9, 0.85); deckSide.update();
+    chairLit.diffuse = new pc.Color(0.85, 0.66, 0.26); chairLit.emissive = new pc.Color(0.30, 0.22, 0.05); chairLit.update();
     hatFelt.diffuse = new pc.Color(0.10, 0.12, 0.13); hatFelt.gloss = 0.2; hatFelt.update();   // dark felt
     hatBand.diffuse = new pc.Color(0.12, 0.45, 0.28); hatBand.update();                          // a card-room green band
     // the walk scripts read the bodies' states through this; nothing in the app does
-    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot };
+    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot, litChair, chairEntities };
     /**
      * LAYERED ON TOP OF THE CLIPS — the gaze and the dealing reach — on `framerender`.
      *
@@ -322,7 +332,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     if (manifestRef.current === manifest && sceneryStamp.current === stamp) return;
     manifestRef.current = manifest; sceneryStamp.current = stamp;
     const furnished = kitReady && !!k?.loaded;
-    scenery.current?.destroy();
+    scenery.current?.destroy(); chairEntities.current.clear(); litChair.current = null;
     for (const [id, pl] of [...plateRef.current]) if (pl.kind === 'table' || pl.kind === 'anchor') plateRef.current.delete(id);
     const root = new pc.Entity('scenery'); a.root.addChild(root); scenery.current = root;
     const mat = (r: number, g: number, b: number, extra: Partial<pc.StandardMaterial> = {}) => { const m = new pc.StandardMaterial(); m.diffuse = new pc.Color(r, g, b); Object.assign(m, extra); m.update(); return m; };
@@ -349,7 +359,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // and a back stand in until the kit has loaded.
       for (let i = 0; i < t.seats; i++) {
         const ang = (i / t.seats) * Math.PI * 2; const c = i < t.seated ? chairTaken : chairFree; const r = CHAIR_R + CHAIR_BACK;
-        if (furnished && k!.place(CHAIR_PIECE, g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI, CHAIR_SCALE)) continue;
+        if (furnished) { const e = k!.place(CHAIR_PIECE, g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI, CHAIR_SCALE); if (e) { chairEntities.current.set(`${t.tableId}:${i}`, e); continue; } }
         add('box', c, [Math.sin(ang) * r, 0.42, Math.cos(ang) * r], [0.5, 0.08, 0.5], ang * 180 / Math.PI);
         add('box', c, [Math.sin(ang) * (r + 0.22), 0.7, Math.cos(ang) * (r + 0.22)], [0.5, 0.6, 0.06], ang * 180 / Math.PI);
       }
@@ -644,11 +654,30 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     return () => clearInterval(t);
   }, [state.you]);
 
+  /**
+   * THE CHAIR YOU ARE TAKING CHANGES COLOUR, and stays that way until you are in it.
+   *
+   * Walking across a room and then waiting a second for the board to open gave no sign that the click had
+   * registered at all — so people clicked again, or thought it had not worked. The chair itself is the thing
+   * they aimed at, so the chair is the thing that answers.
+   */
+  const lightChair = (key: string | null) => {
+    const cur = litChair.current;
+    if (cur && cur.key === key) return;
+    if (cur) { for (const [mi, m] of cur.restore) mi.material = m; litChair.current = null; }
+    if (!key) return;
+    const e = chairEntities.current.get(key); if (!e) return;
+    const restore: Array<[pc.MeshInstance, pc.Material]> = [];
+    for (const r of e.findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) { restore.push([mi, mi.material]); mi.material = chairLit; }
+    litChair.current = { key, restore };
+  };
+
   useImperativeHandle(ref, () => ({
     walkToSeat: (tableId, seat) => {
       const m = me.current; const ch = chairs.current.find((c) => c.tableId === tableId && c.seat === seat);
       if (!m || !ch || ch.taken || m.avatar.seated) return false;
       m.goal = ch.at.clone(); m.heading = { tableId, seat, yaw: ch.yaw };
+      lightChair(`${tableId}:${seat}`);
       return true;
     },
   }), []);

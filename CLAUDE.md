@@ -352,6 +352,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   (`asset.resource.name`); a state assigned no track plays a placeholder of duration `MAX_VALUE` and the body
   stands in a T-pose. Playwright's fake camera is `--use-fake-device-for-media-stream` (not `-capture`).
   Walk: scratch `body-walk.cjs` (standing, walking, seen by another, seated, seen seated; `window.__lounge`).
+  THE CHAIR YOU ARE TAKING LIGHTS UP (gold, `chairLit`, its materials swapped and restored) from the moment it is
+  chosen until you are in it, and the scene says "Taking seat N — dealing you in…" over itself: walking across a
+  room and then waiting a second for the board reads as "it did not work" when nothing answers the click.
+  ARRIVING SHOWS THE ROOM, NOT THE FLOOR: the walking camera sits just over the shoulder at head height (2.35 m,
+  3.6 m back) and looks ACROSS the room rather than down at the body, which at 4.2 m up it did.
   **WALKING UP TO A CHAIR IS HOW YOU SIT** (`lib/roomSeat.ts`, `RoomPage.onSitRequest`, scratch `sit-walk.cjs`): a
   click near a free chair, or its "Sit at N" button, walks the body there; on arrival the page VISITS THE TABLE'S
   SOCKET — `join` with the practice stack, wait for `seat-joined`, close — and re-reads the room so the body sits.

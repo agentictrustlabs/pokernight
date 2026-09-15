@@ -150,6 +150,14 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
         <Suspense fallback={<div className="lounge-loading"><p className="hint">Loading the lounge…</p></div>}>
           {s ? <Lounge ref={lounge} socket={s} state={s.state} onZone={onZone} onSitRequest={onSitRequest} board={board} /> : null}
         </Suspense>
+        {/* THE SECOND BETWEEN THE CLICK AND THE CARDS. Walking over and then waiting for the board to open with
+            nothing on screen read as "it did not work" — the chair lights up out in the room, and this says the
+            same thing in words over it. */}
+        {sitting ? (
+          <div className="room-taking" role="status" aria-live="polite">
+            <p>{sitting.phase === 'walking' ? `Walking to seat ${sitting.seat + 1}…` : sitting.phase === 'standing' ? 'Standing up…' : `Taking seat ${sitting.seat + 1} — dealing you in…`}</p>
+          </div>
+        ) : null}
       </div>
       {/* THE HUD, UNDER THE SCENE — never over it, so the people at the near side of the felt stay in view: your
           cards in hand, the board and the pot as the flat board draws them (readable whatever the camera does),
