@@ -385,7 +385,7 @@ describe('landing and sign-in surfaces', () => {
     expect(html).toContain('Start a club');
     // THE SECOND DOOR. Most visitors are not here to organise anything, and the front door used to
     // offer them nothing but the call to action that asks them to.
-    expect(html).toContain('Or come play or hang out');
+    expect(html).toContain('Come play or hang out');
     expect(html).toContain('Set the night');
     expect(html).toContain('Invite a mission to host');
     expect(html).not.toMatch(/faithchain|Smart Agent|delegation|treasury/i);
