@@ -52,7 +52,7 @@ export interface AuthState {
   /** Something went wrong and the person needs to see it and be able to try again. */
   error: string | null;
   /** Start a Home sign-in. `name` is the PROFILE name the person asked to be called — a display name
-   *  this card room keeps, never a Faithnet handle. Blank is a perfectly good way to be signed in. */
+   *  this room keeps, never a Faithnet handle. Blank is a perfectly good way to be signed in. */
   signInWithHome: (name?: string) => void;
   dismissError: () => void;
   /** Demo users the Home offers. Empty when it offers none, or cannot be reached. */
@@ -330,7 +330,7 @@ export function App() {
   /**
    * The return leg of a CLUB CHARTER — the first of the two ceremonies that start a club. The Worker
    * exchanges the code and checks the identity; what comes back is the club's agent and the bearer the
-   * SECOND ceremony needs, and the browser goes straight on to it: the club authorising this card room
+   * SECOND ceremony needs, and the browser goes straight on to it: the club authorising this room
    * to act as it. The name came back from this origin's own storage, never from the Home.
    */
   useEffect(() => {
@@ -361,7 +361,7 @@ export function App() {
   }, []);
 
   /**
-   * The return leg of the WIRE ceremony — the club has authorised this card room. The first act as the
+   * The return leg of the WIRE ceremony — the club has authorised this room. The first act as the
    * club is to found it: write its profile under the name the host chose. Then its page.
    */
   useEffect(() => {
@@ -377,7 +377,7 @@ export function App() {
     setBusy(true);
     api
       .foundClub(pending.clubId, { name: pending.name, ...(pending.games ? { games: pending.games } : {}) }, current.token)
-      .then((club) => { setNotice(`${club.name} is yours — its agent lives at your Home, and this card room acts as it.`); goTo(clubHash(pending.clubId)); })
+      .then((club) => { setNotice(`${club.name} is yours — its agent lives at your Home, and this room acts as it.`); goTo(clubHash(pending.clubId)); })
       .catch((e: unknown) => setError(e instanceof ApiError ? e.message : 'The club was chartered, but could not be founded here.'))
       .finally(() => setBusy(false));
   }, []);
@@ -421,7 +421,7 @@ export function App() {
         }
       })
       .catch((e: unknown) =>
-        setError(e instanceof ApiError ? `Your Home signed you in, but the card room would not accept it — ${e.message}` : 'Could not finish signing in.'),
+        setError(e instanceof ApiError ? `Your Home signed you in, but the room would not accept it — ${e.message}` : 'Could not finish signing in.'),
       )
       .finally(() => { arrivingRef.current = false; setBusy(false); });
   }, [login]);
@@ -502,13 +502,13 @@ export function App() {
     </ClubHuddleProvider>
   );
 
-  // ARRIVING: the Home has handed the person back and the card room has not accepted them yet. The
+  // ARRIVING: the Home has handed the person back and the room has not accepted them yet. The
   // front door used to flash in that gap — hero, pitch, "Sign in" — and then vanish under the room
   // (2026-09-14, "we flash the home page when we finally connect"). Known before the first paint from
   // the address bar (the code is still in it), and kept while the return leg is in flight.
   const arriving = !session && (busy || arrivingRef.current);
 
-  // THE MISSION REGISTER FORM IS OPEN TO A VISITOR: a steward is not here to play, so the card room's sign-in is
+  // THE MISSION REGISTER FORM IS OPEN TO A VISITOR: a steward is not here to play, so the room's sign-in is
   // not their door. They fill the form, their one trip is to their Home, and the return leg signs them in.
   if (r.page === 'newMission' && !session) {
     return huddled(
@@ -571,7 +571,7 @@ export function App() {
             <Identity session={session} onSignOut={signOut} />
           ) : (
             <>
-              <span>card room · test money</span>
+              <span>room · test money</span>
               {r.page === 'signin' || arriving ? null : <a href="#/signin">Sign in</a>}
             </>
           )}

@@ -18,7 +18,7 @@ import { fmtAmount, shortRef, type TreasuryView } from '../lib/treasury';
  * authority the player signs; the panel shows the exact caps before asking, and shows them again
  * after, because "authorised" with no numbers is not consent.
  */
-/** What this card room's money is called, as the server states it. `SHQ` is the fallback for a
+/** What this room's money is called, as the server states it. `SHQ` is the fallback for a
  *  server that names none; the wrong ticker beside a real balance is worse than no ticker. */
 function ticker(view: { assetSymbol?: string } | null): string {
   return (view?.assetSymbol ?? '').trim() || 'SHQ';
@@ -31,7 +31,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [fundAmount, setFundAmount] = useState('10000');
-  /** This card room's currency, as the server states it. Read before `view` is loaded too, so the
+  /** This room's currency, as the server states it. Read before `view` is loaded too, so the
    *  callbacks below close over a stable value rather than a conditional one. */
   const money = ticker(view);
   const [label, setLabel] = useState('');
@@ -42,7 +42,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
       setView(await api.getTreasury(session.token));
       setLoadError(null);
     } catch (e) {
-      setLoadError(e instanceof ApiError ? `${e.status}: ${e.message}` : 'Could not reach the card room to read your treasury.');
+      setLoadError(e instanceof ApiError ? `${e.status}: ${e.message}` : 'Could not reach the room to read your treasury.');
     }
   }, [session.token]);
 
@@ -115,7 +115,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
   const authoriseAtHome = useCallback(
     (maxPerBuyIn: string) =>
       run('mandate', async () => {
-        if (!config) throw new Error('The card room has not said which Home to ask yet.');
+        if (!config) throw new Error('The room has not said which Home to ask yet.');
         location.href = await startBuyInMandate(config, maxPerBuyIn);
         return 'Sending you to your Home to authorise buy-ins…';
       }),
@@ -218,7 +218,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
         <div className="treasury-create">
           <p className="hint">
             <strong>{view.candidates.length > 0 ? 'Another treasury' : 'Create your treasury'}.</strong> Your Home
-            deploys it and holds its key; the card room never does. A name is optional — the address is its identity.
+            deploys it and holds its key; the room never does. A name is optional — the address is its identity.
           </p>
           {view.create.canName ? (
             <span className="pair">
@@ -244,7 +244,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
       ) : (
         <div className="treasury-create">
           <p className="hint">
-            <strong>Your Home creates and custodies your treasury</strong>, not this card room — it is your money and
+            <strong>Your Home creates and custodies your treasury</strong>, not this room — it is your money and
             your key. Open your Home, create a personal treasury there, then come back here and check again.
           </p>
           <span className="pair">
@@ -311,7 +311,7 @@ export function TreasuryPanel({ session, config, bare = false }: { session: AppS
  * The buy-in authority.
  *
  * A cash-out is the house paying out of its own treasury. A buy-in is the opposite: it is the
- * player's money, and the card room may move it only under a delegation the player's treasury signed.
+ * player's money, and the room may move it only under a delegation the player's treasury signed.
  * So this shows the four numbers that bound it — per buy-in, in total, how many times, until when —
  * before the button, and repeats them after. Nothing is worded as "connect" or "enable": it is a
  * permission to take money, and it reads like one.
@@ -352,7 +352,7 @@ function MandateSection({
       <h3>Buy-in authority</h3>
       {m.present ? (
         <p className="hint">
-          <span className="tag live">authorised</span> The card room may take up to <strong>
+          <span className="tag live">authorised</span> The room may take up to <strong>
             {per} {money}
           </strong>{' '}
           per buy-in from {view.chosenName || shortAddress(view.chosen ?? '')},{' '}
@@ -389,7 +389,7 @@ function MandateSection({
                 {busy === 'mandate' ? 'Sending you to your Home…' : 'Authorise buy-ins at my Home →'}
               </button>
               <p className="hint">
-                Your Home signs this, not the card room: it shows you these caps and signs with your own key, then sends
+                Your Home signs this, not the room: it shows you these caps and signs with your own key, then sends
                 the signed mandate back here.
               </p>
             </>

@@ -1,7 +1,7 @@
 /**
  * THE LEFT RAIL, as a decision rather than as markup.
  *
- * The card room has two kinds of visitor and they arrive wanting opposite things: somebody who wants
+ * The room has two kinds of visitor and they arrive wanting opposite things: somebody who wants
  * to be dealt a hand and has never heard of a club, and somebody a club invited. The navigation has
  * to serve both from one screen, and this module is the whole of what it decides.
  *
@@ -51,7 +51,7 @@ export function yourRail(r: Route): NavItem[] {
     { key: 'play', label: 'Play', hash: HOME_HASH, sub: 'a hand now, against the house', here: r.page === 'home' },
     { key: 'tables', label: 'Tables', hash: TABLES_HASH, sub: 'what is running', here: r.page === 'tables' },
     // MISSIONS is a verb row too — "who could be the guest tonight" — because a mission is invited to any game,
-    // not to a club: the registry is the card room's, on a map, and a club's night or a table names one from it.
+    // not to a club: the registry is the room's, on a map, and a club's night or a table names one from it.
     { key: 'missions', label: 'Missions', hash: MISSIONS_HASH, sub: 'guests for a night', here: r.page === 'missions' || r.page === 'newMission' || r.page === 'mission' },
     { key: 'money', label: 'Your money', hash: MONEY_HASH, here: r.page === 'money' },
   ];

@@ -195,7 +195,7 @@ export function forgetHomeSession(store: StorageLike | null = sessionStore()): v
 
 /**
  * SIGNING OUT HERE MEANS CHOOSING NEXT TIME. The Home keeps its own session in its own cookie, so a person
- * who signed out of the card room and pressed "sign in" was recognised at once and offered one tap as the
+ * who signed out of the room and pressed "sign in" was recognised at once and offered one tap as the
  * same person — "it tries to bring me back in as david.me who I just signed out as". A sign-out is a
  * request to be somebody else, or nobody; so the NEXT sign-in asks the Home for the account chooser
  * (`prompt=select_account`), once. A person who simply came back (no sign-out) still gets one tap.
@@ -387,7 +387,7 @@ export function homeClient(config: AuthConfig): ConnectClient {
  * This is deliberately NOT a Faithnet handle. A handle is claimed by putting `agent_name` on the
  * authorize request, which makes the Home mint `<label>.me`, hop the ceremony to that subdomain, and
  * bind the person to a name in the naming service forever. These accounts are meant to stay nameless
- * there. So the name a person types here is a display name the card room keeps, and nothing else
+ * there. So the name a person types here is a display name the room keeps, and nothing else
  * claims anything: "Rich Pedersen" stays "Rich Pedersen" rather than becoming `rich-pedersen.me`.
  *
  * All this does is make it safe to show to other players: one line, no control or zero-width
@@ -409,7 +409,7 @@ export function toProfileName(input: string): string {
  *
  * The trailing space a person is mid-way through typing has to survive the FIELD — trim on every
  * keystroke and "Rich Pedersen" can never be typed at all — so it is trimmed once, here, on the way
- * out. The card room trims again server-side: nothing about a display name rests on the browser.
+ * out. The room trims again server-side: nothing about a display name rests on the browser.
  */
 export function finishProfileName(input: string): string {
   return toProfileName(input).trim();
@@ -466,7 +466,7 @@ export function takeProfileName(store: StorageLike | null = sessionStore()): str
  * before, and the separate authorisation path still there for whoever needs it.
  *
  * `name` is the person's PROFILE name and it never goes on the authorize request — see
- * {@link toProfileName}. It is remembered on this origin and handed to the card room on the return
+ * {@link toProfileName}. It is remembered on this origin and handed to the room on the return
  * leg. The enrolment itself stays name-deferred, which is what keeps the account nameless in the
  * naming service, and is also exactly what this flow did before there was a field at all.
  */
@@ -523,7 +523,7 @@ export async function startHomeSignIn(
   if (/^\d+$/.test(offer.maxPerBuyIn)) url.searchParams.set('pay_amount', offer.maxPerBuyIn);
   // ALWAYS THE CHOOSER. The Home keeps its own session in its own cookie, and "sign in" here was landing
   // on whoever that cookie last was — alice.me on a shared machine, david.me after signing out. A person
-  // pressing "sign in" at the card room is saying WHO next, so the Home is asked to ask, every time; one
+  // pressing "sign in" at the room is saying WHO next, so the Home is asked to ask, every time; one
   // more tap for somebody coming back, and never the wrong person. (`takeChooseNextTime` is spent too, so
   // the flag never lingers.)
   takeChooseNextTime(store);
@@ -534,7 +534,7 @@ export async function startHomeSignIn(
 export type CallbackOutcome =
   | { status: 'none' }
   | { status: 'signed-in'; code: string; codeVerifier: string; authOrigin: string; nonce: string; state: string;
-      /** What the Home could NOT set up on the way in (the card room's defaults — a coach, a money account), in its words. */
+      /** What the Home could NOT set up on the way in (the room's defaults — a coach, a money account), in its words. */
       defaultsError?: string }
   | { status: 'error'; message: string };
 
@@ -631,7 +631,7 @@ export async function startBuyInMandate(
   return url.toString();
 }
 
-/** The delegation template this card room asks for. Curated at the Home for this client. */
+/** The delegation template this room asks for. Curated at the Home for this client. */
 export const BUY_IN_TEMPLATE = 'poker-buyin';
 
 /* ------------------------------------------------------------ chartering a club */
@@ -642,7 +642,7 @@ export const CLUB_TEMPLATE = 'workspace-create';
 /**
  * STARTING A CLUB is two ceremonies at the host's Home, and this is the first: `workspace-create`
  * charters the club's agent under the name the host typed. The Home does the deploying and the
- * custody — the card room never holds the club's key — and hands back the address on the token
+ * custody — the room never holds the club's key — and hands back the address on the token
  * exchange, which the Worker runs. The NAME is stashed beside the PKCE stash because the Home carries
  * no state of ours, and the club's profile is written with it once the club has authorised the card
  * room (`startClubWire`, the second ceremony).
@@ -699,11 +699,11 @@ export const WIRE_CLUB_KEY = 'pokernight.home.wire.club';
 export const WIRE_TEMPLATE = 'service-agent-wire';
 
 /**
- * THE CLUB AUTHORISES THE CARD ROOM — the second ceremony (`service-agent-wire`). At the Home the host
- * signs, as the club's custodian, a wire from the club's agent to this card room's session key; the Home
- * hands it to the card room directly (`/admin/service-wire`) and sends the host back here with a
+ * THE CLUB AUTHORISES THE ROOM — the second ceremony (`service-agent-wire`). At the Home the host
+ * signs, as the club's custodian, a wire from the club's agent to this room's session key; the Home
+ * hands it to the room directly (`/admin/service-wire`) and sends the host back here with a
  * `collect` result rather than a code. `collect_token` is the host's Home id_token from the charter,
- * which is what the Home presents to the card room's `/admin/*` on their behalf.
+ * which is what the Home presents to the room's `/admin/*` on their behalf.
  */
 export async function startClubWire(
   config: AuthConfig,
@@ -718,7 +718,7 @@ export async function startClubWire(
   const pkce = await generatePkce();
   const stash: ConnectStash = { name: '', state: randomB64url(16), authOrigin: config.home.origin, codeVerifier: pkce.verifier, nonce: randomB64url(16) };
   if (!writeStash(store, stash, WIRE_STASH_KEY)) {
-    throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the club cannot authorise the card room.');
+    throw new Error('This browser will not let the site keep a secret (session storage is blocked), so the club cannot authorise the room.');
   }
   try {
     store?.setItem(WIRE_CLUB_KEY, JSON.stringify({ clubId: club.clubId, name: club.name, ...(club.games?.length ? { games: club.games } : {}) }));
@@ -753,7 +753,7 @@ export function takeWireClub(store: StorageLike | null = sessionStore()): Pendin
 
 /**
  * Consume the wire ceremony's return leg: `?collect=1&collect_kind=service-agent-wire&state=…`, matched to
- * the stash by `state`. There is no code — the Home handed the wire to the card room itself — so the
+ * the stash by `state`. There is no code — the Home handed the wire to the room itself — so the
  * outcome is only whether it is ours. An `?error` on a matching state is the ceremony refused.
  */
 export function takeWireCallback(store: StorageLike | null = sessionStore()): { status: 'none' } | { status: 'done' } | { status: 'error'; message: string } {
@@ -788,7 +788,7 @@ export const COACH_TEMPLATE = 'coach-hire';
  * Send the person to their Home to HIRE A COACH.
  *
  * Same ceremony shape as the club charter, template changed, one extra parameter: `coach`, the coaching
- * service's typed name. The Home does the two custodial acts the card room cannot — writes the specialist
+ * service's typed name. The Home does the two custodial acts the room cannot — writes the specialist
  * line into the person's playbook and has them sign the study grant that lets the service read their
  * card-room records — and hands back what it bound on the token exchange, which the Worker runs. The coach
  * name is stashed beside the PKCE stash because the Home carries no state of ours.
@@ -859,7 +859,7 @@ async function startMembershipLeg(config: AuthConfig, template: string, extra: R
 
 /**
  * Send a HOST to their Home to INVITE A MEMBER into the club's workspace: the Home signs the member's access
- * to the club's agent with the host's own credential and holds it until the member joins. The card room
+ * to the club's agent with the host's own credential and holds it until the member joins. The room
  * learns only that the host ran it; the invitation itself lives at the Home.
  */
 export function startMembershipInvite(
@@ -984,7 +984,7 @@ export function takeCharterClub(store: StorageLike | null = sessionStore()): { n
  * REGISTER A MISSION: send the steward to their Home with the org-create template, purpose `mission`, and the
  * registration itself (`registry_entry`, base64url JSON — presence, affirmed clauses, contact). The Home
  * chooses or creates the organization, has the steward sign the covenant, has the organization sign its own
- * registry entry, and returns; the card room's return leg (`POST /missions/enrol`) verifies and admits.
+ * registry entry, and returns; the room's return leg (`POST /missions/enrol`) verifies and admits.
  */
 export interface MissionDraft {
   name: string;

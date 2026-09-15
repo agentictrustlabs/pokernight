@@ -125,7 +125,7 @@ export function Table({
   chipValue?: string | null;
   /** What that rate is denominated in (`TableSummary.assetSymbol`). Per table, never per deployment. */
   assetSymbol?: string | null;
-  /** This player's money, as the card room sees it. Null while it is still being read. */
+  /** This player's money, as the room sees it. Null while it is still being read. */
   treasury?: TreasuryView | null;
 }) {
   const view = state.view;
@@ -185,7 +185,7 @@ export function Table({
   const deal = dealState(view);
   const sittingOut = me != null && me.status === 'sitting-out';
   // Seated, sitting in, with chips — and still not in the hand. An ordinary rule with a name nobody
-  // outside a card room knows, so it gets a sentence rather than a two-letter badge.
+  // outside a room knows, so it gets a sentence rather than a two-letter badge.
   const dealtInSoon = waitingToBeDealtIn(view);
   const myReason = me != null ? state.players[me.playerId]?.sitOutReason : undefined;
   // What a sat-out player is offered, decided by the one fact that matters: whether they have chips.

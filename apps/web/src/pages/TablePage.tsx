@@ -25,6 +25,7 @@ import { CoachQuestion } from '../components/CoachQuestion';
 import { Toast } from '../components/Toast';
 import { PokerCoach, type Arrangement } from '../components/PokerCoach';
 import { useLeaveTable } from '../lib/useLeaveTable';
+import { roomToReturnTo } from '../lib/fromRoom';
 import { TableSide } from '../components/TableSide';
 import { whoIsWho } from '../lib/whoIsWho';
 import type { CoachStatus } from '../lib/api';
@@ -95,7 +96,7 @@ export function TablePage({
    * Whether this is YOUR OWN practice table — asked of the TABLE, not of the URL.
    *
    * `practice` is an intent that rides on one link and is gone the moment you navigate again;
-   * `practiceFor` is a fact the card room keeps. The coach's default has to come from the fact: a
+   * `practiceFor` is a fact the room keeps. The coach's default has to come from the fact: a
    * person who reached their own practice table from history, a bookmark or the back button is at the
    * table whose whole reason to exist is being taught, and they were getting a coach switched off.
    */
@@ -185,11 +186,13 @@ export function TablePage({
   const mySeat = state.view?.viewerSeat ?? null;
   /** The seat bar's own leave — the same hook the board's controls use; two buttons, one act. */
   const { leaving, leave } = useLeaveTable(mySeat != null, () => send({ type: 'leave' }));
+  // Came from the room: the button that gives up the seat is "Stand up", because that is what it does there.
+  const backToRoom = !!roomToReturnTo();
   const meAtTable = mySeat != null ? state.view?.seats.find((x) => x.seat === mySeat) ?? null : null;
 
   /**
    * HOLD OR RELEASE THE TABLE — one door, requests in order. The screen changes at once (it is saying
-   * what was asked for); the card room is told in the order it was asked, so two presses close
+   * what was asked for); the room is told in the order it was asked, so two presses close
    * together cannot leave it holding the opposite opinion. Same shape as the canasta page's.
    */
   const holdQueue = useRef<Promise<unknown>>(Promise.resolve());
@@ -373,7 +376,7 @@ export function TablePage({
                 ? <button type="button" className="primary" onClick={() => send({ type: 'sit-in' })}>Sit back in</button>
                 : <button type="button" onClick={() => send({ type: 'sit-out' })}>Sit out</button>}
               <button type="button" className="seat-bar-leave" disabled={leaving} onClick={leave}>
-                {leaving ? 'Leaving…' : 'Leave table'}
+                {leaving ? 'Leaving…' : backToRoom ? 'Stand up' : 'Leave table'}
               </button>
             </div>
           ) : null}

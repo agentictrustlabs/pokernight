@@ -4,7 +4,7 @@ import { resume, setSoundEnabled, soundEnabled } from '../lib/sound';
 /**
  * The mute switch, in the table's own topbar.
  *
- * ON BY DEFAULT, because a card room with the sound off by default is one nobody knows has any —
+ * ON BY DEFAULT, because a room with the sound off by default is one nobody knows has any —
  * and OFF in one press, in the place a person looks for it, because somebody playing at their desk
  * needs that press to be findable without reading anything.
  *

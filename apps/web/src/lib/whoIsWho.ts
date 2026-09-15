@@ -4,9 +4,9 @@
  * There are four different things at one of these tables and the screen was letting them blur:
  *
  *   A PERSON in a seat, taking their own turns.
- *   AN AGENT in a seat — an A2A agent the card room asked to play, which takes turns like anybody.
- *   THE HOUSE COACH — the card room's OWN advice, built into this deployment. Not an agent, no A2A
- *     call, no card, nobody's but the card room's. It never takes a turn.
+ *   AN AGENT in a seat — an A2A agent the room asked to play, which takes turns like anybody.
+ *   THE HOUSE COACH — the room's OWN advice, built into this deployment. Not an agent, no A2A
+ *     call, no card, nobody's but the room's. It never takes a turn.
  *   YOUR OWN ADVISER — an A2A agent YOU named, which answers your questions and takes no turn ever.
  *   YOUR COACH — a SERVICE your own agent consults, under a grant you signed, when it is asked. The
  *     table never addresses it and holds no address for it; it shows up here only because an answer
@@ -23,7 +23,7 @@
  * Pure: given the view, the players and who is advising, it says who everybody is.
  */
 
-/** What sits behind an agent, in words rather than in the card room's own shorthand. */
+/** What sits behind an agent, in words rather than in the room's own shorthand. */
 export function strategyWords(kind: string | null | undefined): string {
   const k = (kind ?? '').trim().toLowerCase();
   if (k === 'rules') return 'rules-based';
@@ -98,7 +98,7 @@ export function whoIsWho(
       coach: {
         kind: 'house',
         label: 'The house coach',
-        what: 'the card room’s own advice, the same for everybody. Not an agent, and it never takes a turn.',
+        what: 'the room’s own advice, the same for everybody. Not an agent, and it never takes a turn.',
       },
     };
   }

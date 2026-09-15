@@ -2,7 +2,7 @@
  * Which sound each game's events make.
  *
  * A MAPPING, not game logic — which is why both games' cues live in one file rather than inside
- * their own boards. They have to sound like the same card room: a card is the same card in poker and
+ * their own boards. They have to sound like the same room: a card is the same card in poker and
  * canasta, and if each board invented its own palette a player moving between the two would have to
  * learn the room twice.
  *

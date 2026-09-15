@@ -14,7 +14,7 @@
 /**
  * What a table's money is called when the table does not say.
  *
- * The card room settles in one currency, Sheqel. The ticker still comes off the wire per table
+ * The room settles in one currency, Sheqel. The ticker still comes off the wire per table
  * (`TableSummary.assetSymbol`) rather than being assumed here — a table states the coin it pays in,
  * and that is the label that belongs next to a real amount of somebody's money. This is only the
  * answer for a table that names none.

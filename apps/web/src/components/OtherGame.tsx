@@ -4,7 +4,7 @@ import { PRODUCT_NAME } from '../lib/brand';
 /**
  * What a table looks like when this client cannot draw it.
  *
- * The card room deals more than one game; this client draws poker. Sitting somebody down at a
+ * The room deals more than one game; this client draws poker. Sitting somebody down at a
  * canasta table in a poker board would show them a hand that is not theirs, a pot that does not
  * exist and controls that do nothing — so the honest screen is this one, which names the game, says
  * plainly that the seat is not here yet, and points back to the room.
@@ -19,7 +19,7 @@ export function OtherGame({ game, tableName }: { game: string; tableName?: strin
       <h2>{name} is dealt here</h2>
       <p>
         {tableName ? <strong>{tableName}</strong> : 'This table'} is a game of {name}. {PRODUCT_NAME} can deal it, but
-        this card room screen only knows how to draw a poker table — so there is no seat here to take yet.
+        this room screen only knows how to draw a poker table — so there is no seat here to take yet.
       </p>
       <p className="hint">
         Nothing is wrong with the table. Its round is running on the service exactly as it should, and a {name} screen

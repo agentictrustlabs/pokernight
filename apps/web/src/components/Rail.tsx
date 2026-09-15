@@ -21,7 +21,7 @@ export function Rail({ r, clubs, invitations = [] }: { r: Route; clubs: readonly
   const club = clubRail(clubs, r);
   // INVITED, NOT YET IN. The host's agent told them at their Home; the same invitation, read off their own
   // inbox, is offered here as the door — because "how does Bob know he has an invite" must be answerable
-  // from the card room, not only from a message somewhere else. A club they have since joined drops out.
+  // from the room, not only from a message somewhere else. A club they have since joined drops out.
   const invited = invitations.filter((i) => !(clubs ?? []).some((c) => c.clubId === i.clubId));
   return (
     <nav className="sidenav" aria-label="Where to go">

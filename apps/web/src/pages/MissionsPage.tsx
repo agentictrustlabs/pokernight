@@ -62,7 +62,7 @@ export function MissionsPage() {
         <h2>What registering means</h2>
         <p className="hint">
           A mission is an organization with its own agent at its Home. Its steward affirms a three-clause covenant — genuine, contact only about the night, safe to publish — and the organization
-          signs its own entry in the card room’s registry, on chain, for a year. The card room checks every line against that entry and keeps a signed receipt anyone can verify. A mission is a
+          signs its own entry in the room’s registry, on chain, for a year. The room checks every line against that entry and keeps a signed receipt anyone can verify. A mission is a
           <strong> guest</strong>: it never holds cards, chips, or a hand in anyone’s money.
         </p>
       </section>

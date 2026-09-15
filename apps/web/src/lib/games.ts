@@ -1,7 +1,7 @@
 /**
  * Which game this client can draw — and what to say about the ones it cannot.
  *
- * The card room deals more than one game. This client draws exactly one of them: every board,
+ * The room deals more than one game. This client draws exactly one of them: every board,
  * every action control and every log line in `components/` reads a poker view and nothing else.
  * That is a fine thing for a client to be, and the only dangerous version of it is the one that
  * does not know it — a poker board mounted against another game's view reads `config.bigBlind` off
@@ -21,7 +21,7 @@ export const DRAWN_GAME = 'poker';
  *
  * Distinct from {@link drawsGame}, and the distinction is the point: `drawsGame` asks "will the
  * POKER board understand this?", which is what the poker reducer and the poker page need to know.
- * This asks "does this card room have a screen for it at all?", which is what the lobby needs
+ * This asks "does this room have a screen for it at all?", which is what the lobby needs
  * before it offers a seat. One board per game, and each knows only its own.
  */
 export const BOARDS: readonly string[] = ['poker', 'canasta'];
@@ -75,7 +75,7 @@ export function gameBlurb(game: string | null | undefined): string | null {
  * THE SKILL AN AGENT HAS TO ADVERTISE TO ADVISE AT THIS GAME.
  *
  * Named per game for the same reason `*.act` is: an agent that can talk about hold'em has no business
- * being handed a canasta seat's question, and the card room refuses one whose card does not say so —
+ * being handed a canasta seat's question, and the room refuses one whose card does not say so —
  * before the first question rather than mid-hand. Stated here so the screen can say WHICH skill it is
  * when it explains a refusal, rather than the person discovering it from an error.
  */

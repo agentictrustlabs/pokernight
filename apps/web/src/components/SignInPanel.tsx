@@ -10,7 +10,7 @@ import { fmtAsset } from '../lib/money';
  *
  * The headline is the door a stranger actually uses: their Home, where they sign in with a phone
  * number, an email address or a social account. What happens after they press it — the OIDC
- * ceremony, their Smart Agent signing a delegation, the card room verifying it against their Home —
+ * ceremony, their Smart Agent signing a delegation, the room verifying it against their Home —
  * is true and is not their problem, so this says what they get rather than how.
  *
  * ONE THING IS THEIR PROBLEM, and it is stated here rather than discovered later. That same visit
@@ -23,7 +23,7 @@ import { fmtAsset } from '../lib/money';
  *
  * The question above it is what to call them, and it is a PROFILE name — not a Faithnet handle. It
  * is what the seat plate, the hand log and the header say instead of a truncated address, and it is
- * kept by the card room; nothing claims `<label>.me` in the naming service for it, so a person can
+ * kept by the room; nothing claims `<label>.me` in the naming service for it, so a person can
  * be "Rich Pedersen" here and nameless there. It is OPTIONAL, and blank has to keep working: a Home
  * may know somebody as nothing but a phone number, and making a stranger invent a word before they
  * can sit down is the wrong trade.
@@ -109,7 +109,7 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
 /**
  * What signing in ALSO approves, in the numbers the Home is about to show.
  *
- * Rendered only where the card room states caps. Where it does not — local dev, a deployment with
+ * Rendered only where the room states caps. Where it does not — local dev, a deployment with
  * no mandate configuration — sign-in asks for a plain session, so there is nothing to disclose and
  * this renders nothing rather than a reassurance nobody needs.
  *

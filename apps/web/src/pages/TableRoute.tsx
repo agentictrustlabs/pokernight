@@ -54,7 +54,7 @@ export function TableRoute({
         if (!alive) return;
         setGame(detail.game ?? DRAWN_GAME);
       })
-      // A 404 here is a table that is gone OR one this person may not see, and the card room
+      // A 404 here is a table that is gone OR one this person may not see, and the room
       // deliberately does not say which. Neither is a table to draw a board for.
       .catch(() => alive && setMissing(true));
     return () => {

@@ -125,7 +125,7 @@ export function Coach({
    * Whether the person has chosen for themselves.
    *
    * Until they have, a default that arrives LATE is still the default. `startOn` depends on whether
-   * this is the viewer's own practice table, and that is a fact the card room keeps — it comes back
+   * this is the viewer's own practice table, and that is a fact the room keeps — it comes back
    * from an HTTP read a moment after the board has mounted. A coach that fixed its mode on the first
    * frame ignored it, so arriving at your own practice table any way other than through the "deal me
    * in" link gave you a coach switched off. Once somebody presses one of the three, this stops.
@@ -183,7 +183,7 @@ export function Coach({
   const [feed, setFeed] = useState<Said[]>([]);
   /** Seconds left before it plays, so the pause is legible rather than a hang. */
   const [countdown, setCountdown] = useState<number | null>(null);
-  /** How many times the card room has said "not yet" for this turn. Drives the retry. */
+  /** How many times the room has said "not yet" for this turn. Drives the retry. */
   const [missed, setMissed] = useState(0);
   const [hidden, setHidden] = useState(false);
   const asked = useRef<string>('');
@@ -335,7 +335,7 @@ export function Coach({
         }, READ_MS);
       }
     } catch {
-      // A MISS IS NOT AN ENDING. The card room answers 404 while it does not yet agree that it is
+      // A MISS IS NOT AN ENDING. The room answers 404 while it does not yet agree that it is
       // this seat's turn, which happens for a moment on every turn the view learns about first. The
       // first version asked once and gave up, so one unlucky moment left the coach silent for the
       // rest of the round and the table looking hung. Counting the miss is what makes it retry.
@@ -503,7 +503,7 @@ export function Coach({
                     ? 'Your move — press below when you are ready.'
                     : 'Your move.'
                   : missed > RETRIES
-                    ? 'The card room is not answering. Play this one yourself, or switch me off and on.'
+                    ? 'The room is not answering. Play this one yourself, or switch me off and on.'
                     : mode === 'ask'
                       ? 'Your turn. Ask if you want a word.'
                       : 'Your turn. Looking at your hand…'
@@ -581,12 +581,12 @@ export function VoiceSettings() {
  * WHOSE ADVICE THIS IS — the house's coach, or an agent of the person's own.
  *
  * EXPORTED, and the one piece of the coach that both games share. Naming your own adviser is a fact
- * about you rather than about canasta: the same agent advises you at either table, the card room
+ * about you rather than about canasta: the same agent advises you at either table, the room
  * checks the same card for the game's own advise skill, and the wire is identical. A second copy of
  * this form in the poker coach would be a second place for that sentence to drift.
  *
- * The card room's coach is one strategy and the same for everybody. A person's own agent carries
- * THEIR style, written as their own artifacts somewhere the card room never reaches; naming it here
+ * The room's coach is one strategy and the same for everybody. A person's own agent carries
+ * THEIR style, written as their own artifacts somewhere the room never reaches; naming it here
  * says where to ask and nothing else.
  *
  * Folded, because the house coach is the right answer for almost everybody and a card table is not
@@ -614,16 +614,16 @@ export function Adviser({
    *
    * There was only a text field, under a placeholder that read `carol.me` — which looks like a value
    * somebody already typed, so the greyed-out button beside it reads as broken rather than as empty.
-   * And the name it suggested is one the card room REFUSES: a person's Home agent advertises Home's
+   * And the name it suggested is one the room REFUSES: a person's Home agent advertises Home's
    * skills, not this game's, and naming it gets "carol.me does not advertise the poker.advise skill".
    * A field whose example is a wrong answer is worse than an empty one.
    *
-   * So the agents this card room already knows about are listed, filtered to the ones whose card
+   * So the agents this room already knows about are listed, filtered to the ones whose card
    * advertises THIS game's advise skill — and the field stays, for an agent of your own.
    */
   const [offers, setOffers] = useState<AgentListing[]>([]);
   /**
-   * YOUR OWN AGENT'S NAME, from the card room — which reverse-resolves the address your Home
+   * YOUR OWN AGENT'S NAME, from the room — which reverse-resolves the address your Home
    * asserted. Not from `session.agentName`: the Home's claim is a profile name for an account with
    * no handle, and "Alice Okoro" is not something a card can be fetched for. `null` after the read
    * means the chain has no name for you, and the panel says that rather than offering a broken press.
@@ -663,7 +663,7 @@ export function Adviser({
       onChanged(r.adviser);
       setName('');
     } catch (ex) {
-      // The card room refuses an agent that does not advertise the advise skill, BY NAME — and that
+      // The room refuses an agent that does not advertise the advise skill, BY NAME — and that
       // sentence is far more use than "could not be saved".
       setErr(ex instanceof ApiError ? ex.message : 'That agent could not be reached.');
     } finally {
@@ -678,8 +678,8 @@ export function Adviser({
         The house coach is one strategy, the same for everybody. An agent of your own answers with YOUR style, from
         your own skills — it is sent only what your seat already sees.
       </p>
-      {/* YOUR OWN AGENT, FIRST — the card room knows its name from the Home sign-in, so nobody should
-          have to type it. Pressing it asks the card room to fetch the agent's card and check for this
+      {/* YOUR OWN AGENT, FIRST — the room knows its name from the Home sign-in, so nobody should
+          have to type it. Pressing it asks the room to fetch the agent's card and check for this
           game's advise skill; a refusal comes back BY NAME and says which skill is missing, which is
           the honest state of most people's agents today: they carry their Home's skills, and the
           card-room ones are added at the Home, not here. */}
@@ -690,7 +690,7 @@ export function Adviser({
             <code>{own}</code>
             <span className="hint">
               Answers with your style: it consults the coach you named at your Home, under a grant you signed, and
-              answers in the coach's name. After each hand the card room sends it the hand as you saw it, which it
+              answers in the coach's name. After each hand the room sends it the hand as you saw it, which it
               records to YOUR vault — your coach reads it there. It has to advertise <code>{adviseSkillFor(game)}</code>{' '}
               on its card — if it does not yet, the answer says so by name.
             </span>
@@ -699,13 +699,13 @@ export function Adviser({
       ) : null}
       {!adviser && own === null && session.via !== 'dev' ? (
         <p className="hint adviser-own-none">
-          This card room could not find a name for your agent on the chain, so it cannot offer it here — type its
+          This room could not find a name for your agent on the chain, so it cannot offer it here — type its
           name below if you know it.
         </p>
       ) : null}
       {!adviser && offers.length > 0 ? (
         <>
-          <p className="hint">Agents this card room knows can advise at {game === 'canasta' ? 'canasta' : 'hold’em'}:</p>
+          <p className="hint">Agents this room knows can advise at {game === 'canasta' ? 'canasta' : 'hold’em'}:</p>
           <ul className="adviser-offers">
             {offers.map((a) => (
               <li key={a.agentName}>

@@ -10,10 +10,10 @@ import { seatsFree, withRoom } from '../lib/lobby';
  * PLAY — the first row in the rail, and what a signed-in person sees at the front door.
  *
  * ONE PRESS TO A HAND. Every card site worth copying spends its first slot on being dealt in rather
- * than on a lobby (`docs/NAVIGATION-RESEARCH.md` §12.1), and this card room has an unfair advantage
+ * than on a lobby (`docs/NAVIGATION-RESEARCH.md` §12.1), and this room has an unfair advantage
  * at it: the engines are pure and seeded, the house agents already play both games, and a practice
  * table is derived from who you are rather than created — so "deal me a hand" is one request and
- * costs the card room nothing that has to be cleaned up afterwards.
+ * costs the room nothing that has to be cleaned up afterwards.
  *
  * It leads with the game somebody is most likely to be LEARNING, because a person who already knows
  * how to play does not come here — they go to Tables, which is one row down and is where leaving a
@@ -57,7 +57,7 @@ const PITCH: Record<string, { title: string; blurb: string; cta: string; suit: s
 /**
  * One press to a table of your own.
  *
- * The table is the SAME one every time: the card room derives its id from who you are rather than
+ * The table is the SAME one every time: the room derives its id from who you are rather than
  * storing one, so this is not "make me another" but "take me to mine". It is in no listing, it
  * settles nothing, and its owner can deal again without leaving a dead game behind.
  */
@@ -109,7 +109,7 @@ function PracticeCard({ session, game }: { session: AppSession; game: string }) 
  *
  * This page is about starting, so it never becomes a table list: at most a couple of lines, and
  * nothing at all when nothing is running. An empty "no tables" panel on the front door would be the
- * newcomer's first impression of a card room, and it would be of an empty one.
+ * newcomer's first impression of a room, and it would be of an empty one.
  */
 function Running({ session }: { session: AppSession }) {
   const [tables, setTables] = useState<TableSummary[] | null>(null);

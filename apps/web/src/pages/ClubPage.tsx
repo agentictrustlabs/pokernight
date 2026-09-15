@@ -27,7 +27,7 @@ const POLL_MS = 5000;
  * TABLES FIRST is deliberate and it is a fix, not a preference: a member arriving at a club and being
  * shown a roster has been shown the one thing they cannot act on.
  *
- * A CLUB NOBODY HAS STANDING IN ANSWERS 404. The card room refuses that way on purpose — a 403 would
+ * A CLUB NOBODY HAS STANDING IN ANSWERS 404. The room refuses that way on purpose — a 403 would
  * confirm the club exists, which is a fact about other people's arrangements — so this page cannot and
  * must not tell the two apart. It says the one thing that is true either way.
  */
@@ -117,7 +117,7 @@ export function ClubPage({
     return (
       <section className="panel">
         <h2>Not a club you are in</h2>
-        {/* Deliberately one sentence for two different situations. The card room answers 404 for a
+        {/* Deliberately one sentence for two different situations. The room answers 404 for a
             club that does not exist AND for one you have no standing in, because distinguishing them
             would tell a stranger which clubs are real. */}
         <p>

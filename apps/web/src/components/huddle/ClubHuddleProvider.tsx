@@ -1,5 +1,5 @@
 /**
- * THE CLUB HUDDLE, IN THE CARD ROOM — the Home's governed call (spec 378), ported from the Home's own
+ * THE CLUB HUDDLE, IN THE ROOM — the Home's governed call (spec 378), ported from the Home's own
  * `HuddleProvider` and given a camera. One provider above the routed pages owns the browser call
  * instance, so walking from the club page to one of its tables and back does not hang up — the club
  * keeps talking while the cards are dealt. Participation is frozen for the life of the join: the scope

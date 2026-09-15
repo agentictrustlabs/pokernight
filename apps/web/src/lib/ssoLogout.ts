@@ -5,7 +5,7 @@
  * list of relying apps they are connected to and navigates, top level, to each app's `/sso-logout`
  * with a `return` pointing back at itself, so it can carry on down the list. An app that does not
  * answer that call stays signed in behind the Home's back, which is exactly what "if I disconnect on
- * Home it should disconnect the poker" means and exactly what this card room was failing to do: the
+ * Home it should disconnect the poker" means and exactly what this room was failing to do: the
  * path returned 200 only because the SPA's not-found handling serves index.html for everything, and
  * it cleared nothing at all.
  *
@@ -103,7 +103,7 @@ export interface LogoutPageOptions {
  *
  * Deliberately NOT the SPA. This has to work on a cold load, with the script parsed for the first
  * time, in the middle of somebody else's redirect chain — so it boots no router, mounts no React,
- * and depends on no hash route. It reads the token, asks the card room to give up the seats and kill
+ * and depends on no hash route. It reads the token, asks the room to give up the seats and kill
  * the session, forgets it locally, and moves on.
  */
 export function logoutPageHtml({ apiBase, returnTo }: LogoutPageOptions): string {
@@ -128,7 +128,7 @@ export function logoutPageHtml({ apiBase, returnTo }: LogoutPageOptions): string
 <body>
 <main>
   <h1>Signing you out…</h1>
-  <p>Giving up your seats and ending your session at the card room.</p>
+  <p>Giving up your seats and ending your session at the room.</p>
   <p><a id="onward" href="${escapeAttr(returnTo)}">Continue</a></p>
 </main>
 <script>

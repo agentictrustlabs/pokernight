@@ -161,7 +161,7 @@ export function TableList({
                               await api.closeTable(t.tableId, session.token, t.club);
                               onChanged?.();
                             } catch (e) {
-                              // The card room refuses a SEATED table by name, and that sentence is the
+                              // The room refuses a SEATED table by name, and that sentence is the
                               // useful one — somebody has to stand up before this can happen.
                               setCloseErr(e instanceof ApiError ? e.message : `${t.name} could not be closed.`);
                             } finally {

@@ -1,7 +1,7 @@
 /**
  * WHAT TO SAY AT A HOLD'EM TABLE — the coach's half of the words, on the client.
  *
- * The card room sends one sentence and a reason (`GET /tables/:id/advice`, answered by the seat's own
+ * The room sends one sentence and a reason (`GET /tables/:id/advice`, answered by the seat's own
  * adviser or the house coach). This file is everything the SCREEN needs around it: the name of the
  * move on the button, the short line worth speaking as somebody else acts, and the handful of moments
  * worth interrupting for.
@@ -188,9 +188,9 @@ export function pokerAlerts(view: TableView | null, seat: number | null, nameOf:
  * WHETHER THERE IS A MOVE HERE AT ALL.
  *
  * An adviser is not obliged to suggest one — the skill's output has `action` as optional, and a coach
- * that only ever talks is a legitimate coach. What is NOT legitimate is the card room drawing a button
+ * that only ever talks is a legitimate coach. What is NOT legitimate is the room drawing a button
  * for a move that does not exist: the reference adviser shipped without an action for a while, so
- * "tell me" offered a button labelled `act` that sent nothing, the card room had nothing to apply, and
+ * "tell me" offered a button labelled `act` that sent nothing, the room had nothing to apply, and
  * the clock ran out. After enough of those the table sat the person out and hands went by without
  * them. A button that does nothing is worse than no button, because the person waits for it.
  */

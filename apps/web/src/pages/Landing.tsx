@@ -75,7 +75,7 @@ export function Landing({ auth, onLogin, session = null }: { auth: AuthState; on
             {session ? (
               <div className="signin-card panel">
                 <h2>You are in.</h2>
-                <p className="hint">Everything above is what the card room is for. The tables are where you left them.</p>
+                <p className="hint">Everything above is what the room is for. The tables are where you left them.</p>
                 <a className="cta" href={HOME_HASH}>
                   Play a hand
                 </a>
@@ -375,7 +375,7 @@ function LiveRoom({ live }: { live: LiveLobby }) {
             </table>
           </div>
           <p className="hint">
-            Straight from the card room, refreshed every {POLL_MS / 1000} seconds. These are the open tables anyone may join; a club&rsquo;s
+            Straight from the room, refreshed every {POLL_MS / 1000} seconds. These are the open tables anyone may join; a club&rsquo;s
             own tables are private to its members.
           </p>
         </>

@@ -3,10 +3,10 @@
  *
  * Everything here is pure, because everything here is a sentence somebody reads before they press
  * something. What a host may do, what a member may not, and whether the thing they typed is somebody
- * the card room can recognise — all answerable without a round trip, and all worth being able to
+ * the room can recognise — all answerable without a round trip, and all worth being able to
  * test as text rather than as a rendered page.
  *
- * The card room is still the authority on every one of these. This is what the client says FIRST, so
+ * The room is still the authority on every one of these. This is what the client says FIRST, so
  * a person is not sent to a refusal they could have been told about while they were typing.
  */
 
@@ -47,7 +47,7 @@ export function noTablesLine(standing: ClubStanding, clubName: string): string {
  *
  * A club was permanent until there was a route to retire one, and the thing that replaces "permanent"
  * has to be honest about its own reach, because the host cannot check afterwards. Each line is one
- * consequence, and the last one is the one nobody expects: the card room cannot touch the club's Smart
+ * consequence, and the last one is the one nobody expects: the room cannot touch the club's Smart
  * Agent, so an agent the host chartered goes on existing at their own Home.
  */
 export function retireConsequences(clubName: string, tables: number): string[] {
@@ -57,7 +57,7 @@ export function retireConsequences(clubName: string, tables: number): string[] {
   }
   // The one thing this does NOT do. Saying "deleted" over an agent that is still out there in the
   // estate with the host's name on it is the misleading half of an otherwise complete answer.
-  lines.push('Its Smart Agent is NOT removed — that lives at your Home and this card room has never held its key; this card room only stops acting as it.');
+  lines.push('Its Smart Agent is NOT removed — that lives at your Home and this room has never held its key; this room only stops acting as it.');
   lines.push('There is no undo.');
   return lines;
 }
@@ -87,6 +87,6 @@ export function retiredLine(result: { name: string; tablesClosed: readonly strin
 /* ----------------------------------------------------------- the club's own agent */
 
 /** The sentence under "Start it": what a club IS. A club is chartered as an agent at the host's Home — it
- *  exists nowhere else, and the card room acts as it under an authorisation the host signs there. */
+ *  exists nowhere else, and the room acts as it under an authorisation the host signs there. */
 export const CHARTER_BLURB =
-  'The club is chartered as an agent of its own at your Home — you keep the keys, and this card room acts as it only under an authorisation you sign there.';
+  'The club is chartered as an agent of its own at your Home — you keep the keys, and this room acts as it only under an authorisation you sign there.';

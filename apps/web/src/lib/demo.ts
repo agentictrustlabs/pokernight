@@ -64,14 +64,14 @@ export const DEMO_NOT_ENABLED =
   `Demo sign-in is not enabled for this app yet — the Home has not registered ${PRODUCT_NAME} for its demo users. Sign in with your own Home instead.`;
 
 /**
- * Turn a failure from either half of the demo path — the Home refusing to mint, or the card room
+ * Turn a failure from either half of the demo path — the Home refusing to mint, or the room
  * refusing to accept — into a sentence that says what actually happened.
  */
 export function describeDemoError(e: unknown): string {
   const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : '';
   if (/registered client_id/i.test(msg)) return DEMO_NOT_ENABLED;
   if (/not a trusted issuer/i.test(msg)) {
-    return 'The card room does not trust that Home, so a demo sign-in cannot be completed on this deployment.';
+    return 'The room does not trust that Home, so a demo sign-in cannot be completed on this deployment.';
   }
   if (/incomplete session/i.test(msg)) {
     return 'The Home returned a partial sign-in (no delegation), so there is nothing to seat you with.';

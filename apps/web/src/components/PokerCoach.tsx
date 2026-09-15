@@ -127,7 +127,7 @@ export function PokerCoach({
    * Whether the person has chosen for themselves.
    *
    * Until they have, a default that arrives LATE is still the default. `startOn` depends on whether
-   * this is the viewer's own practice table, and that is a fact the card room keeps — it comes back
+   * this is the viewer's own practice table, and that is a fact the room keeps — it comes back
    * from an HTTP read a moment after the board has mounted. A coach that fixed its mode on the first
    * frame ignored it, so arriving at your own practice table any way other than through the "deal me
    * in" link gave you a coach switched off. Once somebody presses one of the three, this stops.
@@ -333,7 +333,7 @@ export function PokerCoach({
         }, READ_MS);
       }
     } catch {
-      // A MISS IS NOT AN ENDING. The card room answers 404 for the moment before it agrees it is this
+      // A MISS IS NOT AN ENDING. The room answers 404 for the moment before it agrees it is this
       // seat's turn, which happens on most turns because the view learns first. Counting the miss is
       // what makes it retry instead of going quiet for the rest of the hand.
       setWaiting(null);
@@ -372,7 +372,7 @@ export function PokerCoach({
    * NOBODY IS LOOKING, SO NOBODY IS ASKED. A tab in the background, a phone in a pocket, a window
    * behind another: the turn still comes round, and a coach that asked a person's named adviser for
    * every one of them spent that person's coach's tokens on advice nobody read. The heartbeat waits
-   * while the page is hidden and asks the moment it is seen again — the clock is the card room's,
+   * while the page is hidden and asks the moment it is seen again — the clock is the room's,
    * and it is still running, which is the honest cost of walking away.
    */
   useEffect(() => {
@@ -384,7 +384,7 @@ export function PokerCoach({
 
   /**
    * SAT OUT FOR NOT ANSWERING ⇒ THE COACH SWITCHES ITSELF OFF. Two turns timed out in a row is the
-   * card room's own verdict that the person has gone, and a named adviser kept being consulted on
+   * room's own verdict that the person has gone, and a named adviser kept being consulted on
    * every turn until then. Switched off — not merely paused — so that a person who comes back finds
    * it off and presses "Tell me" on purpose; the panel says why. The house coach costs nothing, but
    * the rule is the same for it: a coach talking to an empty chair is noise.
@@ -541,7 +541,7 @@ export function PokerCoach({
                     ? 'Your move — press below when you are ready.'
                     : 'Your move.'
                   : missed > RETRIES
-                    ? 'The card room is not answering. Play this one yourself, or switch me off and on.'
+                    ? 'The room is not answering. Play this one yourself, or switch me off and on.'
                     : waiting
                       ? 'Your turn.'
                       : mode === 'ask'
@@ -571,7 +571,7 @@ export function PokerCoach({
               )}
               {/* NO BUTTON WITHOUT A MOVE BEHIND IT. An adviser may answer with words and no action —
                   the skill allows it, and a coach that only talks is a real coach. What must never
-                  happen is a button for a move that does not exist: it sends nothing, the card room
+                  happen is a button for a move that does not exist: it sends nothing, the room
                   has nothing to apply, and the clock runs out while the person waits for the press to
                   do something. Enough of those and the table sits them out. */}
               {!playable(advice.action) ? (
@@ -603,7 +603,7 @@ export function PokerCoach({
 
 /**
  * THE QUESTION BOX. Only for a named adviser: the house coach is a rule, and a rule has nothing to say
- * about "how am I playing" — it keeps no memory. Your own agent does: the card room records every
+ * about "how am I playing" — it keeps no memory. Your own agent does: the room records every
  * finished hand, as you saw it, to YOUR vault, and the coach you named reads them there under a grant
  * you signed. A question mid-hand goes the same way as advice (your agent consults the coach). The
  * REVIEW over past hands lives on the Ask tab under the coach card. Spends the coach's tokens, never your

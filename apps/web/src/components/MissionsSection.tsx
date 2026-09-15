@@ -34,7 +34,7 @@ export function MissionsSection({ signedIn, variant = 'landing' }: { signedIn: b
         </div>
       </div>
       <p className="missions-lede">
-        A mission is an organization that registered itself here — its steward affirmed the covenant, its own agent signed the entry, and the card room checked every line. A game night invites one as
+        A mission is an organization that registered itself here — its steward affirmed the covenant, its own agent signed the entry, and the room checked every line. A game night invites one as
         its guest: its people join the talk, tell what they do, answer what is asked. Giving is a separate choice, and never a condition of playing.
       </p>
       <div className="missions-grid">

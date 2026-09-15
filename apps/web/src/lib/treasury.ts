@@ -48,7 +48,7 @@ export interface MandateView {
 export interface TreasuryView {
   chainId: number;
   asset: string;
-  /** What that asset calls itself (`SHQ`). Stated by the card room rather than assumed here. */
+  /** What that asset calls itself (`SHQ`). Stated by the room rather than assumed here. */
   assetSymbol?: string;
   /**
    * The DEPLOYMENT DEFAULT rate, which is what a new table would be opened at and what a mandate is
@@ -288,7 +288,7 @@ export interface SeatBlock {
 
 /**
  * What stands between this player and a seat at a settled table, in the order the things have to
- * happen: a treasury exists, it is chosen, it holds the money, and the card room has been authorised
+ * happen: a treasury exists, it is chosen, it holds the money, and the room has been authorised
  * to take the buy-in out of it.
  *
  * The server refuses in the same order and with the same vocabulary (`authorizeBuyIn`). Saying it

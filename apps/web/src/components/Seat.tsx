@@ -137,7 +137,7 @@ export function Seat(p: SeatProps) {
         </span>
       ) : null}
 
-      {/* The name owns a full-width line of its own: a card room calls people by
+      {/* The name owns a full-width line of its own: a room calls people by
           name, so it must never be clipped at the default seat width. */}
       <div className="seat-name">
         <span className="name" title={p.name}>

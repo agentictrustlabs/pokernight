@@ -23,7 +23,7 @@ export interface StakeStep {
   detail?: string;
 }
 
-/** Mirrors `QuickStartNext`. What the player must do that the card room cannot do for them. */
+/** Mirrors `QuickStartNext`. What the player must do that the room cannot do for them. */
 export interface StakeNext {
   action: 'none' | 'create-at-home' | 'authorise-at-home' | 'retry';
   said: string;
@@ -89,7 +89,7 @@ export function stakeName(view: TreasuryView | null | undefined): string | null 
 
 /**
  * `"10,000.00 SHQ"`, or null when there is no balance to state. A balance is money, so it reads as
- * money — and in the currency the card room actually states, because there is more than one on this
+ * money — and in the currency the room actually states, because there is more than one on this
  * estate now. `SHQ` is the fallback for a server that names none, which is what it settles in.
  */
 export function stakeBalance(view: TreasuryView | null | undefined): string | null {

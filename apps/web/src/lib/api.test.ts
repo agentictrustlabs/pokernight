@@ -14,7 +14,7 @@ describe('a request that never arrived', () => {
     // its own generic sentence — a missing CORS method read on screen as "that could not be saved".
     vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')));
     return expect(api.getSchedule('c1', 't')).rejects.toSatisfy(
-      (e: unknown) => e instanceof ApiError && e.status === 0 && /Could not reach the card room/.test(e.message),
+      (e: unknown) => e instanceof ApiError && e.status === 0 && /Could not reach the room/.test(e.message),
     );
   });
 
@@ -25,7 +25,7 @@ describe('a request that never arrived', () => {
     );
   });
 
-  it('still reports a real refusal as a refusal, with the card room’s own words', () => {
+  it('still reports a real refusal as a refusal, with the room’s own words', () => {
     vi.stubGlobal('fetch', () =>
       Promise.resolve(new Response(JSON.stringify({ error: 'only a host of this club can do that' }), { status: 403 })),
     );

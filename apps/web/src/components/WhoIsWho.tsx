@@ -3,7 +3,7 @@ import type { WhoIsWho as Roster } from '../lib/whoIsWho';
 /**
  * WHO IS PLAYING AND WHO IS TALKING TO YOU.
  *
- * Four different things sit at one of these tables — people, A2A agents taking turns, the card room's
+ * Four different things sit at one of these tables — people, A2A agents taking turns, the room's
  * own built-in coach, and an A2A agent you named to advise you — and nothing on the screen told them
  * apart. "I cannot see which ones are playing vs coaches vs agent coaches from a2a and my llm's."
  *

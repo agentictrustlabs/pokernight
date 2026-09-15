@@ -283,6 +283,15 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   invited visit): the mission, the representative (name · agent · email/phone — host-only, stripped for members
   in `clubViewFor`), the status. OPENING A TABLE IS A PAGE (`#/tables/new`, `#/clubs/<id>/tables/new?night=`,
   `pages/TableNewPage.tsx`) — the table and the stakes side by side; the two `<details>` forms are gone.
+- **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
+  hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
+  actually has. `lib/brand.ts` still owns the product name.
+- **SITTING DOWN FLIPS TO THE FLAT BOARD, STANDING UP GOES BACK TO THE ROOM** (2026-09-15, `lib/fromRoom.ts`).
+  One place seen two ways: the room is where you walk and see who is here, the table is where a hand is played
+  with readable cards, a real action bar and the coach. Taking a seat in the room navigates to `#/t/<id>`;
+  giving the seat up there returns to the room it was taken from — WHICH room is remembered in `sessionStorage`,
+  because the board has no idea where you were standing and the hall and each club's lounge are different
+  places. The table's leave button reads "Stand up" when there is a room to go back to.
 - **THE ROOM IS A PLACE; A TABLE IS A THING IN IT** (2026-09-14, `docs/SPATIAL-ROOM.md`). `SceneDO` (one per room:
   `hall`, `club:<id>`; migration v6) holds presence — who stands where, in which zone — and NOTHING about cards; the
   Worker admits by the club's standing and lays the lobby's poker tables on the lounge's anchors on every entry.

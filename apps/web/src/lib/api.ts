@@ -21,7 +21,7 @@ export interface CoachAdvice {
   /**
    * WHOSE ADVICE THIS IS — the house's own coach, or the agent this person named.
    *
-   * Always present, and shown. The card room's coach is one strategy for everybody; a person's own
+   * Always present, and shown. The room's coach is one strategy for everybody; a person's own
    * agent carries their style. Which of the two just spoke is not a detail, and an app that showed
    * them identically would be passing one off as the other.
    */
@@ -67,7 +67,7 @@ export interface CoachReview {
   source?: AdviserVoice;
 }
 
-/** One agent this card room can seat, as `GET /agents` reports it. */
+/** One agent this room can seat, as `GET /agents` reports it. */
 export interface AgentListing {
   id: string;
   agentName: string;
@@ -89,10 +89,10 @@ export interface AgentListing {
  * WHETHER SEATING OR ASKING THIS AGENT SPENDS LANGUAGE-MODEL TOKENS.
  *
  * The house personas are two kinds of thing under one name. A rules-based one costs nothing: the
- * A2A hop is a subrequest to the card room's own Worker and the decision is a lookup. A Claude-backed
+ * A2A hop is a subrequest to the room's own Worker and the decision is a lookup. A Claude-backed
  * one calls a model EVERY TURN — and a practice table filling its chairs from the top of the list was
  * seating one without saying so, so every hand somebody played to learn was spending tokens on an
- * opponent they had not chosen. The strategy label is the card room's own, so this is a fact rather
+ * opponent they had not chosen. The strategy label is the room's own, so this is a fact rather
  * than a guess; anything unrecognised is treated as costing, never as free.
  */
 export function costsTokens(agent: AgentListing): boolean {
@@ -188,7 +188,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string, 
   if (init.body) headers['content-type'] = 'application/json';
   if (token) headers.authorization = `Bearer ${token}`;
   /**
-   * A request that never ARRIVED is a different thing from one the card room refused, and it used to
+   * A request that never ARRIVED is a different thing from one the room refused, and it used to
    * be indistinguishable: `fetch` rejects with a bare `TypeError` for a blocked preflight, a dropped
    * connection or a DNS failure, that is not an `ApiError`, and every caller's `instanceof ApiError`
    * check fell through to its own generic sentence. A CORS method missing from the allow-list read on
@@ -201,7 +201,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string, 
   try {
     res = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...headers, ...(init.headers as Record<string, string>) } });
   } catch {
-    throw new ApiError(0, `Could not reach the card room — it may be offline, or this request was blocked before it left the browser (${init.method ?? 'GET'} ${path})`);
+    throw new ApiError(0, `Could not reach the room — it may be offline, or this request was blocked before it left the browser (${init.method ?? 'GET'} ${path})`);
   }
   const text = await res.text();
   let body: unknown = null;
@@ -255,7 +255,7 @@ export interface HomeAuthBody {
   authOrigin: string;
   nonce: string;
   state: string;
-  /** What the person asked to be called, from the field on the way in. A DISPLAY name the card room
+  /** What the person asked to be called, from the field on the way in. A DISPLAY name the room
    *  keeps — no Faithnet handle is claimed for it. Absent when they did not give one. */
   profileName?: string;
 }
@@ -286,7 +286,7 @@ export const api = {
       (): SignOutResult => ({
         ok: false,
         stoodUp: [],
-        failed: [{ tableId: 'your table', reason: 'the card room could not be reached' }],
+        failed: [{ tableId: 'your table', reason: 'the room could not be reached' }],
       }),
     ),
   /** Finish a `poker-buyin` ceremony the player ran at their Home. The Worker exchanges the code,
@@ -294,7 +294,7 @@ export const api = {
   homeMandate: (body: HomeAuthBody, token: string) =>
     request<MandateResult>('/auth/home/mandate', { method: 'POST', body: JSON.stringify(body) }, token),
   /** The open tables. With no club that is the PUBLIC pickup lobby, which needs no session at all;
-   *  with one it is that club's own tables, and the card room checks standing before it answers. */
+   *  with one it is that club's own tables, and the room checks standing before it answers. */
   listTables: (token?: string, club?: string) =>
     request<TableSummary[]>(club ? `/tables?club=${encodeURIComponent(club)}` : '/tables', {}, token),
   createTable: (req: CreateTableRequest, token?: string) =>
@@ -311,14 +311,14 @@ export const api = {
    * One club, from its own agent: profile, roster, schedule, nights, and what you are to it.
    *
    * A club you are not in answers 404, exactly as a club that does not exist does. The client must
-   * not turn that into "you do not have access" — the card room is declining to say either way.
+   * not turn that into "you do not have access" — the room is declining to say either way.
    */
   getClub: (clubId: string, token: string) => request<ClubView>(`/clubs/${encodeURIComponent(clubId)}`, {}, token),
   /**
-   * STARTING A CLUB, in three steps the card room and the Home take turns at: the `workspace-create`
+   * STARTING A CLUB, in three steps the room and the Home take turns at: the `workspace-create`
    * ceremony's return leg (this — the club's agent exists; `idToken` is the bearer the wire ceremony
-   * needs), then the `service-agent-wire` ceremony (the Home talks to the card room directly), then
-   * `foundClub` — the card room's first act as the club, writing its profile.
+   * needs), then the `service-agent-wire` ceremony (the Home talks to the room directly), then
+   * `foundClub` — the room's first act as the club, writing its profile.
    */
   charterClub: (body: HomeAuthBody, token: string) =>
     request<{ clubId: string; agentName?: string; idToken: string }>('/clubs/charter', { method: 'POST', body: JSON.stringify(body) }, token),
@@ -330,7 +330,7 @@ export const api = {
   mission: (entryId: string) =>
     request<{ listing: MissionListing; receipt: MissionReceipt | null; events: Array<{ kind: string; occurredAt: string; sequence: string }> }>(`/missions/${encodeURIComponent(entryId)}`),
   missionRegistry: () => request<{ registryId: string; name: string; description: string; chainId: number; registryAddress: string | null; operatorAgent: string; configured: boolean }>('/missions/registry'),
-  /** The return leg. Without a session the card room SIGNS THE STEWARD IN as it admits the mission (`session`). */
+  /** The return leg. Without a session the room SIGNS THE STEWARD IN as it admits the mission (`session`). */
   enrolMission: (body: HomeAuthBody, token?: string) =>
     request<{ ok: true; listing: MissionListing; receipt: MissionReceipt; act: 'registered' | 'renewed'; session?: HomeSessionResponse }>('/missions/enrol', { method: 'POST', body: JSON.stringify(body) }, token),
   geocode: (q: string, token?: string) =>
@@ -343,7 +343,7 @@ export const api = {
   /**
    * Your practice table for a game — the same one every time.
    *
-   * Idempotent: the card room derives its id from you and the game rather than storing one, so
+   * Idempotent: the room derives its id from you and the game rather than storing one, so
    * asking twice is asking about the same table. It is in no lobby and settles nothing.
    */
   practiceTable: (game: string, token: string) =>
@@ -360,7 +360,7 @@ export const api = {
   /**
    * What a good player would do in YOUR seat, and why.
    *
-   * Your own seat only, and the coach sees only what that seat sees — enforced in the card room, not
+   * Your own seat only, and the coach sees only what that seat sees — enforced in the room, not
    * here. A coach reasoning from the full table would explain moves with cards you cannot see, which
    * teaches a way of playing you could never reproduce alone.
    *
@@ -369,7 +369,7 @@ export const api = {
   advice: (tableId: string, token: string) =>
     request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice`, {}, token),
   /**
-   * A QUESTION IN YOUR OWN WORDS, to the agent advising you. Carried by the card room untouched, and
+   * A QUESTION IN YOUR OWN WORDS, to the agent advising you. Carried by the room untouched, and
    * always answered by that agent rather than the house — it is the one thing only it can answer in
    * your style. A language-model agent spends its tokens on it, which is why the panel says so first.
    */
@@ -377,7 +377,7 @@ export const api = {
     request<CoachAdvice>(`/tables/${encodeURIComponent(tableId)}/advice?q=${encodeURIComponent(question)}`, {}, token),
   /**
    * HOW HAVE I BEEN PLAYING — your own question about your past hands, in your own words. Your agent
-   * forwards it to the coach you named, which reads the hands this card room recorded to your vault
+   * forwards it to the coach you named, which reads the hands this room recorded to your vault
    * and answers in its own name. Takes longer than a sentence mid-hand; asked only when you ask.
    */
   reviewHands: (tableId: string, question: string, token: string) =>
@@ -390,7 +390,7 @@ export const api = {
   reviewDays: (days: number, question: string, token: string, game: 'poker' | 'canasta' = 'poker') =>
     request<CoachReview & { days: number }>(`/me/review?days=${days}&game=${game}${question ? `&q=${encodeURIComponent(question)}` : ''}`, {}, token),
   /** SEND MY PAST HANDS to my own agent, so a coach hired later can read them: every hand I was dealt in the
-   *  last N days, at every table this card room can find me at, one record per hand, retried, never awaited. */
+   *  last N days, at every table this room can find me at, one record per hand, retried, never awaited. */
   backfillHands: (days: number, token: string, game: 'poker' | 'canasta' = 'poker') =>
     request<{ ok: true; days: number; agent: string; tables: number; found: number; queued: number; note: string }>(`/me/hands/backfill?days=${days}&game=${game}`, { method: 'POST' }, token),
   /** DO I HAVE A COACH, AND HAVE I BEEN ASKED — from my own agent (playbook + my preferences record). */
@@ -399,12 +399,12 @@ export const api = {
   /** I answered the coach question. Written to my vault by my own agent, so it is asked once. */
   coachAnswered: (answer: 'hired' | 'later' | 'no', token: string, game: 'poker' | 'canasta' = 'poker') =>
     request<{ agent: string | null; coach: string | null; asked: { at: string; answer: string } | null }>('/me/coach/asked', { method: 'POST', body: JSON.stringify({ answer, game }) }, token),
-  /** The coaching services this card room offers for hire, for one game, each read from its card. */
+  /** The coaching services this room offers for hire, for one game, each read from its card. */
   coaches: (game: 'poker' | 'canasta' = 'poker') => request<{ coaches: CoachListing[]; hireable: boolean }>(`/coaches?game=${game}`),
   /** The return leg of hiring a coach at your Home. */
   homeCoach: (body: HomeAuthBody, token: string) =>
     request<{ ok: true; coach: { name: string; agent?: string; grantHash?: string } }>('/me/coach', { method: 'POST', body: JSON.stringify(body) }, token),
-  /** Name the agent that advises YOU at this table. The card room checks it advertises the skill. */
+  /** Name the agent that advises YOU at this table. The room checks it advertises the skill. */
   /** Your own agent by NAME, reverse-resolved from the address your Home asserted. `agentName` is null
    *  when the chain has no primary name for it — which is a fact to show, not a field to guess at. */
   myAgent: (token: string) =>
@@ -426,13 +426,13 @@ export const api = {
   clearAdviser: (tableId: string, token: string) =>
     request<{ adviser: null }>(`/tables/${encodeURIComponent(tableId)}/adviser`, { method: 'DELETE' }, token),
   /**
-   * The agents this card room can seat for a game.
+   * The agents this room can seat for a game.
    *
    * Narrowed by game on purpose: an agent that plays poker cannot play canasta, and offering one at
-   * the other's table is offering a seat the card room will refuse a moment later.
+   * the other's table is offering a seat the room will refuse a moment later.
    */
   listAgents: (game: string) => request<{ agents: AgentListing[] }>(`/agents?game=${encodeURIComponent(game)}`, {}),
-  /** Sit an agent down. The card room resolves it, fetches its card, and refuses one that cannot play. */
+  /** Sit an agent down. The room resolves it, fetches its card, and refuses one that cannot play. */
   /** Stand an agent up and cash it out. Anybody signed in may; it is the house's seat, not a person's. */
   unseatAgent: (tableId: string, seat: number, token: string) =>
     request<unknown>(`/tables/${encodeURIComponent(tableId)}/seat-agent/${seat}`, { method: 'DELETE' }, token),
@@ -485,7 +485,7 @@ export const api = {
   /**
    * Close a club for good. Its host only, and only when nobody is sitting at one of its tables.
    *
-   * `agent` comes back when the club was chartered — the card room cannot touch that Smart Agent and
+   * `agent` comes back when the club was chartered — the room cannot touch that Smart Agent and
    * must not let a host believe it did.
    */
   retireClub: (clubId: string, token: string) =>
@@ -495,7 +495,7 @@ export const api = {
       token,
     ),
   /**
-   * Close a table. Whoever opened it, or a host of its club — the card room checks, not this.
+   * Close a table. Whoever opened it, or a host of its club — the room checks, not this.
    *
    * The table's own condition is that nobody is seated: a seat holds chips, and at a settled table
    * those chips are money.
@@ -513,7 +513,7 @@ export const api = {
   /** Everything between signing in and sitting down, in one call: a treasury, a stake, the authority.
    *  Answers with what it did and what (if anything) the player's own Home still has to do. */
   quickStart: (token: string) => request<StakeResult>('/treasury/quick-start', { method: 'POST', body: '{}' }, token),
-  /** Ask the card room to fund play from `address`. It checks custody on chain before agreeing. */
+  /** Ask the room to fund play from `address`. It checks custody on chain before agreeing. */
   selectTreasury: (address: string, token: string) =>
     request<SelectTreasuryResult>('/treasury/select', { method: 'POST', body: JSON.stringify({ address }) }, token),
   /** Charter a treasury under this player's person agent. A real player is handed to their own Home. */
@@ -532,7 +532,7 @@ export const api = {
 };
 
 /**
- * Where sockets open. `VITE_WS_BASE` (dev only) sends them straight to a live card room while HTTP goes through the
+ * Where sockets open. `VITE_WS_BASE` (dev only) sends them straight to a live room while HTTP goes through the
  * Vite proxy — the proxy cannot upgrade a WebSocket to an https target — which is the room's no-deploy loop.
  */
 const WS_BASE: string | undefined = (import.meta.env.VITE_WS_BASE as string | undefined)?.replace(/\/+$/, '');

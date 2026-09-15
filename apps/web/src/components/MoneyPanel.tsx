@@ -84,12 +84,12 @@ export function MoneyPanel({
   // The table's own rate, preferring the summary the page read and falling back to the one the
   // settlement rows carry — both come from the table, neither from the deployment default.
   const rate = tableRate(settlement, chipValue ?? rows?.chipValue ?? null, assetSymbol ?? rows?.assetSymbol ?? null);
-  // The treasury's balance, which is the balance that pays for a seat here: the card room settles
+  // The treasury's balance, which is the balance that pays for a seat here: the room settles
   // in one currency, so the money the player holds and the money this table charges are the same.
   const balance = stakeBalance(treasury);
   const block = seatBlock(settlement, treasury);
   const mandate = treasury?.mandate ?? null;
-  // The mandate names its OWN currency. It should always be this card room's, and the check that
+  // The mandate names its OWN currency. It should always be this room's, and the check that
   // says so lives on the server — this is only what to call it in a sentence.
   const mandateMoney = (treasury?.assetSymbol ?? '').trim() || 'SHQ';
   const entries = rows?.entries ?? [];

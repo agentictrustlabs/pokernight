@@ -55,7 +55,7 @@ export function CanastaPage({
   onSetUp,
 }: {
   tableId: string;
-  /** The Home this card room trusts — where a coach is hired. */
+  /** The Home this room trusts — where a coach is hired. */
   config?: AuthConfig | null;
   /**
    * Set the table up on arrival: take a seat, fill the other three, switch the coach on.
@@ -79,7 +79,7 @@ export function CanastaPage({
   /**
    * Whether this is YOUR practice table — asked of the table, not of the URL.
    *
-   * The card room already answers it: `practiceFor` is on the view every one of these pages reads, and
+   * The room already answers it: `practiceFor` is on the view every one of these pages reads, and
    * the routes that reset, pause and pace a table check the same field. The screen was the only part
    * still taking the query string's word for it, so the controls appeared on the link that carried the
    * query and vanished on every other way of arriving at the same table.
@@ -275,11 +275,11 @@ export function CanastaPage({
    * button. Two of them can happen within a few hundred milliseconds of each other — the freeze fires
    * on arrival at a table whose round has already ended, and a person can press "deal the next round"
    * before that request has landed. Fired independently they race, and the loser is whichever the
-   * card room happens to receive last: the screen said running, the table said held, and the board sat
+   * room happens to receive last: the screen said running, the table said held, and the board sat
    * there until somebody reloaded.
    *
    * So the requests are CHAINED. The screen changes at once, which is right — it is saying what was
-   * asked for — and the card room is told in the order it was asked.
+   * asked for — and the room is told in the order it was asked.
    */
   const holdQueue = useRef<Promise<unknown>>(Promise.resolve());
   const setHeld = useCallback(
@@ -565,7 +565,7 @@ function FillSeats({ tableId, session, empty, mySeat }: { tableId: string; sessi
         );
       }
       if (takeable < wanted.length) {
-        setErr(`Only ${takeable} of the ${wanted.length} chairs could be filled — this card room has ${agents.length} canasta players.`);
+        setErr(`Only ${takeable} of the ${wanted.length} chairs could be filled — this room has ${agents.length} canasta players.`);
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'That seat was refused.');

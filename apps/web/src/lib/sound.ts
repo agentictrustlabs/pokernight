@@ -1,7 +1,7 @@
 /**
  * The table's own sounds — synthesised, not sampled.
  *
- * A card room is not silent. A card landing, chips going in, and the small chime that says it is
+ * A room is not silent. A card landing, chips going in, and the small chime that says it is
  * your turn are how a player at a real table knows what happened without watching every seat; on
  * screen the same job is done by a log line they may not be looking at. This is the difference
  * between a page and a game.
@@ -44,7 +44,7 @@ let enabled = read();
 
 function read(): boolean {
   try {
-    // ON by default. A card room with the sound off by default is a card room nobody knows has any.
+    // ON by default. A room with the sound off by default is a room nobody knows has any.
     return localStorage.getItem(KEY) !== 'off';
   } catch {
     return true;

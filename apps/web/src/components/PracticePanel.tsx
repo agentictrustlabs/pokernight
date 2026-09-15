@@ -8,7 +8,7 @@ import { ApiError, api } from '../lib/api';
  * ONE PANEL FOR BOTH GAMES, because none of this is about a game. A practice table is a fact about the
  * TABLE — one per person, derived, in no lobby, owned — and the three things its owner can do to it
  * are the same whichever game it deals. Canasta had this panel and hold'em did not, which is how "let
- * me pause the poker game" came to be a request: the card room's pause always worked at a poker
+ * me pause the poker game" came to be a request: the room's pause always worked at a poker
  * practice table; nothing on the poker page offered it.
  *
  * THE HOLD IS THE PAGE'S. The pause state and the request to change it are passed in rather than

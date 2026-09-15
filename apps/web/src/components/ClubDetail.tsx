@@ -21,7 +21,7 @@ import { retiredLine } from '../lib/clubs';
  *
  * There is no list of clubs to browse and there never will be — a club you are not in is
  * indistinguishable from one that does not exist, so the only clubs anywhere are the ones you are in.
- * That is also why the card room needs no club directory: an invitation carries the club with it.
+ * That is also why the room needs no club directory: an invitation carries the club with it.
  */
 
 /* ----------------------------------------------------------------- the roster */
@@ -71,7 +71,7 @@ export function About({ view, session, tables, onChanged, onRetired }: { view: C
       <Welcome view={view} session={session} host={host} onChanged={onChanged} />
       <Calendar clubId={view.clubId} clubName={view.name} session={session} nights={view.nights} />
       <p className="hint club-agent">
-        Its agent: <code className="mono" title={view.clubId}>{shortAddress(view.clubId)}</code> — at {host ? 'your' : "the host's"} Home; this card room acts as it.
+        Its agent: <code className="mono" title={view.clubId}>{shortAddress(view.clubId)}</code> — at {host ? 'your' : "the host's"} Home; this room acts as it.
       </p>
       {host ? <Retire view={view} session={session} tables={tables} onRetired={onRetired} /> : null}
     </section>
@@ -134,7 +134,7 @@ function Retire({
             onRetired(retiredLine(result));
           } catch (ex) {
             // The one refusal a host will actually meet: somebody is still sitting at a table. The
-            // card room names them, so this prints its sentence rather than inventing a shorter one.
+            // room names them, so this prints its sentence rather than inventing a shorter one.
             setErr(ex instanceof ApiError ? ex.message : 'The club could not be closed.');
             setBusy(false);
           }
@@ -311,7 +311,7 @@ function Calendar({ clubId, clubName, session, nights }: { clubId: string; clubN
       </label>
       <p className="hint">
         Google fetches a subscribed calendar on its own schedule — often several hours before the first one appears, and it
-        ignores how often this feed says to look. That is Google, not the card room; the two links above are instant.
+        ignores how often this feed says to look. That is Google, not the room; the two links above are instant.
       </p>
     </details>
   );
@@ -321,7 +321,7 @@ function Calendar({ clubId, clubName, session, nights }: { clubId: string; clubN
  * The club's own Smart Agent, or the offer to give it one.
  *
  * A NAVIGATION, not a button that posts something — the Home is what deploys the agent and what
- * shows the host what they are agreeing to, and the card room never holds the club's key. That is
+ * shows the host what they are agreeing to, and the room never holds the club's key. That is
  * the same reason signing in and authorising a buy-in are navigations too.
  */
 /**
@@ -380,7 +380,7 @@ function Invite({ view, session, config, onErr }: { view: ClubView; session: App
 
 /**
  * The people this host already plays with, as one press each — the most common invitation there is,
- * and the one that should need no identifier: the card room reads them off the rosters of the host's
+ * and the one that should need no identifier: the room reads them off the rosters of the host's
  * clubs, by the names those clubs' agents record them under.
  */
 function KnownPeople({ session, roster, busy, onPick }: { session: AppSession; roster: string[]; busy: boolean; onPick: (p: KnownPerson) => void }) {
@@ -417,7 +417,7 @@ function KnownPeople({ session, roster, busy, onPick }: { session: AppSession; r
 /**
  * STARTING A CLUB is chartering its agent at your Home — the club IS that agent. The name typed here is
  * what the workspace is deployed under and what the club is founded as; the trip is two ceremonies at
- * the Home (charter, then authorising this card room to act as the club), and the return leg lands on
+ * the Home (charter, then authorising this room to act as the club), and the return leg lands on
  * the club's page.
  */
 export function StartClub({ config }: { config: AuthConfig | null }) {

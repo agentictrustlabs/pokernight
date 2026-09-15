@@ -389,7 +389,7 @@ function ScheduleForm({
           );
           onDone();
         } catch (ex) {
-          // The card room names what it will not take — an unknown zone, a day that is not one — and
+          // The room names what it will not take — an unknown zone, a day that is not one — and
           // those sentences are more use here than a generic failure.
           setErr(ex instanceof ApiError ? ex.message : 'That schedule could not be saved.');
           setBusy(false);

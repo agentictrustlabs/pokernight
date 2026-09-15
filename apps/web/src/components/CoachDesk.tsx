@@ -196,7 +196,7 @@ export function ReviewSection({
     <div className="side-section review-section">
       <h3>How have I been playing?</h3>
       <p className="hint">
-        Your agent asks the coach you hired; the coach reads the {unit} the card room recorded to your vault — every
+        Your agent asks the coach you hired; the coach reads the {unit} the room recorded to your vault — every
         table, not just this one — and answers with the count behind each leak and one thing to change.
       </p>
       <div className="desk-row">

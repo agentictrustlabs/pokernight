@@ -85,7 +85,7 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
       setTreasury(await api.getTreasury(session.token));
       setTreasuryErr(null);
     } catch (e) {
-      setTreasuryErr(e instanceof ApiError ? `Could not read your money — ${e.message}` : 'Could not reach the card room to read your money.');
+      setTreasuryErr(e instanceof ApiError ? `Could not read your money — ${e.message}` : 'Could not reach the room to read your money.');
     }
   }, [session.token]);
   useEffect(() => {
@@ -164,7 +164,7 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
           </>
         ) : r.page === 'money' ? (
           <>
-            <PageHead eyebrow="Your money" title="Buy-ins and cash-outs" lede="In Sheqels — the card room's own coin, held in your money account at your Home. A practice table needs none of it." />
+            <PageHead eyebrow="Your money" title="Buy-ins and cash-outs" lede="In Sheqels — the room's own coin, held in your money account at your Home. A practice table needs none of it." />
             <MoneyPage session={session} config={auth.config} treasury={treasury} treasuryErr={treasuryErr} tables={tables} onChanged={loadTreasury} />
           </>
         ) : r.page === 'newClub' ? (

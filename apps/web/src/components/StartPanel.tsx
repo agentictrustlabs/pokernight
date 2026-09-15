@@ -109,7 +109,7 @@ export function StartPanel({
 
   const authorise = useCallback(async () => {
     if (!config) {
-      setError('The card room has not said which Home to ask yet. Reload and try again.');
+      setError('The room has not said which Home to ask yet. Reload and try again.');
       return;
     }
     setBusy(true);
@@ -167,12 +167,12 @@ export function StartPanel({
                   approved the caps saw no reason why nothing had changed. */}
               {refused ? (
                 <p className="start-refused" role="alert">
-                  Your Home signed it, but the card room could not accept it: {refused}
+                  Your Home signed it, but the room could not accept it: {refused}
                 </p>
               ) : null}
               <p className="hint">
                 One thing left: your say-so for how much a table may take from your money when you sit down. Your Home asks you that and
-                signs it — the card room never can — and you can undo it there whenever you like.
+                signs it — the room never can — and you can undo it there whenever you like.
               </p>
               <button className="primary" type="button" disabled={busy} onClick={() => void authorise()}>
                 {busy ? 'Sending you to your Home…' : 'Authorise buy-ins at your Home'}

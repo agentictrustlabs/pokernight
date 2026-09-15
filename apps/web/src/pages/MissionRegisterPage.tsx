@@ -10,9 +10,9 @@ interface Place { label: string; country: string; lat: number; lng: number; kind
 
 /**
  * REGISTER A MISSION (docs/MISSION-REGISTRY.md §2.1). The form is the presence — name, what it does, website,
- * languages, a place — the three clauses, and the operators' contact. Nothing is sent to the card room from
+ * languages, a place — the three clauses, and the operators' contact. Nothing is sent to the room from
  * here: the button takes the steward to their Home, which chooses or creates the organization, has them
- * sign the covenant, has the organization sign its entry on chain, and brings them back; the card room's
+ * sign the covenant, has the organization sign its entry on chain, and brings them back; the room's
  * return leg then verifies and admits. What is drawn here is what will be published, and the ceiling is
  * shown before it is signed — a mission in a country whose ceiling hides the point is told so, not surprised.
  */
@@ -32,7 +32,7 @@ export function MissionRegisterPage({ session, config }: { session: AppSession |
   const searchTimer = useRef<number | null>(null);
   const nameCheck = useNameCheck(config, name, 'org');
 
-  // The geocoder, on a debounce, through the card room (the browser names one origin).
+  // The geocoder, on a debounce, through the room (the browser names one origin).
   useEffect(() => {
     if (place && query === place.label) return;
     if (searchTimer.current) window.clearTimeout(searchTimer.current);
@@ -56,7 +56,7 @@ export function MissionRegisterPage({ session, config }: { session: AppSession |
     if (!blurb.trim()) return setErr('Say what the mission does.');
     if (!/^https:\/\/[^\s/$.?#].[^\s]*$/i.test(website)) return setErr('The website must be an https:// address.');
     if (!place) return setErr('Pick the place from the list — the country decides what may be shown.');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) return setErr('The contact must be an email address (for the card room’s operators only).');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) return setErr('The contact must be an email address (for the room’s operators only).');
     if (!allAffirmed) return setErr('Affirm all three clauses of the covenant.');
     setBusy(true);
     try {
@@ -82,15 +82,15 @@ export function MissionRegisterPage({ session, config }: { session: AppSession |
       </header>
 
       {/* A MISSION STEWARD'S OWN ONBOARDING (2026-09-14): a visitor registering a mission is not here to play, and
-          used to be sent through the card room's sign-in — play money, a buy-in limit, a seat. Now the form is open,
+          used to be sent through the room's sign-in — play money, a buy-in limit, a seat. Now the form is open,
           and the ONE trip is to their Home: sign in there (or make a Home), choose or create the organization, sign
-          the covenant, the organization signs its entry — and the card room signs them in as it admits the mission.
+          the covenant, the organization signs its entry — and the room signs them in as it admits the mission.
           No coach, no money account, no seat is set up for them. */}
       {!session ? (
         <section className="panel mission-onboarding">
           <h2 className="eyebrow-h">How registering works</h2>
           <ol>
-            <li><strong>Say what the mission is</strong> — below. Its name, what it does, where it is, how the card room reaches you.</li>
+            <li><strong>Say what the mission is</strong> — below. Its name, what it does, where it is, how the room reaches you.</li>
             <li><strong>Go to your Home.</strong> Your Home is your own account on the faithnet estate — sign in there, or make one on the way (a phone number, an email address or a social account; nothing to install). The organization is created there, in your custody, or you pick one you already steward.</li>
             <li><strong>Two signatures.</strong> The covenant, as you; the registry entry, as the organization. Then you are back here, with the mission on the map.</li>
           </ol>
@@ -143,9 +143,9 @@ export function MissionRegisterPage({ session, config }: { session: AppSession |
               <strong>{place.label}</strong> · {place.country}
             </p>
             {ceiling === 'none' ? (
-              <p className="form-warn">In {place.country} the card room shows no location at all — the mission is listed by name and country. That is the ceiling for the country, whatever you choose below.</p>
+              <p className="form-warn">In {place.country} the room shows no location at all — the mission is listed by name and country. That is the ceiling for the country, whatever you choose below.</p>
             ) : ceiling === 'adm2' ? (
-              <p className="form-warn">In {place.country} the card room shows the region only, never the point. The exact place stays in your organization’s vault.</p>
+              <p className="form-warn">In {place.country} the room shows the region only, never the point. The exact place stays in your organization’s vault.</p>
             ) : (
               <label className="check">
                 <input type="checkbox" checked={precise} onChange={(e) => setPrecise(e.target.checked)} />
@@ -165,11 +165,11 @@ export function MissionRegisterPage({ session, config }: { session: AppSession |
           </label>
         ))}
 
-        <h2>For the card room’s operators</h2>
+        <h2>For the room’s operators</h2>
         <label>
           Contact email
           <input value={contact} onChange={(e) => setContact(e.target.value)} inputMode="email" autoComplete="email" required />
-          <span className="hint">Never shown, never on the map, never on chain. Kept at your organization’s vault and at the card room’s desk.</span>
+          <span className="hint">Never shown, never on the map, never on chain. Kept at your organization’s vault and at the room’s desk.</span>
         </label>
 
         {err ? <div className="form-error">{err}</div> : null}

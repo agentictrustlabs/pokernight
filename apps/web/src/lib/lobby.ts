@@ -1,7 +1,7 @@
 /**
  * Reading the LIVE lobby, purely.
  *
- * The landing page's claim is that this is a real card room with real agents in it, and the only
+ * The landing page's claim is that this is a real room with real agents in it, and the only
  * honest way to make that claim is to read `GET /tables` (open to anyone) and say exactly what is
  * there. Every sentence the hero shows is computed here, so it can be tested against the shapes the
  * service actually returns — including the empty one, where the right answer is to say the room is
@@ -112,12 +112,12 @@ export function pickFeaturedTable(tables: readonly TableSummary[]): TableSummary
 /**
  * Whether this person may close this table — as far as the CLIENT can tell.
  *
- * The card room decides; this only governs whether a control is offered, because a button that will
+ * The room decides; this only governs whether a control is offered, because a button that will
  * be refused is worse than no button. Two ways in: they opened it, or they host the club it belongs
  * to. A table opened before tables recorded an opener has no `createdBy` and belongs to nobody here,
  * so it is operator-only and nothing is offered.
  *
- * The SEATED condition is deliberately not checked here — the card room refuses a seated table and
+ * The SEATED condition is deliberately not checked here — the room refuses a seated table and
  * says so, and a control that vanished whenever somebody sat down would be a control nobody could
  * find when they needed it.
  */

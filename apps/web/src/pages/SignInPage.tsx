@@ -12,7 +12,7 @@ export function SignInPage({ auth, onLogin }: { auth: AuthState; onLogin: (s: Ap
     <div className="signin-page">
       <div className="panel signin-card">
         <p className="hero-eyebrow">{PRODUCT_NAME}</p>
-        <h1>Sign in to the card room</h1>
+        <h1>Sign in to the room</h1>
         <SignInPanel auth={auth} onLogin={onLogin} />
       </div>
       <p className="hint signin-away">

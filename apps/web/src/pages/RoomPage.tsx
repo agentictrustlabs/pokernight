@@ -3,6 +3,7 @@ import type { AppSession } from '../lib/types';
 import { RoomSocket } from '../lib/roomSocket';
 import { api as tables, roomApi as api, tableSocketUrl } from '../lib/api';
 import { leaveSeat, takeSeat } from '../lib/roomSeat';
+import { cameFromRoom, forgetRoom } from '../lib/fromRoom';
 import { TableSocket, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
 import { ActionBar } from '../components/ActionBar';
 import { Card } from '../components/Card';
@@ -97,14 +98,18 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
       const cfg = ((t.view as { config?: { minBuyIn?: number; maxBuyIn?: number } } | undefined)?.config ?? {});
       const buyIn = Math.min(cfg.maxBuyIn ?? ROOM_STACK, Math.max(cfg.minBuyIn ?? 1, ROOM_STACK));
       const r = await takeSeat(tableSocketUrl(tableId, session.token), seat, buyIn);
-      if (!r.ok) setSitError(r.reason);
+      if (!r.ok) { setSitError(r.reason); return; }
       await api.room(roomId, session.token).catch(() => undefined);
+      // SAT DOWN: the hand is played on the flat board, which is where cards are readable and the coach lives.
+      // Standing up there comes back to this room (lib/fromRoom.ts).
+      cameFromRoom(roomHash(clubId));
+      location.hash = `#/t/${encodeURIComponent(tableId)}`;
     } catch (e) { setSitError(e instanceof Error ? e.message : String(e)); } finally { setSitting(null); }
   }, [roomId, session.token]);
   const walkToSeat = (tableId: string, seat: number) => { setSitError(null); if (lounge.current?.walkToSeat(tableId, seat)) setSitting({ tableId, seat, phase: 'walking' }); };
   const standUp = async (tableId: string) => {
     setSitError(null); setSitting({ tableId, seat: -1, phase: 'standing' });
-    try { const r = await leaveSeat(tableSocketUrl(tableId, session.token)); if (!r.ok) setSitError(r.reason); await api.room(roomId, session.token).catch(() => undefined); } finally { setSitting(null); }
+    try { const r = await leaveSeat(tableSocketUrl(tableId, session.token)); if (!r.ok) setSitError(r.reason); forgetRoom(); await api.room(roomId, session.token).catch(() => undefined); } finally { setSitting(null); }
   };
   const s = sock.current;
   // VOICE IN A CLUB'S LOUNGE: the club's huddle is the room's meeting; while you are in it here, every voice
@@ -176,7 +181,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
         {seatedTable ? (
           <div className="room-table-card">
             <strong>{seatedTable.name}</strong> <span className="hint">seat {(meNow!.seatedAt!.seat) + 1} · {seatedTable.seated}/{seatedTable.seats} seated</span>
-            <a className="button primary" href={`#/t/${encodeURIComponent(seatedTable.tableId)}`}>Back to your cards →</a>
+            <a className="button primary" href={`#/t/${encodeURIComponent(seatedTable.tableId)}`} onClick={() => cameFromRoom(roomHash(clubId))}>Back to your cards →</a>
             <button type="button" className="small" disabled={!!sitting} onClick={() => void standUp(seatedTable.tableId)}>{sitting?.phase === 'standing' ? 'Standing up…' : 'Stand up'}</button>
           </div>
         ) : sitting ? (
@@ -190,7 +195,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
                 <button key={i} type="button" className="small" onClick={() => walkToSeat(table.tableId, i)}>Sit at {i + 1}</button>
               ))}
             </span>
-            <a className="small" href={`#/t/${encodeURIComponent(table.tableId)}`}>Open the flat table →</a>
+            <a className="small" href={`#/t/${encodeURIComponent(table.tableId)}`} onClick={() => cameFromRoom(roomHash(clubId))}>Open the flat table →</a>
           </div>
         ) : <span className="hint">Walk up to a table to look in, or click a free chair to sit.</span>}
         {sitError ? <div className="form-error">{sitError}</div> : null}

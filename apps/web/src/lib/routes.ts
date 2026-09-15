@@ -11,7 +11,7 @@
  *   #/t/<tableId> a table
  *   #/join/<clubId>          the door into a club: join it at your Home (the host's agent sent the link)
  *
- * WHY `#/` IS PLAY AND NOT THE TABLE LIST. The commonest visitor to a card room wants to be dealt a
+ * WHY `#/` IS PLAY AND NOT THE TABLE LIST. The commonest visitor to a room wants to be dealt a
  * hand, and every game product worth copying spends its first slot on that rather than on a lobby
  * (`docs/NAVIGATION-RESEARCH.md` §12.1). The list is one press away at `#/tables`, which is where
  * leaving a table lands — that is the returning player's first screen, and it is not the newcomer's.
@@ -54,7 +54,7 @@ export type Route =
   /**
    * An invitation link. It carries the CLUB as well as the token because the token alone does not
    * say which club to ask — a club is its own object, and a global index of every invitation in the
-   * card room would be a thing to leak rather than a thing to have.
+   * room would be a thing to leak rather than a thing to have.
    */
   | { page: 'join'; clubId: string };
 

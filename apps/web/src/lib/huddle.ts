@@ -1,13 +1,13 @@
 /**
- * A CLUB HUDDLE — the Home's governed call (spec 378), from the card room.
+ * A CLUB HUDDLE — the Home's governed call (spec 378), from the room.
  *
  * THE ARRANGEMENT. A club is a `.workspace` agent its host custodies at their Home; the Home's huddle
  * service (`a2a.faithnet.io`) decides who may start, join, invite or end a huddle at that scope, and
- * Cloudflare RealtimeKit carries the audio, video and screen. This card room keeps the club's ROSTER, so
- * for a `club` scope the Home asks the card room who is a member before it admits anybody (a shared secret
- * between the two workers; `GET /clubs/:id/standing-of`), and the card room calls the Home FOR the member
+ * Cloudflare RealtimeKit carries the audio, video and screen. This room keeps the club's ROSTER, so
+ * for a `club` scope the Home asks the room who is a member before it admits anybody (a shared secret
+ * between the two workers; `GET /clubs/:id/standing-of`), and the room calls the Home FOR the member
  * it verified (`POST /clubs/:id/huddle/:op`). The one credential that comes back (the join's `authToken`)
- * passes through the card room once and goes to the browser SDK and nowhere else: not to state that
+ * passes through the room once and goes to the browser SDK and nowhere else: not to state that
  * persists, not to a URL, not to a log.
  *
  * WHO MAY BE THERE is the club's roster: a host or member of the club, playing or not. A member who is
@@ -29,9 +29,9 @@ export type HuddleReply =
   | { ok: false; error: string; notConfigured?: boolean; noHomeSession?: boolean };
 
 /**
- * THE ROAD: through the card room. A person who signed in through their Home holds no Home bearer in this
+ * THE ROAD: through the room. A person who signed in through their Home holds no Home bearer in this
  * browser (the code exchange happened server-side, and a Home credential is not something an app keeps in a
- * tab), so the card room — which verified their session and keeps the club's roster — calls the Home for
+ * tab), so the room — which verified their session and keeps the club's roster — calls the Home for
  * them, server-to-server under the paired secret, naming their agent. `POST /clubs/:id/huddle/:op` with the
  * card-room session; what comes back is passed through once and kept nowhere.
  */
@@ -49,7 +49,7 @@ async function op(token: string, name: string, scope: HuddleScope, extra: Record
   if (b.ok === true) {
     return { ok: true, run: (b.run as HuddleRunView | null) ?? null, ...(typeof b.authToken === 'string' ? { authToken: b.authToken } : {}), ...(b.participant ? { participant: b.participant as { role: 'host' | 'participant'; correlationId: string } } : {}), ...(typeof b.parks === 'string' ? { parks: b.parks } : {}) };
   }
-  const error = String(b.error ?? `the card room answered ${r.status}`);
+  const error = String(b.error ?? `the room answered ${r.status}`);
   return { ok: false, error: error === 'huddles_not_configured' ? 'Huddles are not switched on here yet.' : error, ...(error === 'huddles_not_configured' ? { notConfigured: true } : {}) };
 }
 
