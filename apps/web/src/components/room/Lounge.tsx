@@ -82,6 +82,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const chipFlights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; t: number; delay: number }>>([]);
   /** the camera is placed, not flown, the first time it has a body to follow */
   const camSettled = useRef(false);
+  /** YOUR OWN LOOK: scroll zooms, right-drag orbits — offsets laid over the follow camera, seated or walking */
+  const camCtl = useRef({ zoom: 1, yaw: 0, pitch: 0, dragging: false, lastX: 0, lastY: 0 });
   const [kitReady, setKitReady] = useState(false);
   const me = useRef<{ avatar: ParticipantAvatar; name: string; goal: pc.Vec3 | null; heading: { tableId: string; seat: number; yaw: number } | null } | null>(null);
   const onSitRef = useRef(onSitRequest); onSitRef.current = onSitRequest;
@@ -141,7 +143,12 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     // walking, clicking, the follow camera — every frame
     a.keyboard!.on(pc.EVENT_KEYDOWN, (e: pc.KeyboardEvent) => { const k = keyOf(e.key ?? -1); if (k) { keys.current.add(k); if (me.current) me.current.goal = null; e.event?.preventDefault(); } });
     a.keyboard!.on(pc.EVENT_KEYUP, (e: pc.KeyboardEvent) => { const k = keyOf(e.key ?? -1); if (k) keys.current.delete(k); });
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('wheel', (e) => { e.preventDefault(); const k = camCtl.current; k.zoom = Math.max(0.45, Math.min(2.4, k.zoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); }, { passive: false });
+    a.mouse!.on(pc.EVENT_MOUSEUP, () => { camCtl.current.dragging = false; });
+    a.mouse!.on(pc.EVENT_MOUSEMOVE, (e: pc.MouseEvent) => { const k = camCtl.current; if (!k.dragging) return; k.yaw -= e.dx * 0.006; k.pitch = Math.max(-0.5, Math.min(0.6, k.pitch + e.dy * 0.004)); });
     a.mouse!.on(pc.EVENT_MOUSEDOWN, (e: pc.MouseEvent) => {
+      if (e.button === pc.MOUSEBUTTON_RIGHT || e.button === pc.MOUSEBUTTON_MIDDLE) { const k = camCtl.current; k.dragging = true; return; }
       if (!me.current || e.button !== pc.MOUSEBUTTON_LEFT) return;
       const from = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.nearClip);
       const to = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.farClip);
@@ -160,12 +167,14 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // in the chair: the body is where the seat is; the camera looks over its right shoulder, above the chair
         // back, down at the felt — the table is what a seated person looks at
         m.avatar.update(dt);
-        const p = m.avatar.pos, yaw = m.avatar.yaw;
-        const behind = new pc.Vec3(p.x - Math.sin(yaw) * 1.05 + Math.cos(yaw) * 0.45, 2.75, p.z - Math.cos(yaw) * 1.05 - Math.sin(yaw) * 0.45);
+        const p = m.avatar.pos; const cc = camCtl.current; const yaw = m.avatar.yaw + cc.yaw;
+        const dist = 2.6 * cc.zoom, up = (3.9 + cc.pitch * 3) * cc.zoom;
+        const behind = new pc.Vec3(p.x - Math.sin(yaw) * dist + Math.cos(yaw) * 0.3, Math.max(1.2, up), p.z - Math.cos(yaw) * dist - Math.sin(yaw) * 0.3);
         // arriving already in the chair, the camera is simply there — no swoop down from the door over the felt
         if (!camSettled.current) { camera.setPosition(behind); camSettled.current = true; }
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
-        camera.lookAt(p.x + Math.sin(yaw) * 1.9, 0.72, p.z + Math.cos(yaw) * 1.9);
+        // at the far rail, so the people across the felt and their names sit in the upper third of the frame
+        camera.lookAt(p.x + Math.sin(m.avatar.yaw) * 2.4, 0.9, p.z + Math.cos(m.avatar.yaw) * 2.4);
       } else if (m) {
         const av = m.avatar; const pos = av.pos;
         let dx = 0, dz = 0;
@@ -200,7 +209,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         }
         av.moved(); av.update(dt);
         if (moved) socket.pose(pos.x, pos.z, av.yaw);
-        const behind = new pc.Vec3(Math.max(-10.5, Math.min(10.5, pos.x - Math.sin(av.yaw) * 5.5)), 4.2, Math.max(-10.5, Math.min(10.5, pos.z - Math.cos(av.yaw) * 5.5)));
+        const cc = camCtl.current; const cy = av.yaw + cc.yaw; const dist = 5.5 * cc.zoom, up = Math.max(1.5, (4.2 + cc.pitch * 4) * cc.zoom);
+        const behind = new pc.Vec3(Math.max(-10.5, Math.min(10.5, pos.x - Math.sin(cy) * dist)), up, Math.max(-10.5, Math.min(10.5, pos.z - Math.cos(cy) * dist)));
         if (!camSettled.current) { camera.setPosition(behind); camSettled.current = true; }
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
         camera.lookAt(pos.x, 1.2, pos.z);
@@ -227,7 +237,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         f.entity.setEulerAngles((1 - e) * 35 + e * (f.tilt ?? 0), (f.yawFrom + (f.yawTo - f.yawFrom + 2 * Math.PI) * e) * 180 / Math.PI, 0);
       }
       flights.current = flights.current.filter((f) => f.t < 1);
-      for (const f of chipFlights.current) { f.t = Math.min(1, f.t + dt / 0.3); const e = 1 - (1 - f.t) * (1 - f.t); const p = new pc.Vec3().lerp(f.from, f.to, e); p.y += Math.sin(e * Math.PI) * 0.12; f.entity.setLocalPosition(p); }
+      for (const f of chipFlights.current) { if (f.delay > 0) { f.delay -= dt; continue; } f.t = Math.min(1, f.t + dt / 0.55); const e = 1 - (1 - f.t) * (1 - f.t); const p = new pc.Vec3().lerp(f.from, f.to, e); p.y += Math.sin(e * Math.PI) * 0.28; f.entity.setLocalPosition(p); }
       chipFlights.current = chipFlights.current.filter((f) => f.t < 1);
       // the plates follow their bodies on screen — at 25 Hz, which is what text over a body needs
       plateClock += dt;
@@ -307,6 +317,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       add('cylinder', wood, [0, 0.715, 0], [3.16, 0.03, 3.16]);
       add('cylinder', wood, [0, 0.4, 0], [0.5, 0.66, 0.5]);
       add('cylinder', wood, [0, 0.03, 0], [1.6, 0.06, 1.6]);
+      // THE DEALER'S STOOL at the gap between the last seat and the first — furniture, so it is there before the dealer
+      { const ang = ((t.seats - 0.5) / t.seats) * Math.PI * 2; const r = CHAIR_R + CHAIR_BACK; if (furnished) k!.place('stoolBar', g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI, 0.8); else add('box', wood, [Math.sin(ang) * r, 0.3, Math.cos(ang) * r], [0.4, 0.6, 0.4]); }
       // A CHAIR is the kit's, a little outside where the body's feet go (CHAIR_R), turned to the felt; a seat pad
       // and a back stand in until the kit has loaded.
       for (let i = 0; i < t.seats; i++) {
@@ -419,7 +431,6 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const av = new ParticipantAvatar(lib, 'ink', 'follow'); av.place(at.x, at.z, yaw); a.root.addChild(av.entity);
       // seated, like every dealer — on a stool of their own at the gap
       av.sitAt({ at, yaw, centre: new pc.Vec3(an.x, 0, an.y) });
-      if (kit.current?.loaded && scenery.current) kit.current.place('stoolBar', scenery.current, an.x + Math.sin(ang) * (r + CHAIR_BACK), an.y + Math.cos(ang) * (r + CHAIR_BACK), ang * 180 / Math.PI, 0.8);
       av.lookHead(new pc.Vec3(an.x, 0.9, an.y));
       // THE DECK in the dealer's left hand: a stack of cards (the back on top) that follows the hand bone each frame
       const deck3 = new pc.Entity('deck');
@@ -439,6 +450,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     const t = board && manifest ? manifest.tables.find((x) => x.tableId === board.tableId) : undefined; const an = t ? manifest!.anchors[t.anchor] : undefined;
     if (!a || !ch || !board || !manifest || !you?.seatedAt || you.seatedAt.tableId !== board.tableId || !t || !an) { chipRoot.current?.destroy(); chipRoot.current = null; return; }
     const v = board.view; const cx = an.x, cz = an.y;
+    if (chipHand.current !== (v.hand?.handNo ?? -1)) { pushed.current.clear(); chipHand.current = v.hand?.handNo ?? -1; }
     const sig = JSON.stringify([v.hand?.handNo ?? -1, v.seats.map((s2) => [s2.seat, s2.stack, s2.inHand?.streetBet ?? 0]), v.hand?.pots.map((p) => p.amount) ?? []]);
     if (sig === chipSig.current && chipRoot.current) return;
     const fresh = new pc.Entity('chips-root'); a.root.addChild(fresh);
@@ -453,15 +465,19 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         const { entity, top } = ch.pile(bet, bx, H, bz, fresh);
         // NEW chips this street fly in from where the seat sits — "throwing out chips"
         const was = pushed.current.get(seat.seat) ?? 0;
-        if (bet > was) { const from = new pc.Vec3(cx + sx * 1.18 + px * 0.42, H + 0.06, cz + sz * 1.18 + pz * 0.42); chipFlights.current.push({ entity, from, to: entity.getLocalPosition().clone(), t: 0, delay: 0 }); entity.setLocalPosition(from); }
+        if (bet > was) {
+          const from = new pc.Vec3(cx + sx * 1.18 + px * 0.42, H + 0.06, cz + sz * 1.18 + pz * 0.42);
+          chipFlights.current.push({ entity, from, to: entity.getLocalPosition().clone(), t: 0, delay: 0.15 }); entity.setLocalPosition(from);
+          // the person pushes them: the seat's body reaches with its right arm as the chips leave
+          const who = seat.playerId === state.you ? me.current?.avatar : bodies.current.get(seat.playerId)?.avatar ?? bots.current.get(`${t.tableId}:${seat.seat}`);
+          who?.dealFlick();
+        }
         pushed.current.set(seat.seat, bet);
         void top;
       } else pushed.current.set(seat.seat, 0);
     }
     const pot = (v.hand?.pots.reduce((s2, p) => s2 + p.amount, 0) ?? 0);
     { const yourAng = (you.seatedAt.seat / t.seats) * Math.PI * 2; const rx = Math.cos(yourAng), rz = -Math.sin(yourAng); if (pot > 0) ch.pile(pot, cx + rx * 1.05, H, cz + rz * 1.05, fresh, 0.08); }
-    // a new hand clears what was pushed
-    if (chipHand.current !== (v.hand?.handNo ?? -1)) { pushed.current.clear(); chipHand.current = v.hand?.handNo ?? -1; }
     chipRoot.current?.destroy(); chipRoot.current = fresh; chipSig.current = sig;
   }, [board, state.manifest, state.people, state.you]);
 
@@ -552,7 +568,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         ))}
       </div>
       {!state.manifest ? <div className="lounge-loading-inline"><p className="hint">Walking in…</p></div> : null}
-      <div className="lounge-help hint">Walk with W A S D or the arrow keys, or click the floor. Click a free chair to sit down.</div>
+      <div className="lounge-help hint">Walk with W A S D or the arrow keys, or click the floor. Click a free chair to sit down. Scroll to zoom; right-drag to look around.</div>
     </div>
   );
 });
