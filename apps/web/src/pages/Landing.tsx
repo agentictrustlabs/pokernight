@@ -172,7 +172,7 @@ function Hero({ live }: { live: LiveLobby }) {
             are a short directed list beside it — each going to a page that stands on its own. */}
         <div className="hero-actions">
           <a className="cta-welcome cta-big" href="#/signin">
-            Come play or hang out
+            Come hang out and play
           </a>
           <ul className="hero-links">
             <li><a href="#/signup"><strong>First time? Sign up and play</strong><span>A name and one trip to your Home.</span></a></li>
