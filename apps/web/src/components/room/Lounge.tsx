@@ -27,6 +27,7 @@ const WALK_SPEED = 2.0; // m/s — the walk clip's stride, so feet do not slide
 const ROOM_DIR = '/room';
 const KIT_URL = '/room/lounge-kit.glb';
 const CHAIR_R = 1.78; // where a seated body's feet go, from the table's centre — knees under the rail, as at a real table
+const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
 const deckSide = new pc.StandardMaterial();
 const CHAIR_PIECE = 'loungeChair'; // a padded armchair at the felt, not a kitchen chair
@@ -189,6 +190,14 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         }
         // The walls are at ±11; a body stops a step short, and the camera never leaves the room.
         pos.x = Math.max(-9.5, Math.min(9.5, pos.x)); pos.z = Math.max(-9.5, Math.min(9.5, pos.z));
+        // FURNITURE IS SOLID: a table is a disc a little wider than its rail, the bar a box; a step that lands
+        // inside is pushed back out along the nearest edge, so the body slides around rather than through. A
+        // chair's seated anchor (CHAIR_R) lies just outside the disc, so walking up to sit is never blocked.
+        const mf = manifestRef.current;
+        if (mf) {
+          for (const t of mf.tables) { const an = mf.anchors[t.anchor]; if (!an) continue; const dx = pos.x - an.x, dz = pos.z - an.y; const d = Math.hypot(dx, dz); if (d < TABLE_SOLID && d > 1e-4) { pos.x = an.x + dx / d * TABLE_SOLID; pos.z = an.y + dz / d * TABLE_SOLID; } }
+          const bar = mf.anchors.bar; if (bar) { const dx = pos.x - bar.x, dz = pos.z - bar.y; if (Math.abs(dx) < 0.9 && Math.abs(dz) < 2.9) { if (0.9 - Math.abs(dx) < 2.9 - Math.abs(dz)) pos.x = bar.x + Math.sign(dx || 1) * 0.9; else pos.z = bar.y + Math.sign(dz || 1) * 2.9; } }
+        }
         av.moved(); av.update(dt);
         if (moved) socket.pose(pos.x, pos.z, av.yaw);
         const behind = new pc.Vec3(Math.max(-10.5, Math.min(10.5, pos.x - Math.sin(av.yaw) * 5.5)), 4.2, Math.max(-10.5, Math.min(10.5, pos.z - Math.cos(av.yaw) * 5.5)));
