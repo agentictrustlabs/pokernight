@@ -1,6 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as pc from 'playcanvas';
 import type { RoomManifest, RoomPerson } from '@pokernight/protocol';
+import type { TableView } from '../../lib/types';
+import { Card } from '../Card';
 import type { RoomSocket, RoomState } from '../../lib/roomSocket';
 import { Portrait } from '../huddle/Portrait';
 import { AvatarLibrary, ParticipantAvatar, type Seat } from './embodiment';
@@ -30,6 +32,8 @@ export interface LoungeProps {
   onZone?: (zone: string | null) => void;
   /** Your body has walked up to this chair and turned to it: the page takes the seat at the TABLE. */
   onSitRequest?: (tableId: string, seat: number) => void;
+  /** THE FELT (spec §3.4, step 5): the seated table's view, drawn on its table — cards, pot, whose turn. */
+  board?: { tableId: string; view: TableView; names: Record<string, string> } | null;
 }
 /** What the page can tell the lounge to do with your body. */
 export interface LoungeHandle {
@@ -38,9 +42,14 @@ export interface LoungeHandle {
 }
 
 interface BodyHandle { avatar: ParticipantAvatar; name: string }
-interface Plate { id: string; kind: 'name' | 'table' | 'anchor' | 'bubble'; text: string; sub?: string; world: pc.Vec3; you?: boolean; /** whose face hangs on the plate, when the huddle has one */ face?: string; x?: number; y?: number; visible?: boolean }
+interface Plate {
+  id: string; kind: 'name' | 'table' | 'anchor' | 'bubble' | 'card' | 'pot'; text: string; sub?: string; world: pc.Vec3; you?: boolean;
+  /** whose face hangs on the plate, when the huddle has one */ face?: string;
+  /** a card plate: the card's code, or none for a card face down */ card?: string | null;
+  x?: number; y?: number; z?: number; visible?: boolean;
+}
 
-export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ socket, state, onZone, onSitRequest }, ref) {
+export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ socket, state, onZone, onSitRequest, board }, ref) {
   const host = useRef<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const app = useRef<pc.Application | null>(null);
@@ -160,7 +169,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         for (const pl of plateRef.current.values()) {
           cam.worldToScreen(pl.world, out);
           // z is camera-space depth in world units; behind the camera is negative.
-          next.push({ ...pl, x: out.x, y: out.y, visible: out.z > 0 });
+          next.push({ ...pl, x: out.x, y: out.y, z: out.z, visible: out.z > 0 });
         }
         setPlates(next);
       }
@@ -266,6 +275,36 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     for (const [key, bt] of [...bots.current]) if (!seenBots.has(key)) { bt.destroy(); bots.current.delete(key); plateRef.current.delete(`bot:${key}`); }
   }, [state.people, state.you, state.manifest]);
 
+  // ── THE FELT: the seated table's cards, pot and turn, laid on its table from the view ──
+  // The community cards run across the centre, turned to face your chair; each seat's two cards lie on the felt
+  // in front of it, face down unless the view shows them (yours; a showdown). Cards are the flat board's own
+  // `Card`, projected — real card art, not textures — sized by depth in `LoungeCards`.
+  useEffect(() => {
+    for (const [id] of [...plateRef.current]) if (id.startsWith('felt:')) plateRef.current.delete(id);
+    const manifest = state.manifest; const you = state.you ? state.people.get(state.you) : undefined;
+    if (!board || !manifest || !you?.seatedAt || you.seatedAt.tableId !== board.tableId) return;
+    const t = manifest.tables.find((x) => x.tableId === board.tableId); const an = t ? manifest.anchors[t.anchor] : undefined;
+    if (!t || !an) return;
+    const v = board.view; const cx = an.x, cz = an.y; const yourAng = (you.seatedAt.seat / t.seats) * Math.PI * 2;
+    // the row's direction is across your line of sight: perpendicular to the ray from the centre to your chair
+    const rx = Math.cos(yourAng), rz = -Math.sin(yourAng);
+    const H = 0.86; // just above the felt (the felt's top is 0.84)
+    if (v.hand) {
+      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.24; plateRef.current.set(`felt:board:${i}`, { id: `felt:board:${i}`, kind: 'card', text: c, card: c, world: new pc.Vec3(cx + rx * o, H, cz + rz * o) }); });
+      const pot = v.hand.pots.reduce((a, p) => a + p.amount, 0) + v.seats.reduce((a, s) => a + (s.inHand?.streetBet ?? 0), 0);
+      if (pot > 0) plateRef.current.set('felt:pot', { id: 'felt:pot', kind: 'pot', text: `${pot}`, sub: 'pot', world: new pc.Vec3(cx - Math.sin(yourAng) * 0.55, H + 0.02, cz - Math.cos(yourAng) * 0.55) });
+    }
+    for (const seat of v.seats) {
+      if (!seat.inHand || seat.inHand.folded) continue;
+      const ang = (seat.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
+      const px = Math.cos(ang), pz = -Math.sin(ang); // across that seat's own line
+      const cards = seat.inHand.holeCards ?? [null, null];
+      cards.forEach((c, i) => { const o = (i - 0.5) * 0.14; const id = `felt:hole:${seat.seat}:${i}`; plateRef.current.set(id, { id, kind: 'card', text: c ?? '', card: c, world: new pc.Vec3(cx + sx * 1.35 + px * o, H, cz + sz * 1.35 + pz * o) }); });
+    }
+    // whose turn: a mark under the acting seat's cards
+    if (v.hand?.toAct != null) { const ang = (v.hand.toAct / t.seats) * Math.PI * 2; plateRef.current.set('felt:turn', { id: 'felt:turn', kind: 'pot', text: v.hand.toAct === v.viewerSeat ? 'your turn' : `${board.names[v.seats.find((s) => s.seat === v.hand!.toAct)?.playerId ?? ''] ?? 'to act'}`, world: new pc.Vec3(cx + Math.sin(ang) * 1.0, H + 0.02, cz + Math.cos(ang) * 1.0) }); }
+  }, [board, state.manifest, state.people, state.you]);
+
   // your own plate follows your own body (which moves locally, ahead of the server)
   useEffect(() => {
     const t = setInterval(() => { const m = me.current; const pl = state.you ? plateRef.current.get(`name:${state.you}`) : null; if (m && pl) pl.world = m.avatar.pos.clone().add(new pc.Vec3(0, m.avatar.seated ? 1.6 : 2.05, 0)); }, 50);
@@ -285,7 +324,12 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     <div className="lounge" ref={host}>
       <canvas ref={canvas} />
       <div className="lounge-overlay" aria-hidden="true">
-        {plates.filter((p) => p.visible).map((p) => (
+        {plates.filter((p) => p.visible).map((p) => p.kind === 'card' ? (
+          // a card on the felt: the flat board's card art, sized by how far away it lies (never smaller than readable)
+          <div key={p.id} className="lounge-plate lounge-plate-card" style={{ left: p.x, top: p.y, ['--card-w' as string]: `${Math.max(26, Math.min(64, 96 / Math.max(p.z ?? 1, 0.5)))}px`, ['--card-h' as string]: `${Math.max(36, Math.min(90, 134 / Math.max(p.z ?? 1, 0.5)))}px` }}>
+            <Card card={p.card ?? undefined} />
+          </div>
+        ) : (
           <div key={p.id} className={`lounge-plate lounge-plate-${p.kind}${p.you ? ' lounge-plate-you' : ''}`} style={{ left: p.x, top: p.y }}>
             {p.face ? <Portrait name={p.face} size="plate" /> : null}
             <span>{p.text}</span>{p.sub ? <small>{p.sub}</small> : null}

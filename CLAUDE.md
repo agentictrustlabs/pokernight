@@ -311,6 +311,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   SOCKET — `join` with the practice stack, wait for `seat-joined`, close — and re-reads the room so the body sits.
   Play-money tables only; a money seat stays a button on the flat board. "Stand up" is the same visit with `leave`.
   A seat outlives the socket that took it (a socket is a tab), which is exactly what lets the room take one.
+  **THE FELT IN THE ROOM IS THE VIEW, PROJECTED** (step 5, scratch `felt-walk.cjs`): seated at a hold'em table,
+  `RoomPage` holds the table's socket beside the room's and the lounge lays `view` on the felt as `card`/`pot`
+  plates (the flat board's `Card` art, sized by depth); the HUD is your two cards and the flat `ActionBar`. TRAP:
+  `useRef(expr)` evaluates `expr` EVERY render — a WebGL probe written that way opened a context per render, and
+  once the seated table's clock re-rendered the page twice a second the browser lost the lounge's context ("too
+  many active WebGL contexts"). Probes go in a `useState` initializer, and release their context.
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must

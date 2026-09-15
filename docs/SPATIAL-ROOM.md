@@ -1,6 +1,6 @@
 # The Room — a 3D card room with people in it
 
-**Status:** specification, 2026-09-14; **phase 1 steps 1–4 built the same day, then the bodies replaced with rigged humans (§3.6)** (renderer: PlayCanvas; step 3 —
+**Status:** specification, 2026-09-14; **phase 1 steps 1–4 and phase 2's step 5 built the same day, the bodies replaced with rigged humans (§3.6), sitting from the room (§7)** (renderer: PlayCanvas; step 3 —
 voice placed by body — for a club's lounge, on the club's huddle; step 4 — `components/huddle/Portrait.tsx`, the
 huddle's face at the seat on the flat board and on the name plate over the body, matched by name, camera or
 lit initial, ring when speaking, mic dot) — `SceneDO` (migration v6),
@@ -245,7 +245,12 @@ export type RoomServerMessage = { type: 'room'; manifest: RoomManifest; people: 
 2. **Presence**: `SceneDO` sockets; ten bodies; interpolation; zones.
 3. **Voice, placed**: the room's meeting; panners; the bar louder than the fire.
 4. **Faces**: `VideoTexture` on heads within 8 m; portrait rings beyond and for cameras off.
-5. **The table**: felt from `view`; sprites for cards; the HUD's ActionBar over it; `seat` from the chair.
+5. **The table**: felt from `view`; sprites for cards; the HUD's ActionBar over it; `seat` from the chair. —
+   **built 2026-09-14**: while you sit at a hold'em table in the room, `RoomPage` holds the TABLE's socket beside
+   the room's (the flat board's own `reduce`), the lounge lays the view on the felt as projected plates — the
+   flat board's `Card` art for the community and every seat's two cards (face down unless the view shows
+   them), the pot, whose turn — and the HUD over the scene is your two cards in hand and the flat `ActionBar`,
+   the same `act` on the same wire. Canasta keeps the flat board (one board per game).
 6. **Characters**: personas' bodies; the coach's whisper; the lectern and the `GuestDrawer`.
 7. **Agents move bodies**: `scene.*` on the card, the wire, the Home's "walk me over".
 8. **Story cues**: `SceneCue { lights, line: { anchor, text }, door, camera }` from a script the host writes

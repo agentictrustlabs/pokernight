@@ -6292,8 +6292,8 @@ button.tag.guest {
   align-items: center;
   gap: 0.8rem;
 }
+.room-scene { grid-area: scene; position: relative; min-width: 0; }
 .lounge {
-  grid-area: scene;
   position: relative;
   height: min(68vh, 640px);
   border-radius: var(--radius);
@@ -6336,7 +6336,6 @@ button.tag.guest {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .lounge-loading {
-  grid-area: scene;
   height: min(68vh, 640px);
   display: grid;
   place-items: center;
@@ -6483,3 +6482,17 @@ button.tag.guest {
 .portrait-plate .portrait-initial { color: #f4f2ea; font-size: 1.2rem; }
 .portrait-plate .portrait-mic { width: 12px; height: 12px; right: 1px; bottom: 1px; border-color: #1c2420; }
 .room-chairs { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+/* cards on the felt: centred on their spot, sized by depth (the plate sets --card-w/--card-h) */
+.lounge-overlay .lounge-plate-card { transform: translate(-50%, -50%); }
+.lounge-plate-card .card { width: var(--card-w); height: var(--card-h); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
+.lounge-plate-pot span { color: #f4f2ea; font-weight: 700; background: rgba(0, 0, 0, 0.45); padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 12px; }
+.lounge-plate-pot small { color: #d9b26a; }
+/* the HUD over the room: your cards in your hand and the flat action bar */
+.room-hud { position: absolute; left: 0; right: 0; bottom: 0; display: grid; gap: 0.4rem; padding: 0.5rem; pointer-events: none; }
+.room-hud > * { pointer-events: auto; }
+.room-hand { display: flex; gap: 0.3rem; align-items: flex-end; --card-w: 56px; --card-h: 78px; }
+.room-hand .card { width: var(--card-w); height: var(--card-h); }
+.room-hud .actions { margin: 0; }
+
+.room-hud { grid-template-columns: auto 1fr; align-items: end; }
+.room-hud .actions { width: 640px; max-width: 100%; box-sizing: border-box; justify-self: end; }

@@ -3,6 +3,11 @@ import type { AppSession } from '../lib/types';
 import { RoomSocket } from '../lib/roomSocket';
 import { api as tables, roomApi as api, tableSocketUrl } from '../lib/api';
 import { leaveSeat, takeSeat } from '../lib/roomSeat';
+import { TableSocket, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
+import { ActionBar } from '../components/ActionBar';
+import { Card } from '../components/Card';
+import { DRAWN_GAME } from '../lib/games';
+import type { Action } from '../lib/types';
 import type { LoungeHandle } from '../components/room/Lounge';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { useClubHuddle } from '../components/huddle/ClubHuddleProvider';
@@ -11,6 +16,11 @@ import { SpatialVoice } from '../components/room/SpatialVoice';
 import { clubHash, HOME_HASH } from '../lib/routes';
 
 /** The scene is a separate chunk — three.js never loads for a page that has no room (the Leaflet rule). */
+/** Can this browser draw the room? Asked of a throwaway canvas whose context is released at once. */
+function hasWebGL(): boolean {
+  if (typeof document === 'undefined') return false;
+  try { const c = document.createElement('canvas'); const gl = (c.getContext('webgl2') || c.getContext('webgl')) as WebGLRenderingContext | null; if (!gl) return false; gl.getExtension('WEBGL_lose_context')?.loseContext(); return true; } catch { return false; }
+}
 /** The stack a play-money seat is taken with from the room — the practice table's, for the same reason. */
 const ROOM_STACK = 200;
 const Lounge = lazy(() => import('../components/room/Lounge').then((m) => ({ default: m.Lounge })));
@@ -31,7 +41,20 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
   /** The sit in progress, as a line for the room bar: walking, sitting, refused. */
   const [sitting, setSitting] = useState<{ tableId: string; seat: number; phase: 'walking' | 'sitting' | 'standing' } | null>(null);
   const [sitError, setSitError] = useState<string | null>(null);
-  const webgl = useRef<boolean>(typeof document !== 'undefined' && (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })());
+  /**
+   * THE SEATED TABLE'S OWN SOCKET (spec §3.4, step 5). While you sit at a hold'em table in the room, this page
+   * holds a second socket — the table's, reduced exactly as the flat board reduces it — and the lounge draws the
+   * view on the felt while the flat ActionBar sits over the scene as the HUD. Byte-identical at the table: it
+   * is the same `act` on the same wire. A canasta table keeps the flat board (one board per game; no felt yet).
+   */
+  const [tableState, setTableState] = useState<TableState>(initialState);
+  const tableSock = useRef<TableSocket | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  // ASKED ONCE. `useRef(expr)` evaluates `expr` on EVERY render and keeps only the first — so a probe written that
+  // way opened a WebGL context per render, and once the page re-rendered every half second (the seated table's
+  // clock) the browser hit "too many active WebGL contexts" and LOST THE LOUNGE'S. A lazy initializer runs once.
+  const [webglOk] = useState<boolean>(() => hasWebGL());
+  const webgl = useRef<boolean>(webglOk);
   useEffect(() => {
     if (!webgl.current) return;
     const s = new RoomSocket(roomId, session.token, undefined, bump);
@@ -43,6 +66,17 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
     return () => { clearInterval(relayout); s.close(); sock.current = null; };
   }, [roomId, session.token]);
   const onZone = useCallback((z: string | null) => setZone(z), []);
+  const seatedTableId = (() => { const s0 = sock.current; const me = s0?.state.you ? s0.state.people.get(s0.state.you) : undefined; const t = me?.seatedAt && s0?.state.manifest ? s0.state.manifest.tables.find((x) => x.tableId === me.seatedAt!.tableId) : null; return t && (t.game ?? DRAWN_GAME) === DRAWN_GAME ? t.tableId : null; })();
+  useEffect(() => {
+    if (!seatedTableId) { setTableState(initialState); return; }
+    const ts = new TableSocket({ url: tableSocketUrl(seatedTableId, session.token), onMessage: (m) => setTableState((st) => reduce(st, m)), onStatus: (c) => setTableState((st) => setConnection(st, c)) });
+    tableSock.current = ts; ts.connect();
+    const clock = setInterval(() => setNow(Date.now()), 500);
+    return () => { clearInterval(clock); ts.close(); if (tableSock.current === ts) tableSock.current = null; };
+  }, [seatedTableId, session.token]);
+  const act = (action: Action) => { const t = tableState.turn; if (!t) return; tableSock.current?.send({ type: 'act', handNo: t.handNo, action }); };
+  const board = seatedTableId && tableState.view ? { tableId: seatedTableId, view: tableState.view, names: tableState.names } : null;
+  const myHand = board?.view.seats.find((x) => x.seat === board.view.viewerSeat)?.inHand;
   /**
    * THE BODY HAS ARRIVED AT A CHAIR. A seat is the table's own `join` (spec §3.4, open question 3): a
    * play-money table is joined from here with the practice stack; a money table stays a button on the flat
@@ -103,9 +137,18 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
         </div>
       </header>
       {s?.state.error ? <div className="form-error">{s.state.error}</div> : null}
-      <Suspense fallback={<div className="lounge-loading"><p className="hint">Loading the lounge…</p></div>}>
-        {s ? <Lounge ref={lounge} socket={s} state={s.state} onZone={onZone} onSitRequest={onSitRequest} /> : null}
-      </Suspense>
+      <div className="room-scene">
+        <Suspense fallback={<div className="lounge-loading"><p className="hint">Loading the lounge…</p></div>}>
+          {s ? <Lounge ref={lounge} socket={s} state={s.state} onZone={onZone} onSitRequest={onSitRequest} board={board} /> : null}
+        </Suspense>
+        {/* THE HUD: your cards in your hand, and the flat board's own action bar — the same act on the same wire */}
+        {board ? (
+          <div className="room-hud">
+            {myHand?.holeCards?.length ? <div className="room-hand" aria-label="Your cards">{myHand.holeCards.map((c, i) => <Card key={i} card={c} size="lg" />)}</div> : null}
+            <ActionBar turn={tableState.turn} view={board.view} now={now} onAct={act} waitingOn={board.view.hand?.toAct != null && board.view.hand.toAct !== board.view.viewerSeat ? board.names[board.view.seats.find((x) => x.seat === board.view.hand!.toAct)?.playerId ?? ''] ?? null : null} />
+          </div>
+        ) : null}
+      </div>
       {s && inThisHuddle ? <SpatialVoice state={s.state} /> : null}
       <div className="room-bar">
         {seatedTable ? (
