@@ -299,10 +299,17 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   Walk: scratch `voice-walk.cjs` (fake media; `window.__spatialVoices` counts placed voices).
 - **A BODY IS TOLD WHAT IT IS DOING, NEVER HOW TO MOVE A LIMB** (2026-09-14, `components/room/embodiment.ts`,
   spec §3.6). `ParticipantAvatar` takes semantic acts — `place`, `walkTo`, `sitAt(seat)`, `stand`, `lookAt`,
-  `gesture`, `talking` — and ONE PlayCanvas anim state graph for everybody makes them happen on two rigged,
-  DRESSED humans (Quaternius' CC0 base characters + animation library, retargeted by bone name and clothed by
-  skinning weights — `public/room/person-m|f.glb` + a `skin-<m|f>-<word>.webp` per palette word; the build is the
-  scratch `ubc/build-person.mjs` + `dress.py`; licence beside the files). Never `quantize` a skinned body.
+  `gesture`, `talking` — and ONE PlayCanvas anim state graph for everybody makes them happen on ONE rigged,
+  CLOTHED, ordinary human (`public/room/person.glb`, CC0) whose outfit is a 32×32 PALETTE the mesh's UVs point at
+  (`skin-<word>.png`, ~140 bytes) — so six people in six outfits cost one download and six swatches, and a new
+  outfit is a recoloured swatch rather than another body. Never `quantize` a skinned body.
+  **RETARGETING A CLIP LIBRARY ONTO A FOREIGN RIG IS NOT A NAME-MAPPED COPY** (scratch `ubc/retarget.mjs`): the
+  two rigs hold their bones in rest frames up to 158° apart (`restcmp.py` measures it), so what carries across is
+  the bone's motion away from ITS OWN rest, re-based globally — `Gt = Gs·Gs_rest⁻¹·Gt_rest`, then back to a local
+  rotation parents-first. Both skeletons are read in ARMATURE space (from the root bone, ignoring the armature
+  node). The hips' travel scales by the two BODIES' measured heights — bone rest positions lie when a rig is
+  authored tiny under a scaled armature node (a hip-to-foot of 0.0001 threw the body skyward). And `prune()`
+  before a texture is attached throws away the mesh's UVs.
   Presence, the `scene.*` skills and the Mystery Night's cues all speak that vocabulary; the block `Figure` is
   gone. Traps: a container's animation ASSETS are named `<file>/animation/<i>` — the clip's name is on the TRACK
   (`asset.resource.name`); a state assigned no track plays a placeholder of duration `MAX_VALUE` and the body

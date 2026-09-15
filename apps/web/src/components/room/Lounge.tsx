@@ -27,6 +27,7 @@ const WALK_SPEED = 2.0; // m/s — the walk clip's stride, so feet do not slide
 const ROOM_DIR = '/room';
 const KIT_URL = '/room/lounge-kit.glb';
 const CHAIR_R = 1.78; // where a seated body's feet go, from the table's centre — knees under the rail, as at a real table
+const HOLE_R = 1.05; // a seat's own cards, from the centre — far enough in that a big card never laps the rail
 const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
 const deckSide = new pc.StandardMaterial();
@@ -224,7 +225,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       for (const dl of dealers.current.values()) {
         dl.avatar.update(dt);
         // the deck rides in the LEFT hand; the cards leave from the RIGHT (dealing) hand
-        const l = dl.avatar.bone('hand_l');
+        const l = dl.avatar.bone('LeftHand');
         if (l) { const hp = l.getPosition(); dl.deck.setPosition(hp.x, hp.y + 0.03, hp.z); dl.deck.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
         const r = dl.avatar.dealHand; if (r) dl.hand.copy(r);
       }
@@ -470,10 +471,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     // each seat's own stack sits just in front of its cards; its street bet is pushed a third of the way to the middle
     for (const seat of v.seats) {
       const ang = (seat.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
-      { const px = Math.cos(ang), pz = -Math.sin(ang); if (seat.stack > 0) ch.pile(seat.stack, cx + sx * 1.18 + px * 0.42, H, cz + sz * 1.18 + pz * 0.42, fresh, 0.08); }
+      { const px = Math.cos(ang), pz = -Math.sin(ang); if (seat.stack > 0) ch.pile(seat.stack, cx + sx * 1.14 + px * 0.34, H, cz + sz * 1.14 + pz * 0.34, fresh, 0.08); }
       const bet = seat.inHand?.streetBet ?? 0;
       if (bet > 0) {
-        const px = Math.cos(ang), pz = -Math.sin(ang); const bx = cx + sx * 0.78 + px * 0.42, bz = cz + sz * 0.78 + pz * 0.42;
+        const px = Math.cos(ang), pz = -Math.sin(ang); const bx = cx + sx * 0.72 + px * 0.34, bz = cz + sz * 0.72 + pz * 0.34;
         const { entity, top } = ch.pile(bet, bx, H, bz, fresh);
         // NEW chips this street fly in from where the seat sits — "throwing out chips"
         const was = pushed.current.get(seat.seat) ?? 0;
@@ -549,7 +550,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const ang = (seat.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
       const px = Math.cos(ang), pz = -Math.sin(ang); // across that seat's own line
       const cards = seat.inHand.holeCards ?? [null, null];
-      cards.forEach((c, i) => { const o = (i - 0.5) * 0.19; lay(`hole:${seat.seat}:${i}`, c, cx + sx * 1.3 + px * o, cz + sz * 1.3 + pz * o, ang + Math.PI, i * 0.0005); });
+      cards.forEach((c, i) => { const o = (i - 0.5) * 0.17; lay(`hole:${seat.seat}:${i}`, c, cx + sx * HOLE_R + px * o, cz + sz * HOLE_R + pz * o, ang + Math.PI, i * 0.0005); });
     }
   }, [board, state.manifest, state.people, state.you]);
 

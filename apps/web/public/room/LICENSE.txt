@@ -1,11 +1,10 @@
-person-m.glb, person-f.glb, skin-*.webp — built from two CC0 packs by Quaternius (https://quaternius.com):
-  Universal Base Characters (Standard): the Superhero male/female bodies, faces, eyes, hair (Hair_SimpleParted,
-  Hair_Long) and eyebrows; Universal Animation Library (Standard), Unreal-rig export: the eleven clips the room
-  uses (idle, talking, walk, sit down, seated, seated talking, stand up, interact, pick up, dance), retargeted by
-  bone name (rotations as they are; the pelvis's motion scaled to metres; other translations dropped so each
-  body keeps its proportions). Clothes are painted onto the base colour by skinning weights (a bone belongs to a
-  garment) — one skin per palette word. Tools: FBX2glTF, gltf-transform, PIL. CC0 1.0 Universal:
-  https://creativecommons.org/publicdomain/zero/1.0/
+person.glb, skin-*.png — Quaternius, CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/):
+  the body, its clothes and its rig are "Animated Human" (https://opengameart.org/content/animated-human-low-poly);
+  the ten clips it plays (idle, talking, walk, sit down, seated, seated talking, stand up, interact, pick up,
+  dance) are the Universal Animation Library, RETARGETED onto that rig by bone name in the rest pose the two rigs
+  actually hold — their frames differ by up to 158°, so a plain name-mapped copy makes a pretzel
+  (scratch `ubc/retarget.mjs`, `restcmp.py`, `finish.mjs`). The outfit is a 32×32 palette the mesh's UVs point
+  at, so a new outfit is a few hundred bytes and one recoloured swatch, not another body.
 
 lounge-kit.glb — Kenney, Furniture Kit, https://kenney.nl/assets/furniture-kit (via opengameart.org/content/furniture-kit)
 CC0 1.0 Universal (public domain). Seventeen pieces converted OBJ → glTF (obj2gltf), merged into one file with a

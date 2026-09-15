@@ -88,32 +88,24 @@ export class ContainerLibrary {
   get loaded(): boolean { return !!this.asset; }
 }
 
-/** Which of the two bodies a palette word wears, and where its skin is. */
-export function bodyOf(word: string): 'm' | 'f' { return word === 'rose' || word === 'moss' || word === 'brass' ? 'f' : 'm'; }
 export const SKIN_WORDS = ['oak', 'slate', 'brass', 'rose', 'moss', 'ink'];
 
 /**
- * THE BODIES every participant is instantiated from — two rigged, dressed humans (CC0, `public/room/person-m|f.glb`)
- * with the same clips on the same bone names — and a SKIN per palette word (`skin-<m|f>-<word>.webp`, the base
- * colour with the clothes painted on), loaded once each and shared.
+ * THE BODY every participant is instantiated from — one rigged, clothed, ordinary human (CC0,
+ * `public/room/person.glb`) — and an OUTFIT per palette word. The outfit is a 32×32 palette the mesh's UVs point
+ * at, so a person's clothes are a 140-byte swatch swapped onto a cloned material, not another body: six people
+ * in six outfits cost one 756 KB download and six swatches.
  */
-export class AvatarLibrary {
-  private bodies: Record<'m' | 'f', ContainerLibrary>;
+export class AvatarLibrary extends ContainerLibrary {
   private skins = new Map<string, pc.Asset>();
-  constructor(readonly app: pc.Application, private readonly dir: string) {
-    this.bodies = { m: new ContainerLibrary(app, `${dir}/person-m.glb`, 'person-m.glb'), f: new ContainerLibrary(app, `${dir}/person-f.glb`, 'person-f.glb') };
-  }
-  load(): void { this.bodies.m.load(); this.bodies.f.load(); }
-  ready(sex: 'm' | 'f', fn: (a: pc.Asset) => void): void { this.bodies[sex].ready(fn); }
-  get loaded(): boolean { return this.bodies.m.loaded && this.bodies.f.loaded; }
-  /** The skin for this palette word on this body, loading it the first time it is asked for. */
-  skin(sex: 'm' | 'f', word: string, fn: (t: pc.Texture) => void): void {
+  constructor(app: pc.Application, private readonly dir: string) { super(app, `${dir}/person.glb`, 'person.glb'); }
+  /** The outfit for this palette word, loading it the first time it is asked for. */
+  skin(word: string, fn: (t: pc.Texture) => void): void {
     const w = SKIN_WORDS.includes(word) ? word : 'slate';
-    const key = `${sex}-${w}`;
-    let asset = this.skins.get(key);
+    let asset = this.skins.get(w);
     if (!asset) {
-      asset = new pc.Asset(`skin-${key}`, 'texture', { url: `${this.dir}/skin-${key}.webp` }, { srgb: true });
-      this.app.assets.add(asset); this.skins.set(key, asset);
+      asset = new pc.Asset(`skin-${w}`, 'texture', { url: `${this.dir}/skin-${w}.png` }, { srgb: true });
+      this.app.assets.add(asset); this.skins.set(w, asset);
     }
     if (asset.loaded) { fn(asset.resource as pc.Texture); return; }
     asset.ready((a) => fn(a.resource as pc.Texture)); this.app.assets.load(asset);
@@ -122,13 +114,13 @@ export class AvatarLibrary {
 
 /**
  * THE FURNITURE KIT — Kenney's CC0 pieces (`public/room/lounge-kit.glb`, one named node each), instantiated once
- * as a template and CLONED per placement, so a lounge is a list of (piece, x, z, yaw) and a new piece is a
- * node in the file. A piece the kit does not carry places nothing and says so once.
+ * as a template and CLONED per placement, so a lounge is a list of (piece, x, z, yaw) and a new piece is a node
+ * in the file. Kenney's pivots sit at a CORNER, so every clone is wrapped in a pivot at its footprint's centre —
+ * without it a chair turns about its arm and the person sits beside it.
  */
 export class RoomKit extends ContainerLibrary {
   private template: pc.Entity | null = null;
   private missing = new Set<string>();
-  /** each piece's footprint centre in its own frame — Kenney's pivots sit at a corner, and a chair must turn about its middle */
   private centres = new Map<string, pc.Vec3>();
   constructor(app: pc.Application, url: string) { super(app, url, 'lounge-kit.glb'); }
   private ensure(asset: pc.Asset): pc.Entity {
@@ -145,12 +137,10 @@ export class RoomKit extends ContainerLibrary {
     for (const r of e.findComponents('render') as pc.RenderComponent[]) { r.castShadows = true; r.receiveShadows = true; }
     let centre = this.centres.get(piece);
     if (!centre) {
-      // the template stands at the origin: the union of its mesh bounds is the piece's footprint
       const box = new pc.BoundingBox(); let first = true;
       for (const r of (src as pc.Entity).findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) { if (first) { box.copy(mi.aabb); first = false; } else box.add(mi.aabb); }
       centre = new pc.Vec3(box.center.x, 0, box.center.z); this.centres.set(piece, centre);
     }
-    // a pivot at the footprint's middle: the placement turns the piece about its centre, not a corner
     const pivot = new pc.Entity(piece);
     const s0 = (src as pc.Entity).getLocalScale();
     e.setLocalScale(s0.x, s0.y, s0.z); e.setLocalPosition(-centre.x, 0, -centre.z);
@@ -191,20 +181,18 @@ export class ParticipantAvatar {
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow') {
     this.entity = new pc.Entity('avatar');
-    const sex = bodyOf(palette);
-    library.ready(sex, (asset) => this.dress(asset, library, sex));
+    library.ready((asset) => this.dress(asset, library));
   }
 
-  private dress(asset: pc.Asset, library: AvatarLibrary, sex: 'm' | 'f'): void {
+  private dress(asset: pc.Asset, library: AvatarLibrary): void {
     const res = asset.resource as pc.ContainerResource & { animations: pc.Asset[] };
     const body = res.instantiateRenderEntity();
-    // one skin per person: the body's material, cloned, wears the palette word's painted clothes
+    // one outfit per person: the body's material, cloned, wears this palette word's swatch. NEAREST filtering,
+    // because it is a palette — smoothing it bleeds the shirt's colour into the skin along every UV seam.
     for (const render of body.findComponents('render') as pc.RenderComponent[]) {
       for (const mi of render.meshInstances) {
-        const src = mi.material as pc.StandardMaterial;
-        if (!/Superhero/.test(src.name)) continue;
-        const m = src.clone(); mi.material = m;
-        library.skin(sex, this.palette, (t) => { m.diffuseMap = t; m.update(); });
+        const m = (mi.material as pc.StandardMaterial).clone(); mi.material = m;
+        library.skin(this.palette, (t) => { t.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST; t.magFilter = pc.FILTER_NEAREST; m.diffuseMap = t; m.update(); });
       }
       render.castShadows = true;
     }
@@ -219,14 +207,14 @@ export class ParticipantAvatar {
     this.entity.addChild(body);
     this.body = body;
     this.head = body.findByName('Head');
-    this.upperArmR = body.findByName('upperarm_r'); this.foreArmR = body.findByName('lowerarm_r');
+    this.upperArmR = body.findByName('RightArm'); this.foreArmR = body.findByName('RightForeArm');
   }
 
   private get anim(): pc.AnimComponent | null { return this.body?.anim ?? null; }
   /** A bone's world position and rotation this frame (the dealer's hand, for the deck) — null until dressed. */
   bone(name: string): pc.GraphNode | null { return this.body?.findByName(name) ?? null; }
   /** The right hand's world position (the dealer deals from here) — null until dressed. */
-  get dealHand(): pc.Vec3 | null { const h = this.body?.findByName('hand_r'); return h ? h.getPosition().clone() : null; }
+  get dealHand(): pc.Vec3 | null { const h = this.body?.findByName('RightHand'); return h ? h.getPosition().clone() : null; }
   /** Reach with the dealing arm now — a card leaving the hand, or chips pushed out. */
   dealFlick(): void { this.dealPulse = 1; }
   /**
