@@ -6482,6 +6482,7 @@ button.tag.guest {
 .portrait-plate .portrait-initial { color: #f4f2ea; font-size: 1.2rem; }
 .portrait-plate .portrait-mic { width: 12px; height: 12px; right: 1px; bottom: 1px; border-color: #1c2420; }
 .room-chairs { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+.room-elsewhere { margin-top: 0.6rem; border-top: 1px solid var(--rule); padding-top: 0.5rem; }
 /* cards on the felt: centred on their spot, sized by depth (the plate sets --card-w/--card-h) */
 .lounge-overlay .lounge-plate-card { transform: translate(-50%, -50%); }
 .lounge-plate-card .card { width: var(--card-w); height: var(--card-h); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }

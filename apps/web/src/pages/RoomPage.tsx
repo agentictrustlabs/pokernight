@@ -13,7 +13,7 @@ import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { useClubHuddle } from '../components/huddle/ClubHuddleProvider';
 import { clubScope } from '../lib/huddle';
 import { SpatialVoice } from '../components/room/SpatialVoice';
-import { clubHash, HOME_HASH } from '../lib/routes';
+import { clubHash, HOME_HASH, roomHash } from '../lib/routes';
 
 /** The scene is a separate chunk — three.js never loads for a page that has no room (the Leaflet rule). */
 /** Can this browser draw the room? Asked of a throwaway canvas whose context is released at once. */
@@ -199,8 +199,12 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
         </form>
       </div>
       <aside className="room-people">
-        <h3 className="eyebrow-h">Here now</h3>
+        {/* WHICH ROOM THIS IS. The hall and every club's lounge are separate scenes with separate presence, and
+            they are drawn from the same scenery — so two people in different ones look to each other like a
+            presence bug. Naming the room here, beside the only list of who is in it, is what answers that. */}
+        <h3 className="eyebrow-h">Here now · {manifest?.name ?? (clubId ? 'this club' : 'the hall')}</h3>
         <ul>{people.map((p) => <li key={p.playerId}>{p.name}{p.playerId === s?.state.you ? ' (you)' : ''}{p.zone ? <span className="hint"> · {manifest?.tables.find((t) => t.tableId === p.zone)?.name ?? p.zone}</span> : null}</li>)}</ul>
+        <p className="hint room-elsewhere">Only people in {clubId ? 'this club’s room' : 'the hall'} are here. {clubId ? <>Somebody in <a href={roomHash(null)}>the hall</a> or another club’s room is in a different place.</> : 'Somebody in a club’s own room is in a different place.'}</p>
       </aside>
     </div>
   );
