@@ -12,12 +12,40 @@
  */
 import * as pc from 'playcanvas';
 
-/** The clips the graph plays, by the name they carry in the GLB. */
+/**
+ * WHAT THE ROOM ASKS OF A BODY, and every spelling it will accept (docs/AVATARS.md).
+ *
+ * A body is an ASSET, produced by whatever tool retargets best — Unity's Humanoid retargeting, Blender, or the
+ * scratch pipeline. Each of those names its clips and bones its own way, so the room resolves both through
+ * these alias lists rather than one hard-coded spelling: drop in a better body and it simply works. The FIRST
+ * name in each list is what the docs ask an exporter to emit; the rest are what the common rigs already call it.
+ */
 const CLIPS = {
-  idle: 'Idle_Loop', talk: 'Idle_Talking_Loop', walk: 'Walk_Loop',
-  sitDown: 'Sitting_Enter', seated: 'Sitting_Idle_Loop', seatedTalk: 'Sitting_Talking_Loop', standUp: 'Sitting_Exit',
-  interact: 'Interact', pickUp: 'PickUp_Table', dance: 'Dance_Loop',
+  idle: ['Idle_Loop', 'Idle', 'idle'],
+  talk: ['Idle_Talking_Loop', 'Talking', 'Talk'],
+  walk: ['Walk_Loop', 'Walk', 'Walking'],
+  sitDown: ['Sitting_Enter', 'SitDown', 'Sit_Down', 'Sitting_Down'],
+  seated: ['Sitting_Idle_Loop', 'Sitting', 'Seated', 'Sit_Idle'],
+  seatedTalk: ['Sitting_Talking_Loop', 'Seated_Talking', 'Sitting_Talking'],
+  standUp: ['Sitting_Exit', 'StandUp', 'Stand_Up', 'Standing_Up'],
+  interact: ['Interact', 'Wave', 'Waving'],
+  pickUp: ['PickUp_Table', 'PickUp', 'Pick_Up'],
+  dance: ['Dance_Loop', 'Dance', 'Dancing'],
 } as const;
+/** Bones the room drives itself — the gaze, the dealing reach, the deck in the off hand. */
+const BONES = {
+  head: ['Head', 'mixamorig:Head', 'DEF-head', 'head'],
+  armR: ['RightArm', 'mixamorig:RightArm', 'upperarm_r', 'DEF-upper_arm.R'],
+  foreR: ['RightForeArm', 'mixamorig:RightForeArm', 'lowerarm_r', 'DEF-forearm.R'],
+  armL: ['LeftArm', 'mixamorig:LeftArm', 'upperarm_l', 'DEF-upper_arm.L'],
+  handR: ['RightHand', 'mixamorig:RightHand', 'hand_r', 'DEF-hand.R'],
+  handL: ['LeftHand', 'mixamorig:LeftHand', 'hand_l', 'DEF-hand.L'],
+} as const;
+/** The first of `names` this body actually carries. */
+function findAny(body: pc.Entity, names: readonly string[]): pc.GraphNode | null {
+  for (const n of names) { const f = body.findByName(n); if (f) return f; }
+  return null;
+}
 export type Gesture = 'interact' | 'pickUp' | 'dance';
 
 const GRAPH = {
@@ -204,20 +232,28 @@ export class ParticipantAvatar {
     const tracks = new Map<string, pc.AnimTrack>();
     // the container names its animation ASSETS `<file>/animation/<i>`; the clip's own name is on the track
     for (const a of res.animations) { const t = a.resource as pc.AnimTrack; tracks.set(t.name, t); }
-    for (const [state, key] of Object.entries(STATE_CLIP)) { const t = tracks.get(CLIPS[key]); if (t) anim.assignAnimation(state, t); }
+    const missing: string[] = [];
+    for (const [state, key] of Object.entries(STATE_CLIP)) {
+      const t = CLIPS[key].map((n) => tracks.get(n)).find(Boolean);
+      // A STATE WITH NO TRACK plays a placeholder of duration MAX_VALUE and the body stands in a T-pose there,
+      // with nothing said; naming what is missing is the difference between a bad body and a mystery.
+      if (t) anim.assignAnimation(state, t); else missing.push(`${state} (${CLIPS[key][0]})`);
+    }
+    if (missing.length) console.warn('[room] this body has no clip for:', missing.join(', '), '— see docs/AVATARS.md');
     anim.setBoolean('seated', !!this.seat);
     this.entity.addChild(body);
     this.body = body;
-    this.head = body.findByName('Head');
-    this.upperArmR = body.findByName('RightArm'); this.foreArmR = body.findByName('RightForeArm');
-    this.upperArmL = body.findByName('LeftArm');
+    this.head = findAny(body, BONES.head);
+    this.upperArmR = findAny(body, BONES.armR); this.foreArmR = findAny(body, BONES.foreR);
+    this.upperArmL = findAny(body, BONES.armL);
+    if (!this.head || !this.upperArmR) console.warn('[room] this body carries no bone the room knows by name — the gaze and the reach will not run. See docs/AVATARS.md.');
   }
 
   private get anim(): pc.AnimComponent | null { return this.body?.anim ?? null; }
   /** A bone's world position and rotation this frame (the dealer's hand, for the deck) — null until dressed. */
-  bone(name: string): pc.GraphNode | null { return this.body?.findByName(name) ?? null; }
+  bone(name: keyof typeof BONES): pc.GraphNode | null { return this.body ? findAny(this.body, BONES[name]) : null; }
   /** The right hand's world position (the dealer deals from here) — null until dressed. */
-  get dealHand(): pc.Vec3 | null { const h = this.body?.findByName('RightHand'); return h ? h.getPosition().clone() : null; }
+  get dealHand(): pc.Vec3 | null { const h = this.bone('handR'); return h ? h.getPosition().clone() : null; }
   /** Reach with the dealing arm now — a card leaving the hand, or chips pushed out. */
   dealFlick(): void { this.dealPulse = 1; }
   /**

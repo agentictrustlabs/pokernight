@@ -227,7 +227,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       for (const dl of dealers.current.values()) {
         dl.avatar.update(dt);
         // the deck rides in the LEFT hand; the cards leave from the RIGHT (dealing) hand
-        const l = dl.avatar.bone('LeftHand');
+        const l = dl.avatar.bone('handL');
         if (l) { const hp = l.getPosition(); dl.deck.setPosition(hp.x, hp.y + 0.03, hp.z); dl.deck.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
         const r = dl.avatar.dealHand; if (r) dl.hand.copy(r);
       }

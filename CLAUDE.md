@@ -303,6 +303,15 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   CLOTHED, ordinary human (`public/room/person.glb`, CC0) whose outfit is a 32×32 PALETTE the mesh's UVs point at
   (`skin-<word>.png`, ~140 bytes) — so six people in six outfits cost one download and six swatches, and a new
   outfit is a recoloured swatch rather than another body. Never `quantize` a skinned body.
+  **A BODY IS AN ASSET, NOT CODE** (`docs/AVATARS.md`, 2026-09-15). The room resolves both CLIPS and the six
+  bones it drives through ALIAS LISTS (`CLIPS`, `BONES` in `embodiment.ts`), so a body retargeted by any tool —
+  Unity's Humanoid retargeting, Blender, the scratch pipeline — drops in with no code change; a missing clip or
+  bone is named in the console rather than silently playing a T-pose. `pnpm exec node scripts/check-body.mjs
+  <file.glb>` answers "will the room take this body?" without a browser: clips, bones, height, feet at y=0, and
+  root motion on the walk. Retargeting BETWEEN HUMANOID RIGS IS THE ONE JOB WORTH LEAVING THE BROWSER FOR — the
+  hand-rolled version below gets limbs roughly right and spine and shoulders wrong, which is why seated players
+  look hunched. A Unity WebGL runtime is NOT worth it: the room shares thirteen modules with the app (the action
+  bar, the cards, the huddle's live video, both sockets), each of which becomes a JS↔Unity bridge.
   **RETARGETING A CLIP LIBRARY ONTO A FOREIGN RIG IS NOT A NAME-MAPPED COPY** (scratch `ubc/retarget.mjs`): the
   two rigs hold their bones in rest frames up to 158° apart (`restcmp.py` measures it), so what carries across is
   the bone's motion away from ITS OWN rest, re-based globally — `Gt = Gs·Gs_rest⁻¹·Gt_rest`, then back to a local
