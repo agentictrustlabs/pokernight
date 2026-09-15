@@ -19,7 +19,7 @@ export function SignUpPage({ auth, onLogin }: { auth: AuthState; onLogin: (s: Ap
         <h1>Come and play</h1>
         <ol className="signup-steps">
           <li><strong>Pick a name</strong> — what other players see. You can leave it blank.</li>
-          <li><strong>One trip to your Home</strong> — a phone number, an email address or a social account. No password, nothing to install.</li>
+          <li><strong>One trip to your Home</strong> — an email address or a social account. No password, nothing to install.</li>
           <li><strong>Straight to a table</strong> — you arrive with play money and a seat.</li>
         </ol>
         <SignInPanel auth={auth} onLogin={onLogin} startSigningUp showSwitch={false} />

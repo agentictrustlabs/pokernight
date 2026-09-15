@@ -58,7 +58,7 @@ export function Landing({ auth, onLogin, session = null }: { auth: AuthState; on
                 <p>You have play money of your own, and a seat is one press away.</p>
               ) : (
                 <p>
-                  Sign in with a phone number, an email address or a social account. You start with{' '}
+                  Sign in with an email address or a social account. You start with{' '}
                   <strong>10,000 in play money</strong> and a seat at a table.
                 </p>
               )}

@@ -35,7 +35,7 @@ export function NewClubPage({ config, session }: { config: AuthConfig | null; se
           <h2 className="eyebrow-h">How starting a club works</h2>
           <ol>
             <li><strong>Name it</strong> — below. That is what its members will see, and the name its agent takes.</li>
-            <li><strong>Go to your Home.</strong> Your Home is your own account on the faithnet estate — sign in there, or make one on the way (a phone number, an email address or a social account; nothing to install). The club is created there as an agent of its own, in your custody.</li>
+            <li><strong>Go to your Home.</strong> Your Home is your own account on the faithnet estate — sign in there, or make one on the way (an email address or a social account; nothing to install). The club is created there as an agent of its own, in your custody.</li>
             <li><strong>Two signatures.</strong> The club itself, as you; then its authorisation for this room to act as it. Then you are back here, on the club's own page, ready to invite people.</li>
           </ol>
           <p className="hint">

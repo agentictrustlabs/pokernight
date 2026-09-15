@@ -399,14 +399,11 @@ describe('landing and sign-in surfaces', () => {
     expect(html).toContain('10,000 in play money');
     expect(html).not.toContain('SHQ to play with');
     expect(html).toContain('How a night works');
-    // The panel is ON the page, not linked away to. The button is an invitation to play; the spending ceiling
-    // it also approves is DISCLOSED BUT FOLDED (2026-09-15) — a games site does not open with money, and the
-    // person's own Home shows the same numbers again before anything is signed.
+    // The panel is ON the page, not linked away to, and its button is an invitation to play. The spending
+    // ceiling it also approves is NOT stated here (2026-09-15): the person's own Home shows those numbers and
+    // asks them to sign, which is where the consent happens and the only place it can be refused.
     expect(html).toContain('Come in and play');
-    expect(html).toContain('sets a limit for tonight');
-    expect(html).toContain('200.00 SHQ');
-    expect(html).toContain('1,000.00 SHQ');
-    expect(html).toContain('Nothing is taken until you sit down');
+    expect(html).not.toContain('sets a limit for tonight');
     expect(html).toContain('In the room right now');
     // Before the lobby answers, it says it is reading it — never an empty claim about the room.
     expect(html).toContain('Reading the lobby…');
@@ -426,7 +423,6 @@ describe('landing and sign-in surfaces', () => {
   it('shows no demo section at all when the Home offers none', () => {
     const html = renderToStaticMarkup(createElement(SignInPage, { auth: auth(), onLogin: () => {} }));
     expect(html).not.toContain('Try it as someone else');
-    expect(html).toContain('sets a limit for tonight');
   });
 
   it('says plainly when the Home will not mint a demo session for this app', () => {
@@ -439,7 +435,6 @@ describe('landing and sign-in surfaces', () => {
   it('tells a person whose session ended why they are looking at sign-in', () => {
     const html = renderToStaticMarkup(createElement(SignInPage, { auth: auth({ notice: SESSION_ENDED_NOTICE }), onLogin: () => {} }));
     expect(html).toContain(SESSION_ENDED_NOTICE);
-    expect(html).toContain('sets a limit for tonight');
   });
 });
 

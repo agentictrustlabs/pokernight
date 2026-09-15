@@ -91,7 +91,7 @@ export function MissionRegisterPage({ session, config }: { session: AppSession |
           <h2 className="eyebrow-h">How registering works</h2>
           <ol>
             <li><strong>Say what the mission is</strong> — below. Its name, what it does, where it is, how the room reaches you.</li>
-            <li><strong>Go to your Home.</strong> Your Home is your own account on the faithnet estate — sign in there, or make one on the way (a phone number, an email address or a social account; nothing to install). The organization is created there, in your custody, or you pick one you already steward.</li>
+            <li><strong>Go to your Home.</strong> Your Home is your own account on the faithnet estate — sign in there, or make one on the way (an email address or a social account; nothing to install). The organization is created there, in your custody, or you pick one you already steward.</li>
             <li><strong>Two signatures.</strong> The covenant, as you; the registry entry, as the organization. Then you are back here, with the mission on the map.</li>
           </ol>
           <p className="hint">Registering makes you no player: no play money, no seat, no coach are set up for you. A game night invites your mission as its guest; your people join the talk, and giving is a separate choice — never a condition of anything here.</p>

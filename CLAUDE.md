@@ -303,10 +303,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   held a session (`pokernight.ever`) is the only honest thing the page can know before anybody signs in, and a
   wrong guess costs nothing since both doors lead to the same ceremony. THE DISCLOSURE IS ON BOTH DOORS — the
   Home and the ceiling, on whichever one is actually going to be pressed.
-- **THE FIRST SCREEN IS AN INVITATION, NOT A PRICE LIST** (2026-09-15). Sign-in leads with "Come in and play, or
-  join a club" and a button that says the same; the buy-in ceiling is STILL DISCLOSED but folded into a
-  `<details>` — a games site does not open with money, and the person's own Home shows the same numbers again
-  before anything is signed. Nothing on it is poker's: this room deals more than one game.
+- **THE FIRST SCREEN IS AN INVITATION, NOT A PRICE LIST** (2026-09-15). Sign-in leads with "Come in and play" and a
+  button that says the same. THE BUY-IN CEILING IS NOT STATED HERE (2026-09-15): the person's own Home shows
+  those numbers and asks them to sign, which is where the consent happens and the only place it can be refused,
+  so repeating them on the way made a games site open on money for no gain. Nothing on it is poker's: this room
+  deals more than one game, and no copy names a phone number as the way in.
 - **STARTING A CLUB IS A HOST'S OWN ROAD, OPEN TO A VISITOR** (2026-09-15, `pages/NewClubPage.tsx`), the same
   shape as a mission steward's: `#/clubs/new` renders for somebody with no session (special-cased in `App.tsx`
   beside `newMission`), explains the road, and takes ONE trip to their Home. Sending them through the room's

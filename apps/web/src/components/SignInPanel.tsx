@@ -114,13 +114,11 @@ export function SignInPanel({ auth, onLogin, startSigningUp = false, showSwitch 
               </p>
             )}
 
-            <BuyInConsent buyIn={config.home.buyIn ?? null} />
-
             <button className="primary big" type="button" onClick={() => auth.signInWithHome(signingUp ? name : '')} disabled={busy}>
               {busy ? 'Coming in…' : signingUp ? 'Set me up and come in' : returning ? 'Welcome back — come in and play' : 'Come in and play'}
             </button>
             <p className="hint">
-              Use a phone number, an email address or a social account at your Home{homeHost ? ` (${homeHost})` : ''}. No
+              Use an email address or a social account at your Home{homeHost ? ` (${homeHost})` : ''}. No
               password to set, nothing to install.
             </p>
             {showSwitch ? (
@@ -138,37 +136,14 @@ export function SignInPanel({ auth, onLogin, startSigningUp = false, showSwitch 
 }
 
 /**
- * What signing in ALSO approves, in the numbers the Home is about to show.
+ * THE CEILING IS DISCLOSED AND APPROVED AT THE PERSON'S OWN HOME (2026-09-15), not here.
  *
- * Rendered only where the room states caps. Where it does not — local dev, a deployment with
- * no mandate configuration — sign-in asks for a plain session, so there is nothing to disclose and
- * this renders nothing rather than a reassurance nobody needs.
- *
- * "Nothing is taken until you sit down" is load-bearing and it is true: the mandate is a `pull`
- * authority, so the ceremony mints a ceiling and moves no money. The revocation sentence is true
- * too, and it is the player's, not ours — it happens at their Home.
+ * This screen used to state the numbers — per buy-in, in all, how many, for how long — before sending anybody
+ * over. That was honest but it made a games site open on money, and it duplicated a disclosure the Home makes
+ * properly a moment later: the Home SHOWS the same ceiling and asks the person to sign it, which is where the
+ * consent actually happens and the only place it can be refused. So the line is gone from here and the
+ * ceremony is unchanged.
  */
-function BuyInConsent({ buyIn }: { buyIn: NonNullable<AuthConfig['home']['buyIn']> | null }) {
-  if (!buyIn) return null;
-  const per = `${fmtAsset(BigInt(buyIn.maxPerBuyIn))} ${buyIn.symbol}`;
-  const all = `${fmtAsset(BigInt(buyIn.sessionTotal))} ${buyIn.symbol}`;
-  const hours = Math.max(1, Math.round(buyIn.validSeconds / 3600));
-  // STILL SAID, NEVER SHOUTED. The ceiling is real and a person is about to approve it, so it cannot be hidden —
-  // but the first screen of a games site should not open with money. Folded away, and the person's own Home shows
-  // the same numbers again before anything is signed.
-  return (
-    <details className="signin-consent">
-      <summary>Signing in also sets a limit for tonight</summary>
-      <p>
-        Your Home will ask you to approve a ceiling for this room: up to {per} per buy-in, {all} in all, at most{' '}
-        {buyIn.maxBuyIns} buy-ins, for the next {hours} hours.
-      </p>
-      <p className="hint">
-        Nothing is taken until you sit down at a table and buy in. You can undo the limit at your Home at any time.
-      </p>
-    </details>
-  );
-}
 
 function safeHost(origin: string): string | null {
   try {
