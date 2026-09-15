@@ -40,7 +40,36 @@ const BONES = {
   armL: ['LeftArm', 'mixamorig:LeftArm', 'upperarm_l', 'DEF-upper_arm.L'],
   handR: ['RightHand', 'mixamorig:RightHand', 'hand_r', 'DEF-hand.R'],
   handL: ['LeftHand', 'mixamorig:LeftHand', 'hand_l', 'DEF-hand.L'],
+  spine: ['Spine', 'mixamorig:Spine', 'spine_01', 'DEF-spine.001'],
+  thighL: ['LeftUpLeg', 'mixamorig:LeftUpLeg', 'thigh_l', 'DEF-thigh.L'],
+  thighR: ['RightUpLeg', 'mixamorig:RightUpLeg', 'thigh_r', 'DEF-thigh.R'],
+  shinL: ['LeftLeg', 'mixamorig:LeftLeg', 'calf_l', 'DEF-shin.L'],
+  shinR: ['RightLeg', 'mixamorig:RightLeg', 'calf_r', 'DEF-shin.R'],
 } as const;
+
+/**
+ * SITTING IS POSED, NOT PLAYED (2026-09-15).
+ *
+ * A retargeted seated clip was the worst thing in the room — hunched and twisted — because retargeting a whole
+ * seated body between rigs is exactly where a hand-rolled re-basing fails. A chair does not need a clip: it
+ * needs one pose, and a pose is seven angles that can be MEASURED (scratch `ual/axes.cjs`, on a standing body:
+ * +X lifts a thigh forward and up, −X folds a shin back, +X leans the spine, +X brings an arm down and forward).
+ * So the seated states play the body's own idle — which is correct, and keeps the breathing — and this bends it
+ * into the chair on top, easing in and out. A body that brings a genuinely good seated clip can have this
+ * turned off; nothing else changes.
+ */
+const SEAT_POSE: Array<[keyof typeof BONES, number]> = [
+  ['thighL', 60], ['thighR', 60],   // thighs forward, knee just under hip height
+  ['shinL', -55], ['shinR', -55],   // shins down to the floor — MORE fold raises the foot, not lowers it
+  ['spine', 4],                      // a little forward over the table
+  ['armL', 28], ['armR', 28],        // arms down and forward, toward the felt
+];
+/** How far the hips drop when the legs fold — the difference between standing and sitting on a 0.45 m seat. */
+let SEAT_DROP = 0.42;
+// The pose is TUNED AGAINST MEASUREMENTS, not guessed: `scratch/seatsweep.cjs` sweeps these while reading the
+// hip, knee and foot heights back, because a thigh's rotation changes what the shin's own axis means and no
+// amount of reasoning from a standing body survives that.
+(globalThis as unknown as { __seat?: unknown }).__seat = { pose: SEAT_POSE, drop: (v?: number) => (v === undefined ? SEAT_DROP : (SEAT_DROP = v)) };
 /** The first of `names` this body actually carries. */
 function findAny(body: pc.Entity, names: readonly string[]): pc.GraphNode | null {
   for (const n of names) { const f = body.findByName(n); if (f) return f; }
@@ -97,7 +126,8 @@ const GRAPH = {
     gesture: { name: 'gesture', type: pc.ANIM_PARAMETER_INTEGER, value: 0 },
   },
 };
-const STATE_CLIP: Record<string, keyof typeof CLIPS> = { Idle: 'idle', Talk: 'talk', Walk: 'walk', SitDown: 'sitDown', Seated: 'seated', SeatedTalk: 'seatedTalk', StandUp: 'standUp', Interact: 'interact', PickUp: 'pickUp', Dance: 'dance' };
+// Seated states run the body's OWN idle (and its talking variant) — `applySeat` bends it into the chair.
+const STATE_CLIP: Record<string, keyof typeof CLIPS> = { Idle: 'idle', Talk: 'talk', Walk: 'walk', SitDown: 'idle', Seated: 'idle', SeatedTalk: 'talk', StandUp: 'idle', Interact: 'interact', PickUp: 'pickUp', Dance: 'dance' };
 
 /** A glTF container loaded once per application and handed to whoever asked, in order. */
 export class ContainerLibrary {
@@ -207,6 +237,8 @@ export class ParticipantAvatar {
   private foreArmR: pc.GraphNode | null = null;
   private upperArmL: pc.GraphNode | null = null;
   private cheerPulse = 0; // a winner's arms going up, seated or standing
+  private seatBlend = 0; // 0 standing … 1 sitting, eased
+  private posed = new Map<keyof typeof BONES, pc.GraphNode>();
   private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow') {
@@ -247,6 +279,7 @@ export class ParticipantAvatar {
     this.upperArmR = findAny(body, BONES.armR); this.foreArmR = findAny(body, BONES.foreR);
     this.upperArmL = findAny(body, BONES.armL);
     if (!this.head || !this.upperArmR) console.warn('[room] this body carries no bone the room knows by name — the gaze and the reach will not run. See docs/AVATARS.md.');
+    for (const [key] of SEAT_POSE) { const n = findAny(body, BONES[key]); if (n) this.posed.set(key, n); }
   }
 
   private get anim(): pc.AnimComponent | null { return this.body?.anim ?? null; }
@@ -280,6 +313,23 @@ export class ParticipantAvatar {
     this.upperArmR.setLocalRotation(this.upperArmR.getLocalRotation().clone().mul(du));
     this.foreArmR.setLocalRotation(this.foreArmR.getLocalRotation().clone().mul(df));
     this.dealPulse = Math.max(0, this.dealPulse - dt * 1.3); // ~0.8 s: a reach a person actually sees
+  }
+  /**
+   * THE CHAIR, layered after the clip: the legs fold, the spine leans, the arms come to the table, and the whole
+   * body drops by the height of a seat. Eased both ways, so sitting down and standing up are a movement rather
+   * than a snap. Applied in the bone's own frame, from angles measured on a standing body.
+   */
+  applySeat(dt: number): void {
+    const want = this.seat ? 1 : 0;
+    this.seatBlend += (want - this.seatBlend) * Math.min(1, dt * 5);
+    if (this.seatBlend < 0.002) return;
+    const k = this.seatBlend;
+    for (const [key, deg] of SEAT_POSE) {
+      const n = this.posed.get(key); if (!n) continue;
+      n.setLocalRotation(n.getLocalRotation().clone().mul(new pc.Quat().setFromEulerAngles(deg * k, 0, 0)));
+    }
+    const p = this.entity.getPosition();
+    this.entity.setPosition(p.x, -SEAT_DROP * k, p.z);
   }
   /** The winner's arms, layered after the clip like the reach. Measured: −Y on an upper arm is the one that lifts. */
   applyCheer(dt: number): void {

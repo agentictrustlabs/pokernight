@@ -284,7 +284,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (me.current) all.push(me.current);
       for (const b of bodies.current.values()) all.push(b);
       for (const bt of bots.current.values()) all.push({ avatar: bt, name: '' });
-      for (const dl of dealers.current.values()) { dl.avatar.applyGaze(dt); dl.avatar.applyDeal(dt); }
+      for (const dl of dealers.current.values()) { dl.avatar.applySeat(dt); dl.avatar.applyGaze(dt); dl.avatar.applyDeal(dt); }
       const acting = actingRef.current;
       for (const b of all) {
         const av = b.avatar;

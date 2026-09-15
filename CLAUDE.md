@@ -312,6 +312,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   hand-rolled version below gets limbs roughly right and spine and shoulders wrong, which is why seated players
   look hunched. A Unity WebGL runtime is NOT worth it: the room shares thirteen modules with the app (the action
   bar, the cards, the huddle's live video, both sockets), each of which becomes a JS↔Unity bridge.
+  **SITTING IS POSED, NOT PLAYED** (`SEAT_POSE` in `embodiment.ts`): the seated states play the body's own idle
+  and `applySeat` bends it into the chair — seven angles and a hip drop, eased. A retargeted seated clip was the
+  worst thing in the room. The angles are TUNED AGAINST MEASUREMENTS (`scratch/seatsweep.cjs` sweeps them while
+  reading hip, knee and foot heights back), because a thigh's rotation changes what the shin's own axis means:
+  MORE shin fold RAISES the foot, which no amount of reasoning from a standing body would have told you.
   A BODY'S OWN CLIPS BEAT ANY RETARGET: the shipping body uses its native `Idle` and `Walk`, renamed into the
   room's vocabulary, and only the clips it lacks (the seated set, the gestures) are retargeted at all.
   **RETARGETING A CLIP LIBRARY ONTO A FOREIGN RIG IS NOT A NAME-MAPPED COPY** (scratch `ubc/retarget.mjs`): the
