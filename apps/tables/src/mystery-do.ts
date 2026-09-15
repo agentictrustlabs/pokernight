@@ -40,10 +40,16 @@ interface Meta {
   director?: string;
 }
 
-/** How long a character played by an agent is held back, so the room can read what it said. */
-const PACE_MS = 3_200;
-/** The wake-up between ticks while somebody is here. */
-const TICK_MS = 1_600;
+/**
+ * HOW FAST A ROOM MAY TALK.
+ *
+ * Seven characters each acting every three seconds is fifty lines a minute, which is not a scene — it is a
+ * wall of text nobody can follow and nothing can read aloud. A person reads about three words a second and a
+ * voice says a sentence in four: so ONE character acts per wake, and a wake is a couple of seconds. The room
+ * is quieter than it could be on purpose, and what is said has room to land.
+ */
+const PACE_MS = 9_000;
+const TICK_MS = 2_400;
 
 export class MysteryDO extends DurableObject<Env> {
   private state: MysteryState | null = null;
@@ -310,9 +316,12 @@ export class MysteryDO extends DurableObject<Env> {
     const now = Date.now();
     let changed = false;
 
-    for (const c of this.state.cast) {
-      if (c.operator !== 'agent' || isDead(this.state, c.role)) continue;
-      if (now - (this.lastMoved[c.role] ?? 0) < PACE_MS) continue;
+    // ONE AT A TIME, oldest first: the character who has been quiet longest gets this moment.
+    const waiting = this.state.cast
+      .filter((c) => c.operator === 'agent' && !isDead(this.state!, c.role) && now - (this.lastMoved[c.role] ?? 0) >= PACE_MS)
+      .sort((a, b) => (this.lastMoved[a.role] ?? 0) - (this.lastMoved[b.role] ?? 0))
+      .slice(0, 1);
+    for (const c of waiting) {
       const role = pair.title.roles.find((r) => r.id === c.role);
       if (!role) continue;
       /**
@@ -345,7 +354,7 @@ export class MysteryDO extends DurableObject<Env> {
       changed = true;
       // A BEAT IS WHERE THE STORY IS TOLD. The engine has just decided something; the director is asked for
       // the words that carry it, and whatever it says is narration over facts that are already settled.
-      void this.direct(ticked.events);
+      void this.direct(ticked.events).catch((e: unknown) => console.warn('[mystery] the narration threw:', String(e)));
     }
     if (changed) { this.save(); this.tellEverybody(); }
     if (this.state.phase !== 'revealed') await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
@@ -456,14 +465,16 @@ export class MysteryDO extends DurableObject<Env> {
     const m = this.meta;
     const s = this.state;
     const pair = s ? stagingOf(s.title) : null;
-    if (!m?.director || !s || !pair) return;
+    if (!s || !pair) return;
+    if (!m?.director) { console.warn('[mystery] nobody is directing this night'); return; }
     const facts = events.flatMap((e) => (
       e.type === 'died' ? [`${pair.title.roles.find((r) => r.id === e.victim)?.name ?? e.victim} has been found dead in ${pair.venue.rooms.find((r) => r.id === e.room)?.name ?? e.room}.`]
         : e.type === 'spared' ? [`Nobody died, but ${pair.venue.rooms.find((r) => r.id === e.room)?.name ?? e.room} was turned over in the dark.`]
           : e.type === 'act' ? [`Act ${e.act} — ${e.phase}.`]
             : []
     ));
-    if (!facts.length) return;
+    if (!facts.length) { console.warn(`[mystery] nothing to narrate at ${s.phase} (${events.map((e) => e.type).join(',')})`); return; }
+    console.warn(`[mystery] asking ${m.director} to narrate: ${facts.join(' ')}`);
     const fallback = events.find((e) => e.type === 'cue');
     const publicView = viewFor(s, pair.title, pair.venue, null);
     const out = await askDirector(this.env, m.director, {

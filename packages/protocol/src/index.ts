@@ -1332,14 +1332,27 @@ export interface DirectInput {
   craft?: string[];
 }
 
+/**
+ * THE NARRATION, UNDER WHATEVER KEY IT ARRIVED.
+ *
+ * A Home answers in its own house shape — `{say, because}` — whatever shape the request asks for, and a
+ * director's prose came back under `say` and was thrown away for not being called `cue`. The words are the
+ * answer; the key they came under is not. `cue` is preferred and `say` is accepted, because insisting would
+ * mean losing perfectly good narration to a naming argument.
+ */
 export const DirectOutputSchema = z.object({
-  /** The narration, read to the room. Prose, not a decision. */
   cue: z.string().min(1).max(900),
   /** Optional: somewhere worth looking. A HINT, resolved against clues the engine already placed. */
   hint: z.object({ room: z.string().max(64).optional(), prop: z.string().max(64).optional() }).optional(),
   source: z.string().max(120).optional(),
 });
 export type DirectOutput = z.infer<typeof DirectOutputSchema>;
+/** The same answer, arriving as `{say}` — what a Home's own shape produces. */
+const DirectSaidSchema = z.object({
+  say: z.string().min(1).max(900),
+  hint: z.object({ room: z.string().max(64).optional(), prop: z.string().max(64).optional() }).optional(),
+  source: z.string().max(120).optional(),
+}).transform((v): DirectOutput => ({ cue: v.say, ...(v.hint ? { hint: v.hint } : {}), ...(v.source ? { source: v.source } : {}) }));
 
 export function encodeDirectParts(input: DirectInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
   const shape = {
@@ -1352,7 +1365,10 @@ export function encodeDirectParts(input: DirectInput): Array<{ kind: 'data'; dat
     'Carry these facts, exactly as given, in your own words. Invent no clue, name no killer, move nobody:',
     ...input.facts.map((f) => `  - ${f}`),
     `Answer with ONE JSON object and nothing else: {"cue": ${shape.cue}, "hint": ${shape.hint}}.`,
-    `The house's own line, if you have nothing better: "${input.fallback}"`,
+    // NOT A LINE TO COPY. Handing a model the fallback as "say this if you like" got the fallback back,
+    // word for word, which is a director that has added nothing. It is context: what the room will hear
+    // if you are quiet, and therefore what NOT to write.
+    `If you say nothing the room will hear the house's own line instead — "${input.fallback}" — so do not write that. Write the same moment differently, or answer with nothing at all.`,
     `The story as everybody can see it: ${JSON.stringify(input.publicView)}`,
   ].join('\n');
   return [
@@ -1366,7 +1382,10 @@ export function decodeSceneReply(parts: unknown): SceneOutput | { error: string 
   return decodeShaped(parts, (c) => SceneOutputSchema.safeParse(c));
 }
 export function decodeDirectReply(parts: unknown): DirectOutput | { error: string } {
-  return decodeShaped(parts, (c) => DirectOutputSchema.safeParse(c));
+  return decodeShaped(parts, (c) => {
+    const asCue = DirectOutputSchema.safeParse(c);
+    return asCue.success ? asCue : DirectSaidSchema.safeParse(c);
+  });
 }
 
 /**
