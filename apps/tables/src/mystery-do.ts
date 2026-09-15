@@ -115,10 +115,10 @@ export class MysteryDO extends DurableObject<Env> {
       let handed = 0;
       const cast: Casting[] = title.roles.map((r) => {
         if (r.id === role) return { role: r.id, agent: b.owner, name: b.ownerName || r.name, custodian: b.owner, operator: 'human' as const, playerId: b.owner, mind: 'human' as const };
-        // A PART NOBODY IS PLAYING GETS AN AGENT OF ITS OWN, from the deployment's list, and the house's own
-        // rules when the list runs out. Which agent plays which part is fixed here and never re-drawn.
-        const named = minds[handed];
-        if (named) handed++;
+        // A PART NOBODY IS PLAYING GETS AN AGENT, from the deployment's list — and a short list is a REPERTORY
+        // COMPANY rather than a shortage: one agent plays several parts, because the part is in the ask (the
+        // brief, the view, the room) and not in the agent. The house's rules play the rest when the list is empty.
+        const named = minds.length ? minds[handed++ % minds.length] : undefined;
         return named
           ? { role: r.id, agent: named, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'agent' as const }
           : { role: r.id, agent: `${r.id}.cast`, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'rules' as const };
@@ -187,8 +187,7 @@ export class MysteryDO extends DurableObject<Env> {
       const cast: Casting[] = pair.title.roles.map((r) => {
         const person = Object.entries(this.taken).find(([, t]) => t.role === r.id);
         if (person) return { role: r.id, agent: person[0], name: person[1].name || r.name, custodian: person[0], operator: 'human' as const, playerId: person[0], mind: 'human' as const };
-        const named = minds[handed];
-        if (named) handed++;
+        const named = minds.length ? minds[handed++ % minds.length] : undefined;
         return named
           ? { role: r.id, agent: named, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'agent' as const }
           : { role: r.id, agent: `${r.id}.cast`, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'rules' as const };
@@ -463,8 +462,18 @@ export class MysteryDO extends DurableObject<Env> {
         }
       }
       if (out.output.say) {
-        const said = apply(this.state ?? cur, pair2.title, pair2.venue, role, { type: 'say', text: out.output.say }, now, 'agent');
-        if (said.ok) { this.state = said.state; changed = true; }
+        /**
+         * NOT THE SAME LINE TWICE. An ask that was retried, or an agent that landed on its own last thought
+         * again, used to put the identical sentence in the room twice in a row — which reads as a glitch and
+         * is one. What the character last said is in the log, so this is a lookup and not a guess.
+         */
+        const base = this.state ?? cur;
+        const mine = [...base.log].reverse().find((e) => e.type === 'said' && e.by === role);
+        const repeat = mine?.type === 'said' && mine.text.trim() === out.output.say.trim();
+        if (!repeat) {
+          const said = apply(base, pair2.title, pair2.venue, role, { type: 'say', text: out.output.say }, now, 'agent');
+          if (said.ok) { this.state = said.state; changed = true; }
+        }
       }
       if (changed) { this.save(); this.tellEverybody(); }
     } finally {

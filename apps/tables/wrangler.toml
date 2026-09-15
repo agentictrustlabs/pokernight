@@ -340,5 +340,9 @@ HOUSE_DELEGATE = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # with the story's own artifact in its. Neither is a person doing a job, and neither costs the house a token:
 # each thinks at its own Home. An agent whose card does not advertise `mystery.act` is not asked at all and
 # the house's rules play that part, so this list is a preference, never a dependency.
-MYSTERY_CAST_AGENTS = "alice.me,bob.me,carol.me,dave.me,elena.me,nathan.me,david.me"
-MYSTERY_DIRECTOR = "alice.me"
+# NAMED BY THEIR HOST, not by their agent name: a bare `*.svc` is how this deployment reaches its OWN house
+# personas (agents.faithnet.io/<name>), and these two live at the estate instead — a service Alice custodies,
+# with the mystery archetypes in their playbooks. Three labels and no `@` is a hostname, and the only honest
+# thing to do with a hostname is to ask it; the message then goes wherever the card says (the estate's edge).
+MYSTERY_CAST_AGENTS = "belvedere-cast-svc.faithnet.ai"
+MYSTERY_DIRECTOR = "belvedere-house-svc.faithnet.ai"
