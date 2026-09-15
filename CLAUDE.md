@@ -283,6 +283,13 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   invited visit): the mission, the representative (name · agent · email/phone — host-only, stripped for members
   in `clubViewFor`), the status. OPENING A TABLE IS A PAGE (`#/tables/new`, `#/clubs/<id>/tables/new?night=`,
   `pages/TableNewPage.tsx`) — the table and the stakes side by side; the two `<details>` forms are gone.
+- **MYSTERY NIGHT IS A STORY AT A PLACE, and it is specified before it is built** — `docs/MYSTERY-NIGHT.md`
+  (2026-09-15, nothing built). The third game and the first that is not a table: ONE engine (`packages/mystery`)
+  and many TITLES as content; venue · title · staging are three separate things; every character is a CUSTODIED
+  agent (`.cast`, a vertical type over `person`) cast in a ROLE that is an ARCHETYPE in a new `mystery` skills
+  context; the engine owns facts and the director service owns only words; the killer is drawn by the seed,
+  committed before the night and revealed after; a clue is a card (`viewFor`/`redact`); one player and seven of
+  the estate's own agents is the DEFAULT shape, drawn as the room's own bodies. Read it before building any of it.
 - **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
   hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
   actually has. `lib/brand.ts` still owns the product name.
