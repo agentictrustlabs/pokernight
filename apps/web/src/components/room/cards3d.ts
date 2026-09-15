@@ -57,7 +57,7 @@ export class Deck3D {
   card(code: string | null, x: number, y: number, z: number, yaw: number, parent: pc.Entity, lift = 0): pc.Entity {
     const e = new pc.Entity('card');
     e.addComponent('render', { type: 'plane', material: this.material(code), castShadows: false, receiveShadows: true });
-    e.setLocalScale(0.063 * 1.6, 1, 0.088 * 1.6); // a real card is small from a chair; 1.6× reads
+    e.setLocalScale(0.063 * 2.4, 1, 0.088 * 2.4); // a real card is small from a chair; 2.4× reads
     e.setLocalPosition(x, y + lift, z); e.setLocalEulerAngles(0, yaw * 180 / Math.PI, 0);
     parent.addChild(e);
     return e;

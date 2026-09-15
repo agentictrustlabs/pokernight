@@ -88,9 +88,36 @@ export class ContainerLibrary {
   get loaded(): boolean { return !!this.asset; }
 }
 
-/** The one body every participant is instantiated from. */
-export class AvatarLibrary extends ContainerLibrary {
-  constructor(app: pc.Application, url: string) { super(app, url, 'mannequin.glb'); }
+/** Which of the two bodies a palette word wears, and where its skin is. */
+export function bodyOf(word: string): 'm' | 'f' { return word === 'rose' || word === 'moss' || word === 'brass' ? 'f' : 'm'; }
+export const SKIN_WORDS = ['oak', 'slate', 'brass', 'rose', 'moss', 'ink'];
+
+/**
+ * THE BODIES every participant is instantiated from — two rigged, dressed humans (CC0, `public/room/person-m|f.glb`)
+ * with the same clips on the same bone names — and a SKIN per palette word (`skin-<m|f>-<word>.webp`, the base
+ * colour with the clothes painted on), loaded once each and shared.
+ */
+export class AvatarLibrary {
+  private bodies: Record<'m' | 'f', ContainerLibrary>;
+  private skins = new Map<string, pc.Asset>();
+  constructor(readonly app: pc.Application, private readonly dir: string) {
+    this.bodies = { m: new ContainerLibrary(app, `${dir}/person-m.glb`, 'person-m.glb'), f: new ContainerLibrary(app, `${dir}/person-f.glb`, 'person-f.glb') };
+  }
+  load(): void { this.bodies.m.load(); this.bodies.f.load(); }
+  ready(sex: 'm' | 'f', fn: (a: pc.Asset) => void): void { this.bodies[sex].ready(fn); }
+  get loaded(): boolean { return this.bodies.m.loaded && this.bodies.f.loaded; }
+  /** The skin for this palette word on this body, loading it the first time it is asked for. */
+  skin(sex: 'm' | 'f', word: string, fn: (t: pc.Texture) => void): void {
+    const w = SKIN_WORDS.includes(word) ? word : 'slate';
+    const key = `${sex}-${w}`;
+    let asset = this.skins.get(key);
+    if (!asset) {
+      asset = new pc.Asset(`skin-${key}`, 'texture', { url: `${this.dir}/skin-${key}.webp` }, { srgb: true });
+      this.app.assets.add(asset); this.skins.set(key, asset);
+    }
+    if (asset.loaded) { fn(asset.resource as pc.Texture); return; }
+    asset.ready((a) => fn(a.resource as pc.Texture)); this.app.assets.load(asset);
+  }
 }
 
 /**
@@ -125,11 +152,6 @@ export class RoomKit extends ContainerLibrary {
 
 export interface Seat { at: pc.Vec3; yaw: number; /** the felt's centre, where a seated body rests its eyes */ centre?: pc.Vec3 }
 
-/** Body palettes, from the presence record's `body` word. */
-const BODY_COLOURS: Record<string, [number, number, number]> = {
-  oak: [0.66, 0.49, 0.18], slate: [0.31, 0.36, 0.41], brass: [0.85, 0.70, 0.42], rose: [0.65, 0.22, 0.18], moss: [0.18, 0.44, 0.32], ink: [0.11, 0.14, 0.13],
-};
-
 /**
  * ONE PARTICIPANT'S BODY. Owns its place and its facing, eases toward where it is told to be, and tells the
  * animation graph only what it is doing — how fast it moves, whether it is in a chair, whether it is talking.
@@ -154,20 +176,21 @@ export class ParticipantAvatar {
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow') {
     this.entity = new pc.Entity('avatar');
-    library.ready((asset) => this.dress(asset));
+    const sex = bodyOf(palette);
+    library.ready(sex, (asset) => this.dress(asset, library, sex));
   }
 
-  private dress(asset: pc.Asset): void {
+  private dress(asset: pc.Asset, library: AvatarLibrary, sex: 'm' | 'f'): void {
     const res = asset.resource as pc.ContainerResource & { animations: pc.Asset[] };
     const body = res.instantiateRenderEntity();
-    // one palette per person: the mannequin's material, cloned and tinted, so every body is its own colour
-    const [r, g, b] = BODY_COLOURS[this.palette] ?? [0.5, 0.5, 0.5];
+    // one skin per person: the body's material, cloned, wears the palette word's painted clothes
     for (const render of body.findComponents('render') as pc.RenderComponent[]) {
-      render.meshInstances.forEach((mi, i) => {
-        const m = (mi.material as pc.StandardMaterial).clone();
-        m.diffuse = i === 0 ? new pc.Color(r, g, b) : new pc.Color(0.93, 0.87, 0.78);
-        m.update(); mi.material = m;
-      });
+      for (const mi of render.meshInstances) {
+        const src = mi.material as pc.StandardMaterial;
+        if (!/Superhero/.test(src.name)) continue;
+        const m = src.clone(); mi.material = m;
+        library.skin(sex, this.palette, (t) => { m.diffuseMap = t; m.update(); });
+      }
       render.castShadows = true;
     }
     body.addComponent('anim', { activate: true });
@@ -180,7 +203,7 @@ export class ParticipantAvatar {
     anim.setBoolean('seated', !!this.seat);
     this.entity.addChild(body);
     this.body = body;
-    this.head = body.findByName('DEF-head');
+    this.head = body.findByName('Head');
   }
 
   private get anim(): pc.AnimComponent | null { return this.body?.anim ?? null; }

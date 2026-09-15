@@ -299,8 +299,10 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   Walk: scratch `voice-walk.cjs` (fake media; `window.__spatialVoices` counts placed voices).
 - **A BODY IS TOLD WHAT IT IS DOING, NEVER HOW TO MOVE A LIMB** (2026-09-14, `components/room/embodiment.ts`,
   spec §3.6). `ParticipantAvatar` takes semantic acts — `place`, `walkTo`, `sitAt(seat)`, `stand`, `lookAt`,
-  `gesture`, `talking` — and ONE PlayCanvas anim state graph for everybody makes them happen on ONE rigged human
-  (Quaternius' CC0 mannequin, `public/room/mannequin.glb`, trimmed with gltf-transform; licence beside it).
+  `gesture`, `talking` — and ONE PlayCanvas anim state graph for everybody makes them happen on two rigged,
+  DRESSED humans (Quaternius' CC0 base characters + animation library, retargeted by bone name and clothed by
+  skinning weights — `public/room/person-m|f.glb` + a `skin-<m|f>-<word>.webp` per palette word; the build is the
+  scratch `ubc/build-person.mjs` + `dress.py`; licence beside the files). Never `quantize` a skinned body.
   Presence, the `scene.*` skills and the Mystery Night's cues all speak that vocabulary; the block `Figure` is
   gone. Traps: a container's animation ASSETS are named `<file>/animation/<i>` — the clip's name is on the TRACK
   (`asset.resource.name`); a state assigned no track plays a placeholder of duration `MAX_VALUE` and the body

@@ -23,9 +23,10 @@ import { Deck3D } from './cards3d';
  */
 
 const WALK_SPEED = 2.0; // m/s — the walk clip's stride, so feet do not slide
-const BODY_URL = '/room/mannequin.glb';
+const ROOM_DIR = '/room';
 const KIT_URL = '/room/lounge-kit.glb';
-const CHAIR_R = 2.35; // where a seated body's feet go, from the table's centre
+const CHAIR_R = 2.15; // where a seated body's feet go, from the table's centre
+const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
 
 export interface LoungeProps {
   socket: RoomSocket;
@@ -133,9 +134,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // back, down at the felt — the table is what a seated person looks at
         m.avatar.update(dt);
         const p = m.avatar.pos, yaw = m.avatar.yaw;
-        const behind = new pc.Vec3(p.x - Math.sin(yaw) * 2.4 + Math.cos(yaw) * 0.9, 3.1, p.z - Math.cos(yaw) * 2.4 - Math.sin(yaw) * 0.9);
+        const behind = new pc.Vec3(p.x - Math.sin(yaw) * 1.9 + Math.cos(yaw) * 0.8, 2.6, p.z - Math.cos(yaw) * 1.9 - Math.sin(yaw) * 0.8);
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
-        camera.lookAt(p.x + Math.sin(yaw) * 2.2, 0.85, p.z + Math.cos(yaw) * 2.2);
+        camera.lookAt(p.x + Math.sin(yaw) * 2.0, 0.78, p.z + Math.cos(yaw) * 2.0);
       } else if (m) {
         const av = m.avatar; const pos = av.pos;
         let dx = 0, dz = 0;
@@ -185,7 +186,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         setPlates(next);
       }
     });
-    library.current = new AvatarLibrary(a, BODY_URL); library.current.load();
+    library.current = new AvatarLibrary(a, ROOM_DIR); library.current.load();
     kit.current = new RoomKit(a, KIT_URL); kit.current.ready(() => setKitReady(true));
     deck.current = new Deck3D(a);
     // the walk scripts read the bodies' states through this; nothing in the app does
@@ -228,7 +229,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     for (const [id, pl] of [...plateRef.current]) if (pl.kind === 'table' || pl.kind === 'anchor') plateRef.current.delete(id);
     const root = new pc.Entity('scenery'); a.root.addChild(root); scenery.current = root;
     const mat = (r: number, g: number, b: number, extra: Partial<pc.StandardMaterial> = {}) => { const m = new pc.StandardMaterial(); m.diffuse = new pc.Color(r, g, b); Object.assign(m, extra); m.update(); return m; };
-    const felt = mat(0.12, 0.42, 0.29), feltHi = mat(0.16, 0.49, 0.35), wall = mat(0.08, 0.25, 0.17), wood = mat(0.23, 0.16, 0.10), brass = mat(0.85, 0.70, 0.42, { metalness: 0.6, gloss: 0.7, useMetalness: true }), chairFree = mat(0.36, 0.29, 0.53), chairTaken = mat(0.54, 0.25, 0.20), shade = mat(0.11, 0.14, 0.13);
+    const felt = mat(0.12, 0.42, 0.29), feltHi = mat(0.16, 0.49, 0.35), wall = mat(0.08, 0.25, 0.17), wood = mat(0.23, 0.16, 0.10), brass = mat(0.85, 0.70, 0.42, { metalness: 0.6, gloss: 0.7, useMetalness: true }), chairFree = mat(0.36, 0.29, 0.53), chairTaken = mat(0.54, 0.25, 0.20), shade = mat(0.11, 0.14, 0.13), rail = mat(0.24, 0.13, 0.09, { gloss: 0.5 });
     const prim = (type: string, material: pc.StandardMaterial, pos: [number, number, number], scale: [number, number, number], rotY = 0) => {
       const e = new pc.Entity(type); e.addComponent('render', { type, material, castShadows: type !== 'plane', receiveShadows: true }); e.setLocalPosition(...pos); e.setLocalScale(...scale); e.setLocalEulerAngles(0, rotY, 0); root.addChild(e); return e;
     };
@@ -239,13 +240,16 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const p = a2[t.anchor]!;
       const g = new pc.Entity(`table:${t.tableId}`); g.setLocalPosition(p.x, 0, p.y); root.addChild(g);
       const add = (type: string, material: pc.StandardMaterial, pos: [number, number, number], scale: [number, number, number], rotY = 0) => { const e = new pc.Entity(type); e.addComponent('render', { type, material, castShadows: true, receiveShadows: true }); e.setLocalPosition(...pos); e.setLocalScale(...scale); e.setLocalEulerAngles(0, rotY, 0); g.addChild(e); };
-      add('cylinder', feltHi, [0, 0.78, 0], [3, 0.12, 3]);
-      add('cylinder', wood, [0, 0.72, 0], [3.3, 0.06, 3.3]);
-      add('cylinder', wood, [0, 0.36, 0], [0.6, 0.72, 0.6]);
+      // A POKER TABLE: a thin felt at 0.76 m inside a padded leather rail, on a pedestal — not a drum
+      add('cylinder', feltHi, [0, 0.77, 0], [2.84, 0.02, 2.84]);
+      add('cylinder', rail, [0, 0.745, 0], [3.1, 0.03, 3.1]);
+      add('cylinder', wood, [0, 0.715, 0], [3.16, 0.03, 3.16]);
+      add('cylinder', wood, [0, 0.4, 0], [0.5, 0.66, 0.5]);
+      add('cylinder', wood, [0, 0.03, 0], [1.6, 0.06, 1.6]);
       // A CHAIR is the kit's, a little outside where the body's feet go (CHAIR_R), turned to the felt; a seat pad
       // and a back stand in until the kit has loaded.
       for (let i = 0; i < t.seats; i++) {
-        const ang = (i / t.seats) * Math.PI * 2; const c = i < t.seated ? chairTaken : chairFree; const r = CHAIR_R + 0.28;
+        const ang = (i / t.seats) * Math.PI * 2; const c = i < t.seated ? chairTaken : chairFree; const r = CHAIR_R + CHAIR_BACK;
         if (furnished && k!.place('chairCushion', g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI)) continue;
         add('box', c, [Math.sin(ang) * r, 0.42, Math.cos(ang) * r], [0.5, 0.08, 0.5], ang * 180 / Math.PI);
         add('box', c, [Math.sin(ang) * (r + 0.22), 0.7, Math.cos(ang) * (r + 0.22)], [0.5, 0.6, 0.06], ang * 180 / Math.PI);
@@ -319,7 +323,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       let b = bodies.current.get(p.playerId);
       if (!b) { const av = new ParticipantAvatar(lib, p.body, 'follow'); av.place(p.x, p.y, p.yaw); a.root.addChild(av.entity); b = { avatar: av, name: p.name }; bodies.current.set(p.playerId, b); }
       if (chair) b.avatar.sitAt(chair); else { b.avatar.stand(); b.avatar.walkTo(p.x, p.y, p.yaw); }
-      const head = (chair ? chair.at : new pc.Vec3(p.x, 0, p.y)).add(new pc.Vec3(0, chair ? 1.75 : 2.05, 0));
+      const head = (chair ? chair.at : new pc.Vec3(p.x, 0, p.y)).add(new pc.Vec3(0, chair ? 1.55 : 2.05, 0));
       // The agent under the name only when it IS a name — an address says nothing to anyone.
       const agentSub = p.agent && p.agent.includes('.') ? p.agent : undefined;
       plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: p.name, face: p.name, agentSub, sub: actingPlayer.current === p.playerId ? 'to act' : agentSub, world: head });
@@ -338,7 +342,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       let bt = bots.current.get(key);
       if (!bt) { bt = new ParticipantAvatar(lib, o.kind === 'agent' ? 'slate' : 'ink', 'follow'); bt.place(chair.at.x, chair.at.z, chair.yaw); bt.sitAt(chair); a.root.addChild(bt.entity); bots.current.set(key, bt); }
       botPlate.current.set(o.playerId, `bot:${key}`);
-      plateRef.current.set(`bot:${key}`, { id: `bot:${key}`, kind: 'name', text: o.name ?? (o.kind === 'agent' ? 'house bot' : 'seated'), sub: actingPlayer.current === o.playerId ? 'to act' : undefined, world: chair.at.clone().add(new pc.Vec3(0, 1.75, 0)) });
+      plateRef.current.set(`bot:${key}`, { id: `bot:${key}`, kind: 'name', text: o.name ?? (o.kind === 'agent' ? 'house bot' : 'seated'), sub: actingPlayer.current === o.playerId ? 'to act' : undefined, world: chair.at.clone().add(new pc.Vec3(0, 1.55, 0)) });
     }
     for (const [key, bt] of [...bots.current]) if (!seenBots.has(key)) { bt.destroy(); bots.current.delete(key); plateRef.current.delete(`bot:${key}`); }
   }, [state.people, state.you, state.manifest]);
@@ -360,9 +364,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     const v = board.view; const cx = an.x, cz = an.y; const yourAng = (you.seatedAt.seat / t.seats) * Math.PI * 2;
     // the row runs across your line of sight: perpendicular to the ray from the centre to your chair
     const rx = Math.cos(yourAng), rz = -Math.sin(yourAng);
-    const H = 0.845; // the felt's top is 0.84
+    const H = 0.785; // the felt's top is 0.78
     if (v.hand) {
-      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.13; d.card(c, cx + rx * o, H, cz + rz * o, yourAng + Math.PI, root, i * 0.0005); });
+      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.19; d.card(c, cx + rx * o, H, cz + rz * o, yourAng + Math.PI, root, i * 0.0005); });
       const pot = v.hand.pots.reduce((a2, p) => a2 + p.amount, 0) + v.seats.reduce((a2, s2) => a2 + (s2.inHand?.streetBet ?? 0), 0);
       if (pot > 0) plateRef.current.set('felt:pot', { id: 'felt:pot', kind: 'pot', text: `${pot}`, sub: 'pot', world: new pc.Vec3(cx - Math.sin(yourAng) * 0.45, H + 0.02, cz - Math.cos(yourAng) * 0.45) });
     }
@@ -371,7 +375,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const ang = (seat.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
       const px = Math.cos(ang), pz = -Math.sin(ang); // across that seat's own line
       const cards = seat.inHand.holeCards ?? [null, null];
-      cards.forEach((c, i) => { const o = (i - 0.5) * 0.075; d.card(c, cx + sx * 1.3 + px * o, H, cz + sz * 1.3 + pz * o, ang + Math.PI, root, i * 0.0005); });
+      cards.forEach((c, i) => { const o = (i - 0.5) * 0.11; d.card(c, cx + sx * 1.3 + px * o, H, cz + sz * 1.3 + pz * o, ang + Math.PI, root, i * 0.0005); });
     }
     // whose turn: a mark on the felt in front of the acting seat's cards, and where the seated heads turn
     actingRef.current = v.hand?.toAct != null ? (() => { const ang = (v.hand!.toAct! / t.seats) * Math.PI * 2; return new pc.Vec3(cx + Math.sin(ang) * CHAIR_R, 1.15, cz + Math.cos(ang) * CHAIR_R); })() : null;
@@ -382,7 +386,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
 
   // your own plate follows your own body (which moves locally, ahead of the server)
   useEffect(() => {
-    const t = setInterval(() => { const m = me.current; const pl = state.you ? plateRef.current.get(`name:${state.you}`) : null; if (m && pl) pl.world = m.avatar.pos.clone().add(new pc.Vec3(0, m.avatar.seated ? 1.6 : 2.05, 0)); }, 50);
+    const t = setInterval(() => { const m = me.current; const pl = state.you ? plateRef.current.get(`name:${state.you}`) : null; if (m && pl) pl.world = m.avatar.pos.clone().add(new pc.Vec3(0, m.avatar.seated ? 1.55 : 2.05, 0)); }, 50);
     return () => clearInterval(t);
   }, [state.you]);
 

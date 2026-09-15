@@ -182,15 +182,18 @@ A2A participant → Player Embodiment → Avatar template → Animation controll
 | Layer | What | Off the shelf | File |
 | --- | --- | --- | --- |
 | Semantic acts | `place`, `walkTo`, `sitAt(seat)`, `stand`, `lookAt`, `gesture`, `talking(on)` — what presence says now and what the `scene.*` skills will say; **nothing above this line moves a limb** | — | `components/room/embodiment.ts` `ParticipantAvatar` |
-| Body | ONE rigged humanoid GLB, loaded once per app (`AvatarLibrary`) and instantiated per participant; per-person palette by material tint | **Quaternius Universal Animation Library mannequin, CC0** (`public/room/mannequin.glb`, trimmed with gltf-transform to the 12 clips used: 880 KB, 354 KB gzipped) | `embodiment.ts` |
+| Body | TWO rigged, dressed humans (`person-m.glb`, `person-f.glb`, ~0.8 MB gzipped each), loaded once per app (`AvatarLibrary`) and instantiated per participant; the palette word picks the body and a SKIN — the base colour with clothes painted on by skinning weights (`skin-<m\|f>-<word>.webp`, ~30 KB) | **Quaternius Universal Base Characters + Universal Animation Library, both CC0**; the clips retargeted onto the bodies by bone name (`scratchpad/ubc/build-person.mjs`, `dress.py` — the pipeline is the asset, rerun it for a new hair, a new garment palette, a new clip) | `embodiment.ts` |
 | Clips | idle, talking, walk, sit down, seated, seated talking, stand up, interact, pick up, dance | the same library (46 clips available; Universal Base Characters and UAL 2 share the rig) | in the GLB |
 | Controller | ONE PlayCanvas **anim state graph** for everybody: `START → Idle \| Seated`, `Idle ⇄ Walk` on `speed`, `Idle ⇄ Talk` and `Seated ⇄ SeatedTalk` on `talking`, `Idle → SitDown → Seated → StandUp → Idle` on `seated`, one-shots on `gesture` | PlayCanvas `anim` component (`AnimStateGraph`, transitions with `exitTime`, later layer masks for seated lower body + talking upper body) | `embodiment.ts` `GRAPH` |
 | Seats | a `Seat { at, yaw }` anchor per chair (`chairOf`): the seated anchor is where the feet go, the clip puts the hips on the chair; approach point, camera anchor and look target derive from it | — | `Lounge.tsx` |
 | Scene | the floor, walls and poker tables are primitives; the FURNITURE is **Kenney's CC0 Furniture Kit** (`public/room/lounge-kit.glb`, 17 pieces as named nodes, 23 KB gzipped) cloned per placement by `RoomKit.place(piece, x, z, yaw)` — chairs at the tables, the bar with its stools, the sofa and chairs by the hearth, bookcases, the doorway, lamps and plants; next: a whole glTF scene with anchors as **named nodes** (`door`, `bar`, `fire`, `lectern`, `table.N`, `table.N.seat.M`) so a Blender/PlayCanvas-editor scene drops in and the runtime reads its anchors by name | Blender / PlayCanvas editor, glTF | `Lounge.tsx` scenery effect |
 | Cues | `SceneCue` (§5.8): lights, a line at an anchor, a camera move, a gesture by name — a script a host writes for a night | — | phase 4 |
 
-**Retargeting.** Every humanoid the room draws is on ONE skeleton (the library's Rigify `DEF-*` bones), so the
-clips are shared by node name across bodies and the graph never changes. A person's own avatar from
+**Retargeting.** Every humanoid the room draws is on ONE skeleton (the library's Unreal-style rig: `pelvis`,
+`spine_01…03`, `Head`, `upperarm_l`…), so the clips are shared by node name across bodies and the graph never
+changes. The clip rig is in centimetres under a ×100 node: rotations carry over as they are, the pelvis's
+translation is scaled to metres and re-based on the body's own hip, every other translation is dropped so a body
+keeps its proportions. gltf-transform's `quantize` breaks skinned meshes here — leave it out for bodies. A person's own avatar from
 **Avaturn** or a **Mixamo**-rigged GLB is a different skeleton: it is retargeted ONCE, offline (Blender's
 retarget script, or the library re-exported onto the Mixamo rig), stored as a GLB whose clips carry the same
 names, and referenced from the person's `cardroom.avatar` record. The runtime keeps one code path.
