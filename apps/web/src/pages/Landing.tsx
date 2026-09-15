@@ -10,7 +10,7 @@ import { describeMoment, fmtSeats, pickFeaturedTable, stakeLabel, summarizeLobby
 import { SignInPanel } from '../components/SignInPanel';
 import { brandLine } from '../lib/brand';
 import { hasBoard } from '../lib/games';
-import { HOME_HASH, MISSIONS_HASH, NEW_CLUB_HASH } from '../lib/routes';
+import { HOME_HASH, NEW_CLUB_HASH } from '../lib/routes';
 
 const POLL_MS = 15000;
 
@@ -177,7 +177,9 @@ function Hero({ live }: { live: LiveLobby }) {
           <ul className="hero-links">
             <li><a href="#/signup"><strong>First time? Sign up and play</strong><span>A name and one trip to your Home.</span></a></li>
             <li><a href={NEW_CLUB_HASH}><strong>Start a club</strong><span>For the group you already meet with.</span></a></li>
-            <li><a href={MISSIONS_HASH}><strong>The missions</strong><span>Who comes as a guest, and from where.</span></a></li>
+            {/* THE MISSIONS ARE ALREADY ON THIS PAGE, right under the hero — so this one is a scroll, not a
+                trip away (2026-09-15). The section's own "See them all" is the road to the map. */}
+            <li><a href="#missions"><strong>The missions</strong><span>Who comes as a guest, and from where.</span></a></li>
             <li><a href="#how"><strong>How it works</strong><span>A night, end to end.</span></a></li>
           </ul>
         </div>
