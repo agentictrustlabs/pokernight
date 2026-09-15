@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { AppSession } from '../lib/types';
 import { RoomSocket } from '../lib/roomSocket';
-import { roomApi as api } from '../lib/api';
+import { api as tables, roomApi as api, tableSocketUrl } from '../lib/api';
+import { leaveSeat, takeSeat } from '../lib/roomSeat';
+import type { LoungeHandle } from '../components/room/Lounge';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { useClubHuddle } from '../components/huddle/ClubHuddleProvider';
 import { clubScope } from '../lib/huddle';
@@ -9,6 +11,8 @@ import { SpatialVoice } from '../components/room/SpatialVoice';
 import { clubHash, HOME_HASH } from '../lib/routes';
 
 /** The scene is a separate chunk — three.js never loads for a page that has no room (the Leaflet rule). */
+/** The stack a play-money seat is taken with from the room — the practice table's, for the same reason. */
+const ROOM_STACK = 200;
 const Lounge = lazy(() => import('../components/room/Lounge').then((m) => ({ default: m.Lounge })));
 
 /**
@@ -23,6 +27,10 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
   const sock = useRef<RoomSocket | null>(null);
   const [zone, setZone] = useState<string | null>(null);
   const [line, setLine] = useState('');
+  const lounge = useRef<LoungeHandle | null>(null);
+  /** The sit in progress, as a line for the room bar: walking, sitting, refused. */
+  const [sitting, setSitting] = useState<{ tableId: string; seat: number; phase: 'walking' | 'sitting' | 'standing' } | null>(null);
+  const [sitError, setSitError] = useState<string | null>(null);
   const webgl = useRef<boolean>(typeof document !== 'undefined' && (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })());
   useEffect(() => {
     if (!webgl.current) return;
@@ -35,6 +43,31 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
     return () => { clearInterval(relayout); s.close(); sock.current = null; };
   }, [roomId, session.token]);
   const onZone = useCallback((z: string | null) => setZone(z), []);
+  /**
+   * THE BODY HAS ARRIVED AT A CHAIR. A seat is the table's own `join` (spec §3.4, open question 3): a
+   * play-money table is joined from here with the practice stack; a money table stays a button on the flat
+   * board, because a buy-in is money and the room forwards nothing that costs any. The room is re-read at once
+   * so the body sits without waiting for the next relayout.
+   */
+  const onSitRequest = useCallback(async (tableId: string, seat: number) => {
+    setSitError(null);
+    try {
+      const t = await tables.getTable(tableId, session.token);
+      if (t.settlement !== 'play-money') { location.hash = `#/t/${encodeURIComponent(tableId)}`; return; }
+      setSitting({ tableId, seat, phase: 'sitting' });
+      // the poker view carries its config; a canasta table has no stake and the number is ignored
+      const cfg = ((t.view as { config?: { minBuyIn?: number; maxBuyIn?: number } } | undefined)?.config ?? {});
+      const buyIn = Math.min(cfg.maxBuyIn ?? ROOM_STACK, Math.max(cfg.minBuyIn ?? 1, ROOM_STACK));
+      const r = await takeSeat(tableSocketUrl(tableId, session.token), seat, buyIn);
+      if (!r.ok) setSitError(r.reason);
+      await api.room(roomId, session.token).catch(() => undefined);
+    } catch (e) { setSitError(e instanceof Error ? e.message : String(e)); } finally { setSitting(null); }
+  }, [roomId, session.token]);
+  const walkToSeat = (tableId: string, seat: number) => { setSitError(null); if (lounge.current?.walkToSeat(tableId, seat)) setSitting({ tableId, seat, phase: 'walking' }); };
+  const standUp = async (tableId: string) => {
+    setSitError(null); setSitting({ tableId, seat: -1, phase: 'standing' });
+    try { const r = await leaveSeat(tableSocketUrl(tableId, session.token)); if (!r.ok) setSitError(r.reason); await api.room(roomId, session.token).catch(() => undefined); } finally { setSitting(null); }
+  };
   const s = sock.current;
   // VOICE IN A CLUB'S LOUNGE: the club's huddle is the room's meeting; while you are in it here, every voice
   // is placed at the body that owns it. The hall has no huddle yet (spec §3.3 — a `hall` scope at the Home).
@@ -71,7 +104,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
       </header>
       {s?.state.error ? <div className="form-error">{s.state.error}</div> : null}
       <Suspense fallback={<div className="lounge-loading"><p className="hint">Loading the lounge…</p></div>}>
-        {s ? <Lounge socket={s} state={s.state} onZone={onZone} /> : null}
+        {s ? <Lounge ref={lounge} socket={s} state={s.state} onZone={onZone} onSitRequest={onSitRequest} /> : null}
       </Suspense>
       {s && inThisHuddle ? <SpatialVoice state={s.state} /> : null}
       <div className="room-bar">
@@ -79,13 +112,23 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
           <div className="room-table-card">
             <strong>{seatedTable.name}</strong> <span className="hint">seat {(meNow!.seatedAt!.seat) + 1} · {seatedTable.seated}/{seatedTable.seats} seated</span>
             <a className="button primary" href={`#/t/${encodeURIComponent(seatedTable.tableId)}`}>Back to your cards →</a>
+            <button type="button" className="small" disabled={!!sitting} onClick={() => void standUp(seatedTable.tableId)}>{sitting?.phase === 'standing' ? 'Standing up…' : 'Stand up'}</button>
           </div>
+        ) : sitting ? (
+          <div className="room-table-card"><span className="hint">{sitting.phase === 'walking' ? `Walking to seat ${sitting.seat + 1}…` : `Sitting down at seat ${sitting.seat + 1}…`}</span></div>
         ) : table ? (
           <div className="room-table-card">
             <strong>{table.name}</strong> <span className="hint">{table.seated}/{table.seats} seated</span>
-            <a className="button primary" href={`#/t/${encodeURIComponent(table.tableId)}`}>Sit down at the table →</a>
+            {/* THE FREE CHAIRS, as buttons: the same walk a click on the chair starts */}
+            <span className="room-chairs">
+              {Array.from({ length: table.seats }, (_, i) => i).filter((i) => !(table.occupants ?? []).some((o) => o.seat === i)).map((i) => (
+                <button key={i} type="button" className="small" onClick={() => walkToSeat(table.tableId, i)}>Sit at {i + 1}</button>
+              ))}
+            </span>
+            <a className="small" href={`#/t/${encodeURIComponent(table.tableId)}`}>Open the flat table →</a>
           </div>
-        ) : <span className="hint">Walk up to a table to look in.</span>}
+        ) : <span className="hint">Walk up to a table to look in, or click a free chair to sit.</span>}
+        {sitError ? <div className="form-error">{sitError}</div> : null}
         <form className="room-say" onSubmit={(e) => { e.preventDefault(); if (line.trim()) { s?.say(line.trim()); setLine(''); } }}>
           <input value={line} onChange={(e) => setLine(e.target.value)} placeholder="Say something to the room" maxLength={140} />
           <button type="submit" disabled={!line.trim()}>Say</button>

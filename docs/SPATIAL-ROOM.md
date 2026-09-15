@@ -270,8 +270,11 @@ export type RoomServerMessage = { type: 'room'; manifest: RoomManifest; people: 
 - **VRM licensing** for stock bodies (CC-BY assets exist; commission four).
 - **Phones**: P1 ships desktop-first; the phone gets the flat board until a joystick and a 30 fps budget
   are proven.
-- **`scene.sit` and money**: the room forwards a sit to the table on the person's behalf only for a
-  play-money table in P3; a money table's seat stays a button the person presses.
+- ~~**`scene.sit` and money**~~ — **built 2026-09-14** (`lib/roomSeat.ts`, `RoomPage.onSitRequest`): a click on a
+  free chair (or its button in the table card) walks the body to the seat; on arrival the page visits the
+  TABLE's socket — `join` with the practice stack, wait for `seat-joined`, close — and re-reads the room so
+  the body sits. Only a play-money table; a money table's seat stays a button on the flat board, because a
+  buy-in is money and the room forwards nothing that costs any. "Stand up" is the same visit with `leave`.
 - **Recording**: never. The room keeps counts (who, when, at which night), not audio.
 
 ## 8. Acceptance

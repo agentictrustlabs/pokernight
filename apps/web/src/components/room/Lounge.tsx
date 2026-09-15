@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as pc from 'playcanvas';
 import type { RoomManifest, RoomPerson } from '@pokernight/protocol';
 import type { RoomSocket, RoomState } from '../../lib/roomSocket';
@@ -28,19 +28,29 @@ export interface LoungeProps {
   socket: RoomSocket;
   state: RoomState;
   onZone?: (zone: string | null) => void;
+  /** Your body has walked up to this chair and turned to it: the page takes the seat at the TABLE. */
+  onSitRequest?: (tableId: string, seat: number) => void;
+}
+/** What the page can tell the lounge to do with your body. */
+export interface LoungeHandle {
+  /** Walk to this chair; `onSitRequest` fires on arrival. */
+  walkToSeat: (tableId: string, seat: number) => boolean;
 }
 
 interface BodyHandle { avatar: ParticipantAvatar; name: string }
 interface Plate { id: string; kind: 'name' | 'table' | 'anchor' | 'bubble'; text: string; sub?: string; world: pc.Vec3; you?: boolean; /** whose face hangs on the plate, when the huddle has one */ face?: string; x?: number; y?: number; visible?: boolean }
 
-export function Lounge({ socket, state, onZone }: LoungeProps) {
+export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ socket, state, onZone, onSitRequest }, ref) {
   const host = useRef<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const app = useRef<pc.Application | null>(null);
   const bodies = useRef(new Map<string, BodyHandle>());
   const scenery = useRef<pc.Entity | null>(null);
   const library = useRef<AvatarLibrary | null>(null);
-  const me = useRef<{ avatar: ParticipantAvatar; name: string; goal: pc.Vec3 | null } | null>(null);
+  const me = useRef<{ avatar: ParticipantAvatar; name: string; goal: pc.Vec3 | null; heading: { tableId: string; seat: number; yaw: number } | null } | null>(null);
+  const onSitRef = useRef(onSitRequest); onSitRef.current = onSitRequest;
+  /** Every chair in the room, by table and seat, with whether somebody is in it — from the manifest. */
+  const chairs = useRef<Array<{ tableId: string; seat: number; at: pc.Vec3; yaw: number; taken: boolean }>>([]);
   /** House bots in chairs — bodies for occupants no person in the room owns. */
   const bots = useRef(new Map<string, ParticipantAvatar>());
   const keys = useRef(new Set<string>());
@@ -89,7 +99,12 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
       const to = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.farClip);
       const ray = new pc.Ray(from, to.sub(from).normalize());
       const hit = new pc.Vec3();
-      if (new pc.Plane(pc.Vec3.UP, 0).intersectsRay(ray, hit)) me.current.goal = new pc.Vec3(hit.x, 0, hit.z);
+      if (!new pc.Plane(pc.Vec3.UP, 0).intersectsRay(ray, hit)) return;
+      // A CLICK NEAR A FREE CHAIR is "sit there": walk to it and, on arrival, ask the table for the seat.
+      let best: (typeof chairs.current)[number] | null = null; let bd = 0.9;
+      for (const ch of chairs.current) { if (ch.taken) continue; const d = Math.hypot(ch.at.x - hit.x, ch.at.z - hit.z); if (d < bd) { bd = d; best = ch; } }
+      if (best && !me.current.avatar.seated) { me.current.goal = best.at.clone(); me.current.heading = { tableId: best.tableId, seat: best.seat, yaw: best.yaw }; }
+      else { me.current.goal = new pc.Vec3(hit.x, 0, hit.z); me.current.heading = null; }
     });
     a.on('update', (dt: number) => {
       const m = me.current;
@@ -108,15 +123,20 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
         if (k.has('up')) dz += 1; if (k.has('down')) dz -= 1; if (k.has('left')) dx -= 1; if (k.has('right')) dx += 1;
         let moved = false;
         if (dx || dz) {
+          m.heading = null;
           const len = Math.hypot(dx, dz); dx /= len; dz /= len;
           const cp = camera.getPosition();
           const heading = Math.atan2(cp.x - pos.x, cp.z - pos.z) + Math.PI;
           const fx = Math.sin(heading) * dz + Math.cos(heading) * dx;
           const fz = Math.cos(heading) * dz - Math.sin(heading) * dx;
-          pos.x += fx * WALK_SPEED * dt; pos.z += fz * WALK_SPEED * dt; av.yaw = Math.atan2(fx, fz); moved = true;
+          pos.x += fx * WALK_SPEED * dt; pos.z += fz * WALK_SPEED * dt; av.face(Math.atan2(fx, fz)); moved = true;
         } else if (m.goal) {
           const d = new pc.Vec3().sub2(m.goal, pos); d.y = 0;
-          if (d.length() < 0.1) m.goal = null; else { d.normalize(); pos.x += d.x * WALK_SPEED * dt; pos.z += d.z * WALK_SPEED * dt; av.yaw = Math.atan2(d.x, d.z); moved = true; }
+          if (d.length() < 0.1) {
+            m.goal = null;
+            // arrived at a chair: turn to the felt and ask for the seat, once
+            if (m.heading) { av.face(m.heading.yaw); av.moved(); socket.pose(pos.x, pos.z, av.yaw); const h = m.heading; m.heading = null; onSitRef.current?.(h.tableId, h.seat); }
+          } else { d.normalize(); pos.x += d.x * WALK_SPEED * dt; pos.z += d.z * WALK_SPEED * dt; av.face(Math.atan2(d.x, d.z)); moved = true; }
         }
         // The walls are at ±11; a body stops a step short, and the camera never leaves the room.
         pos.x = Math.max(-9.5, Math.min(9.5, pos.x)); pos.z = Math.max(-9.5, Math.min(9.5, pos.z));
@@ -215,7 +235,7 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
       if (isMe) {
         if (!me.current) {
           const av = new ParticipantAvatar(lib, p.body, 'direct'); av.place(p.x, p.y, p.yaw); a.root.addChild(av.entity);
-          me.current = { avatar: av, name: p.name, goal: null };
+          me.current = { avatar: av, name: p.name, goal: null, heading: null };
         }
         if (chair) me.current.avatar.sitAt(chair); else me.current.avatar.stand();
         plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: `${p.name} · you`, face: p.name, world: me.current.avatar.pos.clone().add(new pc.Vec3(0, 2.05, 0)), you: true });
@@ -233,6 +253,7 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
     for (const [id, b] of [...bodies.current]) if (!seen.has(id)) { b.avatar.destroy(); bodies.current.delete(id); plateRef.current.delete(`name:${id}`); plateRef.current.delete(`bubble:${id}`); }
     // THE HOUSE'S BOTS AND ABSENT PLAYERS: an occupant no body in the room owns is drawn seated in its chair
     // as a quieter figure — a persona's body is decoration for a seat, not presence (spec §3.5).
+    chairs.current = manifest.tables.flatMap((t) => Array.from({ length: t.seats }, (_, i) => { const c = chairOf(t.tableId, i)!; return { tableId: t.tableId, seat: i, at: c.at, yaw: c.yaw, taken: (t.occupants ?? []).some((o) => o.seat === i) }; }));
     const seenBots = new Set<string>();
     for (const t of manifest.tables) for (const o of t.occupants ?? []) {
       if (state.people.has(o.playerId)) continue;
@@ -251,6 +272,15 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
     return () => clearInterval(t);
   }, [state.you]);
 
+  useImperativeHandle(ref, () => ({
+    walkToSeat: (tableId, seat) => {
+      const m = me.current; const ch = chairs.current.find((c) => c.tableId === tableId && c.seat === seat);
+      if (!m || !ch || ch.taken || m.avatar.seated) return false;
+      m.goal = ch.at.clone(); m.heading = { tableId, seat, yaw: ch.yaw };
+      return true;
+    },
+  }), []);
+
   return (
     <div className="lounge" ref={host}>
       <canvas ref={canvas} />
@@ -263,10 +293,10 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
         ))}
       </div>
       {!state.manifest ? <div className="lounge-loading-inline"><p className="hint">Walking in…</p></div> : null}
-      <div className="lounge-help hint">Walk with W A S D or the arrow keys, or click the floor. Walk up to a table to look in.</div>
+      <div className="lounge-help hint">Walk with W A S D or the arrow keys, or click the floor. Click a free chair to sit down.</div>
     </div>
   );
-}
+});
 
 function keyOf(key: number): 'up' | 'down' | 'left' | 'right' | null {
   if (key === pc.KEY_W || key === pc.KEY_UP) return 'up';

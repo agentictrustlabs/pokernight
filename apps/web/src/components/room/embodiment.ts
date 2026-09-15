@@ -185,8 +185,10 @@ export class ParticipantAvatar {
       setTimeout(() => anim.setInteger('gesture', 0), 400);
     }
   }
-  /** Your own body: the controller moved `pos`/`yaw` itself this frame; keep the target with it. */
-  moved(): void { this.target.copy(this.pos); this.targetYaw = this.yaw; }
+  /** Your own body: the controller moved `pos` itself this frame; keep the target with it (the facing is `face`'s). */
+  moved(): void { this.target.copy(this.pos); }
+  /** Face this way now — the controller's own turn, not eased. */
+  face(yaw: number): void { this.yaw = yaw; this.targetYaw = yaw; }
   destroy(): void { this.entity.destroy(); }
 }
 

@@ -306,6 +306,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   (`asset.resource.name`); a state assigned no track plays a placeholder of duration `MAX_VALUE` and the body
   stands in a T-pose. Playwright's fake camera is `--use-fake-device-for-media-stream` (not `-capture`).
   Walk: scratch `body-walk.cjs` (standing, walking, seen by another, seated, seen seated; `window.__lounge`).
+  **WALKING UP TO A CHAIR IS HOW YOU SIT** (`lib/roomSeat.ts`, `RoomPage.onSitRequest`, scratch `sit-walk.cjs`): a
+  click near a free chair, or its "Sit at N" button, walks the body there; on arrival the page VISITS THE TABLE'S
+  SOCKET — `join` with the practice stack, wait for `seat-joined`, close — and re-reads the room so the body sits.
+  Play-money tables only; a money seat stays a button on the flat board. "Stand up" is the same visit with `leave`.
+  A seat outlives the socket that took it (a socket is a tab), which is exactly what lets the room take one.
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must
