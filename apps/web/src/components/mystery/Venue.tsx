@@ -137,11 +137,11 @@ export function Venue({ view, speaking, act, onPerson }: VenueProps) {
       // LOOKING INTO THE ROOM, NOT AT THE FLOOR: back from the near wall and well above head height, aimed at
       // the middle of it — the arrival view the card room's lounge had to learn too.
       const cc = camCtl.current;
-      const dist = 11.5 * cc.zoom;
+      const dist = 8.6 * cc.zoom;
       const x = Math.sin(cc.yaw) * dist;
       const z = -Math.cos(cc.yaw) * dist;
-      camera.setPosition(x, 5.6 + cc.pitch * 7, z - 3.4);
-      camera.lookAt(0, 1.2, 1.6);
+      camera.setPosition(x, 3.9 + cc.pitch * 6, z - 2.6);
+      camera.lookAt(0, 1.25, 1.8);
       for (const [role, b] of bodies.current) { b.talking(speakingRef.current === role); b.update(dt); }
     });
 

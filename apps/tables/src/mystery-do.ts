@@ -17,7 +17,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { bytesToHex, randomSeed, seedCommit } from '@pokernight/deal';
 import {
-  apply, chooseAction, isDead, openStaging, parseAction, stagingOf, tick, viewFor,
+  apply, CHARACTER_CRAFT, chooseAction, DIRECTOR_CRAFT, isDead, openStaging, parseAction, stagingOf, tick, viewFor,
   type Casting, type MysteryEvent, type MysteryState, type MysteryView, type RoleId,
 } from '@pokernight/mystery';
 import { MYSTERY_DIRECT_SKILL } from '@pokernight/protocol';
@@ -390,6 +390,8 @@ export class MysteryDO extends DurableObject<Env> {
         brief: `${part?.blurb ?? ''} ${view.you?.killer ? 'You are the one who did it, and nobody else knows.' : ''} What only you know: ${part?.secret ?? ''}`.trim(),
         view: view as unknown as Record<string, unknown>,
         legal: ['move', 'say', 'whisper', 'examine', 'search', 'share', 'testify', 'alibi', ...(view.you?.killer ? ['murder', 'plant'] : []), ...(s0.phase === 'accusations' || s0.act >= pair.title.acts.length ? ['accuse'] : [])],
+        // THE CRAFT TRAVELS WITH THE ASK until it is a published artifact in the agent's own playbook.
+        craft: [...CHARACTER_CRAFT, ...(pair.title.voice?.character ?? [])],
         deadlineMs: a2aTimeoutMs(this.env),
       }, a2aTimeoutMs(this.env));
       if (!out.ok) {
@@ -472,6 +474,7 @@ export class MysteryDO extends DurableObject<Env> {
       publicView: { rooms: publicView.rooms, cast: publicView.cast.map((c) => ({ role: c.role, name: c.name, alive: c.alive })), deaths: publicView.deaths, act: publicView.act, actName: publicView.actName, objective: publicView.objective } as unknown as Record<string, unknown>,
       facts,
       fallback: fallback?.type === 'cue' ? fallback.text : '',
+      craft: [...DIRECTOR_CRAFT, ...(pair.title.voice?.director ?? [])],
       deadlineMs: a2aTimeoutMs(this.env),
     }, a2aTimeoutMs(this.env)).catch((e: unknown) => ({ ok: false as const, error: String(e) }));
     if (!out.ok) { console.warn('[mystery] the director was quiet:', out.error); return; }

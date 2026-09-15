@@ -16,6 +16,16 @@ export const BELVEDERE_SNOWFALL: Title = {
   venue: 'alpine-belvedere',
   blurb: 'The pass is shut, the wind is up, and by morning two of the eight people in this hotel will be dead. One of you did it.',
   tone: 'A death happens off the page and is described the way a novel would: no injury, no cruelty, nothing sexual.',
+  voice: {
+    character: [
+      'This is a grand alpine hotel in the nineteen-thirties and everybody is a little formal, even when frightened. Nobody swears; nobody says "guys".',
+      'Two winters ago the old man died on the mountain. Everybody here has a reason to bring it up and a reason not to.',
+    ],
+    director: [
+      'The Belvedere is stone, timber and weather. Cold rooms, a fire that will not take, a generator that falters, snow against every window.',
+      'The register, the keys, the drinks, the skis, the service stairs — the hotel is the evidence, and it is what the house notices.',
+    ],
+  },
   evidencePerDeath: 2,
   accusationMinutes: 3,
   // Halfway through the act, at the earliest: a killing at the door ends the act it was meant to shape.

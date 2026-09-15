@@ -7,6 +7,7 @@
 export * from './types.js';
 export * from './engine.js';
 export { chooseAction, type CastLines } from './cast.js';
+export { CHARACTER_CRAFT, DIRECTOR_CRAFT } from './craft.js';
 
 import { ALPINE_BELVEDERE } from './venues/alpine-belvedere.js';
 import { BELVEDERE_SNOWFALL } from './titles/belvedere-snowfall.js';

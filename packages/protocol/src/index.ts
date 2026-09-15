@@ -1272,6 +1272,11 @@ export interface SceneInput {
   deadlineMs: number;
   /** For `mystery.consult`: what their player asked. */
   question?: string;
+  /**
+   * HOW TO PLAY A PART, in words — the craft artifact's text, carried until it is a published skill in the
+   * agent's own playbook. An agent that already knows the craft can ignore it; one that does not, cannot.
+   */
+  craft?: string[];
 }
 
 /** What a character says back: one thing done, one thing said. Both optional — a character may just watch. */
@@ -1298,6 +1303,7 @@ export function encodeSceneParts(input: SceneInput): Array<{ kind: 'data'; data:
   const text = [
     `${input.skill}: you are ${input.roleName} in a murder mystery, act ${input.act}.`,
     input.brief,
+    ...(input.craft ?? []).map((c) => `- ${c}`),
     input.question ? `Your player asks: "${input.question}".` : 'It is your moment. Stay in character, and do one thing.',
     `Answer with ONE JSON object and nothing else: {"say": ${shape.say}, "action": ${shape.action}}.`,
     `What you may do here: ${input.legal.join(', ')}`,
@@ -1322,6 +1328,8 @@ export interface DirectInput {
   /** The house's own line for this moment, which is what runs if the director is quiet. */
   fallback: string;
   deadlineMs: number;
+  /** HOW TO DIRECT, in words — the same artifact-in-waiting as a character's craft. */
+  craft?: string[];
 }
 
 export const DirectOutputSchema = z.object({
@@ -1340,6 +1348,7 @@ export function encodeDirectParts(input: DirectInput): Array<{ kind: 'data'; dat
   };
   const text = [
     `${input.skill}: you are the house voice of a murder mystery, at act ${input.act} (${input.phase}).`,
+    ...(input.craft ?? []).map((c) => `- ${c}`),
     'Carry these facts, exactly as given, in your own words. Invent no clue, name no killer, move nobody:',
     ...input.facts.map((f) => `  - ${f}`),
     `Answer with ONE JSON object and nothing else: {"cue": ${shape.cue}, "hint": ${shape.hint}}.`,

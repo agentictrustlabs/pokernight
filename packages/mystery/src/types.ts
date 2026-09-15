@@ -93,6 +93,12 @@ export interface Title {
   blurb: string;
   /** The stated line on subject matter, carried into the invitation. */
   tone: string;
+  /**
+   * THE TITLE'S OWN VOICE — what this story sounds like, over and above the craft of playing any mystery.
+   * It travels with every ask until the story is a published skill artifact of its own, and then it is that
+   * artifact's opening lines.
+   */
+  voice?: { character?: string[]; director?: string[] };
   roles: Role[];
   acts: ActDef[];
   clues: ClueDef[];
