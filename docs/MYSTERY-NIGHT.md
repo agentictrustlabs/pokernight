@@ -595,8 +595,29 @@ MysteryDO ──ask, signed as the house──▶  alice.me / bob.me / …      
 - **The tokens are the thinking agent's, never the house's** — the rule that deleted `ANTHROPIC_API_KEY` from
   the persona worker. A character with a mind of its own thinks at its own Home.
 
-What remains before any of it speaks is the ESTATE half: the `mystery` skills context, the role archetypes,
-the director's archetype and the story's own artifact, published and pinned onto those agents' playbooks.
+**It speaks (2026-09-15).** `scripts/add-mystery-skills.mts` in the estate puts `mystery.act`, `mystery.consult`
+and (for a director) `mystery.direct` on an agent's `atl:capabilities` and its Studio draft; a release and a
+republish serve the card. All seven of the estate's demo agents carry it, so a solo night is a room of parts
+thought for at seven Homes. Four faults stood in the way and each was found by logging the REASON rather than
+guessing: a Home answers at the estate's edge and refuses its own host (401), so the endpoint comes off the
+card; a Home answers with a TASK and a persona with a message, so one reader knows both (`replyParts`); the
+Home's parts carry no `kind`, so requiring one threw away a good answer; and a Home answers in its own house
+shape, so a director's prose arrives under `say` and is taken as the `cue` it is.
+
+**What playing it with real Homes taught, and what the code now does about it:**
+
+| It did this | Because | So |
+| --- | --- | --- |
+| Announced its own moves — "I'll examine the register now" | Asked for an action AND a line, a model says the action aloud | The craft: your line is what the ROOM HEARS, never a narration of your own hand |
+| Repeated itself every minute | Nothing said not to | The craft: what you have said is in your view; do not say it again |
+| Whole cast fell silent after two minutes | Three misses handed the part to the house for the rest of the night, and a busy estate misses | A card that cannot answer is permanent; anything else is a REST of two minutes, then asked again |
+| Every Home slow at once | Seven asks in flight made the estate the bottleneck | Two at a time, one character per wake |
+| The director wrote the house's own line back | It was handed the fallback as something it could say | The fallback is stated as what NOT to write, and a cue that is >72% of it is dropped |
+| Fifty lines a minute | Seven characters acting every three seconds | One acts per wake: about a line every five seconds, which is what a voice can read |
+
+What remains of the estate half is the `mystery` skills CONTEXT — the role archetypes, the director's, and the
+story as its own artifact — so the craft (`packages/mystery/src/craft.ts`) and the title's voice live in each
+agent's playbook instead of riding in every message.
 
 ## 16. What playing it changed (2026-09-15)
 
