@@ -12,11 +12,11 @@ export function SignInPage({ auth, onLogin }: { auth: AuthState; onLogin: (s: Ap
     <div className="signin-page">
       <div className="panel signin-card">
         <p className="hero-eyebrow">{PRODUCT_NAME}</p>
-        <h1>Sign in to the room</h1>
+        <h1>Come in and play, or join a club</h1>
         <SignInPanel auth={auth} onLogin={onLogin} />
       </div>
       <p className="hint signin-away">
-        New here? <a href="#/">The front page</a> explains the room and shows which tables are running.
+        New here? <a href="#/">The front page</a> shows what is running and who is playing.
       </p>
     </div>
   );

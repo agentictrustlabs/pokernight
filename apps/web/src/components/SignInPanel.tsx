@@ -87,11 +87,11 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
               />
             </label>
             <p className="hint" id="signin-name-hint">
-              This is the name other players see at the table. Leave it blank and you will play as &ldquo;Seat 4&rdquo;.
+              This is the name other players see. Leave it blank and you will play as &ldquo;Seat 4&rdquo;.
             </p>
             <BuyInConsent buyIn={config.home.buyIn ?? null} />
             <button className="primary big" type="button" onClick={() => auth.signInWithHome(name)} disabled={busy}>
-              {busy ? 'Signing in…' : config.home.buyIn ? 'Sign in and set tonight’s limit' : 'Sign in to play'}
+              {busy ? 'Coming in…' : 'Come in and play'}
             </button>
             <p className="hint">
               Use a phone number, an email address or a social account at your Home{homeHost ? ` (${homeHost})` : ''}. No
@@ -122,16 +122,20 @@ function BuyInConsent({ buyIn }: { buyIn: NonNullable<AuthConfig['home']['buyIn'
   const per = `${fmtAsset(BigInt(buyIn.maxPerBuyIn))} ${buyIn.symbol}`;
   const all = `${fmtAsset(BigInt(buyIn.sessionTotal))} ${buyIn.symbol}`;
   const hours = Math.max(1, Math.round(buyIn.validSeconds / 3600));
+  // STILL SAID, NEVER SHOUTED. The ceiling is real and a person is about to approve it, so it cannot be hidden —
+  // but the first screen of a games site should not open with money. Folded away, and the person's own Home shows
+  // the same numbers again before anything is signed.
   return (
-    <div className="signin-consent">
+    <details className="signin-consent">
+      <summary>Signing in also sets a limit for tonight</summary>
       <p>
-        <strong>Signing in also sets your limit for tonight.</strong> Your Home will ask you to approve a ceiling for this
-        room: up to {per} per buy-in, {all} in all, at most {buyIn.maxBuyIns} buy-ins, for the next {hours} hours.
+        Your Home will ask you to approve a ceiling for this room: up to {per} per buy-in, {all} in all, at most{' '}
+        {buyIn.maxBuyIns} buy-ins, for the next {hours} hours.
       </p>
       <p className="hint">
         Nothing is taken until you sit down at a table and buy in. You can undo the limit at your Home at any time.
       </p>
-    </div>
+    </details>
   );
 }
 

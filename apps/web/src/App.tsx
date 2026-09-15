@@ -24,7 +24,7 @@ import {
 } from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
-import { HOME_HASH, clubHash, goTo, missionHash, route, takeReturn } from './lib/routes';
+import { HOME_HASH, NEW_MISSION_HASH, clubHash, goTo, missionHash, route, takeReturn } from './lib/routes';
 import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
 import { Brand } from './components/Brand';
 import { PRODUCT_MARK } from './lib/brand';
@@ -566,12 +566,18 @@ export function App() {
       <div className="topbar">
         <Brand />
         <span className="spacer" />
+        {/* THE THINGS YOU DO ONCE live up here, not on the screens people use every night: registering a
+            mission is a steward's errand and starting a club is a host's, and neither belongs in front of
+            somebody who came to play a game. */}
+        <nav className="topbar-secondary" aria-label="Set something up">
+          <a href={NEW_MISSION_HASH}>Register a mission</a>
+          {session ? <a href="#/clubs/new">Start a club</a> : null}
+        </nav>
         <span className="meta">
           {session ? (
             <Identity session={session} onSignOut={signOut} />
           ) : (
             <>
-              <span>room · test money</span>
               {r.page === 'signin' || arriving ? null : <a href="#/signin">Sign in</a>}
             </>
           )}

@@ -286,6 +286,13 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
   hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
   actually has. `lib/brand.ts` still owns the product name.
+- **THE FIRST SCREEN IS AN INVITATION, NOT A PRICE LIST** (2026-09-15). Sign-in leads with "Come in and play, or
+  join a club" and a button that says the same; the buy-in ceiling is STILL DISCLOSED but folded into a
+  `<details>` — a games site does not open with money, and the person's own Home shows the same numbers again
+  before anything is signed. Nothing on it is poker's: this room deals more than one game.
+- **THE THINGS YOU DO ONCE LIVE IN THE HEADER** (`.topbar-secondary`): registering a mission is a steward's
+  errand and starting a club is a host's, and neither belongs in front of somebody who came to play. Missions
+  are still SHOWN everywhere (the map on the front door and on Play); only the REGISTER road moved.
 - **SITTING DOWN FLIPS TO THE FLAT BOARD, STANDING UP GOES BACK TO THE ROOM** (2026-09-15, `lib/fromRoom.ts`).
   One place seen two ways: the room is where you walk and see who is here, the table is where a hand is played
   with readable cards, a real action bar and the coach. Taking a seat in the room navigates to `#/t/<id>`;

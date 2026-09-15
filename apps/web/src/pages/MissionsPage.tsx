@@ -35,7 +35,7 @@ export function MissionsPage() {
       <section className="panel mission-panel">
         <div className="mission-toolbar">
           <span className="hint">{missions == null ? 'Reading the registry…' : active.length === 0 ? 'No missions are registered yet.' : `${active.length} registered ${active.length === 1 ? 'mission' : 'missions'}`}</span>
-          <a className="button primary" href={NEW_MISSION_HASH}>Register a mission</a>
+          <a className="small" href={NEW_MISSION_HASH}>Register a mission</a>
         </div>
         {err ? <div className="form-error">{err}</div> : null}
         <MissionMap missions={active} selected={selected} onSelect={setSelected} />

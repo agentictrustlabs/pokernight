@@ -6503,3 +6503,12 @@ button.tag.guest {
 .room-hud .actions { margin: 0; }
 
 .room-hud .actions { max-width: 100%; box-sizing: border-box; }
+
+/* The header's once-only errands: registering a mission, starting a club. Quiet by design — they are not
+   what anybody came for, and they must never crowd the screens people use every night. */
+.topbar-secondary { display: flex; gap: 0.9rem; align-items: center; margin-left: 1rem; }
+.topbar-secondary a { font-size: 0.78rem; color: var(--hero-ink-soft, var(--ink-soft)); text-decoration: none; opacity: 0.85; }
+.topbar-secondary a:hover { text-decoration: underline; opacity: 1; }
+@media (max-width: 720px) { .topbar-secondary { display: none; } }
+.signin-consent > summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-soft); }
+.signin-consent > summary:hover { color: var(--ink); }
