@@ -573,6 +573,8 @@ export interface MysteryTitleSummary {
 export interface StagingSummary {
   stagingId: string; title: string; venue: string; role: string; act: number; phase: string;
   deadline: number | null; seedCommit: string; paused: boolean; startedAt: number; endedAt: number | null;
+  /** A club's night carries its club, which is whose huddle the room's voices come from. */
+  club?: string; night?: string; host?: string; director?: string; pace?: string;
 }
 
 export const mysteryApi = {

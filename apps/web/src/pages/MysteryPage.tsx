@@ -6,8 +6,13 @@ import { MysterySocket, type MysteryClientState } from '../lib/mysterySocket';
 import { castVoicesOn, hushCast, sayAs, setCastVoicesOn, voicesAvailable } from '../lib/castVoices';
 import { HOME_HASH } from '../lib/routes';
 import { Face } from '../components/mystery/Face';
+import type { VenueHandle } from '../components/mystery/Venue';
+import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
+import { clubScope } from '../lib/huddle';
 /** THE ROOM, DRAWN — a separate chunk, like the lounge: the engine never loads for somebody reading the page. */
 const Venue = lazy(() => import('../components/mystery/Venue').then((m) => ({ default: m.Venue })));
+/** The room's own audio — the club's huddle, silenced across doors (`RoomVoice`). */
+const RoomVoice = lazy(() => import('../components/mystery/RoomVoice').then((m) => ({ default: m.RoomVoice })));
 /** Can this browser draw it at all? Asked once, of a throwaway canvas whose context is released at once. */
 function canDraw(): boolean {
   if (typeof document === 'undefined') return false;
@@ -32,6 +37,19 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
   const redraw = useMemo(() => () => bump((n) => n + 1), []);
   const [line, setLine] = useState('');
   const [whisperTo, setWhisperTo] = useState<string | null>(null);
+  const venue = useRef<VenueHandle | null>(null);
+  /**
+   * EVERY ACT GOES THROUGH THE ROOM FIRST. Pressing "look again at the drinks tray" in the list should walk
+   * you to the drinks tray exactly as clicking it in the picture does — the controls and the things are the
+   * same acts, and half a game that moves your body and half that teleports your attention is two games.
+   * The room takes the two acts that are journeys; everything else goes straight down the socket.
+   */
+  const act = useMemo(() => (a: unknown) => {
+    const move = a as { type?: string; prop?: string; room?: string };
+    if (move?.type === 'examine' && move.prop && venue.current?.approach(move.prop)) return;
+    if (move?.type === 'move' && move.room && venue.current?.goThrough(move.room)) return;
+    sock.current?.act(a);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [voices, setVoices] = useState(() => castVoicesOn());
   /** Who is talking right now, so the room can show it — cleared a few seconds after their line lands. */
@@ -90,6 +108,9 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
         </span>
         <span className="spacer" />
         <span className="meta">
+          {st?.staging?.club ? (
+            <HuddleAffordance scope={clubScope({ clubId: st.staging.club })} scopeName={`${view?.titleName ?? 'the night'} · this room`} compact />
+          ) : null}
           {webgl ? (
             <button
               type="button"
@@ -135,8 +156,13 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
                 you want to go back over what somebody said. */}
             {webgl && drawn && view.room ? (
               <Suspense fallback={<div className="venue venue-loading"><p className="hint">Walking in…</p></div>}>
-                <Venue view={view} speaking={speaking} act={(a) => sock.current?.act(a)} onPerson={(role) => setWhisperTo(role)} />
+                <Venue ref={venue} view={view} speaking={speaking} act={(a) => sock.current?.act(a)} onPerson={(role) => setWhisperTo(role)} />
               </Suspense>
+            ) : null}
+            {/* A CLUB'S NIGHT HAS A CALL, and it stays in the room it is spoken in. A night of your own has
+                nobody to talk to, so there is nothing to place. */}
+            {st?.staging?.club && view.room ? (
+              <Suspense fallback={null}><RoomVoice view={view} /></Suspense>
             ) : null}
             <Transcript view={view} speaking={speaking} />
             {view.phase !== 'revealed' ? (
@@ -149,12 +175,12 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
               </form>
             ) : null}
             {st?.error ? <div className="form-error">{st.error}</div> : null}
-            <Room view={view} act={(a) => sock.current?.act(a)} speaking={speaking} whisperTo={whisperTo} onWhisperTo={setWhisperTo} />
+            <Room view={view} act={act} speaking={speaking} whisperTo={whisperTo} onWhisperTo={setWhisperTo} />
           </main>
           <aside className="mystery-side">
-            <You view={view} act={(a) => sock.current?.act(a)} />
-            <Clues view={view} act={(a) => sock.current?.act(a)} />
-            <Cast view={view} act={(a) => sock.current?.act(a)} speaking={speaking} />
+            <You view={view} act={act} />
+            <Clues view={view} act={act} />
+            <Cast view={view} act={act} speaking={speaking} />
           </aside>
         </div>
       )}

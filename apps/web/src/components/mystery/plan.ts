@@ -121,6 +121,19 @@ export const BELVEDERE_PLAN: Record<string, RoomPlan> = {
   },
 };
 
+/**
+ * WHERE THE i-TH PERSON IN A ROOM STANDS — the one answer the drawing and the VOICE both use.
+ *
+ * The venue places a body here and the room's audio pans a voice to the same point, so somebody talking by
+ * the hearth sounds like somebody talking by the hearth. Two answers would drift apart the first time either
+ * was tuned.
+ */
+export function spotIn(roomId: string, i: number): [number, number] {
+  const plan = BELVEDERE_PLAN[roomId];
+  if (!plan) return [0, 0];
+  return plan.spots[i % plan.spots.length] ?? [0, 0];
+}
+
 /** Somewhere to put a prop the plan forgot: along the back wall, spaced out, so it can still be clicked. */
 export function strandedAt(i: number, plan: RoomPlan): [number, number] {
   return [-plan.w + 1.5 + i * 1.6, -plan.d + 1.2];
