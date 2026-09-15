@@ -97,6 +97,9 @@ simple = { limit = 20, period = 60 }
 
 # Local dev (Anvil on :8545, Vite on :5173). There is no dev login: sign in through a Home.
 [vars]
+# Mystery Night: who plays the parts nobody is playing, and who narrates (see the faithnet block).
+MYSTERY_CAST_AGENTS = ""
+MYSTERY_DIRECTOR = ""
 CHAIN_ID = "31337"
 RPC_URL = "http://127.0.0.1:8545"
 # Local dev points agents at localhost:8788; a public deployment must NOT enable this.
@@ -331,3 +334,11 @@ HOUSE_SA = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # lands in the same account that spent the authority to collect it. Pointing this at the service
 # agent instead made every mandate fail its delegate check with nothing wrong on the player's side.
 HOUSE_DELEGATE = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
+
+# MYSTERY NIGHT (docs/MYSTERY-NIGHT.md §8). The parts nobody is playing are played by AGENTS — one each, at
+# their own Home, from the role archetype in their playbook — and the night is narrated by a director agent
+# with the story's own artifact in its. Neither is a person doing a job, and neither costs the house a token:
+# each thinks at its own Home. An agent whose card does not advertise `mystery.act` is not asked at all and
+# the house's rules play that part, so this list is a preference, never a dependency.
+MYSTERY_CAST_AGENTS = "alice.me,bob.me,carol.me,dave.me,elena.me,nathan.me,david.me"
+MYSTERY_DIRECTOR = "carol.me"

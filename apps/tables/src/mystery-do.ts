@@ -21,9 +21,10 @@ import {
   type Casting, type MysteryEvent, type MysteryState, type MysteryView, type RoleId,
 } from '@pokernight/mystery';
 import { MYSTERY_DIRECT_SKILL } from '@pokernight/protocol';
-import { askDirector } from './mystery-a2a.js';
+import { askCharacter, askDirector } from './mystery-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
-import type { Env } from './env.js';
+import { mysteryCastAgents, mysteryDirector, type Env } from './env.js';
+import { MYSTERY_ACT_SKILL } from '@pokernight/protocol';
 
 interface Attachment { playerId: string; name: string }
 interface Meta {
@@ -52,13 +53,23 @@ export class MysteryDO extends DurableObject<Env> {
   private lastMoved: Record<string, number> = {};
   /** Who has taken which part while a club's night is casting. Empty for a night of your own. */
   private taken: Record<string, { role: RoleId; name: string }> = {};
+  /** Characters whose agent is mid-thought, so one slow Home does not become a queue of asks. */
+  private thinking = new Set<RoleId>();
+  /** Parts whose agent could not be asked, and why — said once per night rather than every scene. */
+  private mute = new Map<RoleId, string>();
+  /** How many goes an agent has had at a part it keeps missing. */
+  private misses: Record<string, number> = {};
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     void ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);`);
       for (const r of ctx.storage.sql.exec<{ k: string; v: string }>(`SELECT k, v FROM kv`).toArray()) {
-        if (r.k === 'state') this.state = JSON.parse(r.v) as MysteryState;
+        if (r.k === 'state') {
+          const st = JSON.parse(r.v) as MysteryState | null;
+          // A NIGHT OPENED BY AN OLDER ENGINE is repaired here, once, rather than defended against everywhere.
+          this.state = st ? { ...st, traces: st.traces ?? [], claims: st.claims ?? [], accusations: st.accusations ?? [] } : null;
+        }
         if (r.k === 'meta') this.meta = JSON.parse(r.v) as Meta;
         if (r.k === 'paused') this.paused = r.v === '1';
         if (r.k === 'taken') this.taken = JSON.parse(r.v) as Record<string, { role: RoleId; name: string }>;
@@ -88,11 +99,18 @@ export class MysteryDO extends DurableObject<Env> {
         || (!!b.pace && !!this.meta && (this.meta.pace ?? 'full') !== b.pace);
       if (this.state && !b.restart && !wantsOther && this.state.phase !== 'revealed') return json({ ok: true, staging: this.summary() });
       const role = title.roles.find((r) => r.id === b.role)?.id ?? title.roles[0]!.id;
-      const cast: Casting[] = title.roles.map((r) => (
-        r.id === role
-          ? { role: r.id, agent: b.owner, name: b.ownerName || r.name, custodian: b.owner, operator: 'human' as const, playerId: b.owner }
-          : { role: r.id, agent: `${r.id}.cast`, name: r.name, custodian: 'house', operator: 'agent' as const }
-      ));
+      const minds = mysteryCastAgents(this.env);
+      let handed = 0;
+      const cast: Casting[] = title.roles.map((r) => {
+        if (r.id === role) return { role: r.id, agent: b.owner, name: b.ownerName || r.name, custodian: b.owner, operator: 'human' as const, playerId: b.owner, mind: 'human' as const };
+        // A PART NOBODY IS PLAYING GETS AN AGENT OF ITS OWN, from the deployment's list, and the house's own
+        // rules when the list runs out. Which agent plays which part is fixed here and never re-drawn.
+        const named = minds[handed];
+        if (named) handed++;
+        return named
+          ? { role: r.id, agent: named, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'agent' as const }
+          : { role: r.id, agent: `${r.id}.cast`, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'rules' as const };
+      });
       const seed = randomSeed();
       const seedHex = bytesToHex(seed);
       // WHO THE SEED MAY LAND ON, said before it is spent: the whole cast by default — a solo player who was
@@ -104,7 +122,7 @@ export class MysteryDO extends DurableObject<Env> {
         killerRule: b.killer === 'me' ? role : 'any',
         pace: b.pace === 'short' ? 0.25 : 1,
       });
-      this.meta = { stagingId: b.stagingId, owner: b.owner, ownerName: b.ownerName, title: title.id, role, pace: b.pace === 'short' ? 'short' : 'full', ...(b.director ? { director: b.director } : {}) };
+      this.meta = { stagingId: b.stagingId, owner: b.owner, ownerName: b.ownerName, title: title.id, role, pace: b.pace === 'short' ? 'short' : 'full', ...(mysteryDirector(this.env) ? { director: mysteryDirector(this.env)! } : {}) };
       this.paused = false;
       this.lastMoved = {};
       this.save();
@@ -126,7 +144,7 @@ export class MysteryDO extends DurableObject<Env> {
       this.meta = {
         stagingId: b.stagingId, owner: b.host, ownerName: b.hostName, title: pair.title.id,
         role: pair.title.roles[0]!.id, pace: b.pace === 'short' ? 'short' : 'full',
-        club: b.club, ...(b.night ? { night: b.night } : {}), casting: true, ...(b.director ? { director: b.director } : {}),
+        club: b.club, ...(b.night ? { night: b.night } : {}), casting: true, ...(mysteryDirector(this.env) ? { director: mysteryDirector(this.env)! } : {}),
       };
       this.save();
       return json({ ok: true, staging: this.summary(), cast: this.castList() });
@@ -152,11 +170,16 @@ export class MysteryDO extends DurableObject<Env> {
       if (this.meta.owner !== b.by) return json({ error: 'the host raises the curtain' }, 403);
       const pair = stagingOf(this.meta.title);
       if (!pair) return json({ error: 'no such mystery' }, 404);
+      const minds = mysteryCastAgents(this.env);
+      let handed = 0;
       const cast: Casting[] = pair.title.roles.map((r) => {
         const person = Object.entries(this.taken).find(([, t]) => t.role === r.id);
-        return person
-          ? { role: r.id, agent: person[0], name: person[1].name || r.name, custodian: person[0], operator: 'human' as const, playerId: person[0] }
-          : { role: r.id, agent: `${r.id}.cast`, name: r.name, custodian: 'house', operator: 'agent' as const };
+        if (person) return { role: r.id, agent: person[0], name: person[1].name || r.name, custodian: person[0], operator: 'human' as const, playerId: person[0], mind: 'human' as const };
+        const named = minds[handed];
+        if (named) handed++;
+        return named
+          ? { role: r.id, agent: named, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'agent' as const }
+          : { role: r.id, agent: `${r.id}.cast`, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'rules' as const };
       });
       const seed = randomSeed();
       // A PARTY WANTS SOMEBODY AT THE TABLE TO HAVE TO LIE, so a club's night draws over the people in it.
@@ -217,7 +240,7 @@ export class MysteryDO extends DurableObject<Env> {
       deadline: s?.deadline ?? null, seedCommit: s?.seedCommit ?? '', paused: this.paused,
       startedAt: s?.startedAt ?? 0, endedAt: s?.endedAt ?? null,
       ...(m.club ? { club: m.club } : {}), ...(m.night ? { night: m.night } : {}),
-      host: m.owner, pace: m.pace ?? 'full',
+      host: m.owner, pace: m.pace ?? 'full', ...(m.director ? { director: m.director } : {}),
     };
   }
 
@@ -292,10 +315,23 @@ export class MysteryDO extends DurableObject<Env> {
       if (now - (this.lastMoved[c.role] ?? 0) < PACE_MS) continue;
       const role = pair.title.roles.find((r) => r.id === c.role);
       if (!role) continue;
+      /**
+       * A CHARACTER WITH AN AGENT IS ASKED, and the night does not wait for the answer.
+       *
+       * A Home takes ten seconds or more to think; an act is minutes long and a scene is a few seconds, so
+       * the ask goes out and the answer is applied whenever it lands — validated against the state as it is
+       * THEN, which is the only honest way to take a late answer. Meanwhile the house's rules keep the part
+       * moving, so a slow agent is a quieter character rather than a frozen one.
+       */
+      this.lastMoved[c.role] = now;
+      if (c.mind === 'agent' && c.agent && !this.thinking.has(c.role)) {
+        this.thinking.add(c.role);
+        void this.askOne(c.role, c.agent, pair.title.id);
+        continue;
+      }
       const view = viewFor(this.state, pair.title, pair.venue, c.role);
       const move = chooseAction(view, role.lines, Math.floor(now / PACE_MS));
       if (!move) continue;
-      this.lastMoved[c.role] = now;
       const done = apply(this.state, pair.title, pair.venue, c.role, move.action, now, 'agent');
       if (done.ok) { this.state = done.state; changed = true; }
       if (move.line) {
@@ -328,6 +364,79 @@ export class MysteryDO extends DurableObject<Env> {
       this.state = out.state;
     }
     this.save();
+  }
+
+  /**
+   * ONE CHARACTER'S MOMENT, ASKED OF THE AGENT THAT PLAYS THEM.
+   *
+   * The whole point of the road: the part is not played by code in this object but by an agent at its own
+   * endpoint, reasoning from the role's own skill artifacts in its playbook. What comes back is validated by
+   * the ENGINE like anybody else's move — an agent cannot walk through a wall or murder somebody in a room
+   * full of people because it said so — and a refusal is logged rather than applied.
+   */
+  private async askOne(role: RoleId, agent: string, titleId: string): Promise<void> {
+    try {
+      const pair = stagingOf(titleId);
+      const s0 = this.state;
+      if (!pair || !s0) return;
+      const part = pair.title.roles.find((r) => r.id === role);
+      const view = viewFor(s0, pair.title, pair.venue, role);
+      const out = await askCharacter(this.env, agent, {
+        skill: MYSTERY_ACT_SKILL,
+        stagingId: this.meta?.stagingId ?? '',
+        act: s0.act,
+        role,
+        roleName: part?.name ?? role,
+        brief: `${part?.blurb ?? ''} ${view.you?.killer ? 'You are the one who did it, and nobody else knows.' : ''} What only you know: ${part?.secret ?? ''}`.trim(),
+        view: view as unknown as Record<string, unknown>,
+        legal: ['move', 'say', 'whisper', 'examine', 'search', 'share', 'testify', 'alibi', ...(view.you?.killer ? ['murder', 'plant'] : []), ...(s0.phase === 'accusations' || s0.act >= pair.title.acts.length ? ['accuse'] : [])],
+        deadlineMs: a2aTimeoutMs(this.env),
+      }, a2aTimeoutMs(this.env));
+      if (!out.ok) {
+        /**
+         * AN AGENT THAT CANNOT PLAY THE PART HANDS IT BACK — really hands it back, rather than being logged
+         * about. The casting's mind becomes `rules` and the house plays that character for the rest of the
+         * night, which is the difference between a fallback and a silent room. A card that does not advertise
+         * the skill is a permanent answer and demotes at once; anything else (a slow Home, a bad moment) is
+         * given three goes first, because an agent worth asking is worth waiting for twice.
+         */
+        const permanent = /does not advertise|card unreachable|not an A2A agent card|is not JSON/.test(out.error);
+        const misses = (this.misses[role] ?? 0) + 1;
+        this.misses[role] = misses;
+        if (permanent || misses >= 3) {
+          if (!this.mute.has(role)) { this.mute.set(role, out.error); console.warn(`[mystery] ${role} is played by the house from here: ${out.error}`); }
+          const cur0 = this.state;
+          if (cur0) {
+            this.state = { ...cur0, cast: cur0.cast.map((c) => (c.role === role ? { ...c, mind: 'rules' as const } : c)) };
+            this.save();
+            this.tellEverybody();
+          }
+        }
+        return;
+      }
+      this.misses[role] = 0;
+      // LATE IS FINE; ILLEGAL IS NOT. The answer is applied to the state as it is now, and the engine says.
+      const now = Date.now();
+      const cur = this.state;
+      const pair2 = cur ? stagingOf(cur.title) : null;
+      if (!cur || !pair2) return;
+      let changed = false;
+      if (out.output.action) {
+        const parsed = parseAction(out.output.action);
+        if (parsed.ok) {
+          const done = apply(cur, pair2.title, pair2.venue, role, parsed.action, now, 'agent');
+          if (done.ok) { this.state = done.state; changed = true; }
+          else console.warn(`[mystery] ${role}'s agent tried something the night refused: ${done.code}`);
+        }
+      }
+      if (out.output.say) {
+        const said = apply(this.state ?? cur, pair2.title, pair2.venue, role, { type: 'say', text: out.output.say }, now, 'agent');
+        if (said.ok) { this.state = said.state; changed = true; }
+      }
+      if (changed) { this.save(); this.tellEverybody(); }
+    } finally {
+      this.thinking.delete(role);
+    }
   }
 
   /**

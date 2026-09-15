@@ -374,3 +374,18 @@ describe('the killer\'s choices change the night', () => {
     expect(apply(s, TITLE, VENUE, 'doctor', { type: 'plant', prop: 'drinks-tray', trait: 'scent:iris' }, T0, 'human')).toMatchObject({ ok: false, code: 'not-you' });
   });
 });
+
+describe('a night opened by an older engine', () => {
+  it('still ticks, still applies, still views — a field added today is missing from every night opened yesterday', () => {
+    const fresh = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor']), seedHex: seedFrom(61), seedCommit: 'x', now: T0 });
+    // exactly what a Durable Object holds after a deploy that added a list
+    const old = JSON.parse(JSON.stringify(fresh)) as Record<string, unknown>;
+    delete old['traces'];
+    const before = old as unknown as MysteryState;
+    expect(() => tick(before, TITLE, VENUE, T0 + 60 * 60_000)).not.toThrow();
+    const moved = apply(before, TITLE, VENUE, 'doctor', { type: 'move', room: 'lounge' }, T0 + 1000, 'human');
+    expect(moved.ok).toBe(true);
+    if (moved.ok) expect(moved.state.traces).toEqual([]);
+    expect(() => viewFor(before, TITLE, VENUE, 'doctor')).not.toThrow();
+  });
+});

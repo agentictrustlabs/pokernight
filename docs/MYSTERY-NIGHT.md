@@ -572,6 +572,32 @@ part, both walk into the same hotel, Alice is the killer and Bob is not told.
 7. **Record scopes.** `cardroom.mystery.night` and `cardroom.mystery.character` are two new vault record types:
    four registrations and a grant re-issue per agent, the road every record type here has walked.
 
+## 15.1 How a character and a director are actually asked (built 2026-09-15)
+
+```
+MysteryDO ──ask, signed as the house──▶  alice.me / bob.me / …        (mystery.act,    one per part)
+          └─ask, signed as the house──▶  the director agent           (mystery.direct, at every beat)
+                     │
+                     └─ the answer is validated by the ENGINE, or refused in the game's own words
+```
+
+- **`MYSTERY_CAST_AGENTS`** (a deployment var) is the list of agents that play the parts nobody at the table
+  is playing — handed out in the title's own order, one per part, asked at their own endpoints.
+- **`MYSTERY_DIRECTOR`** is the agent that narrates. NOT the player's own agent, and not a person doing a job:
+  an agent with the director archetype and the story's own artifact in its playbook.
+- **The night never waits.** An ask goes out and the answer is applied whenever it lands, against the state as
+  it is THEN — a late answer that has become illegal is refused like any other. Meanwhile the part keeps
+  moving, so a slow Home is a quieter character rather than a frozen one.
+- **An agent that cannot play the part hands it back.** A card that does not advertise `mystery.act` demotes
+  that casting to `rules` at once (three misses for anything slower or flakier), the house plays the part for
+  the rest of the night, and the reason is logged once. Proven live: seven parts asked of seven agents, all
+  seven refused for `does not advertise mystery.act`, all seven handed back, and the room went on talking.
+- **The tokens are the thinking agent's, never the house's** — the rule that deleted `ANTHROPIC_API_KEY` from
+  the persona worker. A character with a mind of its own thinks at its own Home.
+
+What remains before any of it speaks is the ESTATE half: the `mystery` skills context, the role archetypes,
+the director's archetype and the story's own artifact, published and pinned onto those agents' playbooks.
+
 ## 16. What playing it changed (2026-09-15)
 
 Five rules came out of watching a night rather than out of this document, and they are in the engine now:

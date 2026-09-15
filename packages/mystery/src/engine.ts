@@ -164,14 +164,22 @@ export function openStaging(args: {
   return state;
 }
 
+/**
+ * A STATE WRITTEN BY AN OLDER ENGINE IS STILL A NIGHT.
+ *
+ * A staging outlives a deploy — it is a Durable Object holding JSON somebody is in the middle of playing —
+ * so a field added today is missing from every night opened yesterday. `clone` is where every change to state
+ * passes, which makes it the one place worth being forgiving: a missing list reads as empty rather than as
+ * `undefined.map(...)`, which is what stopped a night dead the first time this file grew a field.
+ */
 const clone = (s: MysteryState): MysteryState => ({
   ...s,
-  cast: s.cast.slice(),
+  cast: (s.cast ?? []).slice(),
   where: { ...s.where }, knows: { ...s.knows }, examined: { ...s.examined },
-  publicClues: s.publicClues.slice(),
-  deaths: s.deaths.map((d) => ({ ...d, evidence: d.evidence.slice(), found: d.found.slice() })),
-  traces: s.traces.map((t) => ({ ...t, evidence: t.evidence.slice(), found: t.found.slice() })),
-  claims: s.claims.slice(), accusations: s.accusations.slice(), log: s.log.slice(),
+  publicClues: (s.publicClues ?? []).slice(),
+  deaths: (s.deaths ?? []).map((d) => ({ ...d, evidence: d.evidence.slice(), found: d.found.slice() })),
+  traces: (s.traces ?? []).map((t) => ({ ...t, evidence: t.evidence.slice(), found: t.found.slice() })),
+  claims: (s.claims ?? []).slice(), accusations: (s.accusations ?? []).slice(), log: (s.log ?? []).slice(),
 });
 
 /** The log is what everybody's transcript is filtered out of, so it is capped rather than unbounded. */
@@ -243,7 +251,7 @@ export function tick(state: MysteryState, title: Title, venue: Venue, now: numbe
        */
       const already = s.deaths.flatMap((d) => d.evidence);
       const evidence = pickEvidence(title, s.killer, already, title.evidencePerDeath);
-      s.traces = [...s.traces, { room: title.spared.room, prop: title.spared.prop, act: s.act, evidence, found: [], at: now, kind: 'spared' }];
+      s.traces = [...(s.traces ?? []), { room: title.spared.room, prop: title.spared.prop, act: s.act, evidence, found: [], at: now, kind: 'spared' }];
       events.push(...push(s, { type: 'spared', at: now, room: title.spared.room, act: s.act }));
     }
     events.push(...push(s, { type: 'act', at: now, act: s.act, phase: s.phase, deadline: s.deadline }));
@@ -322,7 +330,7 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       if (action.room !== here) return no('not-here', 'You would have to be in there.');
       // A BODY OR A ROOM TURNED OVER — both are things a room has to give up, and both are searched the same.
       const death = s.deaths.find((d) => d.room === here);
-      const trace = s.traces.find((t) => t.room === here);
+      const trace = (s.traces ?? []).find((t) => t.room === here);
       const mine = s.knows[role] ?? [];
       const fromDeath = death?.evidence.find((id) => !mine.includes(id));
       const fromTrace = trace?.evidence.find((id) => !mine.includes(id));
@@ -331,7 +339,7 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       if (!next) return no('nothing-more', 'You have found everything this room has.');
       s.knows[role] = [...mine, next];
       if (fromDeath && death) s.deaths = s.deaths.map((d) => (d === death ? { ...d, found: d.found.includes(next) ? d.found : [...d.found, next] } : d));
-      else if (trace) s.traces = s.traces.map((t) => (t === trace ? { ...t, found: t.found.includes(next) ? t.found : [...t.found, next] } : t));
+      else if (trace) s.traces = (s.traces ?? []).map((t) => (t === trace ? { ...t, found: t.found.includes(next) ? t.found : [...t.found, next] } : t));
       events.push(...push(s, { type: 'found', at: now, who: role, clue: next, room: here }));
       break;
     }
@@ -401,8 +409,8 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       if (me?.traits.includes(action.trait)) return no('yours', 'That points at you, which is the opposite of the idea.');
       const clue = title.clues.find((c) => c.kind === 'evidence' && c.trait === action.trait);
       if (!clue) return no('not-that', 'Nothing here would suggest that.');
-      if (s.traces.some((t) => t.kind === 'planted' && t.by === role)) return no('enough', 'One trail is a lie; two is a pattern.');
-      s.traces = [...s.traces, { room: here, prop: action.prop, act: s.act, evidence: [clue.id], found: [], at: now, kind: 'planted', by: role }];
+      if ((s.traces ?? []).some((t) => t.kind === 'planted' && t.by === role)) return no('enough', 'One trail is a lie; two is a pattern.');
+      s.traces = [...(s.traces ?? []), { room: here, prop: action.prop, act: s.act, evidence: [clue.id], found: [], at: now, kind: 'planted', by: role }];
       // You know what you left — it is your own lie, and you will want to remember whose door it is at.
       s.knows[role] = [...(s.knows[role] ?? []), clue.id];
       events.push(...push(s, { type: 'planted', at: now, by: role, clue: clue.id, room: here }));
@@ -483,7 +491,7 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
   const here = role ? state.where[role] ?? null : null;
   const room = here ? roomOf(venue, here) : undefined;
   const death = here ? state.deaths.find((d) => d.room === here) : undefined;
-  const trace = here ? state.traces.find((t) => t.room === here) : undefined;
+  const trace = here ? (state.traces ?? []).find((t) => t.room === here) : undefined;
   const known = role ? state.knows[role] ?? [] : state.publicClues;
   const revealed = state.phase === 'revealed';
   const opp = role === state.killer ? (act.opportunities ?? []).find((o) => o.room === here) : undefined;
@@ -508,7 +516,7 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
       killer: role === state.killer,
       ...(opp && oppProp ? { opportunity: { room: opp.room, prop: opp.prop, propName: oppProp.name, ready: Date.now() >= chanceOpensAt(state, title), readyAt: chanceOpensAt(state, title) } } : {}),
       ...(plantProp && plantOptions.length
-        ? { plant: { prop: plantProp.id, propName: plantProp.name, used: state.traces.some((t) => t.kind === 'planted' && t.by === role), options: plantOptions } }
+        ? { plant: { prop: plantProp.id, propName: plantProp.name, used: (state.traces ?? []).some((t) => t.kind === 'planted' && t.by === role), options: plantOptions } }
         : {}),
     } : null,
     room: room && here ? {
@@ -528,12 +536,12 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
     reveal: revealed ? {
       killer: state.killer, killerName: roleOf(title, state.killer)?.name ?? state.killer, seed: state.seedHex ?? '', rule: state.killerRule,
       spared: state.deaths.length < 2,
-      planted: state.traces.filter((t) => t.kind === 'planted').flatMap((t) => t.evidence.map((id) => ({ clue: id, trait: traitsOf(title, [id])[0] ?? '' }))),
+      planted: (state.traces ?? []).filter((t) => t.kind === 'planted').flatMap((t) => t.evidence.map((id) => ({ clue: id, trait: traitsOf(title, [id])[0] ?? '' }))),
       correct: state.accusations.filter((a) => a.against === state.killer).map((a) => a.by),
       fooled: state.accusations.filter((a) => a.against !== state.killer).map((a) => ({ by: a.by, against: a.against })),
       missed: [
         ...state.deaths.flatMap((d) => d.evidence.filter((id) => !d.found.includes(id))),
-        ...state.traces.filter((t) => t.kind === 'spared').flatMap((t) => t.evidence.filter((id) => !t.found.includes(id))),
+        ...(state.traces ?? []).filter((t) => t.kind === 'spared').flatMap((t) => t.evidence.filter((id) => !t.found.includes(id))),
       ],
     } : null,
   };

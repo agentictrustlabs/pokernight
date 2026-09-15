@@ -59,6 +59,21 @@ export interface Env {
    *  ALLOWED_ORIGINS entry + "/" so `wrangler dev` needs no extra config. */
   HOME_REDIRECT_URI?: string;
   AGENT_CARD_ZONE: string;
+  /**
+   * MYSTERY NIGHT'S CAST AND ITS DIRECTOR, by agent name (docs/MYSTERY-NIGHT.md §8).
+   *
+   * `MYSTERY_CAST_AGENTS` is a comma-separated list of agents that play the parts nobody at the table is
+   * playing — a person-shaped agent each, thinking at its own Home from the role archetype in its playbook.
+   * They are handed out in the title's own order and asked `mystery.act` at their own endpoints. An agent
+   * whose card does not advertise the skill is simply not asked, and the house's rules policy plays that
+   * part instead, so a missing agent is a quieter character rather than a stopped night.
+   *
+   * `MYSTERY_DIRECTOR` is the agent that narrates. It is NOT the player's own agent and not a person doing
+   * a job: it is an agent with the director archetype and the story's own artifact in its playbook, asked
+   * `mystery.direct` at every beat and free to be quiet.
+   */
+  MYSTERY_CAST_AGENTS?: string;
+  MYSTERY_DIRECTOR?: string;
   /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
   A2A_TIMEOUT_MS?: string;
   /** How long ADVICE may take. Longer than a turn call: a person's own agent at their Home reasons
@@ -276,4 +291,14 @@ export const DEFAULT_SEAT_IDLE_MS = 5 * 60 * 1000;
 export function seatIdleMs(env: Env): number {
   const n = Number(env.SEAT_IDLE_MS);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_SEAT_IDLE_MS;
+}
+
+/** The agents that play the parts nobody is playing, in the order the title's roles are filled. */
+export function mysteryCastAgents(env: Env): string[] {
+  return (env.MYSTERY_CAST_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+/** Who narrates, if anybody. Absent means the title's own written lines, which is a complete night. */
+export function mysteryDirector(env: Env): string | null {
+  const name = (env.MYSTERY_DIRECTOR ?? '').trim();
+  return name || null;
 }
