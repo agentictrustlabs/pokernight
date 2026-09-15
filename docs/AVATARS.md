@@ -14,6 +14,12 @@ which is why a seated player looks hunched and twisted. Retargeting between huma
 tools built for it, and badly solved by a few hundred lines of my own. **Unity's Humanoid retargeting is the
 best-in-class answer** — this is the one job worth leaving the browser for.
 
+## A body's OWN clips beat any retarget
+
+The body shipping today uses its own `Idle` and `Walk` — authored on its own rig, so they carry none of the
+retarget's error — and only the clips it does not have (the seated set, the gestures) are retargeted. If a body
+you export already has a clip the room asks for, name it and ship it; never retarget over it.
+
 ## What the room requires
 
 **Format** — `.glb` (binary glTF), one file, skinned mesh + skeleton + clips embedded.
