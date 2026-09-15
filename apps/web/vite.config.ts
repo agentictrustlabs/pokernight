@@ -14,7 +14,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8787',
+        // VITE_PROXY_TARGET=https://games.faithnet.io points a local client at the live card room — the fast loop
+        // for the room's graphics: sign in on the live site, copy the session into localhost, iterate with HMR.
+        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:8787',
         changeOrigin: true,
         ws: true,
         rewrite: (path) => path.replace(/^\/api/, ''),

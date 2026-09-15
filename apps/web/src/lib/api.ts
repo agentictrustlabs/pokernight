@@ -531,15 +531,23 @@ export const api = {
     request<TableSettlement>(`/tables/${encodeURIComponent(id)}/settlement`, {}, token),
 };
 
+/**
+ * Where sockets open. `VITE_WS_BASE` (dev only) sends them straight to a live card room while HTTP goes through the
+ * Vite proxy — the proxy cannot upgrade a WebSocket to an https target — which is the room's no-deploy loop.
+ */
+const WS_BASE: string | undefined = (import.meta.env.VITE_WS_BASE as string | undefined)?.replace(/\/+$/, '');
+function socketBase(): string {
+  if (WS_BASE) return WS_BASE.replace(/^http/i, 'ws');
+  if (/^https?:\/\//i.test(API_BASE)) return API_BASE.replace(/^http/i, 'ws');
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}${API_BASE}`;
+}
+
 /** WebSocket URL for a table, derived from API_BASE (relative or absolute). */
 export function tableSocketUrl(tableId: string, token: string | null): string {
   const path = `/tables/${encodeURIComponent(tableId)}/ws`;
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
-  if (/^https?:\/\//i.test(API_BASE)) {
-    return API_BASE.replace(/^http/i, 'ws') + path + q;
-  }
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}${API_BASE}${path}${q}`;
+  return socketBase() + path + q;
 }
 
 /** THE ROOM's manifest and who is in it; reading it also lays the room's tables out again. */
@@ -547,8 +555,5 @@ export const roomApi = { room: (roomId: string, token: string) => request<{ mani
 
 /** THE ROOM's socket (docs/SPATIAL-ROOM.md) — a body's presence, never a card. */
 export function roomSocketUrl(roomId: string, token: string): string {
-  const path = `/rooms/${encodeURIComponent(roomId)}/ws?token=${encodeURIComponent(token)}`;
-  if (/^https?:\/\//i.test(API_BASE)) return API_BASE.replace(/^http/i, 'ws') + path;
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}${API_BASE}${path}`;
+  return `${socketBase()}/rooms/${encodeURIComponent(roomId)}/ws?token=${encodeURIComponent(token)}`;
 }

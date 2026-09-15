@@ -123,7 +123,7 @@ export class RoomKit extends ContainerLibrary {
   }
 }
 
-export interface Seat { at: pc.Vec3; yaw: number }
+export interface Seat { at: pc.Vec3; yaw: number; /** the felt's centre, where a seated body rests its eyes */ centre?: pc.Vec3 }
 
 /** Body palettes, from the presence record's `body` word. */
 const BODY_COLOURS: Record<string, [number, number, number]> = {
@@ -147,6 +147,10 @@ export class ParticipantAvatar {
   private speed = 0;
   private talk = false;
   private pendingGesture: Gesture | null = null;
+  /** the head bone, once dressed, and where it is looking — eased, applied after the clip each frame */
+  private head: pc.GraphNode | null = null;
+  private gaze: pc.Vec3 | null = null;
+  private gazeYaw = 0; private gazePitch = 0;
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow') {
     this.entity = new pc.Entity('avatar');
@@ -176,6 +180,7 @@ export class ParticipantAvatar {
     anim.setBoolean('seated', !!this.seat);
     this.entity.addChild(body);
     this.body = body;
+    this.head = body.findByName('DEF-head');
   }
 
   private get anim(): pc.AnimComponent | null { return this.body?.anim ?? null; }
@@ -192,12 +197,41 @@ export class ParticipantAvatar {
   /** Out of the chair. */
   stand(): void { if (!this.seat) return; this.seat = null; this.anim?.setBoolean('seated', false); }
   get seated(): boolean { return !!this.seat; }
+  get seatCentre(): pc.Vec3 | null { return this.seat?.centre ? new pc.Vec3(this.seat.centre.x, 0.95, this.seat.centre.z) : null; }
   /** Mouth moving: the talking loops, standing or seated. */
   talking(on: boolean): void { if (this.talk === on) return; this.talk = on; this.anim?.setBoolean('talking', on); }
   /** A one-shot from the idle: a wave-like interact, a reach to the table, a dance. */
   gesture(g: Gesture): void { this.pendingGesture = g; }
-  /** Turn to face a point on the floor (a seated body turns its whole self a little; head-only comes with layer masks). */
-  lookAt(x: number, z: number): void { if (this.seat) return; this.targetYaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
+  /** Turn to face a point on the floor (a standing body turns its whole self; a seated one turns its head). */
+  lookAt(x: number, z: number): void { if (this.seat) { this.gaze = new pc.Vec3(x, 1.2, z); return; } this.targetYaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
+  /** Look at this point with the HEAD only — whoever is acting, speaking, or walking up. Null looks ahead again. */
+  lookHead(target: pc.Vec3 | null): void { this.gaze = target; }
+  /**
+   * AFTER THE CLIP, EVERY FRAME: turn the head toward the gaze, within what a neck does (±70° yaw, ±25° pitch),
+   * eased. The clip sets the head's rotation in `update`; this is applied in `postUpdate`, on top of it, in
+   * world space, so it holds for every clip and every body without knowing the rig's rest pose.
+   */
+  applyGaze(dt: number): void {
+    const h = this.head; if (!h) return;
+    let wantYaw = 0, wantPitch = 0;
+    if (this.gaze) {
+      const hp = h.getPosition();
+      const dx = this.gaze.x - hp.x, dy = this.gaze.y - hp.y, dz = this.gaze.z - hp.z;
+      const dist = Math.hypot(dx, dz);
+      wantYaw = clamp(wrap(Math.atan2(dx, dz) - this.yaw), -1.22, 1.22);
+      wantPitch = clamp(Math.atan2(dy, dist), -0.44, 0.44);
+      // behind you is nobody's business: past the neck's reach the head just comes back to the front
+      if (Math.abs(wrap(Math.atan2(dx, dz) - this.yaw)) > 1.9) { wantYaw = 0; wantPitch = 0; }
+    }
+    const k = Math.min(1, dt * 6);
+    this.gazeYaw += (wantYaw - this.gazeYaw) * k; this.gazePitch += (wantPitch - this.gazePitch) * k;
+    if (Math.abs(this.gazeYaw) < 1e-3 && Math.abs(this.gazePitch) < 1e-3) return;
+    // yaw about the world's up, pitch about the body's right, composed onto the clip's world rotation
+    const right = new pc.Vec3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const q = new pc.Quat().setFromAxisAngle(pc.Vec3.UP, this.gazeYaw * 180 / Math.PI);
+    const qp = new pc.Quat().setFromAxisAngle(right, -this.gazePitch * 180 / Math.PI);
+    h.setRotation(q.mul(qp).mul(h.getRotation()));
+  }
 
   /** Every frame: ease toward the target (follow mode), face the way we are going, tell the graph. */
   update(dt: number): void {
@@ -227,4 +261,5 @@ export class ParticipantAvatar {
   destroy(): void { this.entity.destroy(); }
 }
 
+function clamp(v: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, v)); }
 function wrap(a: number): number { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
