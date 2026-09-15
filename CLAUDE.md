@@ -291,6 +291,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   with `camera.worldToScreen` (its `z` is view depth — behind the camera is negative, nothing else). A body in a table's zone is offered the FLAT table (step 5 draws the felt in the
   room); sitting is the table's own `seat` command, never the room's. PlayCanvas primitives are unit-sized (a
   capsule is 2 m tall at scale 1); lights are `directional` / `omni` with an `intensity` around 1–2.
+- **VOICE IN A CLUB'S LOUNGE IS THE CLUB'S HUDDLE, PLACED** (2026-09-14, `components/room/SpatialVoice.tsx`). The
+  same RealtimeKit meeting; each participant's audio track goes through a `PannerNode` (HRTF, inverse rolloff) at
+  the body that owns it, the listener at yours, matched by the huddle's display name = the session's name. The
+  dock's `<audio>` elements stay ATTACHED but muted (`HuddleCtx.spatial`): a remote WebRTC track flows into Web
+  Audio only while some media element holds it. The hall has no huddle (no `hall` scope at the Home yet).
+  Walk: scratch `voice-walk.cjs` (fake media; `window.__spatialVoices` counts placed voices).
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must

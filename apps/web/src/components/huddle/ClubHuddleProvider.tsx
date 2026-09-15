@@ -40,6 +40,9 @@ interface HuddleCtx {
   toggleScreen: () => Promise<void>;
   peek: (scope: HuddleScope) => Promise<HuddleRunView | null>;
   dismissError: () => void;
+  /** THE ROOM IS PLACING THE VOICES: the dock keeps its <audio> elements attached but silent. */
+  spatial: boolean;
+  setSpatial: (on: boolean) => void;
 }
 
 const Ctx = createContext<HuddleCtx | null>(null);
@@ -52,6 +55,7 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenOn, setScreenOn] = useState(false);
+  const [spatial, setSpatial] = useState(false);
   const meetingRef = useRef(meeting);
   meetingRef.current = meeting;
   const offered = huddlesOffered(config, session);
@@ -131,9 +135,9 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
   const peek = useCallback(async (scope: HuddleScope) => { if (!session || !offered) return null; const r = await huddles.get(session.token, scope).catch(() => null); return r && r.ok ? r.run : null; }, [session, offered]);
 
   const value = useMemo<HuddleCtx>(() => ({
-    offered, current, meeting, busy, error, micOn, camOn, screenOn,
+    offered, current, meeting, busy, error, micOn, camOn, screenOn, spatial, setSpatial,
     start: (s, n) => enter('start', s, n), join: (s, n) => enter('join', s, n), leave, end, toggleMic, toggleCam, toggleScreen, peek, dismissError: () => setError(null),
-  }), [offered, current, meeting, busy, error, micOn, camOn, screenOn, enter, leave, end, toggleMic, toggleCam, toggleScreen, peek]);
+  }), [spatial, offered, current, meeting, busy, error, micOn, camOn, screenOn, enter, leave, end, toggleMic, toggleCam, toggleScreen, peek]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

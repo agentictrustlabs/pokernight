@@ -2,6 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } 
 import type { AppSession } from '../lib/types';
 import { RoomSocket } from '../lib/roomSocket';
 import { roomApi as api } from '../lib/api';
+import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
+import { useClubHuddle } from '../components/huddle/ClubHuddleProvider';
+import { clubScope } from '../lib/huddle';
+import { SpatialVoice } from '../components/room/SpatialVoice';
 import { clubHash, HOME_HASH } from '../lib/routes';
 
 /** The scene is a separate chunk — three.js never loads for a page that has no room (the Leaflet rule). */
@@ -32,6 +36,11 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
   }, [roomId, session.token]);
   const onZone = useCallback((z: string | null) => setZone(z), []);
   const s = sock.current;
+  // VOICE IN A CLUB'S LOUNGE: the club's huddle is the room's meeting; while you are in it here, every voice
+  // is placed at the body that owns it. The hall has no huddle yet (spec §3.3 — a `hall` scope at the Home).
+  const huddle = useClubHuddle();
+  const scope = clubId ? clubScope({ clubId }) : null;
+  const inThisHuddle = !!(scope && huddle.current && huddle.meeting && huddle.current.scope.id === scope.id);
   const manifest = s?.state.manifest ?? null;
   const meNow = s?.state.you ? s.state.people.get(s.state.you) : undefined;
   const seatedTable = meNow?.seatedAt && manifest ? manifest.tables.find((t) => t.tableId === meNow.seatedAt!.tableId) : null;
@@ -54,6 +63,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
           <h1>{seatedTable ? `Seated at ${seatedTable.name}` : zone ? (table ? `At ${table.name}` : zone === 'bar' ? 'At the bar' : zone === 'fire' ? 'By the fire' : zone === 'lectern' ? 'At the lectern' : 'In the room') : 'In the room'}</h1>
         </div>
         <div className="room-meta">
+          {scope ? <HuddleAffordance scope={scope} scopeName={manifest?.name ?? 'the club'} compact /> : null}
           <span className={`conn ${s?.state.connection ?? 'connecting'}`}>{s?.state.connection ?? 'connecting'}</span>
           <span className="hint">{people.length === 1 ? 'You are the only one here' : `${people.length} here`}</span>
           <a className="small" href={clubId ? clubHash(clubId) : HOME_HASH}>Leave the room</a>
@@ -63,6 +73,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
       <Suspense fallback={<div className="lounge-loading"><p className="hint">Loading the lounge…</p></div>}>
         {s ? <Lounge socket={s} state={s.state} onZone={onZone} /> : null}
       </Suspense>
+      {s && inThisHuddle ? <SpatialVoice state={s.state} /> : null}
       <div className="room-bar">
         {seatedTable ? (
           <div className="room-table-card">

@@ -21,6 +21,9 @@ type Tracked = {
 /** One participant's audio: an <audio> whose stream follows the SDK's `audioUpdate`. */
 function ParticipantAudio({ p }: { p: Tracked }) {
   const ref = useRef<HTMLAudioElement>(null);
+  // Muted, not detached, while the room places the voices: the track must stay on an element to flow at all.
+  const { spatial } = useClubHuddle();
+  useEffect(() => { if (ref.current) ref.current.muted = spatial; }, [spatial]);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

@@ -1,6 +1,7 @@
 # The Room — a 3D card room with people in it
 
-**Status:** specification, 2026-09-14; **phase 1 steps 1–2 built the same day** — `SceneDO` (migration v6),
+**Status:** specification, 2026-09-14; **phase 1 steps 1–3 built the same day** (renderer: PlayCanvas; step 3 —
+voice placed by body — for a club's lounge, on the club's huddle) — `SceneDO` (migration v6),
 `GET /rooms/:id` + `/rooms/:id/ws`, `lib/roomSocket.ts`, `components/room/Lounge.tsx` (built-in scenery, capsule
 bodies, walking, the follow camera, zones), `pages/RoomPage.tsx` at `#/hall` and `#/clubs/<id>/room`. Proven
 live: two people in the hall see each other, one walks to a table and both are told. The hold'em board that
