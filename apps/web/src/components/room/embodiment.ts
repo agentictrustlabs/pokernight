@@ -218,6 +218,8 @@ export class ParticipantAvatar {
   }
 
   private get anim(): pc.AnimComponent | null { return this.body?.anim ?? null; }
+  /** A bone's world position and rotation this frame (the dealer's hand, for the deck) — null until dressed. */
+  bone(name: string): pc.GraphNode | null { return this.body?.findByName(name) ?? null; }
   /** for the walk scripts: which state the graph is in */
   get debug(): Record<string, unknown> { const an = this.anim; return { dressed: !!this.body, state: an?.baseLayer?.activeState, playing: an?.playing, playable: an?.playable, speed: this.speed, seated: !!this.seat, talking: this.talk }; }
 
