@@ -31,8 +31,8 @@ const HOLE_R = 1.05; // a seat's own cards, from the centre — far enough in th
 const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
 const deckSide = new pc.StandardMaterial();
-const visorGreen = new pc.StandardMaterial();
-const visorDark = new pc.StandardMaterial();
+const hatFelt = new pc.StandardMaterial();
+const hatBand = new pc.StandardMaterial();
 const CHAIR_PIECE = 'loungeChair'; // a padded armchair at the felt, not a kitchen chair
 const CHAIR_SCALE = 0.85; // the kit's chairs are 1.15 m with the pad at ~0.55; at 0.85 the pad meets the seated hips (~0.47)
 
@@ -261,8 +261,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     deck.current = new Deck3D(a);
     chips.current = new Chips3D(a);
     deckSide.diffuse = new pc.Color(0.92, 0.9, 0.85); deckSide.update();
-    visorGreen.diffuse = new pc.Color(0.12, 0.45, 0.28); visorGreen.update();
-    visorDark.diffuse = new pc.Color(0.10, 0.12, 0.13); visorDark.update();
+    hatFelt.diffuse = new pc.Color(0.10, 0.12, 0.13); hatFelt.gloss = 0.2; hatFelt.update();   // dark felt
+    hatBand.diffuse = new pc.Color(0.12, 0.45, 0.28); hatBand.update();                          // a card-room green band
     // the walk scripts read the bodies' states through this; nothing in the app does
     (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot };
     /**
@@ -291,7 +291,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         if (l) { const hp = l.getPosition(); dl.deck.setPosition(hp.x, hp.y + 0.03, hp.z); dl.deck.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
         const r = dl.avatar.dealHand; if (r) dl.hand.copy(r);
         const hd = dl.avatar.bone('head');
-        if (hd) { const hp = hd.getPosition(); dl.hat.setPosition(hp.x, hp.y + 0.13, hp.z); dl.hat.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
+        if (hd) { const hp = hd.getPosition(); dl.hat.setPosition(hp.x, hp.y + 0.10, hp.z); dl.hat.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
       }
       const acting = actingRef.current;
       for (const b of all) {
@@ -465,9 +465,12 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       a.root.addChild(deck3);
       // THE HAT SAYS WHO DEALS. Everybody in the room wears the same body, so the one person whose job is
       // different needs to be readable at a glance from across the felt: a dealer's green visor.
-      const hat = new pc.Entity('visor');
-      const crown = new pc.Entity('crown'); crown.addComponent('render', { type: 'cylinder', material: visorDark, castShadows: true }); crown.setLocalScale(0.21, 0.05, 0.21); crown.setLocalPosition(0, 0.03, 0); hat.addChild(crown);
-      const brim = new pc.Entity('brim'); brim.addComponent('render', { type: 'cylinder', material: visorGreen, castShadows: true }); brim.setLocalScale(0.30, 0.012, 0.30); brim.setLocalPosition(0, 0.005, 0.05); hat.addChild(brim);
+      // A WHOLE HAT, not a visor: a brim all the way round, a crown standing on it, and a band where the two
+      // meet. A brim pushed forward on its own reads as a sun visor stuck to a forehead.
+      const hat = new pc.Entity('hat');
+      const brim = new pc.Entity('brim'); brim.addComponent('render', { type: 'cylinder', material: hatFelt, castShadows: true }); brim.setLocalScale(0.34, 0.018, 0.34); brim.setLocalPosition(0, 0, 0); hat.addChild(brim);
+      const band = new pc.Entity('band'); band.addComponent('render', { type: 'cylinder', material: hatBand, castShadows: true }); band.setLocalScale(0.245, 0.035, 0.245); band.setLocalPosition(0, 0.025, 0); hat.addChild(band);
+      const crown = new pc.Entity('crown'); crown.addComponent('render', { type: 'cylinder', material: hatFelt, castShadows: true }); crown.setLocalScale(0.235, 0.14, 0.235); crown.setLocalPosition(0, 0.105, 0); hat.addChild(crown);
       a.root.addChild(hat);
       dealers.current.set(t.tableId, { avatar: av, hand: new pc.Vec3(at.x + Math.sin(yaw) * 0.45, 0.98, at.z + Math.cos(yaw) * 0.45), deck: deck3, hat });
       plateRef.current.set(`dealer:${t.tableId}`, { id: `dealer:${t.tableId}`, kind: 'name', text: 'the dealer', world: at.clone().add(new pc.Vec3(0, 2.05, 0)) });
