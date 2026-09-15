@@ -27,6 +27,7 @@ const ROOM_DIR = '/room';
 const KIT_URL = '/room/lounge-kit.glb';
 const CHAIR_R = 2.15; // where a seated body's feet go, from the table's centre
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
+const CHAIR_SCALE = 0.85; // the kit's chair is 1.15 m with its pad at 0.55; at 0.85 the pad meets the seated hips (~0.47)
 
 export interface LoungeProps {
   socket: RoomSocket;
@@ -61,6 +62,13 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const kit = useRef<RoomKit | null>(null);
   const deck = useRef<Deck3D | null>(null);
   const felt = useRef<pc.Entity | null>(null);
+  /** THE DEALER at each table — a body standing at the ring's gap, whose hands the cards come from. */
+  const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3 }>());
+  /** cards in the air: from the dealer's hand to their place on the felt, one after another */
+  const flights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; t: number; delay: number }>>([]);
+  /** which cards were already on the felt last time, so only the NEW ones are dealt (keyed by hand) */
+  const dealt = useRef<{ handNo: number; ids: Set<string> }>({ handNo: -1, ids: new Set() });
+  const feltSig = useRef('');
   const [kitReady, setKitReady] = useState(false);
   const me = useRef<{ avatar: ParticipantAvatar; name: string; goal: pc.Vec3 | null; heading: { tableId: string; seat: number; yaw: number } | null } | null>(null);
   const onSitRef = useRef(onSitRequest); onSitRef.current = onSitRequest;
@@ -170,7 +178,17 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (m) m.avatar.talking(isSpeaking(m.name));
       // the others ease toward their last pose; mouths move for whoever the huddle hears
       for (const bt of bots.current.values()) bt.update(dt);
+      for (const dl of dealers.current.values()) dl.avatar.update(dt);
       for (const b of bodies.current.values()) { b.avatar.talking(isSpeaking(b.name)); b.avatar.update(dt); }
+      // cards in the air: an arc from the dealer's hand to the felt, a quarter second each, one after another
+      for (const f of flights.current) {
+        if (f.delay > 0) { f.delay -= dt; continue; }
+        f.t = Math.min(1, f.t + dt / 0.28);
+        const e = 1 - (1 - f.t) * (1 - f.t);
+        const p = new pc.Vec3().lerp(f.from, f.to, e); p.y += Math.sin(e * Math.PI) * 0.18;
+        f.entity.setPosition(p);
+      }
+      flights.current = flights.current.filter((f) => f.t < 1);
       // the plates follow their bodies on screen — at 25 Hz, which is what text over a body needs
       plateClock += dt;
       if (plateClock >= 0.04) {
@@ -190,7 +208,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     kit.current = new RoomKit(a, KIT_URL); kit.current.ready(() => setKitReady(true));
     deck.current = new Deck3D(a);
     // the walk scripts read the bodies' states through this; nothing in the app does
-    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt };
+    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights };
     // GAZE, after the clips have posed the bodies: a seated body looks at whoever is acting at its table (or the
     // felt); a standing body looks at the nearest person within a few steps, the one talking first; yours looks
     // where the others do. Cheap — a dozen bodies, a dozen distances.
@@ -199,6 +217,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (me.current) all.push(me.current);
       for (const b of bodies.current.values()) all.push(b);
       for (const bt of bots.current.values()) all.push({ avatar: bt, name: '' });
+      for (const dl of dealers.current.values()) { dl.avatar.applyGaze(dt); }
       const acting = actingRef.current;
       for (const b of all) {
         const av = b.avatar;
@@ -213,7 +232,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     });
     a.start();
     app.current = a;
-    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; deck.current = null; felt.current = null; bodies.current.clear(); bots.current.clear(); me.current = null; scenery.current = null; plateRef.current.clear(); };
+    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; deck.current = null; felt.current = null; bodies.current.clear(); bots.current.clear(); dealers.current.clear(); flights.current = []; me.current = null; scenery.current = null; plateRef.current.clear(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -250,7 +269,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // and a back stand in until the kit has loaded.
       for (let i = 0; i < t.seats; i++) {
         const ang = (i / t.seats) * Math.PI * 2; const c = i < t.seated ? chairTaken : chairFree; const r = CHAIR_R + CHAIR_BACK;
-        if (furnished && k!.place('chairCushion', g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI)) continue;
+        if (furnished && k!.place('chairCushion', g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI, CHAIR_SCALE)) continue;
         add('box', c, [Math.sin(ang) * r, 0.42, Math.cos(ang) * r], [0.5, 0.08, 0.5], ang * 180 / Math.PI);
         add('box', c, [Math.sin(ang) * (r + 0.22), 0.7, Math.cos(ang) * (r + 0.22)], [0.5, 0.6, 0.06], ang * 180 / Math.PI);
       }
@@ -345,6 +364,22 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       plateRef.current.set(`bot:${key}`, { id: `bot:${key}`, kind: 'name', text: o.name ?? (o.kind === 'agent' ? 'house bot' : 'seated'), sub: actingPlayer.current === o.playerId ? 'to act' : undefined, world: chair.at.clone().add(new pc.Vec3(0, 1.55, 0)) });
     }
     for (const [key, bt] of [...bots.current]) if (!seenBots.has(key)) { bt.destroy(); bots.current.delete(key); plateRef.current.delete(`bot:${key}`); }
+    // THE DEALER: a body at every table that has anybody at it, standing at the gap between the last seat and the
+    // first, facing the felt. A social figure — the deal is the table's, the dealer only shows it happening.
+    const seenDealers = new Set<string>();
+    for (const t of manifest.tables) {
+      if (!t.seated) continue;
+      seenDealers.add(t.tableId);
+      if (dealers.current.has(t.tableId)) continue;
+      const an = manifest.anchors[t.anchor]; if (!an) continue;
+      const ang = ((t.seats - 0.5) / t.seats) * Math.PI * 2; const r = 2.0;
+      const at = new pc.Vec3(an.x + Math.sin(ang) * r, 0, an.y + Math.cos(ang) * r); const yaw = ang + Math.PI;
+      const av = new ParticipantAvatar(lib, 'ink', 'follow'); av.place(at.x, at.z, yaw); a.root.addChild(av.entity);
+      av.lookHead(new pc.Vec3(an.x, 0.9, an.y));
+      dealers.current.set(t.tableId, { avatar: av, hand: new pc.Vec3(at.x + Math.sin(yaw) * 0.45, 0.98, at.z + Math.cos(yaw) * 0.45) });
+      plateRef.current.set(`dealer:${t.tableId}`, { id: `dealer:${t.tableId}`, kind: 'name', text: 'the dealer', world: at.clone().add(new pc.Vec3(0, 2.05, 0)) });
+    }
+    for (const [id, dl] of [...dealers.current]) if (!seenDealers.has(id)) { dl.avatar.destroy(); dealers.current.delete(id); plateRef.current.delete(`dealer:${id}`); }
   }, [state.people, state.you, state.manifest]);
 
   // ── THE FELT: the seated table's cards, pot and turn, laid on its table from the view ──
@@ -353,35 +388,53 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   // GEOMETRY (cards3d.ts) — planes on the felt with a face from the deck's atlas — so they lie the way cards
   // lie from every chair; the pot and whose turn are HTML plates, because they are words.
   useEffect(() => {
-    for (const [id] of [...plateRef.current]) if (id.startsWith('felt:')) plateRef.current.delete(id);
-    felt.current?.destroy(); felt.current = null; actingRef.current = null;
     const a = app.current; const d = deck.current;
     const manifest = state.manifest; const you = state.you ? state.people.get(state.you) : undefined;
-    if (!a || !d || !board || !manifest || !you?.seatedAt || you.seatedAt.tableId !== board.tableId) return;
-    const t = manifest.tables.find((x) => x.tableId === board.tableId); const an = t ? manifest.anchors[t.anchor] : undefined;
-    if (!t || !an) return;
-    const root = new pc.Entity('felt'); a.root.addChild(root); felt.current = root;
+    const t = board && manifest ? manifest.tables.find((x) => x.tableId === board.tableId) : undefined; const an = t ? manifest!.anchors[t.anchor] : undefined;
+    if (!a || !d || !board || !manifest || !you?.seatedAt || you.seatedAt.tableId !== board.tableId || !t || !an) {
+      felt.current?.destroy(); felt.current = null; actingRef.current = null; flights.current = []; feltSig.current = '';
+      return;
+    }
     const v = board.view; const cx = an.x, cz = an.y; const yourAng = (you.seatedAt.seat / t.seats) * Math.PI * 2;
+    // whose turn changes every message; the CARDS change a few times a hand — the felt is rebuilt only for those,
+    // so a flight in progress is not cut short by a chat line or a clock tick
+    actingRef.current = v.hand?.toAct != null ? (() => { const ang = (v.hand!.toAct! / t.seats) * Math.PI * 2; return new pc.Vec3(cx + Math.sin(ang) * CHAIR_R, 1.15, cz + Math.cos(ang) * CHAIR_R); })() : null;
+    actingPlayer.current = v.hand?.toAct != null ? v.seats.find((s2) => s2.seat === v.hand!.toAct)?.playerId ?? null : null;
+    for (const pl of plateRef.current.values()) if (pl.kind === 'name') pl.sub = pl.id === `name:${actingPlayer.current}` || pl.id.startsWith('bot:') && pl.id === botPlate.current.get(actingPlayer.current ?? '') ? 'to act' : pl.agentSub;
+    const sig = JSON.stringify([v.hand?.handNo ?? -1, v.hand?.board ?? [], v.seats.map((s2) => [s2.seat, s2.inHand?.folded ?? null, s2.inHand?.holeCards ?? null]), you.seatedAt.seat]);
+    if (sig === feltSig.current && felt.current) return;
+    feltSig.current = sig;
+    felt.current?.destroy(); felt.current = null; flights.current = [];
+    const root = new pc.Entity('felt'); a.root.addChild(root); felt.current = root;
     // the row runs across your line of sight: perpendicular to the ray from the centre to your chair
     const rx = Math.cos(yourAng), rz = -Math.sin(yourAng);
     const H = 0.785; // the felt's top is 0.78
+    // A NEW HAND deals everything again; within a hand only the cards that were not there yet are dealt.
+    const handNo = v.hand?.handNo ?? -1;
+    if (dealt.current.handNo !== handNo) dealt.current = { handNo, ids: new Set() };
+    const dealer = dealers.current.get(board.tableId);
+    let n = 0;
+    const lay = (id: string, code: string | null, x: number, z: number, yaw: number, lift: number) => {
+      const e = d.card(code, x, H, z, yaw, root, lift);
+      if (dealer && !dealt.current.ids.has(id)) {
+        // it starts in the dealer's hand and arrives in order; the dealer reaches for the deck once per round of dealing
+        const to = e.getPosition().clone(); e.setPosition(dealer.hand);
+        flights.current.push({ entity: e, from: dealer.hand.clone(), to, t: 0, delay: n * 0.12 });
+        if (n === 0) dealer.avatar.gesture('pickUp');
+        n++;
+      }
+      dealt.current.ids.add(id);
+    };
     if (v.hand) {
-      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.19; d.card(c, cx + rx * o, H, cz + rz * o, yourAng + Math.PI, root, i * 0.0005); });
-      const pot = v.hand.pots.reduce((a2, p) => a2 + p.amount, 0) + v.seats.reduce((a2, s2) => a2 + (s2.inHand?.streetBet ?? 0), 0);
-      if (pot > 0) plateRef.current.set('felt:pot', { id: 'felt:pot', kind: 'pot', text: `${pot}`, sub: 'pot', world: new pc.Vec3(cx - Math.sin(yourAng) * 0.45, H + 0.02, cz - Math.cos(yourAng) * 0.45) });
+      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.24; lay(`board:${i}`, c, cx + rx * o, cz + rz * o, yourAng + Math.PI, i * 0.0005); });
     }
     for (const seat of v.seats) {
       if (!seat.inHand || seat.inHand.folded) continue;
       const ang = (seat.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
       const px = Math.cos(ang), pz = -Math.sin(ang); // across that seat's own line
       const cards = seat.inHand.holeCards ?? [null, null];
-      cards.forEach((c, i) => { const o = (i - 0.5) * 0.11; d.card(c, cx + sx * 1.3 + px * o, H, cz + sz * 1.3 + pz * o, ang + Math.PI, root, i * 0.0005); });
+      cards.forEach((c, i) => { const o = (i - 0.5) * 0.14; lay(`hole:${seat.seat}:${i}`, c, cx + sx * 1.3 + px * o, cz + sz * 1.3 + pz * o, ang + Math.PI, i * 0.0005); });
     }
-    // whose turn: a mark on the felt in front of the acting seat's cards, and where the seated heads turn
-    actingRef.current = v.hand?.toAct != null ? (() => { const ang = (v.hand!.toAct! / t.seats) * Math.PI * 2; return new pc.Vec3(cx + Math.sin(ang) * CHAIR_R, 1.15, cz + Math.cos(ang) * CHAIR_R); })() : null;
-    // whose turn is said on the acting player's own name plate (the people effect reads `actingPlayer`)
-    actingPlayer.current = v.hand?.toAct != null ? v.seats.find((s2) => s2.seat === v.hand!.toAct)?.playerId ?? null : null;
-    for (const pl of plateRef.current.values()) if (pl.kind === 'name') pl.sub = pl.id === `name:${actingPlayer.current}` || pl.id.startsWith('bot:') && pl.id === botPlate.current.get(actingPlayer.current ?? '') ? 'to act' : pl.agentSub;
   }, [board, state.manifest, state.people, state.you]);
 
   // your own plate follows your own body (which moves locally, ahead of the server)

@@ -6261,7 +6261,7 @@ button.tag.guest {
 .room-page {
   display: grid;
   grid-template-columns: 1fr 220px;
-  grid-template-areas: 'head head' 'scene people' 'bar people';
+  grid-template-areas: 'head head' 'scene people' 'hud people' 'bar people';
   gap: 0.8rem;
   align-items: start;
 }
@@ -6449,7 +6449,7 @@ button.tag.guest {
 @media (max-width: 860px) {
   .room-page {
     grid-template-columns: 1fr;
-    grid-template-areas: 'head' 'scene' 'bar' 'people';
+    grid-template-areas: 'head' 'scene' 'hud' 'bar' 'people';
   }
   .lounge, .lounge-loading {
     height: 60vh;
@@ -6488,11 +6488,14 @@ button.tag.guest {
 .lounge-plate-pot span { color: #f4f2ea; font-weight: 700; background: rgba(0, 0, 0, 0.45); padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 12px; }
 .lounge-plate-pot small { color: #d9b26a; }
 /* the HUD over the room: your cards in your hand and the flat action bar */
-.room-hud { position: absolute; left: 0; right: 0; bottom: 0; display: grid; gap: 0.4rem; padding: 0.5rem; pointer-events: none; }
-.room-hud > * { pointer-events: auto; }
+.room-hud { grid-area: hud; display: grid; gap: 0.5rem; }
+.room-hud-cards { display: flex; align-items: flex-end; gap: 1.2rem; flex-wrap: wrap; }
+.room-board { display: flex; align-items: center; gap: 0.3rem; }
+.room-board .card-slot { width: var(--card-w); height: var(--card-h); border: 1px dashed var(--rule); border-radius: 4px; }
+.room-pot { margin-left: 0.6rem; font-size: 0.85rem; color: var(--ink-soft); }
+.room-pot strong { font-size: 1.05rem; color: var(--ink); }
 .room-hand { display: flex; gap: 0.3rem; align-items: flex-end; --card-w: 56px; --card-h: 78px; }
 .room-hand .card { width: var(--card-w); height: var(--card-h); }
 .room-hud .actions { margin: 0; }
 
-.room-hud { grid-template-columns: auto 1fr; align-items: end; }
-.room-hud .actions { width: 640px; max-width: 100%; box-sizing: border-box; justify-self: end; }
+.room-hud .actions { max-width: 100%; box-sizing: border-box; }

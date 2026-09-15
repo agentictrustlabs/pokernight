@@ -128,6 +128,8 @@ export class AvatarLibrary {
 export class RoomKit extends ContainerLibrary {
   private template: pc.Entity | null = null;
   private missing = new Set<string>();
+  /** each piece's footprint centre in its own frame — Kenney's pivots sit at a corner, and a chair must turn about its middle */
+  private centres = new Map<string, pc.Vec3>();
   constructor(app: pc.Application, url: string) { super(app, url, 'lounge-kit.glb'); }
   private ensure(asset: pc.Asset): pc.Entity {
     if (!this.template) { this.template = (asset.resource as pc.ContainerResource).instantiateRenderEntity(); this.template.enabled = false; }
@@ -141,12 +143,21 @@ export class RoomKit extends ContainerLibrary {
     if (!src) { if (!this.missing.has(piece)) { this.missing.add(piece); console.warn('[room] no such piece in the kit:', piece); } return null; }
     const e = (src as pc.Entity).clone(); e.enabled = true;
     for (const r of e.findComponents('render') as pc.RenderComponent[]) { r.castShadows = true; r.receiveShadows = true; }
-    // the piece's own node carries the kit's metre scale; the clone keeps it and takes the placement on top
+    let centre = this.centres.get(piece);
+    if (!centre) {
+      // the template stands at the origin: the union of its mesh bounds is the piece's footprint
+      const box = new pc.BoundingBox(); let first = true;
+      for (const r of (src as pc.Entity).findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) { if (first) { box.copy(mi.aabb); first = false; } else box.add(mi.aabb); }
+      centre = new pc.Vec3(box.center.x, 0, box.center.z); this.centres.set(piece, centre);
+    }
+    // a pivot at the footprint's middle: the placement turns the piece about its centre, not a corner
+    const pivot = new pc.Entity(piece);
     const s0 = (src as pc.Entity).getLocalScale();
-    e.setLocalScale(s0.x * scale, s0.y * scale, s0.z * scale);
-    e.setLocalPosition(x, 0, z); e.setLocalEulerAngles(0, yawDeg, 0);
-    parent.addChild(e);
-    return e;
+    e.setLocalScale(s0.x, s0.y, s0.z); e.setLocalPosition(-centre.x, 0, -centre.z);
+    pivot.addChild(e);
+    pivot.setLocalScale(scale, scale, scale); pivot.setLocalPosition(x, 0, z); pivot.setLocalEulerAngles(0, yawDeg, 0);
+    parent.addChild(pivot);
+    return pivot;
   }
 }
 

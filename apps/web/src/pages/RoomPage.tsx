@@ -141,14 +141,25 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
         <Suspense fallback={<div className="lounge-loading"><p className="hint">Loading the lounge…</p></div>}>
           {s ? <Lounge ref={lounge} socket={s} state={s.state} onZone={onZone} onSitRequest={onSitRequest} board={board} /> : null}
         </Suspense>
-        {/* THE HUD: your cards in your hand, and the flat board's own action bar — the same act on the same wire */}
-        {board ? (
-          <div className="room-hud">
-            {myHand?.holeCards?.length ? <div className="room-hand" aria-label="Your cards">{myHand.holeCards.map((c, i) => <Card key={i} card={c} size="lg" />)}</div> : null}
-            <ActionBar turn={tableState.turn} view={board.view} now={now} onAct={act} waitingOn={board.view.hand?.toAct != null && board.view.hand.toAct !== board.view.viewerSeat ? board.names[board.view.seats.find((x) => x.seat === board.view.hand!.toAct)?.playerId ?? ''] ?? null : null} />
-          </div>
-        ) : null}
       </div>
+      {/* THE HUD, UNDER THE SCENE — never over it, so the people at the near side of the felt stay in view: your
+          cards in hand, the board and the pot as the flat board draws them (readable whatever the camera does),
+          and the flat board's own action bar — the same act on the same wire */}
+      {board ? (
+        <div className="room-hud">
+          <div className="room-hud-cards">
+            {myHand?.holeCards?.length ? <div className="room-hand" aria-label="Your cards">{myHand.holeCards.map((c, i) => <Card key={i} card={c} size="lg" />)}</div> : null}
+            {board.view.hand ? (
+              <div className="room-board" aria-label="The board">
+                {board.view.hand.board.map((c, i) => <Card key={i} card={c} />)}
+                {Array.from({ length: 5 - board.view.hand.board.length }, (_, i) => <span key={`e${i}`} className="card-slot" aria-hidden="true" />)}
+                <span className="room-pot num"><strong>{board.view.hand.pots.reduce((a2, p) => a2 + p.amount, 0) + board.view.seats.reduce((a2, s2) => a2 + (s2.inHand?.streetBet ?? 0), 0)}</strong> pot</span>
+              </div>
+            ) : null}
+          </div>
+          <ActionBar turn={tableState.turn} view={board.view} now={now} onAct={act} waitingOn={board.view.hand?.toAct != null && board.view.hand.toAct !== board.view.viewerSeat ? board.names[board.view.seats.find((x) => x.seat === board.view.hand!.toAct)?.playerId ?? ''] ?? null : null} />
+        </div>
+      ) : null}
       {s && inThisHuddle ? <SpatialVoice state={s.state} /> : null}
       <div className="room-bar">
         {seatedTable ? (
