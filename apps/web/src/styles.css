@@ -6489,6 +6489,7 @@ button.tag.guest {
 .lounge-plate-pot small { color: #d9b26a; }
 /* the HUD over the room: your cards in your hand and the flat action bar */
 .room-hud { grid-area: hud; display: grid; gap: 0.5rem; }
+.room-satout { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding: 0.5rem 0.7rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
 .room-hud-cards { display: flex; align-items: flex-end; gap: 1.2rem; flex-wrap: wrap; }
 .room-board { display: flex; align-items: center; gap: 0.3rem; }
 .room-board .card-slot { width: var(--card-w); height: var(--card-h); border: 1px dashed var(--rule); border-radius: 4px; }

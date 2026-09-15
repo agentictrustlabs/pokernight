@@ -41,7 +41,7 @@ export interface LoungeProps {
   /** Your body has walked up to this chair and turned to it: the page takes the seat at the TABLE. */
   onSitRequest?: (tableId: string, seat: number) => void;
   /** THE FELT (spec §3.4, step 5): the seated table's view, drawn on its table — cards, pot, whose turn. */
-  board?: { tableId: string; view: TableView; names: Record<string, string> } | null;
+  board?: { tableId: string; view: TableView; names: Record<string, string>; lastHand?: { handNo: number; result?: { awards: Array<{ seat: number; amount: number }> } } | null } | null;
 }
 /** What the page can tell the lounge to do with your body. */
 export interface LoungeHandle {
@@ -80,6 +80,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const chipRoot = useRef<pc.Entity | null>(null);
   const chipSig = useRef('');
   const chipHand = useRef(-1);
+  const sweptHand = useRef(-1);
+  const sweepRoot = useRef<pc.Entity | null>(null);
   const chipFlights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; t: number; delay: number }>>([]);
   /** the camera is placed, not flown, the first time it has a body to follow */
   const camSettled = useRef(false);
@@ -297,7 +299,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     });
     a.start();
     app.current = a;
-    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; deck.current = null; felt.current = null; bodies.current.clear(); bots.current.clear(); dealers.current.clear(); flights.current = []; chipFlights.current = []; chipRoot.current = null; me.current = null; scenery.current = null; plateRef.current.clear(); };
+    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; deck.current = null; felt.current = null; bodies.current.clear(); bots.current.clear(); dealers.current.clear(); flights.current = []; chipFlights.current = []; chipRoot.current = null; sweepRoot.current = null; me.current = null; scenery.current = null; plateRef.current.clear(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -494,6 +496,41 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     chipRoot.current?.destroy(); chipRoot.current = fresh; chipSig.current = sig;
   }, [board, state.manifest, state.people, state.you]);
 
+  // ── THE END OF A HAND: the pot swept to the winner, stacked in front of them, and a word of celebration ──
+  // The table says who won and how much (`lastHand.result.awards`). The chips already on the felt are not
+  // re-simulated: a pile is flown from the middle to the winner's own place and left there until the next deal
+  // clears the felt, which is what a dealer pushing a pot across actually looks like.
+  useEffect(() => {
+    const a = app.current; const ch = chips.current; const manifest = state.manifest;
+    const you = state.you ? state.people.get(state.you) : undefined;
+    const t = board && manifest ? manifest.tables.find((x) => x.tableId === board.tableId) : undefined;
+    const an = t ? manifest!.anchors[t.anchor] : undefined;
+    const res = board?.lastHand?.result; const handNo = board?.lastHand?.handNo ?? -1;
+    if (!a || !ch || !board || !t || !an || !res || !you?.seatedAt || sweptHand.current === handNo) return;
+    sweptHand.current = handNo;
+    sweepRoot.current?.destroy();
+    const root = new pc.Entity('sweep'); a.root.addChild(root); sweepRoot.current = root;
+    const cx = an.x, cz = an.y; const H = 0.79;
+    for (const award of res.awards) {
+      if (!(award.amount > 0)) continue;
+      const ang = (award.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
+      const px = Math.cos(ang), pz = -Math.sin(ang);
+      const { entity } = ch.pile(award.amount, cx + sx * 1.14 + px * 0.34, H, cz + sz * 1.14 + pz * 0.34, root, 0.08);
+      const from = new pc.Vec3(cx, H + 0.04, cz - 0.2);
+      chipFlights.current.push({ entity, from, to: entity.getLocalPosition().clone(), t: 0, delay: 0.25 });
+      entity.setLocalPosition(from);
+      // the winner says so: a body that is in the room celebrates, a seat that is only an occupant does not
+      const winner = board.view.seats.find((s2) => s2.seat === award.seat)?.playerId;
+      const av = winner === state.you ? me.current?.avatar : winner ? bodies.current.get(winner)?.avatar : undefined;
+      window.setTimeout(() => av?.celebrate(), 700);
+      if (winner) {
+        const nm = board.names[winner] ?? 'the winner';
+        plateRef.current.set('felt:won', { id: 'felt:won', kind: 'pot', text: `${nm} wins ${award.amount}`, world: new pc.Vec3(cx, 1.35, cz) });
+        window.setTimeout(() => plateRef.current.delete('felt:won'), 5000);
+      }
+    }
+  }, [board, state.manifest, state.people, state.you]);
+
   // ── THE FELT: the seated table's cards, pot and turn, laid on its table from the view ──
   // The community cards run across the centre, turned to your chair; each seat's two cards lie on the felt in
   // front of it, turned to that seat, face down unless the view shows them (yours; a showdown). Cards are
@@ -504,7 +541,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     const manifest = state.manifest; const you = state.you ? state.people.get(state.you) : undefined;
     const t = board && manifest ? manifest.tables.find((x) => x.tableId === board.tableId) : undefined; const an = t ? manifest!.anchors[t.anchor] : undefined;
     if (!a || !d || !board || !manifest || !you?.seatedAt || you.seatedAt.tableId !== board.tableId || !t || !an) {
-      felt.current?.destroy(); felt.current = null; actingRef.current = null; flights.current = []; feltSig.current = '';
+      felt.current?.destroy(); felt.current = null; actingRef.current = null; flights.current = [];
+    if (sweepRoot.current && feltSig.current) { sweepRoot.current.destroy(); sweepRoot.current = null; } feltSig.current = '';
       return;
     }
     const v = board.view; const cx = an.x, cz = an.y; const yourAng = (you.seatedAt.seat / t.seats) * Math.PI * 2;
@@ -512,7 +550,13 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     // so a flight in progress is not cut short by a chat line or a clock tick
     actingRef.current = v.hand?.toAct != null ? (() => { const ang = (v.hand!.toAct! / t.seats) * Math.PI * 2; return new pc.Vec3(cx + Math.sin(ang) * CHAIR_R, 1.15, cz + Math.cos(ang) * CHAIR_R); })() : null;
     actingPlayer.current = v.hand?.toAct != null ? v.seats.find((s2) => s2.seat === v.hand!.toAct)?.playerId ?? null : null;
-    for (const pl of plateRef.current.values()) if (pl.kind === 'name') pl.sub = pl.id === `name:${actingPlayer.current}` || pl.id.startsWith('bot:') && pl.id === botPlate.current.get(actingPlayer.current ?? '') ? 'to act' : pl.agentSub;
+    const out = new Set(v.seats.filter((s2) => s2.status === 'sitting-out').map((s2) => s2.playerId));
+    for (const pl of plateRef.current.values()) {
+      if (pl.kind !== 'name') continue;
+      const who = pl.id.startsWith('name:') ? pl.id.slice(5) : null;
+      const acting = pl.id === `name:${actingPlayer.current}` || (pl.id.startsWith('bot:') && pl.id === botPlate.current.get(actingPlayer.current ?? ''));
+      pl.sub = acting ? 'to act' : who && out.has(who) ? 'sitting out' : pl.agentSub;
+    }
     const sig = JSON.stringify([v.hand?.handNo ?? -1, v.hand?.board ?? [], v.seats.map((s2) => [s2.seat, s2.inHand?.folded ?? null, s2.inHand?.holeCards ?? null]), you.seatedAt.seat]);
     if (sig === feltSig.current && felt.current) return;
     feltSig.current = sig;

@@ -177,6 +177,8 @@ export class ParticipantAvatar {
   /** the right arm, for a procedural dealing reach applied after the clip */
   private upperArmR: pc.GraphNode | null = null;
   private foreArmR: pc.GraphNode | null = null;
+  private upperArmL: pc.GraphNode | null = null;
+  private cheerPulse = 0; // a winner's arms going up, seated or standing
   private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow') {
@@ -208,6 +210,7 @@ export class ParticipantAvatar {
     this.body = body;
     this.head = body.findByName('Head');
     this.upperArmR = body.findByName('RightArm'); this.foreArmR = body.findByName('RightForeArm');
+    this.upperArmL = body.findByName('LeftArm');
   }
 
   private get anim(): pc.AnimComponent | null { return this.body?.anim ?? null; }
@@ -218,6 +221,14 @@ export class ParticipantAvatar {
   /** Reach with the dealing arm now — a card leaving the hand, or chips pushed out. */
   dealFlick(): void { this.dealPulse = 1; }
   /**
+   * WON THE POT: both arms up, twice, over about a second and a half.
+   *
+   * Not the `Dance_Loop` clip, because the graph only reaches a gesture from Idle and a winner is usually IN A
+   * CHAIR — a standing dance clip on a seated body stands them up out of it. Arms layered on whatever clip is
+   * playing celebrate from the chair, which is what winning a pot actually looks like.
+   */
+  celebrate(): void { this.cheerPulse = 1; }
+  /**
    * AFTER THE CLIP: the reach, layered on the right arm IN THE BONE'S OWN FRAME, out and back over ~0.45 s.
    *
    * THE AXIS WAS MEASURED, not guessed (scratch `armaxis.cjs`): on this rig +X on `upperarm_r` carries the hand
@@ -226,13 +237,24 @@ export class ParticipantAvatar {
    * bone's own frame, exactly as the probe measured it.
    */
   applyDeal(dt: number): void {
-    if (this.dealPulse <= 0.001 || !this.upperArmR || !this.foreArmR) { this.dealPulse = Math.max(0, this.dealPulse - dt * 2.2); return; }
+    if (this.dealPulse <= 0.001 || !this.upperArmR || !this.foreArmR) { this.dealPulse = Math.max(0, this.dealPulse - dt * 1.3); return; }
     const swing = Math.sin(this.dealPulse * Math.PI); // 0 → out → 0 as the pulse decays
     const du = new pc.Quat().setFromEulerAngles(swing * 52, 0, 0);
     const df = new pc.Quat().setFromEulerAngles(swing * 46, 0, 0);
     this.upperArmR.setLocalRotation(this.upperArmR.getLocalRotation().clone().mul(du));
     this.foreArmR.setLocalRotation(this.foreArmR.getLocalRotation().clone().mul(df));
-    this.dealPulse = Math.max(0, this.dealPulse - dt * 2.2);
+    this.dealPulse = Math.max(0, this.dealPulse - dt * 1.3); // ~0.8 s: a reach a person actually sees
+  }
+  /** The winner's arms, layered after the clip like the reach. Measured: −Y on an upper arm is the one that lifts. */
+  applyCheer(dt: number): void {
+    if (this.cheerPulse <= 0.001 || !this.upperArmR || !this.upperArmL) { this.cheerPulse = Math.max(0, this.cheerPulse - dt * 0.7); return; }
+    const p = this.cheerPulse;
+    const lift = Math.sin(p * Math.PI) * (0.65 + 0.35 * Math.sin(p * Math.PI * 6)); // up, with two pumps in it
+    const r = new pc.Quat().setFromEulerAngles(0, -lift * 95, 0);
+    const l = new pc.Quat().setFromEulerAngles(0, lift * 95, 0);
+    this.upperArmR.setLocalRotation(this.upperArmR.getLocalRotation().clone().mul(r));
+    this.upperArmL.setLocalRotation(this.upperArmL.getLocalRotation().clone().mul(l));
+    this.cheerPulse = Math.max(0, this.cheerPulse - dt * 0.7);
   }
   /** for the walk scripts: which state the graph is in */
   get debug(): Record<string, unknown> { const an = this.anim; return { dressed: !!this.body, state: an?.baseLayer?.activeState, playing: an?.playing, playable: an?.playable, speed: this.speed, seated: !!this.seat, talking: this.talk }; }

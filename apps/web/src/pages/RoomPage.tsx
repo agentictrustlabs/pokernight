@@ -75,8 +75,12 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
     return () => { clearInterval(clock); ts.close(); if (tableSock.current === ts) tableSock.current = null; };
   }, [seatedTableId, session.token]);
   const act = (action: Action) => { const t = tableState.turn; if (!t) return; tableSock.current?.send({ type: 'act', handNo: t.handNo, action }); };
-  const board = seatedTableId && tableState.view ? { tableId: seatedTableId, view: tableState.view, names: tableState.names } : null;
-  const myHand = board?.view.seats.find((x) => x.seat === board.view.viewerSeat)?.inHand;
+  const board = seatedTableId && tableState.view ? { tableId: seatedTableId, view: tableState.view, names: tableState.names, lastHand: tableState.lastHand } : null;
+  const mySeat = board?.view.seats.find((x) => x.seat === board.view.viewerSeat);
+  const myHand = mySeat?.inHand;
+  // SAT OUT IS NOT BROKEN, AND THE ROOM HAS TO SAY SO. Two turns timed out and the table sits a person out; from
+  // the room there was no sign of it and no way back, so a player who stepped away read it as "the game ignores me".
+  const sittingOut = mySeat?.status === 'sitting-out';
   /**
    * THE BODY HAS ARRIVED AT A CHAIR. A seat is the table's own `join` (spec §3.4, open question 3): a
    * play-money table is joined from here with the practice stack; a money table stays a button on the flat
@@ -157,6 +161,12 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
               </div>
             ) : null}
           </div>
+          {sittingOut ? (
+            <div className="room-satout">
+              <strong>You are sitting out.</strong> <span className="hint">The table deals past a seat that misses two turns.</span>
+              <button type="button" className="primary" onClick={() => tableSock.current?.send({ type: 'sit-in' })}>Sit back in</button>
+            </div>
+          ) : null}
           <ActionBar turn={tableState.turn} view={board.view} now={now} onAct={act} waitingOn={board.view.hand?.toAct != null && board.view.hand.toAct !== board.view.viewerSeat ? board.names[board.view.seats.find((x) => x.seat === board.view.hand!.toAct)?.playerId ?? ''] ?? null : null} />
         </div>
       ) : null}
