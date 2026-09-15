@@ -3,7 +3,7 @@ import type { AppSession, ClubView, MissionVisit } from '../lib/types';
 import { api, type MissionListing } from '../lib/api';
 import { RoomSocket } from '../lib/roomSocket';
 import { peekSeatPlace } from '../lib/fromRoom';
-import { BAR_SEATS, FIRE_SEATS, barSeat, firesideSeat } from '../lib/roomSeats';
+import { BAR_SEATS, FIRE_SEATS, barSeat, firesideSeat, isAtPlace } from '../lib/roomSeats';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { clubScope } from '../lib/huddle';
 import { fireHash, missionHash, roomHash } from '../lib/routes';
@@ -68,7 +68,8 @@ export function FiresidePage({ session, clubId, place = 'fire' }: { session: App
     }, 2000);
     return () => { clearInterval(hold); s2.close(); sock.current = null; };
   }, [roomId, session.token, fireside]);
-  const here = [...(sock.current?.state.people.values() ?? [])].filter((p) => p.zone === (fireside ? 'fire' : 'bar'));
+  const anchorHere = sock.current?.state.manifest?.anchors?.[fireside ? 'fire' : 'bar'];
+  const here = [...(sock.current?.state.people.values() ?? [])].filter((p) => isAtPlace(anchorHere, p.x, p.y));
 
   return (
     <div className="stack bar-page">

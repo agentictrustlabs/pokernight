@@ -42,6 +42,18 @@ export function barSeat(anchor: RoomAnchorLike, i: number): SeatSpot {
   return { key: `bar:${i}`, x: anchor.x + 1.35, z, yaw: -Math.PI / 2, chairYawDeg: 90 };
 }
 
+/**
+ * HOW NEAR COUNTS AS "AT" THE FIRE OR THE BAR.
+ *
+ * Not the room's own zone: the fire anchor's radius is 2.5 m and its chairs stand at 2.55, so a body sitting
+ * in one was never inside the zone and a fireside with people in it reported nobody. Distance to the anchor,
+ * measured here, is the same answer for both views and cannot drift out from under them.
+ */
+export const AT_PLACE = 3.4;
+export function isAtPlace(anchor: RoomAnchorLike | undefined, x: number, z: number): boolean {
+  return !!anchor && Math.hypot(anchor.x - x, anchor.y - z) <= AT_PLACE;
+}
+
 /** Which of a place's seats is nearest a point — how a body's pose is read back as "sitting in that one". */
 export function nearestSeatOf(seats: SeatSpot[], x: number, z: number): SeatSpot | null {
   let best: SeatSpot | null = null; let bd = 2.2;

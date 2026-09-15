@@ -314,6 +314,10 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   inward; deriving it afresh with cos/sin and an `atan2` is what left the fireside's chairs looking at the wall.
 - **A HIGHLIGHT CLONES THE MATERIAL THAT IS THERE and only adds emissive.** Swapping in a foreign
   `StandardMaterial` made the kit's chairs VANISH under the pointer instead of lighting up.
+- **"AT THE FIRE" IS A DISTANCE, NOT THE ROOM'S ZONE** (`isAtPlace`, `lib/roomSeats.ts`): the fire anchor's
+  radius is 2.5 m and its chairs stand at 2.55, so a body sitting in one was never inside the zone and a
+  fireside with people in it reported nobody. Both views measure the distance themselves, from one shared
+  definition of where those seats are, so the two cannot drift apart.
 - **THE FIRESIDE AND THE BAR KEEP THEIR OWN PRESENCE** (`FiresidePage` opens a `RoomSocket` and poses at the
   anchor): sitting down leaves the 3D room for a 2D page, so without it the two people who had both sat down
   could not see each other at all — each alone in a room about meeting people.

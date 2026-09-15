@@ -6,7 +6,7 @@ import type { RoomSocket, RoomState } from '../../lib/roomSocket';
 import { Portrait } from '../huddle/Portrait';
 import { AvatarLibrary, ParticipantAvatar, RoomKit, type Seat } from './embodiment';
 import { isSpeaking } from './speaking';
-import { BAR_SEATS, FIRE_SEATS as FIRE_SEAT_COUNT, barSeat, firesideSeat, nearestSeatOf, type SeatSpot } from '../../lib/roomSeats';
+import { BAR_SEATS, FIRE_SEATS as FIRE_SEAT_COUNT, barSeat, firesideSeat, isAtPlace, nearestSeatOf, type SeatSpot } from '../../lib/roomSeats';
 import { Deck3D } from './cards3d';
 import { Chips3D } from './chips3d';
 
@@ -581,11 +581,12 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // SOMEBODY AT THE FIRE OR THE BAR IS SITTING THERE. They have left for the 2D page and the room still
       // holds their pose; drawn standing, a fireside of people reads as a fireside of nobody. The nearest seat
       // to where they stand is the one they are in.
-      const lounging = !chair && (p.zone === 'fire' || p.zone === 'bar')
-        ? nearestSeatOf(p.zone === 'fire' ? fireSpots(manifest) : barSpots(manifest), p.x, p.y)
-        : null;
+      const atFire = !chair && isAtPlace(manifest.anchors.fire, p.x, p.y);
+      const atBar = !chair && !atFire && isAtPlace(manifest.anchors.bar, p.x, p.y);
+      const lounging = atFire ? nearestSeatOf(fireSpots(manifest), p.x, p.y) : atBar ? nearestSeatOf(barSpots(manifest), p.x, p.y) : null;
+      const loungeAnchor = atFire ? manifest.anchors.fire : atBar ? manifest.anchors.bar : undefined;
       if (chair) b.avatar.sitAt(chair);
-      else if (lounging) b.avatar.sitAt({ at: new pc.Vec3(lounging.x, 0, lounging.z), yaw: lounging.yaw, centre: new pc.Vec3(manifest.anchors[p.zone!]!.x, 0, manifest.anchors[p.zone!]!.y) });
+      else if (lounging && loungeAnchor) b.avatar.sitAt({ at: new pc.Vec3(lounging.x, 0, lounging.z), yaw: lounging.yaw, centre: new pc.Vec3(loungeAnchor.x, 0, loungeAnchor.y) });
       else { b.avatar.stand(); b.avatar.walkTo(p.x, p.y, p.yaw); }
       const head = (chair ? chair.at : new pc.Vec3(p.x, 0, p.y)).add(new pc.Vec3(0, chair ? 1.55 : 2.05, 0));
       // The agent under the name only when it IS a name — an address says nothing to anyone.
