@@ -31,6 +31,8 @@ const HOLE_R = 1.05; // a seat's own cards, from the centre — far enough in th
 const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
 const deckSide = new pc.StandardMaterial();
+const visorGreen = new pc.StandardMaterial();
+const visorDark = new pc.StandardMaterial();
 const CHAIR_PIECE = 'loungeChair'; // a padded armchair at the felt, not a kitchen chair
 const CHAIR_SCALE = 0.85; // the kit's chairs are 1.15 m with the pad at ~0.55; at 0.85 the pad meets the seated hips (~0.47)
 
@@ -71,7 +73,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   /** the count of chips each seat has already pushed toward the pot this street, so raising THROWS the new chips */
   const pushed = useRef<Map<number, number>>(new Map());
   /** THE DEALER at each table — a body standing at the ring's gap, whose hands the cards come from. */
-  const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3; deck: pc.Entity }>());
+  const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3; deck: pc.Entity; hat: pc.Entity }>());
   /** cards in the air: from the dealer's hand to their place on the felt, one after another */
   const flights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; yawFrom: number; yawTo: number; t: number; delay: number; tilt?: number }>>([]);
   /** which cards were already on the felt last time, so only the NEW ones are dealt (keyed by hand) */
@@ -259,6 +261,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     deck.current = new Deck3D(a);
     chips.current = new Chips3D(a);
     deckSide.diffuse = new pc.Color(0.92, 0.9, 0.85); deckSide.update();
+    visorGreen.diffuse = new pc.Color(0.12, 0.45, 0.28); visorGreen.update();
+    visorDark.diffuse = new pc.Color(0.10, 0.12, 0.13); visorDark.update();
     // the walk scripts read the bodies' states through this; nothing in the app does
     (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot };
     /**
@@ -286,6 +290,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         const l = dl.avatar.bone('handL');
         if (l) { const hp = l.getPosition(); dl.deck.setPosition(hp.x, hp.y + 0.03, hp.z); dl.deck.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
         const r = dl.avatar.dealHand; if (r) dl.hand.copy(r);
+        const hd = dl.avatar.bone('head');
+        if (hd) { const hp = hd.getPosition(); dl.hat.setPosition(hp.x, hp.y + 0.13, hp.z); dl.hat.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
       }
       const acting = actingRef.current;
       for (const b of all) {
@@ -338,7 +344,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       add('cylinder', wood, [0, 0.4, 0], [0.5, 0.66, 0.5]);
       add('cylinder', wood, [0, 0.03, 0], [1.6, 0.06, 1.6]);
       // THE DEALER'S STOOL at the gap between the last seat and the first — furniture, so it is there before the dealer
-      { const ang = ((t.seats - 0.5) / t.seats) * Math.PI * 2; const r = CHAIR_R + CHAIR_BACK; if (furnished) k!.place('stoolBar', g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI, 0.8); else add('box', wood, [Math.sin(ang) * r, 0.3, Math.cos(ang) * r], [0.4, 0.6, 0.4]); }
+      { const ang = ((t.seats - 0.5) / t.seats) * Math.PI * 2; const r = CHAIR_R + CHAIR_BACK; if (furnished) k!.place(CHAIR_PIECE, g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI, CHAIR_SCALE); else add('box', wood, [Math.sin(ang) * r, 0.3, Math.cos(ang) * r], [0.4, 0.6, 0.4]); }
       // A CHAIR is the kit's, a little outside where the body's feet go (CHAIR_R), turned to the felt; a seat pad
       // and a back stand in until the kit has loaded.
       for (let i = 0; i < t.seats; i++) {
@@ -457,10 +463,16 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const stack = new pc.Entity('stack'); stack.addComponent('render', { type: 'box', material: deckSide, castShadows: true }); stack.setLocalScale(0.063 * 1.4, 0.022, 0.088 * 1.4); deck3.addChild(stack);
       const top = deck.current!.card(null, 0, 0.0115, 0, 0, deck3); top.setLocalScale(0.063 * 1.4, 1, 0.088 * 1.4);
       a.root.addChild(deck3);
-      dealers.current.set(t.tableId, { avatar: av, hand: new pc.Vec3(at.x + Math.sin(yaw) * 0.45, 0.98, at.z + Math.cos(yaw) * 0.45), deck: deck3 });
+      // THE HAT SAYS WHO DEALS. Everybody in the room wears the same body, so the one person whose job is
+      // different needs to be readable at a glance from across the felt: a dealer's green visor.
+      const hat = new pc.Entity('visor');
+      const crown = new pc.Entity('crown'); crown.addComponent('render', { type: 'cylinder', material: visorDark, castShadows: true }); crown.setLocalScale(0.21, 0.05, 0.21); crown.setLocalPosition(0, 0.03, 0); hat.addChild(crown);
+      const brim = new pc.Entity('brim'); brim.addComponent('render', { type: 'cylinder', material: visorGreen, castShadows: true }); brim.setLocalScale(0.30, 0.012, 0.30); brim.setLocalPosition(0, 0.005, 0.05); hat.addChild(brim);
+      a.root.addChild(hat);
+      dealers.current.set(t.tableId, { avatar: av, hand: new pc.Vec3(at.x + Math.sin(yaw) * 0.45, 0.98, at.z + Math.cos(yaw) * 0.45), deck: deck3, hat });
       plateRef.current.set(`dealer:${t.tableId}`, { id: `dealer:${t.tableId}`, kind: 'name', text: 'the dealer', world: at.clone().add(new pc.Vec3(0, 2.05, 0)) });
     }
-    for (const [id, dl] of [...dealers.current]) if (!seenDealers.has(id)) { dl.avatar.destroy(); dl.deck.destroy(); dealers.current.delete(id); plateRef.current.delete(`dealer:${id}`); }
+    for (const [id, dl] of [...dealers.current]) if (!seenDealers.has(id)) { dl.avatar.destroy(); dl.deck.destroy(); dl.hat.destroy(); dealers.current.delete(id); plateRef.current.delete(`dealer:${id}`); }
   }, [state.people, state.you, state.manifest]);
 
   // ── CHIPS: each seat's street bet pushed toward the pot, and the pot pile — rebuilt when any bet changes ──

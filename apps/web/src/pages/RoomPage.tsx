@@ -131,7 +131,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
       <header className="room-head">
         <div>
           <span className="eyebrow">{manifest?.name ?? 'The room'}</span>
-          <h1>{seatedTable ? `Seated at ${seatedTable.name}` : zone ? (table ? `At ${table.name}` : zone === 'bar' ? 'At the bar' : zone === 'fire' ? 'By the fire' : zone === 'lectern' ? 'At the lectern' : 'In the room') : 'In the room'}</h1>
+          <h1>{seatedTable ? `Seated at ${seatedTable.name}` : zone ? (table ? `At ${table.name}` : zone === 'bar' ? 'At the bar' : zone === 'fire' ? 'By the fire' : zone === 'lectern' ? 'At the lectern' : 'In the room') : 'In the room'}{sittingOut ? <span className="room-out-tag"> · sitting out</span> : null}</h1>
         </div>
         <div className="room-meta">
           {scope ? <HuddleAffordance scope={scope} scopeName={manifest?.name ?? 'the club'} compact /> : null}
@@ -163,7 +163,8 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
           </div>
           {sittingOut ? (
             <div className="room-satout">
-              <strong>You are sitting out.</strong> <span className="hint">The table deals past a seat that misses two turns.</span>
+              <strong>You are sitting out — you are not being dealt in.</strong>{' '}
+              <span className="hint">The table deals past a seat that misses two turns in a row. Your chips are safe; press this and you are in the next hand.</span>
               <button type="button" className="primary" onClick={() => tableSock.current?.send({ type: 'sit-in' })}>Sit back in</button>
             </div>
           ) : null}
