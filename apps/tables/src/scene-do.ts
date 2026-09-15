@@ -81,9 +81,17 @@ export class SceneDO extends DurableObject<Env> {
     const url = new URL(request.url);
     if (request.method === 'POST' && url.pathname === '/layout') {
       // The Worker lays the room's tables out on anchors — the club's open tables, in order; the pickup hall's.
-      const b = (await request.json()) as { roomId: string; name: string; tables: Array<{ tableId: string; name: string; game?: string; seats: number; seated: number }> };
+      const b = (await request.json()) as { roomId: string; name: string; tables: Array<{ tableId: string; name: string; game?: string; seats: number; seated: number; occupants?: Array<{ seat: number; playerId: string; kind: string }> }> };
       this.roomId = b.roomId; this.roomName = b.name;
       this.tables = b.tables.slice(0, TABLE_ANCHORS.length).map((t, i) => ({ ...t, anchor: TABLE_ANCHORS[i]! }));
+      // A body in the room whose person the table seats is drawn in that chair; one no table seats stands.
+      const seatOf = new Map<string, { tableId: string; seat: number }>();
+      for (const t of this.tables) for (const o of t.occupants ?? []) seatOf.set(o.playerId, { tableId: t.tableId, seat: o.seat });
+      for (const p of this.people()) {
+        const now = seatOf.get(p.playerId) ?? undefined;
+        const was = p.seatedAt;
+        if ((now?.tableId ?? null) !== (was?.tableId ?? null) || (now?.seat ?? null) !== (was?.seat ?? null)) { const { seatedAt: _s, ...rest } = p; const next = { ...rest, ...(now ? { seatedAt: now } : {}) }; this.put(next); this.queue(next); }
+      }
       this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO room (k, v) VALUES ('tables', ?), ('roomId', ?), ('roomName', ?)`, JSON.stringify(this.tables), this.roomId, this.roomName);
       // Everybody hears the new layout; zones are re-derived on their next pose.
       this.broadcast({ type: 'room', manifest: this.manifest(), you: '', people: this.people() }, true);
@@ -98,8 +106,6 @@ export class SceneDO extends DurableObject<Env> {
       if (!playerId) return json({ error: 'a body needs a person' }, 401);
       const pair = new WebSocketPair();
       const [client, server] = [pair[0], pair[1]];
-      // One body per person: a second tab replaces the first, which is told so.
-      for (const old of this.ctx.getWebSockets(playerId)) { try { old.close(4001, 'replaced'); } catch { /* gone */ } }
       this.ctx.acceptWebSocket(server, [playerId]);
       const attachment: Attachment = { playerId, name, ...(agent ? { agent } : {}) };
       server.serializeAttachment(attachment);
@@ -116,11 +122,20 @@ export class SceneDO extends DurableObject<Env> {
     const m = parsed.data;
     if (m.type === 'ping') return;
     if (m.type === 'join') {
+      // ONE BODY PER PERSON: the socket that says `join` is the tab that is here; every other socket of theirs
+      // is told it was replaced. Decided at `join` rather than at the upgrade, because two upgrades from one
+      // tab (React mounting an effect twice) can land in either order and the survivor must be the one that
+      // speaks, not the one that arrived last.
+      for (const other of this.ctx.getWebSockets(who.playerId)) if (other !== ws) { try { other.close(4001, 'replaced'); } catch { /* gone */ } }
       const body = m.body && (BODIES as readonly string[]).includes(m.body) ? m.body : BODIES[hash(who.playerId) % BODIES.length]!;
       const existing = this.row(who.playerId);
       const door = LOUNGE_ANCHORS.door!;
       const spread = (hash(who.playerId + 'x') % 200) / 100 - 1;
-      const person: RoomPerson = existing ? { ...rowToPerson(existing), name: who.name, body } : { playerId: who.playerId, ...(who.agent ? { agent: who.agent } : {}), name: who.name, body, x: door.x + spread, y: door.y + 0.5, yaw: 0, zone: null };
+      const base: RoomPerson = existing ? { ...rowToPerson(existing), name: who.name, body } : { playerId: who.playerId, ...(who.agent ? { agent: who.agent } : {}), name: who.name, body, x: door.x + spread, y: door.y + 0.5, yaw: 0, zone: null };
+      // Seated somewhere the layout knows? Then the body is drawn in that chair from the first frame.
+      const seat = this.tables.flatMap((t) => (t.occupants ?? []).filter((o) => o.playerId === who.playerId).map((o) => ({ tableId: t.tableId, seat: o.seat })))[0];
+      const { seatedAt: _s, ...rest } = base;
+      const person: RoomPerson = { ...rest, ...(seat ? { seatedAt: seat } : {}) };
       this.put(person);
       this.send(ws, { type: 'room', manifest: this.manifest(), you: who.playerId, people: this.people() });
       this.queue(person);

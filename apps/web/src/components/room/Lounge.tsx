@@ -26,7 +26,7 @@ export interface LoungeProps {
   onZone?: (zone: string | null) => void;
 }
 
-interface BodyHandle { figure: Figure; entity: pc.Entity; target: pc.Vec3; yaw: number; last: pc.Vec3; speed: number }
+interface BodyHandle { figure: Figure; entity: pc.Entity; target: pc.Vec3; yaw: number; last: pc.Vec3; speed: number; seated: boolean }
 interface Plate { id: string; kind: 'name' | 'table' | 'anchor' | 'bubble'; text: string; sub?: string; world: pc.Vec3; you?: boolean; x?: number; y?: number; visible?: boolean }
 
 export function Lounge({ socket, state, onZone }: LoungeProps) {
@@ -35,7 +35,9 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
   const app = useRef<pc.Application | null>(null);
   const bodies = useRef(new Map<string, BodyHandle>());
   const scenery = useRef<pc.Entity | null>(null);
-  const me = useRef<{ figure: Figure; entity: pc.Entity; pos: pc.Vec3; yaw: number; goal: pc.Vec3 | null } | null>(null);
+  const me = useRef<{ figure: Figure; entity: pc.Entity; pos: pc.Vec3; yaw: number; goal: pc.Vec3 | null; seated: { at: pc.Vec3; yaw: number } | null } | null>(null);
+  /** House bots in chairs — figures for occupants no person in the room owns. */
+  const bots = useRef(new Map<string, { figure: Figure; entity: pc.Entity }>());
   const keys = useRef(new Set<string>());
   const [plates, setPlates] = useState<Plate[]>([]);
   const plateRef = useRef<Map<string, Plate>>(new Map());
@@ -86,7 +88,14 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
     });
     a.on('update', (dt: number) => {
       const m = me.current;
-      if (m) {
+      if (m && m.seated) {
+        m.pos.copy(m.seated.at); m.yaw = m.seated.yaw;
+        m.figure.animate(dt, 0, true);
+        m.entity.setPosition(m.pos); m.entity.setEulerAngles(0, m.yaw * 180 / Math.PI, 0);
+        const behind = new pc.Vec3(m.pos.x - Math.sin(m.yaw) * 3.2, 2.6, m.pos.z - Math.cos(m.yaw) * 3.2);
+        camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
+        camera.lookAt(m.pos.x + Math.sin(m.yaw) * 2, 0.9, m.pos.z + Math.cos(m.yaw) * 2);
+      } else if (m) {
         let dx = 0, dz = 0;
         const k = keys.current;
         if (k.has('up')) dz += 1; if (k.has('down')) dz -= 1; if (k.has('left')) dx -= 1; if (k.has('right')) dx += 1;
@@ -114,13 +123,14 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
         camera.lookAt(m.pos.x, 1.2, m.pos.z);
       }
       // the others ease toward their last pose
+      for (const bt of bots.current.values()) bt.figure.animate(dt, 0, true);
       for (const b of bodies.current.values()) {
         const p = b.entity.getPosition();
         const before = b.last.copy(p);
         b.entity.setPosition(p.lerp(p, b.target, Math.min(1, dt * 8)));
         const stepped = b.entity.getPosition().distance(before) / Math.max(dt, 1e-3);
         b.speed += (stepped - b.speed) * Math.min(1, dt * 10);
-        b.figure.animate(dt, b.speed);
+        b.figure.animate(dt, b.seated ? 0 : b.speed, b.seated);
         const cur = b.entity.getEulerAngles().y * Math.PI / 180;
         b.entity.setEulerAngles(0, (cur + (b.yaw - cur) * Math.min(1, dt * 8)) * 180 / Math.PI, 0);
       }
@@ -184,29 +194,51 @@ export function Lounge({ socket, state, onZone }: LoungeProps) {
 
   // ── the people, from presence ──
   useEffect(() => {
-    const a = app.current; if (!a || !state.you) return;
+    const a = app.current; const manifest = state.manifest; if (!a || !state.you || !manifest) return;
+    // WHERE A CHAIR IS: the table's anchor plus the seat's place around it, facing the felt.
+    const chairOf = (tableId: string, seat: number): { at: pc.Vec3; yaw: number } | null => {
+      const t = manifest.tables.find((x) => x.tableId === tableId); const an = t ? manifest.anchors[t.anchor] : undefined;
+      if (!t || !an) return null;
+      const ang = (seat / t.seats) * Math.PI * 2; // seats are 0-based, as the flat board's ring draws them
+      return { at: new pc.Vec3(an.x + Math.sin(ang) * 2.1, 0, an.y + Math.cos(ang) * 2.1), yaw: ang + Math.PI };
+    };
     const seen = new Set<string>();
     for (const p of state.people.values()) {
       seen.add(p.playerId);
+      const chair = p.seatedAt ? chairOf(p.seatedAt.tableId, p.seatedAt.seat) : null;
       const isMe = p.playerId === state.you;
       if (isMe) {
         if (!me.current) {
           const f = new Figure(p.body); const e = f.entity; e.setPosition(p.x, 0, p.y); e.setEulerAngles(0, p.yaw * 180 / Math.PI, 0); a.root.addChild(e);
-          me.current = { figure: f, entity: e, pos: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, goal: null };
+          me.current = { figure: f, entity: e, pos: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, goal: null, seated: null };
         }
+        me.current.seated = chair;
         plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: `${p.name} · you`, world: me.current.entity.getPosition().clone().add(new pc.Vec3(0, 2.05, 0)), you: true });
         continue;
       }
       let b = bodies.current.get(p.playerId);
-      if (!b) { const f = new Figure(p.body); const e = f.entity; e.setPosition(p.x, 0, p.y); a.root.addChild(e); b = { figure: f, entity: e, target: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, last: new pc.Vec3(p.x, 0, p.y), speed: 0 }; bodies.current.set(p.playerId, b); }
-      b.target.set(p.x, 0, p.y); b.yaw = p.yaw;
+      if (!b) { const f = new Figure(p.body); const e = f.entity; e.setPosition(p.x, 0, p.y); a.root.addChild(e); b = { figure: f, entity: e, target: new pc.Vec3(p.x, 0, p.y), yaw: p.yaw, last: new pc.Vec3(p.x, 0, p.y), speed: 0, seated: false }; bodies.current.set(p.playerId, b); }
+      if (chair) { b.target.copy(chair.at); b.yaw = chair.yaw; b.seated = true; } else { b.target.set(p.x, 0, p.y); b.yaw = p.yaw; b.seated = false; }
       // The agent under the name only when it IS a name — an address says nothing to anyone.
       plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: p.name, ...(p.agent && p.agent.includes('.') ? { sub: p.agent } : {}), world: b.target.clone().add(new pc.Vec3(0, 2.05, 0)) });
       const said = p.said && Date.now() - p.said.at < 8000 ? p.said.text : null;
       if (said) plateRef.current.set(`bubble:${p.playerId}`, { id: `bubble:${p.playerId}`, kind: 'bubble', text: said, world: b.target.clone().add(new pc.Vec3(0, 2.5, 0)) }); else plateRef.current.delete(`bubble:${p.playerId}`);
     }
     for (const [id, b] of [...bodies.current]) if (!seen.has(id)) { b.entity.destroy(); bodies.current.delete(id); plateRef.current.delete(`name:${id}`); plateRef.current.delete(`bubble:${id}`); }
-  }, [state.people, state.you]);
+    // THE HOUSE'S BOTS AND ABSENT PLAYERS: an occupant no body in the room owns is drawn seated in its chair
+    // as a quieter figure — a persona's body is decoration for a seat, not presence (spec §3.5).
+    const seenBots = new Set<string>();
+    for (const t of manifest.tables) for (const o of t.occupants ?? []) {
+      if (state.people.has(o.playerId)) continue;
+      const key = `${t.tableId}:${o.seat}`; seenBots.add(key);
+      const chair = chairOf(t.tableId, o.seat); if (!chair) continue;
+      let bt = bots.current.get(key);
+      if (!bt) { const f = new Figure(o.kind === 'agent' ? 'slate' : 'ink'); a.root.addChild(f.entity); bt = { figure: f, entity: f.entity }; bots.current.set(key, bt); }
+      bt.entity.setPosition(chair.at); bt.entity.setEulerAngles(0, chair.yaw * 180 / Math.PI, 0);
+      plateRef.current.set(`bot:${key}`, { id: `bot:${key}`, kind: 'name', text: o.name ?? (o.kind === 'agent' ? 'house bot' : 'seated'), world: chair.at.clone().add(new pc.Vec3(0, 1.7, 0)) });
+    }
+    for (const [key, bt] of [...bots.current]) if (!seenBots.has(key)) { bt.entity.destroy(); bots.current.delete(key); plateRef.current.delete(`bot:${key}`); }
+  }, [state.people, state.you, state.manifest]);
 
   // your own plate follows your own body (which moves locally, ahead of the server)
   useEffect(() => {
@@ -269,8 +301,20 @@ export class Figure {
     const leg = (side: 1 | -1) => { const pivot = new pc.Entity('leg'); pivot.setLocalPosition(side * 0.12, 0.02, 0); hips.addChild(pivot); pivot.addChild(part('capsule', dark, [0, -0.45, 0], [0.16, 0.46, 0.16])); pivot.addChild(part('box', ink, [0, -0.93, 0.05], [0.16, 0.08, 0.28])); return pivot; };
     this.arms = [arm(1), arm(-1)]; this.legs = [leg(1), leg(-1)];
   }
-  /** `speed` in m/s this frame. */
-  animate(dt: number, speed: number): void {
+  private seat = 0; // 0 standing … 1 seated, eased
+  /** `speed` in m/s this frame; `seated` puts the figure in a chair: hips down, thighs forward, hands on the felt. */
+  animate(dt: number, speed: number, seated = false): void {
+    this.seat += ((seated ? 1 : 0) - this.seat) * Math.min(1, dt * 6);
+    if (this.seat > 0.5) {
+      this.idle += dt;
+      const s = this.seat;
+      this.hips.setLocalPosition(0, 0.98 - 0.42 * s + Math.sin(this.idle * 1.6) * 0.006, 0.05 * s);
+      this.legs[0].setLocalEulerAngles(-85 * s, 0, 4); this.legs[1].setLocalEulerAngles(-85 * s, 0, -4);
+      this.arms[0].setLocalEulerAngles(-45 * s, 0, 14); this.arms[1].setLocalEulerAngles(-45 * s, 0, -14);
+      this.torso.setLocalEulerAngles(6 * s, 0, 0);
+      this.head.setLocalEulerAngles(8 * s, Math.sin(this.idle * 0.4) * 22, 0);
+      return;
+    }
     const walking = Math.min(1, speed / 2.2);
     this.gait += (walking - this.gait) * Math.min(1, dt * 8);
     this.idle += dt;

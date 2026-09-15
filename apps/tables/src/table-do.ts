@@ -739,6 +739,12 @@ export class PokerTableDO extends DurableObject<Env> {
     if (request.method === 'GET' && path === '/summary') {
       return json(this.summary());
     }
+    // WHO SITS WHERE, by player id — for the room to draw a body in the chair the TABLE says (docs/SPATIAL-ROOM.md
+    // §2: a body is presence, not authority). No cards, no stacks: seat numbers and ids only.
+    if (request.method === 'GET' && path === '/seats') {
+      const state = this.state;
+      return json({ seats: state ? this.snap(state).seats.map((s) => ({ seat: s.seat, playerId: s.playerId, kind: this.players[s.playerId]?.kind ?? 'human' })) : [] });
+    }
     if (request.method === 'GET' && path === '/ledger') {
       return json(this.ledgerFor(url.searchParams.get('playerId')));
     }

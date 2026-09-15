@@ -1213,7 +1213,11 @@ export const RoomManifestSchema = z.object({
   /** The scenery: a built-in scene id today (`lounge`); an R2 key for a glTF later. */
   scene: z.string(),
   anchors: z.record(RoomAnchorSchema),
-  tables: z.array(z.object({ tableId: z.string(), name: z.string(), anchor: z.string(), game: z.string().optional(), seats: z.number().int(), seated: z.number().int() })),
+  tables: z.array(z.object({
+    tableId: z.string(), name: z.string(), anchor: z.string(), game: z.string().optional(), seats: z.number().int(), seated: z.number().int(),
+    /** Who sits where, as the TABLE says — a player id per chair; a house bot is `kind: 'agent'` and drawn in its chair too. */
+    occupants: z.array(z.object({ seat: z.number().int(), playerId: z.string(), kind: z.string(), name: z.string().optional() })).optional(),
+  })),
   bodies: z.array(z.string()),
 });
 export type RoomManifest = z.infer<typeof RoomManifestSchema>;

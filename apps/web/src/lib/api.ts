@@ -542,6 +542,9 @@ export function tableSocketUrl(tableId: string, token: string | null): string {
   return `${proto}//${location.host}${API_BASE}${path}${q}`;
 }
 
+/** THE ROOM's manifest and who is in it; reading it also lays the room's tables out again. */
+export const roomApi = { room: (roomId: string, token: string) => request<{ manifest: unknown; people: unknown[] }>(`/rooms/${encodeURIComponent(roomId)}`, {}, token) };
+
 /** THE ROOM's socket (docs/SPATIAL-ROOM.md) — a body's presence, never a card. */
 export function roomSocketUrl(roomId: string, token: string): string {
   const path = `/rooms/${encodeURIComponent(roomId)}/ws?token=${encodeURIComponent(token)}`;

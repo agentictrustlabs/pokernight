@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { AppSession } from '../lib/types';
 import { RoomSocket } from '../lib/roomSocket';
+import { roomApi as api } from '../lib/api';
 import { clubHash, HOME_HASH } from '../lib/routes';
 
 /** The scene is a separate chunk — three.js never loads for a page that has no room (the Leaflet rule). */
@@ -24,11 +25,16 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
     const s = new RoomSocket(roomId, session.token, undefined, bump);
     sock.current = s;
     bump();
-    return () => { s.close(); sock.current = null; };
+    // THE LAYOUT IS RE-READ every few seconds: a table opened, a seat taken, a hand's count — the room learns
+    // it from the tables through the Worker, and everybody in the room hears the new manifest.
+    const relayout = setInterval(() => { void api.room(roomId, session.token).catch(() => undefined); }, 8000);
+    return () => { clearInterval(relayout); s.close(); sock.current = null; };
   }, [roomId, session.token]);
   const onZone = useCallback((z: string | null) => setZone(z), []);
   const s = sock.current;
   const manifest = s?.state.manifest ?? null;
+  const meNow = s?.state.you ? s.state.people.get(s.state.you) : undefined;
+  const seatedTable = meNow?.seatedAt && manifest ? manifest.tables.find((t) => t.tableId === meNow.seatedAt!.tableId) : null;
   const table = zone && manifest ? manifest.tables.find((t) => t.tableId === zone) : null;
   const people = s ? [...s.state.people.values()] : [];
 
@@ -45,7 +51,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
       <header className="room-head">
         <div>
           <span className="eyebrow">{manifest?.name ?? 'The room'}</span>
-          <h1>{zone ? (table ? `At ${table.name}` : zone === 'bar' ? 'At the bar' : zone === 'fire' ? 'By the fire' : zone === 'lectern' ? 'At the lectern' : 'In the room') : 'In the room'}</h1>
+          <h1>{seatedTable ? `Seated at ${seatedTable.name}` : zone ? (table ? `At ${table.name}` : zone === 'bar' ? 'At the bar' : zone === 'fire' ? 'By the fire' : zone === 'lectern' ? 'At the lectern' : 'In the room') : 'In the room'}</h1>
         </div>
         <div className="room-meta">
           <span className={`conn ${s?.state.connection ?? 'connecting'}`}>{s?.state.connection ?? 'connecting'}</span>
@@ -58,7 +64,12 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
         {s ? <Lounge socket={s} state={s.state} onZone={onZone} /> : null}
       </Suspense>
       <div className="room-bar">
-        {table ? (
+        {seatedTable ? (
+          <div className="room-table-card">
+            <strong>{seatedTable.name}</strong> <span className="hint">seat {(meNow!.seatedAt!.seat) + 1} · {seatedTable.seated}/{seatedTable.seats} seated</span>
+            <a className="button primary" href={`#/t/${encodeURIComponent(seatedTable.tableId)}`}>Back to your cards →</a>
+          </div>
+        ) : table ? (
           <div className="room-table-card">
             <strong>{table.name}</strong> <span className="hint">{table.seated}/{table.seats} seated</span>
             <a className="button primary" href={`#/t/${encodeURIComponent(table.tableId)}`}>Sit down at the table →</a>
