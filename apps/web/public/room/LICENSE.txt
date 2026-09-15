@@ -1,3 +1,7 @@
 mannequin.glb — Quaternius, Universal Animation Library (Standard), https://quaternius.com/packs/universalanimationlibrary.html
 CC0 1.0 Universal (public domain): https://creativecommons.org/publicdomain/zero/1.0/
 Trimmed to the clips the room uses (gltf-transform: resample, dedup, prune, quantize) — see docs/SPATIAL-ROOM.md §3.6.
+
+lounge-kit.glb — Kenney, Furniture Kit, https://kenney.nl/assets/furniture-kit (via opengameart.org/content/furniture-kit)
+CC0 1.0 Universal (public domain). Seventeen pieces converted OBJ → glTF (obj2gltf), merged into one file with a
+named node per piece (chairCushion, kitchenBar, stoolBar, loungeSofa, lampRoundFloor, rugRound, …), scaled to metres.

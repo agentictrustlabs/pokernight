@@ -5,7 +5,7 @@ import type { TableView } from '../../lib/types';
 import { Card } from '../Card';
 import type { RoomSocket, RoomState } from '../../lib/roomSocket';
 import { Portrait } from '../huddle/Portrait';
-import { AvatarLibrary, ParticipantAvatar, type Seat } from './embodiment';
+import { AvatarLibrary, ParticipantAvatar, RoomKit, type Seat } from './embodiment';
 import { isSpeaking } from './speaking';
 
 /**
@@ -24,6 +24,7 @@ import { isSpeaking } from './speaking';
 
 const WALK_SPEED = 2.0; // m/s — the walk clip's stride, so feet do not slide
 const BODY_URL = '/room/mannequin.glb';
+const KIT_URL = '/room/lounge-kit.glb';
 const CHAIR_R = 2.35; // where a seated body's feet go, from the table's centre
 
 export interface LoungeProps {
@@ -56,6 +57,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const bodies = useRef(new Map<string, BodyHandle>());
   const scenery = useRef<pc.Entity | null>(null);
   const library = useRef<AvatarLibrary | null>(null);
+  const kit = useRef<RoomKit | null>(null);
+  const [kitReady, setKitReady] = useState(false);
   const me = useRef<{ avatar: ParticipantAvatar; name: string; goal: pc.Vec3 | null; heading: { tableId: string; seat: number; yaw: number } | null } | null>(null);
   const onSitRef = useRef(onSitRequest); onSitRef.current = onSitRequest;
   /** Every chair in the room, by table and seat, with whether somebody is in it — from the manifest. */
@@ -66,6 +69,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const [plates, setPlates] = useState<Plate[]>([]);
   const plateRef = useRef<Map<string, Plate>>(new Map());
   const manifestRef = useRef<RoomManifest | null>(null);
+  const sceneryStamp = useRef('');
   const stateRef = useRef(state);
   stateRef.current = state;
   useEffect(() => { onZone?.(state.zone); }, [state.zone, onZone]);
@@ -175,19 +179,23 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       }
     });
     library.current = new AvatarLibrary(a, BODY_URL); library.current.load();
+    kit.current = new RoomKit(a, KIT_URL); kit.current.ready(() => setKitReady(true));
     // the walk scripts read the bodies' states through this; nothing in the app does
-    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library };
+    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery };
     a.start();
     app.current = a;
-    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; bodies.current.clear(); bots.current.clear(); me.current = null; scenery.current = null; plateRef.current.clear(); };
+    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; bodies.current.clear(); bots.current.clear(); me.current = null; scenery.current = null; plateRef.current.clear(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── the scenery, from the manifest ──
   useEffect(() => {
-    const a = app.current; const manifest = state.manifest;
-    if (!a || !manifest || manifestRef.current === manifest) return;
-    manifestRef.current = manifest;
+    const a = app.current; const manifest = state.manifest; const k = kit.current;
+    if (!a || !manifest) return;
+    const stamp = `${kitReady ? 'kit' : 'bare'}`;
+    if (manifestRef.current === manifest && sceneryStamp.current === stamp) return;
+    manifestRef.current = manifest; sceneryStamp.current = stamp;
+    const furnished = kitReady && !!k?.loaded;
     scenery.current?.destroy();
     for (const [id, pl] of [...plateRef.current]) if (pl.kind === 'table' || pl.kind === 'anchor') plateRef.current.delete(id);
     const root = new pc.Entity('scenery'); a.root.addChild(root); scenery.current = root;
@@ -206,9 +214,11 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       add('cylinder', feltHi, [0, 0.78, 0], [3, 0.12, 3]);
       add('cylinder', wood, [0, 0.72, 0], [3.3, 0.06, 3.3]);
       add('cylinder', wood, [0, 0.36, 0], [0.6, 0.72, 0.6]);
-      // A CHAIR is a seat pad and a back, a little outside where the body's feet go (CHAIR_R), turned to the felt.
+      // A CHAIR is the kit's, a little outside where the body's feet go (CHAIR_R), turned to the felt; a seat pad
+      // and a back stand in until the kit has loaded.
       for (let i = 0; i < t.seats; i++) {
         const ang = (i / t.seats) * Math.PI * 2; const c = i < t.seated ? chairTaken : chairFree; const r = CHAIR_R + 0.28;
+        if (furnished && k!.place('chairCushion', g, Math.sin(ang) * r, Math.cos(ang) * r, ang * 180 / Math.PI + 180)) continue;
         add('box', c, [Math.sin(ang) * r, 0.42, Math.cos(ang) * r], [0.5, 0.08, 0.5], ang * 180 / Math.PI);
         add('box', c, [Math.sin(ang) * (r + 0.22), 0.7, Math.cos(ang) * (r + 0.22)], [0.5, 0.6, 0.06], ang * 180 / Math.PI);
       }
@@ -216,14 +226,39 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const lamp = new pc.Entity('lamp'); lamp.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.94, 0.8), intensity: 2.2, range: 10, castShadows: false }); lamp.setLocalPosition(0, 3.1, 0); g.addChild(lamp);
       plateRef.current.set(`table:${t.tableId}`, { id: `table:${t.tableId}`, kind: 'table', text: t.name, sub: `${t.seated}/${t.seats} seated`, world: new pc.Vec3(p.x, 1.9, p.y) });
     }
-    if (a2.bar) { prim('box', wood, [a2.bar.x, 0.55, a2.bar.y], [1, 1.1, 5]); prim('box', brass, [a2.bar.x, 1.12, a2.bar.y], [1.2, 0.06, 5.2]); plateRef.current.set('anchor:bar', { id: 'anchor:bar', kind: 'anchor', text: 'The bar', world: new pc.Vec3(a2.bar.x, 1.8, a2.bar.y) }); }
+    if (a2.bar) {
+      // THE BAR: the kit's counter in four lengths with its two ends, stools along the room side, a lamp behind
+      const bx = a2.bar.x, bz = a2.bar.y; const yaw = a2.bar.yaw * 180 / Math.PI;
+      if (furnished) {
+        for (let i = -2; i < 2; i++) k!.place('kitchenBar', root, bx, bz + i * 1.08 + 0.54, yaw + 90);
+        k!.place('kitchenBarEnd', root, bx, bz - 2.16 - 0.125, yaw + 90); k!.place('kitchenBarEnd', root, bx, bz + 2.16 + 0.125, yaw + 90);
+        for (let i = -1; i <= 1; i++) k!.place('stoolBar', root, bx + 0.9, bz + i * 1.2, yaw + 90);
+        k!.place('lampRoundFloor', root, bx - 0.9, bz - 2.9, 0); k!.place('lampRoundFloor', root, bx - 0.9, bz + 2.9, 0);
+      } else { prim('box', wood, [bx, 0.55, bz], [1, 1.1, 5]); prim('box', brass, [bx, 1.12, bz], [1.2, 0.06, 5.2]); }
+      plateRef.current.set('anchor:bar', { id: 'anchor:bar', kind: 'anchor', text: 'The bar', world: new pc.Vec3(bx, 1.8, bz) });
+    }
     if (a2.fire) {
       prim('box', mat(0.36, 0.29, 0.23), [a2.fire.x, 0.8, a2.fire.y], [0.6, 1.6, 2.2]);
+      if (furnished) {
+        // a rug, a sofa facing the hearth and a chair each side
+        k!.place('rugRound', root, a2.fire.x - 2.2, a2.fire.y, 0);
+        k!.place('loungeSofa', root, a2.fire.x - 3.4, a2.fire.y, 90);
+        k!.place('loungeChair', root, a2.fire.x - 2.0, a2.fire.y - 1.9, 0); k!.place('loungeChair', root, a2.fire.x - 2.0, a2.fire.y + 1.9, 180);
+        k!.place('pottedPlant', root, a2.fire.x - 0.6, a2.fire.y + 2.2, 0);
+      }
       const fire = new pc.Entity('fire'); fire.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.6, 0.24), intensity: 1.6, range: 7 }); fire.setLocalPosition(a2.fire.x - 0.6, 0.5, a2.fire.y); root.addChild(fire);
       plateRef.current.set('anchor:fire', { id: 'anchor:fire', kind: 'anchor', text: 'The fire', world: new pc.Vec3(a2.fire.x, 1.9, a2.fire.y) });
     }
+    if (furnished) {
+      // the room's dressing: a doorway where you come in, bookcases and plants along the walls, lamps in the corners
+      if (a2.door) k!.place('doorway', root, a2.door.x, -10.85, 0);
+      k!.place('bookcaseOpen', root, -4, -10.6, 0); k!.place('bookcaseOpen', root, 4, -10.6, 0);
+      k!.place('bookcaseOpen', root, -10.6, -6, 90); k!.place('bookcaseOpen', root, 10.6, -7, -90);
+      for (const [x, z] of [[-10.3, 10.3], [10.3, 10.3], [-10.3, -10.3], [10.3, -10.3]] as const) k!.place('pottedPlant', root, x, z, 0);
+      k!.place('lampRoundFloor', root, -10.3, 0, 0); k!.place('lampRoundFloor', root, 10.3, 1, 0);
+    }
     if (a2.lectern) { prim('box', wood, [a2.lectern.x, 0.6, a2.lectern.y], [0.5, 1.2, 0.5]); plateRef.current.set('anchor:lectern', { id: 'anchor:lectern', kind: 'anchor', text: "♦ The guest's lectern", world: new pc.Vec3(a2.lectern.x, 1.7, a2.lectern.y) }); }
-  }, [state.manifest]);
+  }, [state.manifest, kitReady]);
 
   // ── the people, from presence ──
   useEffect(() => {

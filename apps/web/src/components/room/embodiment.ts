@@ -71,21 +71,56 @@ const GRAPH = {
 };
 const STATE_CLIP: Record<string, keyof typeof CLIPS> = { Idle: 'idle', Talk: 'talk', Walk: 'walk', SitDown: 'sitDown', Seated: 'seated', SeatedTalk: 'seatedTalk', StandUp: 'standUp', Interact: 'interact', PickUp: 'pickUp', Dance: 'dance' };
 
-/** The one body every participant is instantiated from: the container, loaded once per application. */
-export class AvatarLibrary {
+/** A glTF container loaded once per application and handed to whoever asked, in order. */
+export class ContainerLibrary {
   private asset: pc.Asset | null = null;
   private waiting: Array<(a: pc.Asset) => void> = [];
   private failed: string | null = null;
-  constructor(private readonly app: pc.Application, private readonly url: string) {}
+  constructor(readonly app: pc.Application, private readonly url: string, private readonly filename: string) {}
   load(): void {
     if (this.asset || this.failed) return;
-    this.app.assets.loadFromUrlAndFilename(this.url, 'mannequin.glb', 'container', (err, asset) => {
-      if (err || !asset) { this.failed = String(err ?? 'no asset'); console.warn('[room] the body did not load:', this.failed); return; }
+    this.app.assets.loadFromUrlAndFilename(this.url, this.filename, 'container', (err, asset) => {
+      if (err || !asset) { this.failed = String(err ?? 'no asset'); console.warn(`[room] ${this.filename} did not load:`, this.failed); return; }
       this.asset = asset; for (const w of this.waiting) w(asset); this.waiting = [];
     });
   }
   ready(fn: (a: pc.Asset) => void): void { if (this.asset) fn(this.asset); else { this.waiting.push(fn); this.load(); } }
   get loaded(): boolean { return !!this.asset; }
+}
+
+/** The one body every participant is instantiated from. */
+export class AvatarLibrary extends ContainerLibrary {
+  constructor(app: pc.Application, url: string) { super(app, url, 'mannequin.glb'); }
+}
+
+/**
+ * THE FURNITURE KIT — Kenney's CC0 pieces (`public/room/lounge-kit.glb`, one named node each), instantiated once
+ * as a template and CLONED per placement, so a lounge is a list of (piece, x, z, yaw) and a new piece is a
+ * node in the file. A piece the kit does not carry places nothing and says so once.
+ */
+export class RoomKit extends ContainerLibrary {
+  private template: pc.Entity | null = null;
+  private missing = new Set<string>();
+  constructor(app: pc.Application, url: string) { super(app, url, 'lounge-kit.glb'); }
+  private ensure(asset: pc.Asset): pc.Entity {
+    if (!this.template) { this.template = (asset.resource as pc.ContainerResource).instantiateRenderEntity(); this.template.enabled = false; }
+    return this.template;
+  }
+  /** A clone of `piece` at (x, z) on the floor, turned `yawDeg`, under `parent`. Null until the kit is loaded. */
+  place(piece: string, parent: pc.Entity, x: number, z: number, yawDeg = 0, scale = 1): pc.Entity | null {
+    if (!this.loaded) return null;
+    let src: pc.Entity | null = null;
+    this.ready((a) => { src = this.ensure(a).findByName(piece) as pc.Entity | null; });
+    if (!src) { if (!this.missing.has(piece)) { this.missing.add(piece); console.warn('[room] no such piece in the kit:', piece); } return null; }
+    const e = (src as pc.Entity).clone(); e.enabled = true;
+    for (const r of e.findComponents('render') as pc.RenderComponent[]) { r.castShadows = true; r.receiveShadows = true; }
+    // the piece's own node carries the kit's metre scale; the clone keeps it and takes the placement on top
+    const s0 = (src as pc.Entity).getLocalScale();
+    e.setLocalScale(s0.x * scale, s0.y * scale, s0.z * scale);
+    e.setLocalPosition(x, 0, z); e.setLocalEulerAngles(0, yawDeg, 0);
+    parent.addChild(e);
+    return e;
+  }
 }
 
 export interface Seat { at: pc.Vec3; yaw: number }
