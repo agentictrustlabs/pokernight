@@ -171,8 +171,8 @@ function Hero({ live }: { live: LiveLobby }) {
           <a className="cta" href={NEW_CLUB_HASH}>
             Start a club
           </a>
-          <a className="cta-quiet" href="#/signin">
-            Or just play a hand
+          <a className="cta-welcome" href="#/signin">
+            Or come play or hang out
           </a>
           <a className="cta-quiet" href={MISSIONS_HASH}>
             The missions

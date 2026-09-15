@@ -1,4 +1,7 @@
 import { useState } from 'react';
+
+/** Set the first time a session is saved on this device; read before sign-in to tell a return from a first visit. */
+export const EVER_KEY = 'pokernight.ever';
 import type { AuthState } from '../App';
 import type { AppSession, Session } from '../lib/types';
 import { api } from '../lib/api';
@@ -42,6 +45,14 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
   const homeHost = config?.home.origin ? safeHost(config.home.origin) : null;
   const personas = auth.personas;
   const [name, setName] = useState('');
+  /**
+   * HAS THIS BROWSER EVER HELD A SESSION? That is what "returning" means here, and it is the only honest thing
+   * the page can know before anybody signs in: the room has no idea who is looking at it. A wrong guess costs
+   * nothing — both doors lead to the same ceremony at the same Home — so the returning one is offered first and
+   * the name box waits behind "first time here".
+   */
+  const [returning] = useState(() => { try { return localStorage.getItem(EVER_KEY) === '1'; } catch { return false; } });
+  const [signingUp, setSigningUp] = useState(false);
 
   return (
     <div className="signin">
@@ -73,30 +84,48 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
       ) : (
         <>
           <div className="signin-primary">
-            <label className="signin-name">
-              What should we call you?
-              <input
-                type="text"
-                value={name}
-                maxLength={PROFILE_NAME_MAX}
-                autoComplete="given-name"
-                placeholder="optional"
-                aria-describedby="signin-name-hint"
-                onChange={(e) => setName(toProfileName(e.target.value))}
-                disabled={busy}
-              />
-            </label>
-            <p className="hint" id="signin-name-hint">
-              This is the name other players see. Leave it blank and you will play as &ldquo;Seat 4&rdquo;.
-            </p>
+            {/* THE NAME BELONGS TO SIGNING UP (2026-09-15). Somebody who has played here before is not being
+                asked their name again — they are coming back, and one press should do it. What is NOT behind
+                that door is the disclosure: the Home you are about to use and the ceiling you are about to
+                approve are on whichever door you are actually going to press, because hiding either behind
+                "first time here" would be hiding it from everybody who is not. */}
+            {signingUp ? (
+              <>
+                <label className="signin-name">
+                  What should we call you?
+                  <input
+                    type="text"
+                    value={name}
+                    maxLength={PROFILE_NAME_MAX}
+                    autoComplete="given-name"
+                    placeholder="optional"
+                    aria-describedby="signin-name-hint"
+                    onChange={(e) => setName(toProfileName(e.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+                <p className="hint" id="signin-name-hint">
+                  This is the name other players see. Leave it blank and you will play as &ldquo;Seat 4&rdquo;.
+                </p>
+              </>
+            ) : (
+              <p className="hint signin-welcome">
+                {returning ? 'Welcome back — your Home knows you, and your name comes with you.' : 'Already have a Home on the faithnet estate? Come straight in.'}
+              </p>
+            )}
+
             <BuyInConsent buyIn={config.home.buyIn ?? null} />
-            <button className="primary big" type="button" onClick={() => auth.signInWithHome(name)} disabled={busy}>
-              {busy ? 'Coming in…' : 'Come in and play'}
+
+            <button className="primary big" type="button" onClick={() => auth.signInWithHome(signingUp ? name : '')} disabled={busy}>
+              {busy ? 'Coming in…' : signingUp ? 'Set me up and come in' : returning ? 'Welcome back — come in and play' : 'Come in and play'}
             </button>
             <p className="hint">
               Use a phone number, an email address or a social account at your Home{homeHost ? ` (${homeHost})` : ''}. No
               password to set, nothing to install.
             </p>
+            <button className="link-button" type="button" onClick={() => setSigningUp(!signingUp)} disabled={busy}>
+              {signingUp ? '← Been here before? Just come in' : 'First time here? Set your name up →'}
+            </button>
           </div>
 
           {personas.length > 0 ? <DemoUsers auth={auth} homeHost={homeHost} /> : null}

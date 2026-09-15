@@ -60,13 +60,18 @@ export function FiresidePage({ session, clubId, place = 'fire' }: { session: App
     // left the body standing at the door for everybody still in the room.
     const mine = peekSeatPlace();
     const idx = mine && (mine.tableId === 'fire' || mine.tableId === 'bar') ? mine.seat : 0;
-    const hold = setInterval(() => {
+    // AS SOON AS THE ROOM ANSWERS, not on the next tick: the first pose used to wait two seconds, which is two
+    // seconds of everybody else watching an empty chair. Then a slow heartbeat, in case a reconnect loses it.
+    const sit = () => {
       const an = s2.state.manifest?.anchors?.[fireside ? 'fire' : 'bar'];
-      if (!an) return;
+      if (!an) return false;
       const spot = fireside ? firesideSeat(an, Math.min(idx, FIRE_SEATS - 1)) : barSeat(an, Math.min(idx, BAR_SEATS - 1));
       s2.pose(spot.x, spot.z, spot.yaw);
-    }, 2000);
-    return () => { clearInterval(hold); s2.close(); sock.current = null; };
+      return true;
+    };
+    const soon = setInterval(() => { if (sit()) clearInterval(soon); }, 120);
+    const hold = setInterval(sit, 4000);
+    return () => { clearInterval(soon); clearInterval(hold); s2.close(); sock.current = null; };
   }, [roomId, session.token, fireside]);
   const anchorHere = sock.current?.state.manifest?.anchors?.[fireside ? 'fire' : 'bar'];
   const here = [...(sock.current?.state.people.values() ?? [])].filter((p) => isAtPlace(anchorHere, p.x, p.y));

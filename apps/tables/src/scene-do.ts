@@ -29,6 +29,17 @@ export const LOUNGE_ANCHORS: Record<string, RoomAnchor> = {
   'table.3': { x: -3, y: 4, yaw: 0, radius: 3.2 },
   'table.4': { x: 2, y: 5, yaw: 0, radius: 3.2 },
 };
+/**
+ * How long a body stays put after its socket closes. Long enough to cross from the room to a seat's own page
+ * (or to refresh), short enough that somebody who really left is gone before anyone wonders.
+ */
+const LINGER_MS = 12_000;
+/** Tests want this short; nothing else sets it. */
+const lingerMs = (env: { ROOM_LINGER_MS?: string }): number => {
+  const n = Number(env.ROOM_LINGER_MS);
+  return Number.isFinite(n) && n >= 0 ? n : LINGER_MS;
+};
+
 export const BODIES = ['oak', 'slate', 'brass', 'rose', 'moss', 'ink'] as const;
 const TABLE_ANCHORS = Object.keys(LOUNGE_ANCHORS).filter((k) => k.startsWith('table.'));
 
@@ -50,6 +61,8 @@ export class SceneDO extends DurableObject<Env> {
   private roomName = '';
   private pending = new Map<string, RoomPerson>();
   private leaves = new Set<string>();
+  /** People whose socket has closed but who are not gone yet — see `leave`. */
+  private going = new Map<string, ReturnType<typeof setTimeout>>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -127,6 +140,9 @@ export class SceneDO extends DurableObject<Env> {
       // tab (React mounting an effect twice) can land in either order and the survivor must be the one that
       // speaks, not the one that arrived last.
       for (const other of this.ctx.getWebSockets(who.playerId)) if (other !== ws) { try { other.close(4001, 'replaced'); } catch { /* gone */ } }
+      // They are back before the grace ran out: nothing to remove.
+      const pending = this.going.get(who.playerId);
+      if (pending) { clearTimeout(pending); this.going.delete(who.playerId); }
       const body = m.body && (BODIES as readonly string[]).includes(m.body) ? m.body : BODIES[hash(who.playerId) % BODIES.length]!;
       const existing = this.row(who.playerId);
       const door = LOUNGE_ANCHORS.door!;
@@ -164,15 +180,35 @@ export class SceneDO extends DurableObject<Env> {
   override async webSocketClose(ws: WebSocket): Promise<void> { this.leave(ws); }
   override async webSocketError(ws: WebSocket): Promise<void> { this.leave(ws); }
 
+  /**
+   * A CLOSED SOCKET IS NOT SOMEBODY LEAVING THE ROOM — not yet.
+   *
+   * Taking a seat by the fire moves the person from the 3D room to that seat's own page, and the page they came
+   * from closes its socket on the way. Removing them the instant it closed made everybody else watch them
+   * VANISH and then, seconds later, reappear sitting down. The same flicker happens on every refresh and every
+   * hiccup in a phone's connection.
+   *
+   * So a closing socket starts a GRACE: the body stays exactly where it was, and only if nothing has reconnected
+   * by the time it expires is the person really gone. Coming back within it is seamless — the reconnect simply
+   * finds them still there. The seat itself is not in question here; this is only about a body in a room.
+   */
   private leave(ws: WebSocket): void {
     const who = ws.deserializeAttachment() as Attachment | null;
     if (!who) return;
     // Still connected on another socket (a replaced tab closing late)? Then they are still here.
     if (this.ctx.getWebSockets(who.playerId).some((s) => s !== ws)) return;
-    this.ctx.storage.sql.exec(`DELETE FROM people WHERE player_id = ?`, who.playerId);
-    this.pending.delete(who.playerId);
-    this.leaves.add(who.playerId);
-    this.flushSoon();
+    const id = who.playerId;
+    const timer = this.going.get(id);
+    if (timer) clearTimeout(timer);
+    this.going.set(id, setTimeout(() => {
+      this.going.delete(id);
+      // Reconnected in the meantime? Then they never left.
+      if (this.ctx.getWebSockets(id).length > 0) return;
+      this.ctx.storage.sql.exec(`DELETE FROM people WHERE player_id = ?`, id);
+      this.pending.delete(id);
+      this.leaves.add(id);
+      this.flushSoon();
+    }, lingerMs(this.env as unknown as { ROOM_LINGER_MS?: string })));
   }
 
   // ── presence, batched ──

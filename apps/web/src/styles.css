@@ -6538,3 +6538,14 @@ button.tag.guest {
 .bar-people .cr-name { font-weight: 600; }
 /* The seat bar holds the call as well as the seat's own buttons. */
 .seat-bar .huddle-start { margin-left: auto; }
+/* THE WELCOMING DOOR. Starting a club is the deliberate one; this is the one most people actually want, so it
+   is warm rather than quiet — an invitation, not a footnote beside it. */
+.cta-welcome {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.6rem 1.15rem; border-radius: 999px;
+  background: linear-gradient(135deg, #d9b26a, #c2903f);
+  color: #1c2420; font-weight: 700; text-decoration: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.cta-welcome:hover { filter: brightness(1.06); text-decoration: none; }
+.signin-welcome { margin: 0 0 0.2rem; }

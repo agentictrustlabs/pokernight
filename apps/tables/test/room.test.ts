@@ -76,10 +76,21 @@ describe('the hall', () => {
     const moved = await until(A.next, (m) => m.type === 'people' && m.upserts.some((p) => p.playerId === b.playerId && p.zone === t.tableId));
     expect(moved.type).toBe('people');
 
-    // B leaves; A is told.
+    // B's SOCKET CLOSES AND B DOES NOT VANISH. Taking a seat by the fire moves somebody to that seat's own
+    // page, and the page they came from closes its socket on the way — so a close that removed them at once
+    // made everyone else watch them disappear and reappear seconds later. The body lingers instead, and a
+    // reconnect inside the grace is seamless: they were never gone.
     B.ws.close(1000, 'bye');
-    const left = await until(A.next, (m) => m.type === 'people' && m.leaves.includes(b.playerId));
-    expect(left.type).toBe('people');
+    const vanished = await Promise.race([
+      until(A.next, (m) => m.type === 'people' && m.leaves.includes(b.playerId)).then(() => true),
+      sleep(600).then(() => false),
+    ]);
+    expect(vanished).toBe(false);
+    const B2 = await open(b.token); B2.ws.send(JSON.stringify({ type: 'join' }));
+    const back = await until(B2.next, (m) => m.type === 'room');
+    expect(back.type).toBe('room');
+    expect((back as { people: Array<{ playerId: string }> }).people.map((p) => p.playerId)).toContain(b.playerId);
+    B2.ws.close(1000, 'bye');
     A.ws.close(1000, 'bye');
     await sleep(50);
   });

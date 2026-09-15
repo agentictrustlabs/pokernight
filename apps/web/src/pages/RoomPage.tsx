@@ -11,6 +11,7 @@ import { DRAWN_GAME } from '../lib/games';
 import type { Action } from '../lib/types';
 import type { LoungeHandle } from '../components/room/Lounge';
 import { BAR, FIRE } from '../components/room/Lounge';
+import { barSeat, firesideSeat } from '../lib/roomSeats';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { useClubHuddle } from '../components/huddle/ClubHuddleProvider';
 import { clubScope } from '../lib/huddle';
@@ -96,9 +97,16 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
     // A STOOL AT THE BAR is a seat too, but nothing is dealt there: it opens the guest's half of the night.
     // LEAVING THESE IS STANDING UP, so the seat is remembered the same way a table's is: coming back puts the
     // body beside the chair it left, not wherever presence last had it.
-    if (tableId === BAR) { setSitting({ tableId, seat, phase: 'sitting' }); cameFromRoom(roomHash(clubId)); rememberSeat(tableId, seat); location.hash = barHash(clubId); return; }
-    // A CHAIR BY THE FIRE opens the guest's half of the night, where the mission's own representative hosts.
-    if (tableId === FIRE) { setSitting({ tableId, seat, phase: 'sitting' }); cameFromRoom(roomHash(clubId)); rememberSeat(tableId, seat); location.hash = fireHash(clubId); return; }
+    if (tableId === BAR || tableId === FIRE) {
+      setSitting({ tableId, seat, phase: 'sitting' });
+      cameFromRoom(roomHash(clubId)); rememberSeat(tableId, seat);
+      // SIT BEFORE LEAVING. The room's socket closes as this page unmounts, so the last pose it sends should
+      // already be the chair — then the body never appears to stand up and walk off on its way to sitting down.
+      const an = sock.current?.state.manifest?.anchors?.[tableId === FIRE ? 'fire' : 'bar'];
+      if (an) { const spot = tableId === FIRE ? firesideSeat(an, seat) : barSeat(an, seat); sock.current?.pose(spot.x, spot.z, spot.yaw); }
+      location.hash = tableId === FIRE ? fireHash(clubId) : barHash(clubId);
+      return;
+    }
     try {
       const t = await tables.getTable(tableId, session.token);
       if (t.settlement !== 'play-money') { location.hash = `#/t/${encodeURIComponent(tableId)}`; return; }

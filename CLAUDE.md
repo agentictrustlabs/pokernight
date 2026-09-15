@@ -286,6 +286,16 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
   hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
   actually has. `lib/brand.ts` still owns the product name.
+- **A CLOSING SOCKET IS NOT SOMEBODY LEAVING** (`SceneDO.leave`, `LINGER_MS` 12 s, `ROOM_LINGER_MS` for tests):
+  taking a seat by the fire moves a person to that seat's own page and the page they came from closes its
+  socket on the way, so removing them at once made everybody watch them VANISH and reappear seconds later. The
+  body lingers; a reconnect inside the grace cancels the removal and is seamless. The room page also POSES INTO
+  THE CHAIR BEFORE IT NAVIGATES, and the seat's page poses the moment the manifest lands rather than on a timer.
+- **SIGNING UP AND COMING BACK ARE TWO DOORS** (2026-09-15, `SignInPanel`): "what should we call you" belongs to
+  sign-up and waits behind "first time here"; a returning player gets one press. Whether this browser has ever
+  held a session (`pokernight.ever`) is the only honest thing the page can know before anybody signs in, and a
+  wrong guess costs nothing since both doors lead to the same ceremony. THE DISCLOSURE IS ON BOTH DOORS — the
+  Home and the ceiling, on whichever one is actually going to be pressed.
 - **THE FIRST SCREEN IS AN INVITATION, NOT A PRICE LIST** (2026-09-15). Sign-in leads with "Come in and play, or
   join a club" and a button that says the same; the buy-in ceiling is STILL DISCLOSED but folded into a
   `<details>` — a games site does not open with money, and the person's own Home shows the same numbers again

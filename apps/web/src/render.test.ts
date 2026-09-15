@@ -261,13 +261,15 @@ describe('sign-in render', () => {
   const signIn = (a: AuthState): string =>
     renderToStaticMarkup(createElement(Room, { r: { page: 'home' }, session: null, auth: a, onLogin: () => {} }));
 
-  it('asks what to call you, optionally, and says what the name is for', () => {
+  it('offers one press to come back, and puts the name behind the sign-up door', () => {
     const html = signIn(auth());
-    expect(html).toContain('What should we call you?');
-    expect(html).toContain('optional');
-    expect(html).toContain('other players see');
-    // A nameless player has to be able to read straight past it: the copy says what blank means.
-    expect(html).toContain('Leave it blank');
+    // THE NAME BOX IS SIGN-UP'S (2026-09-15). Somebody who has played here before is not asked their name
+    // again: the first screen is one press, and "what should we call you" waits behind "first time here".
+    expect(html).toContain('First time here? Set your name up');
+    expect(html).not.toContain('What should we call you?');
+    // WHAT IS NEVER BEHIND THAT DOOR is the disclosure — the Home you are about to use, on whichever door you
+    // are actually going to press.
+    expect(html).toContain('www.faithnet.me');
   });
 
   it('offers Home sign-in, naming the Home', () => {
@@ -383,7 +385,7 @@ describe('landing and sign-in surfaces', () => {
     expect(html).toContain('Start a club');
     // THE SECOND DOOR. Most visitors are not here to organise anything, and the front door used to
     // offer them nothing but the call to action that asks them to.
-    expect(html).toContain('Or just play a hand');
+    expect(html).toContain('Or come play or hang out');
     expect(html).toContain('Set the night');
     expect(html).toContain('Invite a mission to host');
     expect(html).not.toMatch(/faithchain|Smart Agent|delegation|treasury/i);

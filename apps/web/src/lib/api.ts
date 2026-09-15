@@ -154,6 +154,8 @@ export function loadSession(): AppSession | null {
 
 export function saveSession(session: AppSession | null): void {
   try {
+    // This device has now held a session, which is what lets sign-in greet a return rather than ask a name again.
+    if (session) localStorage.setItem('pokernight.ever', '1');
     if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     else localStorage.removeItem(SESSION_KEY);
   } catch {
