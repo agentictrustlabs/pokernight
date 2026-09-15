@@ -11,7 +11,7 @@ const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 const SUITS = ['c', 'd', 'h', 's'];
 const GLYPH: Record<string, string> = { c: '♣', d: '♦', h: '♥', s: '♠' };
 const COLS = 13, ROWS = 5; // 4 suits + the back row
-const CW = 128, CH = 180;
+const CW = 256, CH = 358; // a cell per card, sharp when the camera leans in
 
 export class Deck3D {
   private texture: pc.Texture;
@@ -19,22 +19,22 @@ export class Deck3D {
   constructor(private readonly app: pc.Application) {
     const c = document.createElement('canvas'); c.width = CW * COLS; c.height = CH * ROWS;
     const g = c.getContext('2d')!;
-    const face = (x: number, y: number) => { g.fillStyle = '#fffdf7'; round(g, x + 3, y + 3, CW - 6, CH - 6, 10); g.fill(); g.strokeStyle = '#c9c4b6'; g.lineWidth = 2; g.stroke(); };
+    const face = (x: number, y: number) => { g.fillStyle = '#fffdf7'; round(g, x + 6, y + 6, CW - 12, CH - 12, 20); g.fill(); g.strokeStyle = '#c9c4b6'; g.lineWidth = 4; g.stroke(); };
     SUITS.forEach((s, r) => RANKS.forEach((rank, i) => {
       const x = i * CW, y = r * CH; face(x, y);
       const red = s === 'd' || s === 'h'; g.fillStyle = red ? '#b8262b' : '#1c2420';
       const label = rank === 'T' ? '10' : rank;
-      g.font = 'bold 34px "IBM Plex Sans", system-ui, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'top';
-      g.fillText(label, x + 12, y + 10); g.font = '30px serif'; g.fillText(GLYPH[s]!, x + 12, y + 46);
-      g.save(); g.translate(x + CW - 12, y + CH - 10); g.rotate(Math.PI); g.font = 'bold 34px "IBM Plex Sans", system-ui, sans-serif'; g.fillText(label, 0, 0); g.font = '30px serif'; g.fillText(GLYPH[s]!, 0, 36); g.restore();
-      g.font = '72px serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(GLYPH[s]!, x + CW / 2, y + CH / 2 + 6);
+      g.font = 'bold 68px "IBM Plex Sans", system-ui, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'top';
+      g.fillText(label, x + 22, y + 18); g.font = '58px serif'; g.fillText(GLYPH[s]!, x + 22, y + 92);
+      g.save(); g.translate(x + CW - 22, y + CH - 18); g.rotate(Math.PI); g.font = 'bold 68px "IBM Plex Sans", system-ui, sans-serif'; g.fillText(label, 0, 0); g.font = '58px serif'; g.fillText(GLYPH[s]!, 0, 74); g.restore();
+      g.font = '150px serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(GLYPH[s]!, x + CW / 2, y + CH / 2 + 12);
     }));
     // the back: the room's green with a brass border and a diamond lattice
     const bx = 0, by = 4 * CH; face(bx, by);
-    g.fillStyle = '#1f6a49'; round(g, bx + 10, by + 10, CW - 20, CH - 20, 6); g.fill(); g.strokeStyle = '#d9b26a'; g.lineWidth = 3; g.stroke();
+    g.fillStyle = '#1f6a49'; round(g, bx + 20, by + 20, CW - 40, CH - 40, 12); g.fill(); g.strokeStyle = '#d9b26a'; g.lineWidth = 6; g.stroke();
     g.strokeStyle = 'rgba(217,178,106,0.35)'; g.lineWidth = 1.5;
-    for (let d = -CH; d < CW + CH; d += 16) { g.beginPath(); g.moveTo(bx + d, by + 12); g.lineTo(bx + d + CH, by + CH - 12); g.stroke(); g.beginPath(); g.moveTo(bx + d, by + CH - 12); g.lineTo(bx + d + CH, by + 12); g.stroke(); }
-    this.texture = new pc.Texture(app.graphicsDevice, { width: c.width, height: c.height, format: pc.PIXELFORMAT_RGBA8, mipmaps: true, anisotropy: 4 });
+    for (let d = -CH; d < CW + CH; d += 32) { g.beginPath(); g.moveTo(bx + d, by + 24); g.lineTo(bx + d + CH, by + CH - 24); g.stroke(); g.beginPath(); g.moveTo(bx + d, by + CH - 24); g.lineTo(bx + d + CH, by + 24); g.stroke(); }
+    this.texture = new pc.Texture(app.graphicsDevice, { width: c.width, height: c.height, format: pc.PIXELFORMAT_RGBA8, mipmaps: true, anisotropy: 16, minFilter: pc.FILTER_LINEAR_MIPMAP_LINEAR, magFilter: pc.FILTER_LINEAR });
     this.texture.setSource(c);
   }
   /** The material that shows `code` (`As`, `Td`, …) or the back when there is no code. */

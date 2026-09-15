@@ -146,11 +146,11 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // back, down at the felt — the table is what a seated person looks at
         m.avatar.update(dt);
         const p = m.avatar.pos, yaw = m.avatar.yaw;
-        const behind = new pc.Vec3(p.x - Math.sin(yaw) * 1.9 + Math.cos(yaw) * 0.8, 2.6, p.z - Math.cos(yaw) * 1.9 - Math.sin(yaw) * 0.8);
+        const behind = new pc.Vec3(p.x - Math.sin(yaw) * 1.25 + Math.cos(yaw) * 0.55, 2.0, p.z - Math.cos(yaw) * 1.25 - Math.sin(yaw) * 0.55);
         // arriving already in the chair, the camera is simply there — no swoop down from the door over the felt
         if (!camSettled.current) { camera.setPosition(behind); camSettled.current = true; }
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
-        camera.lookAt(p.x + Math.sin(yaw) * 2.0, 0.78, p.z + Math.cos(yaw) * 2.0);
+        camera.lookAt(p.x + Math.sin(yaw) * 2.3, 0.72, p.z + Math.cos(yaw) * 2.3);
       } else if (m) {
         const av = m.avatar; const pos = av.pos;
         let dx = 0, dz = 0;
@@ -387,9 +387,12 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       seenDealers.add(t.tableId);
       if (dealers.current.has(t.tableId)) continue;
       const an = manifest.anchors[t.anchor]; if (!an) continue;
-      const ang = ((t.seats - 0.5) / t.seats) * Math.PI * 2; const r = 2.0;
+      const ang = ((t.seats - 0.5) / t.seats) * Math.PI * 2; const r = CHAIR_R;
       const at = new pc.Vec3(an.x + Math.sin(ang) * r, 0, an.y + Math.cos(ang) * r); const yaw = ang + Math.PI;
       const av = new ParticipantAvatar(lib, 'ink', 'follow'); av.place(at.x, at.z, yaw); a.root.addChild(av.entity);
+      // seated, like every dealer — on a stool of their own at the gap
+      av.sitAt({ at, yaw, centre: new pc.Vec3(an.x, 0, an.y) });
+      if (kit.current?.loaded && scenery.current) kit.current.place('stoolBar', scenery.current, an.x + Math.sin(ang) * (r + CHAIR_BACK), an.y + Math.cos(ang) * (r + CHAIR_BACK), ang * 180 / Math.PI, 0.8);
       av.lookHead(new pc.Vec3(an.x, 0.9, an.y));
       // THE DECK in the dealer's left hand: a stack of cards (the back on top) that follows the hand bone each frame
       const deck3 = new pc.Entity('deck');
