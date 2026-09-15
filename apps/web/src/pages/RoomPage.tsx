@@ -13,7 +13,7 @@ import { DRAWN_GAME } from '../lib/games';
 import type { Action } from '../lib/types';
 import type { LoungeHandle } from '../components/room/Lounge';
 import { BAR, FIRE } from '../components/room/Lounge';
-import { barSeat, firesideSeat } from '../lib/roomSeats';
+import { BAR_SEATS, barSeat, FIRE_SEATS, firesideSeat, isAtPlace, nearestSeatOf } from '../lib/roomSeats';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { useClubHuddle } from '../components/huddle/ClubHuddleProvider';
 import { clubScope } from '../lib/huddle';
@@ -44,6 +44,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
   const sock = useRef<RoomSocket | null>(null);
   const [zone, setZone] = useState<string | null>(null);
   const [line, setLine] = useState('');
+  const [picked, setPicked] = useState<{ tableId: string; name: string } | null>(null);
   const lounge = useRef<LoungeHandle | null>(null);
   /** The sit in progress, as a line for the room bar: walking, sitting, refused. */
   const [sitting, setSitting] = useState<{ tableId: string; seat: number; phase: 'walking' | 'sitting' | 'standing' } | null>(null);
@@ -87,15 +88,29 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
 
   const onZone = useCallback((z: string | null) => setZone(z), []);
   const seatedTableId = (() => { const s0 = sock.current; const me = s0?.state.you ? s0.state.people.get(s0.state.you) : undefined; const t = me?.seatedAt && s0?.state.manifest ? s0.state.manifest.tables.find((x) => x.tableId === me.seatedAt!.tableId) : null; return t && (t.game ?? DRAWN_GAME) === DRAWN_GAME ? t.tableId : null; })();
+  /**
+   * A HAND IS WORTH WATCHING FROM THE ROOM (2026-09-15). The felt only ever drew for the table you were SEATED
+   * at — and sitting down takes you to the flat board — so from the room every table was bare wood with people
+   * round it: "I don't see the cards and chips on the table anymore". Standing at a table, or picking one, opens
+   * the same socket as a SPECTATOR: the community cards, the chips and the pot, exactly what the table lets a
+   * watcher see. Nobody's hole cards travel — the table redacts the view, as it does for every spectator.
+   */
+  const watchedTableId = (() => {
+    if (seatedTableId) return seatedTableId;
+    const id = picked?.tableId ?? zone;
+    if (!id || id === BAR || id === FIRE) return null;
+    const t = sock.current?.state.manifest?.tables.find((x) => x.tableId === id);
+    return t && (t.game ?? DRAWN_GAME) === DRAWN_GAME ? t.tableId : null;
+  })();
   useEffect(() => {
-    if (!seatedTableId) { setTableState(initialState); return; }
-    const ts = new TableSocket({ url: tableSocketUrl(seatedTableId, session.token), onMessage: (m) => setTableState((st) => reduce(st, m)), onStatus: (c) => setTableState((st) => setConnection(st, c)) });
+    if (!watchedTableId) { setTableState(initialState); return; }
+    const ts = new TableSocket({ url: tableSocketUrl(watchedTableId, session.token), onMessage: (m) => setTableState((st) => reduce(st, m)), onStatus: (c) => setTableState((st) => setConnection(st, c)) });
     tableSock.current = ts; ts.connect();
     const clock = setInterval(() => setNow(Date.now()), 500);
     return () => { clearInterval(clock); ts.close(); if (tableSock.current === ts) tableSock.current = null; };
-  }, [seatedTableId, session.token]);
+  }, [watchedTableId, session.token]);
   const act = (action: Action) => { const t = tableState.turn; if (!t) return; tableSock.current?.send({ type: 'act', handNo: t.handNo, action }); };
-  const board = seatedTableId && tableState.view ? { tableId: seatedTableId, view: tableState.view, names: tableState.names, lastHand: tableState.lastHand } : null;
+  const board = watchedTableId && tableState.view ? { tableId: watchedTableId, view: tableState.view, names: tableState.names, lastHand: tableState.lastHand } : null;
   const mySeat = board?.view.seats.find((x) => x.seat === board.view.viewerSeat);
   const myHand = mySeat?.inHand;
   // SAT OUT IS NOT BROKEN, AND THE ROOM HAS TO SAY SO. Two turns timed out and the table sits a person out; from
@@ -165,6 +180,11 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
     if (place) { stoodAt.current = Date.now(); lounge.current?.standBeside(place.tableId, place.seat); }
   }, [manifestReady, seatedTableId]);
 
+  /**
+   * WHAT YOU HAVE PICKED. A click on a table, the hearth or the bar selects THAT PLACE and its free seats
+   * appear along the bottom of the screen — somebody who has just walked in should never have to work out
+   * which of the small shapes on the floor is a chair they may sit in.
+   */
   const walkToSeat = (tableId: string, seat: number) => { setSitError(null); if (lounge.current?.walkToSeat(tableId, seat)) setSitting({ tableId, seat, phase: 'walking' }); };
   const standUp = async (tableId: string) => {
     setSitError(null); stoodAt.current = Date.now(); setSitting({ tableId, seat: -1, phase: 'standing' });
@@ -183,6 +203,27 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
   const seatedTable = meNow?.seatedAt && manifest ? manifest.tables.find((t) => t.tableId === meNow.seatedAt!.tableId) : null;
   const table = zone && manifest ? manifest.tables.find((t) => t.tableId === zone) : null;
   const people = s ? [...s.state.people.values()] : [];
+
+  /** The free seats of whatever you have picked — a table's own, or the six by the fire, or the stools. */
+  const pickedSeats = (() => {
+    if (!picked || !manifest) return null;
+    if (picked.tableId === FIRE || picked.tableId === BAR) {
+      const an = manifest.anchors[picked.tableId === FIRE ? 'fire' : 'bar'];
+      if (!an) return null;
+      const n = picked.tableId === FIRE ? FIRE_SEATS : BAR_SEATS;
+      const spots = Array.from({ length: n }, (_, i) => (picked.tableId === FIRE ? firesideSeat(an, i) : barSeat(an, i)));
+      const taken = new Set<number>();
+      for (const p of people) {
+        if (p.playerId === s?.state.you || !isAtPlace(an, p.x, p.y)) continue;
+        const sp = nearestSeatOf(spots, p.x, p.y);
+        if (sp) taken.add(Number(sp.key.split(':')[1]));
+      }
+      return { seats: Array.from({ length: n }, (_, i) => i), taken };
+    }
+    const t2 = manifest.tables.find((x) => x.tableId === picked.tableId);
+    if (!t2) return null;
+    return { seats: Array.from({ length: t2.seats }, (_, i) => i), taken: new Set((t2.occupants ?? []).map((o) => o.seat)) };
+  })();
 
   if (!webgl.current) {
     return (
@@ -225,7 +266,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
       ) : null}
       <div className="room-scene">
         <Suspense fallback={<div className="lounge-loading"><p className="hint">Loading the lounge…</p></div>}>
-          {s ? <Lounge ref={lounge} socket={s} state={s.state} onZone={onZone} onSitRequest={onSitRequest} board={board} /> : null}
+          {s ? <Lounge ref={lounge} socket={s} state={s.state} onZone={onZone} onSitRequest={onSitRequest} onPick={setPicked} board={board} /> : null}
         </Suspense>
         {/* THE SECOND BETWEEN THE CLICK AND THE CARDS. Walking over and then waiting for the board to open with
             nothing on screen read as "it did not work" — the chair lights up out in the room, and this says the
@@ -235,6 +276,15 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
             <p>{sitting.phase === 'walking' ? `Walking to seat ${sitting.seat + 1}…` : sitting.phase === 'standing' ? 'Standing up…' : `Taking seat ${sitting.seat + 1} — dealing you in…`}</p>
           </div>
         ) : null}
+      <details className="room-people" open>
+        <summary>Here now · {people.length}</summary>
+        {/* WHICH ROOM THIS IS. The hall and every club's lounge are separate scenes with separate presence, and
+            they are drawn from the same scenery — so two people in different ones look to each other like a
+            presence bug. Naming the room here, beside the only list of who is in it, is what answers that. */}
+        <p className="hint room-people-where">{manifest?.name ?? (clubId ? 'this club' : 'the hall')}</p>
+        <ul>{people.map((p) => <li key={p.playerId}>{p.name}{p.playerId === s?.state.you ? ' (you)' : ''}{p.zone ? <span className="hint"> · {manifest?.tables.find((t) => t.tableId === p.zone)?.name ?? p.zone}</span> : null}</li>)}</ul>
+        <p className="hint room-elsewhere">Only people in {clubId ? 'this club’s room' : 'the hall'} are here. {clubId ? <>Somebody in <a href={roomHash(null)}>the hall</a> or another club’s room is in a different place.</> : 'Somebody in a club’s own room is in a different place.'}</p>
+      </details>
       </div>
       {/* THE HUD, UNDER THE SCENE — never over it, so the people at the near side of the felt stay in view: your
           cards in hand, the board and the pot as the flat board draws them (readable whatever the camera does),
@@ -258,7 +308,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
               <button type="button" className="primary" onClick={() => tableSock.current?.send({ type: 'sit-in' })}>Sit back in</button>
             </div>
           ) : null}
-          <ActionBar turn={tableState.turn} view={board.view} now={now} onAct={act} waitingOn={board.view.hand?.toAct != null && board.view.hand.toAct !== board.view.viewerSeat ? board.names[board.view.seats.find((x) => x.seat === board.view.hand!.toAct)?.playerId ?? ''] ?? null : null} />
+          {mySeat == null ? null : <ActionBar turn={tableState.turn} view={board.view} now={now} onAct={act} waitingOn={board.view.hand?.toAct != null && board.view.hand.toAct !== board.view.viewerSeat ? board.names[board.view.seats.find((x) => x.seat === board.view.hand!.toAct)?.playerId ?? ''] ?? null : null} />}
         </div>
       ) : null}
       {s && inThisHuddle ? <SpatialVoice state={s.state} /> : null}
@@ -271,6 +321,18 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
           </div>
         ) : sitting ? (
           <div className="room-table-card"><span className="hint">{sitting.phase === 'walking' ? `Walking to seat ${sitting.seat + 1}…` : `Sitting down at seat ${sitting.seat + 1}…`}</span></div>
+        ) : picked && pickedSeats ? (
+          <div className="room-table-card">
+            <strong>{picked.name}</strong> <span className="hint">take a seat</span>
+            <span className="room-chairs">
+              {pickedSeats.seats.map((i) => (
+                <button key={i} type="button" className="small" disabled={pickedSeats.taken.has(i)} onClick={() => walkToSeat(picked.tableId, i)}>
+                  {pickedSeats.taken.has(i) ? `${i + 1} taken` : `Sit at ${i + 1}`}
+                </button>
+              ))}
+            </span>
+            <button type="button" className="small" onClick={() => setPicked(null)}>Never mind</button>
+          </div>
         ) : table ? (
           <div className="room-table-card">
             <strong>{table.name}</strong> <span className="hint">{table.seated}/{table.seats} seated</span>
@@ -282,21 +344,21 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
             </span>
             <a className="small" href={`#/t/${encodeURIComponent(table.tableId)}`} onClick={() => cameFromRoom(roomHash(clubId))}>Open the flat table →</a>
           </div>
-        ) : <span className="hint">Walk up to a table to look in, or click a free chair to sit.</span>}
+        ) : (
+          /* ARRIVING IS BEING ASKED TO SIT DOWN (2026-09-15). The room opened on a floor of furniture and no
+             word about what to do with it; everything here happens at a seat, so the first thing it says is
+             how to take one — either way round, the chair or the place. */
+          <div className="room-invite">
+            <strong>Take a seat.</strong>{' '}
+            <span className="hint">Click a chair and you will walk over and sit down — or click a table or the fireplace and its free seats appear here.</span>
+          </div>
+        )}
         {sitError ? <div className="form-error">{sitError}</div> : null}
         <form className="room-say" onSubmit={(e) => { e.preventDefault(); if (line.trim()) { s?.say(line.trim()); setLine(''); } }}>
           <input value={line} onChange={(e) => setLine(e.target.value)} placeholder="Say something to the room" maxLength={140} />
           <button type="submit" disabled={!line.trim()}>Say</button>
         </form>
       </div>
-      <aside className="room-people">
-        {/* WHICH ROOM THIS IS. The hall and every club's lounge are separate scenes with separate presence, and
-            they are drawn from the same scenery — so two people in different ones look to each other like a
-            presence bug. Naming the room here, beside the only list of who is in it, is what answers that. */}
-        <h3 className="eyebrow-h">Here now · {manifest?.name ?? (clubId ? 'this club' : 'the hall')}</h3>
-        <ul>{people.map((p) => <li key={p.playerId}>{p.name}{p.playerId === s?.state.you ? ' (you)' : ''}{p.zone ? <span className="hint"> · {manifest?.tables.find((t) => t.tableId === p.zone)?.name ?? p.zone}</span> : null}</li>)}</ul>
-        <p className="hint room-elsewhere">Only people in {clubId ? 'this club’s room' : 'the hall'} are here. {clubId ? <>Somebody in <a href={roomHash(null)}>the hall</a> or another club’s room is in a different place.</> : 'Somebody in a club’s own room is in a different place.'}</p>
-      </aside>
     </div>
   );
 }

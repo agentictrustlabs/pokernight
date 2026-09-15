@@ -54,6 +54,8 @@ export interface LoungeProps {
   onZone?: (zone: string | null) => void;
   /** Your body has walked up to this chair and turned to it: the page takes the seat at the TABLE. */
   onSitRequest?: (tableId: string, seat: number) => void;
+  /** A click on a TABLE or the FIRE or the BAR itself — "that place" — so the page can offer its seats. */
+  onPick?: (place: { tableId: string; name: string } | null) => void;
   /** THE FELT (spec §3.4, step 5): the seated table's view, drawn on its table — cards, pot, whose turn. */
   board?: { tableId: string; view: TableView; names: Record<string, string>; lastHand?: { handNo: number; result?: { awards: Array<{ seat: number; amount: number }> } } | null } | null;
 }
@@ -73,7 +75,7 @@ interface Plate {
   x?: number; y?: number; z?: number; visible?: boolean;
 }
 
-export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ socket, state, onZone, onSitRequest, board }, ref) {
+export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ socket, state, onZone, onSitRequest, onPick, board }, ref) {
   const host = useRef<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const app = useRef<pc.Application | null>(null);
@@ -106,6 +108,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const [kitReady, setKitReady] = useState(false);
   const me = useRef<{ avatar: ParticipantAvatar; name: string; goal: pc.Vec3 | null; heading: { tableId: string; seat: number; yaw: number } | null } | null>(null);
   const onSitRef = useRef(onSitRequest); onSitRef.current = onSitRequest;
+  const onPickRef = useRef(onPick); onPickRef.current = onPick;
+  /** Who the pointer is over, if anybody — their name, what they are doing, and where to draw the card. */
+  const [over, setOver] = useState<{ name: string; agent?: string; doing: string; said?: string; x: number; y: number } | null>(null);
+  const nodded = useRef<string | null>(null);
   /** where the acting player sits at your table (a head height point), for every seated body to look at */
   const actingRef = useRef<pc.Vec3 | null>(null);
   const actingPlayer = useRef<string | null>(null);
@@ -129,6 +135,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const [plates, setPlates] = useState<Plate[]>([]);
   const plateRef = useRef<Map<string, Plate>>(new Map());
   const manifestRef = useRef<RoomManifest | null>(null);
+  /** WHO IS HERE, read from a handler that was built once. The scene's effect closes over the FIRST `state`
+      it ever saw, so anything asking it about people got the room as it was the moment the canvas appeared. */
+  const peopleRef = useRef(state.people); peopleRef.current = state.people;
   const sceneryStamp = useRef('');
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -225,6 +234,25 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const hit = floorAt(camera, e.x, e.y);
       const seat = pickSeat(e.x, e.y, hit);
       lightChair(seat ? seat.key : null);
+      // AND WHO IS UNDER THE POINTER. Names hang over heads at a distance and vanish in a crowd; looking at
+      // somebody should tell you who they are, and they should look back.
+      const out2 = new pc.Vec3();
+      let near: { id: string; b: BodyHandle; d: number } | null = null;
+      for (const [id, b] of bodies.current) {
+        camera.camera!.worldToScreen(new pc.Vec3(b.avatar.pos.x, 1.2, b.avatar.pos.z), out2);
+        if (out2.z <= 0) continue;
+        const d = Math.hypot(out2.x - e.x, out2.y - e.y);
+        if (d < 70 && (!near || d < near.d)) near = { id, b, d };
+      }
+      if (!near) { setOver(null); nodded.current = null; return; }
+      const p2 = peopleRef.current.get(near.id);
+      const manifest2 = manifestRef.current;
+      const table2 = p2?.seatedAt ? manifest2?.tables.find((t2) => t2.tableId === p2.seatedAt!.tableId) : null;
+      const doing = table2 ? `sitting at ${table2.name}` : p2 && isAtPlace(manifest2?.anchors.fire, p2.x, p2.y) ? 'by the fire' : p2 && isAtPlace(manifest2?.anchors.bar, p2.x, p2.y) ? 'at the bar' : 'in the room';
+      camera.camera!.worldToScreen(new pc.Vec3(near.b.avatar.pos.x, 1.25, near.b.avatar.pos.z), out2);
+      setOver({ name: near.b.name, ...(p2?.agent && p2.agent.includes('.') ? { agent: p2.agent } : {}), doing, ...(p2?.said && Date.now() - p2.said.at < 20000 ? { said: p2.said.text } : {}), x: out2.x, y: out2.y });
+      // they nod back, once per approach
+      if (nodded.current !== near.id) { nodded.current = near.id; near.b.avatar.nod(); }
     });
     /** Where on the floor a screen point lands, or null when it points at the sky. */
     const floorAt = (cam: pc.Entity, sx: number, sy: number): pc.Vec3 | null => {
@@ -263,6 +291,20 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       for (const st of fireSeats.current) { const d = Math.hypot(st.at.x - hit.x, st.at.z - hit.z); if (d < fd) { fd = d; best = { key: st.key, at: st.at, yaw: st.yaw, tableId: FIRE, seat: Number(st.key.slice(5)) }; } }
       return best;
     };
+    /** The PLACE under a click on the floor: a table's top, the hearth, the bar — each is picked by the area it owns. */
+    const pickPlace = (hit: pc.Vec3 | null): { tableId: string; name: string } | null => {
+      const mf = manifestRef.current;
+      if (!hit || !mf) return null;
+      for (const t of mf.tables) {
+        const an = mf.anchors[t.anchor]; if (!an) continue;
+        if (Math.hypot(hit.x - an.x, hit.z - an.y) < TABLE_SOLID) return { tableId: t.tableId, name: t.name };
+      }
+      const f = mf.anchors.fire;
+      if (f && Math.hypot(hit.x - f.x, hit.z - f.y) < 1.6) return { tableId: FIRE, name: 'the fireside' };
+      const bp = mf.anchors.bar;
+      if (bp && Math.hypot(hit.x - bp.x, hit.z - bp.y) < 1.6) return { tableId: BAR, name: 'the bar' };
+      return null;
+    };
     a.mouse!.on(pc.EVENT_MOUSEDOWN, (e: pc.MouseEvent) => {
       if (e.button === pc.MOUSEBUTTON_RIGHT || e.button === pc.MOUSEBUTTON_MIDDLE) return; // the captured pointer drag owns these
       if (!me.current || e.button !== pc.MOUSEBUTTON_LEFT) return;
@@ -272,8 +314,14 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const hit = new pc.Vec3();
       if (!new pc.Plane(pc.Vec3.UP, 0).intersectsRay(ray, hit)) return;
       // A CLICK NEAR A FREE CHAIR is "sit there": walk to it and, on arrival, ask the table for the seat.
-      const seat = pickSeat(e.x, e.y, hit);
-      if (seat && !me.current.avatar.seated) { me.current.goal = seat.at.clone(); me.current.heading = { tableId: seat.tableId, seat: seat.seat, yaw: seat.yaw }; lightChair(seat.key); }
+      // THE FURNITURE WINS INSIDE ITS OWN FOOTPRINT. A click on a TABLE, THE FIRE or THE BAR is "that place" —
+      // the page puts its free seats along the bottom of the screen — and a chair is only picked out on the
+      // floor around it. Screen-space seat picking reaches 110 px, which from across the room covers the whole
+      // table top, so without this a click on the felt walked you to whichever chair happened to be nearest.
+      const place = pickPlace(hit);
+      const seat = place ? null : pickSeat(e.x, e.y, hit);
+      if (place) { onPickRef.current?.(place); me.current.heading = null; me.current.goal = null; lightChair(null); }
+      else if (seat && !me.current.avatar.seated) { me.current.goal = seat.at.clone(); me.current.heading = { tableId: seat.tableId, seat: seat.seat, yaw: seat.yaw }; lightChair(seat.key); onPickRef.current?.(null); }
       // A CLICK ON THE WALL IS NOT A PLACE TO GO. The floor plane runs on past the walls forever, so a click
       // anywhere above the skirting landed metres outside the room and the body set off to stand in it.
       else if (Math.abs(hit.x) > WALKABLE || Math.abs(hit.z) > WALKABLE) { me.current.heading = null; lightChair(null); }
@@ -385,7 +433,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     hatFelt.diffuse = new pc.Color(0.78, 0.11, 0.11); hatFelt.emissive = new pc.Color(0.16, 0.01, 0.01); hatFelt.gloss = 0.35; hatFelt.update();
     hatBand.diffuse = new pc.Color(0.07, 0.08, 0.09); hatBand.update();
     // the walk scripts read the bodies' states through this; nothing in the app does
-    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot, litChair, chairEntities, barSeats, fireSeats };
+    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot, litChair, chairEntities, barSeats, fireSeats, plates: plateRef, manifest: manifestRef, camera, pc };
     /**
      * LAYERED ON TOP OF THE CLIPS — the gaze and the dealing reach — on `framerender`.
      *
@@ -426,7 +474,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // EVERY body gets the whole layer, not just its gaze: the seat pose, the dealing/pushing reach and the
         // winner's cheer. These were the dealers' alone for a while — which is why a seated player's own reach
         // and celebration never showed, while the dealer's did.
-        av.applySeat(dt); av.applyGaze(dt); av.applyDeal(dt); av.applyCheer(dt);
+        av.applySeat(dt); av.applyGaze(dt); av.applyNod(dt); av.applyDeal(dt); av.applyCheer(dt);
       }
     });
     a.start();
@@ -573,7 +621,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // your own name hangs over your body while you walk; seated, the camera is over your shoulder and the plate
         // would sit on the felt — you know who you are, and the HUD is yours
         if (chair) plateRef.current.delete(`name:${p.playerId}`);
-        else plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: `${p.name} · you`, face: p.name, world: me.current.avatar.pos.clone().add(new pc.Vec3(0, 2.05, 0)), you: true });
+        else plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: `${p.name} · you`, face: p.name, world: me.current.avatar.pos.clone().add(new pc.Vec3(0, 1.86, 0)), you: true });
         continue;
       }
       let b = bodies.current.get(p.playerId);
@@ -588,7 +636,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (chair) b.avatar.sitAt(chair);
       else if (lounging && loungeAnchor) b.avatar.sitAt({ at: new pc.Vec3(lounging.x, 0, lounging.z), yaw: lounging.yaw, centre: new pc.Vec3(loungeAnchor.x, 0, loungeAnchor.y) });
       else { b.avatar.stand(); b.avatar.walkTo(p.x, p.y, p.yaw); }
-      const head = (chair ? chair.at : new pc.Vec3(p.x, 0, p.y)).add(new pc.Vec3(0, chair ? 1.55 : 2.05, 0));
+      const head = (chair ? chair.at : new pc.Vec3(p.x, 0, p.y)).add(new pc.Vec3(0, chair ? 1.40 : 1.86, 0));
       // The agent under the name only when it IS a name — an address says nothing to anyone.
       const agentSub = p.agent && p.agent.includes('.') ? p.agent : undefined;
       plateRef.current.set(`name:${p.playerId}`, { id: `name:${p.playerId}`, kind: 'name', text: p.name, face: p.name, agentSub, sub: actingPlayer.current === p.playerId ? 'to act' : agentSub, world: head });
@@ -607,7 +655,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       let bt = bots.current.get(key);
       if (!bt) { bt = new ParticipantAvatar(lib, o.kind === 'agent' ? 'slate' : 'ink', 'follow'); bt.place(chair.at.x, chair.at.z, chair.yaw); bt.sitAt(chair); a.root.addChild(bt.entity); bots.current.set(key, bt); }
       botPlate.current.set(o.playerId, `bot:${key}`);
-      plateRef.current.set(`bot:${key}`, { id: `bot:${key}`, kind: 'name', text: o.name ?? (o.kind === 'agent' ? 'house bot' : 'seated'), sub: actingPlayer.current === o.playerId ? 'to act' : undefined, world: chair.at.clone().add(new pc.Vec3(0, 1.55, 0)) });
+      // A PERSON PLAYING AT THE TABLE IS AT THE TABLE, even though their tab is the flat board: if they are in
+      // the club's huddle, their camera hangs at their seat here, the same chip the boards and the dock show.
+      // That is what tells the room a chair holds a person you can talk to rather than a name (2026-09-15).
+      plateRef.current.set(`bot:${key}`, { id: `bot:${key}`, kind: 'name', text: o.name ?? (o.kind === 'agent' ? 'house bot' : 'seated'), ...(o.name && o.kind !== 'agent' ? { face: o.name } : {}), sub: actingPlayer.current === o.playerId ? 'to act' : undefined, world: chair.at.clone().add(new pc.Vec3(0, 1.40, 0)) });
     }
     for (const [key, bt] of [...bots.current]) if (!seenBots.has(key)) { bt.destroy(); bots.current.delete(key); plateRef.current.delete(`bot:${key}`); }
     // THE DEALER: a body at every table that has anybody at it, standing at the gap between the last seat and the
@@ -639,7 +690,6 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const crown = new pc.Entity('crown'); crown.addComponent('render', { type: 'cylinder', material: hatFelt, castShadows: true }); crown.setLocalScale(0.235, 0.14, 0.235); crown.setLocalPosition(0, 0.105, 0); hat.addChild(crown);
       a.root.addChild(hat);
       dealers.current.set(t.tableId, { avatar: av, hand: new pc.Vec3(at.x + Math.sin(yaw) * 0.45, 0.98, at.z + Math.cos(yaw) * 0.45), deck: deck3, hat });
-      plateRef.current.set(`dealer:${t.tableId}`, { id: `dealer:${t.tableId}`, kind: 'name', text: 'the dealer', world: at.clone().add(new pc.Vec3(0, 2.05, 0)) });
     }
     for (const [id, dl] of [...dealers.current]) if (!seenDealers.has(id)) { dl.avatar.destroy(); dl.deck.destroy(); dl.hat.destroy(); dealers.current.delete(id); plateRef.current.delete(`dealer:${id}`); }
   }, [state.people, state.you, state.manifest]);
@@ -746,12 +796,19 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     const a = app.current; const d = deck.current;
     const manifest = state.manifest; const you = state.you ? state.people.get(state.you) : undefined;
     const t = board && manifest ? manifest.tables.find((x) => x.tableId === board.tableId) : undefined; const an = t ? manifest!.anchors[t.anchor] : undefined;
-    if (!a || !d || !board || !manifest || !you?.seatedAt || you.seatedAt.tableId !== board.tableId || !t || !an) {
+    // A WATCHER SEES THE HAND TOO (2026-09-15). The felt used to be drawn only for whoever was SEATED at this
+    // table — and sitting down takes you to the flat board — so from the room every table was bare wood with
+    // people round it. Standing at a table you get what a spectator gets: the board, the pot, face-down cards.
+    if (!a || !d || !board || !manifest || !you || !t || !an) {
       felt.current?.destroy(); felt.current = null; actingRef.current = null; flights.current = [];
     if (sweepRoot.current && feltSig.current) { sweepRoot.current.destroy(); sweepRoot.current = null; } feltSig.current = '';
       return;
     }
-    const v = board.view; const cx = an.x, cz = an.y; const yourAng = (you.seatedAt.seat / t.seats) * Math.PI * 2;
+    const v = board.view; const cx = an.x, cz = an.y;
+    // WHICH WAY THE CARDS FACE: your chair when you are in one, and otherwise wherever you are standing — a
+    // table's convention throughout is that the seat at angle `a` is at `(sin a, cos a)` from the centre.
+    const seatedHere = you.seatedAt && you.seatedAt.tableId === board.tableId ? you.seatedAt : null;
+    const yourAng = seatedHere ? (seatedHere.seat / t.seats) * Math.PI * 2 : Math.atan2(you.x - cx, you.y - cz);
     // whose turn changes every message; the CARDS change a few times a hand — the felt is rebuilt only for those,
     // so a flight in progress is not cut short by a chat line or a clock tick
     actingRef.current = v.hand?.toAct != null ? (() => { const ang = (v.hand!.toAct! / t.seats) * Math.PI * 2; return new pc.Vec3(cx + Math.sin(ang) * CHAIR_R, 1.15, cz + Math.cos(ang) * CHAIR_R); })() : null;
@@ -763,7 +820,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const acting = pl.id === `name:${actingPlayer.current}` || (pl.id.startsWith('bot:') && pl.id === botPlate.current.get(actingPlayer.current ?? ''));
       pl.sub = acting ? 'to act' : who && out.has(who) ? 'sitting out' : pl.agentSub;
     }
-    const sig = JSON.stringify([v.hand?.handNo ?? -1, v.hand?.board ?? [], v.seats.map((s2) => [s2.seat, s2.inHand?.folded ?? null, s2.inHand?.holeCards ?? null]), you.seatedAt.seat]);
+    const sig = JSON.stringify([v.hand?.handNo ?? -1, v.hand?.board ?? [], v.seats.map((s2) => [s2.seat, s2.inHand?.folded ?? null, s2.inHand?.holeCards ?? null]), seatedHere ? seatedHere.seat : Math.round(yourAng * 8)]);
     if (sig === feltSig.current && felt.current) return;
     feltSig.current = sig;
     felt.current?.destroy(); felt.current = null; flights.current = [];
@@ -806,7 +863,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
 
   // your own plate follows your own body (which moves locally, ahead of the server)
   useEffect(() => {
-    const t = setInterval(() => { const m = me.current; const pl = state.you ? plateRef.current.get(`name:${state.you}`) : null; if (m && pl) pl.world = m.avatar.pos.clone().add(new pc.Vec3(0, m.avatar.seated ? 1.55 : 2.05, 0)); }, 50);
+    const t = setInterval(() => { const m = me.current; const pl = state.you ? plateRef.current.get(`name:${state.you}`) : null; if (m && pl) pl.world = m.avatar.pos.clone().add(new pc.Vec3(0, m.avatar.seated ? 1.40 : 1.86, 0)); }, 50);
     return () => clearInterval(t);
   }, [state.you]);
 
@@ -839,10 +896,16 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
 
   useImperativeHandle(ref, () => ({
     walkToSeat: (tableId, seat) => {
-      const m = me.current; const ch = chairs.current.find((c) => c.tableId === tableId && c.seat === seat);
+      const m = me.current;
+      // A STOOL AND A FIRESIDE ARMCHAIR ARE WALKED TO LIKE ANY OTHER CHAIR — the button at the bottom of the
+      // screen and a click on the chair itself are the same act, and neither teleports anybody.
+      const lounge = tableId === BAR ? barSeats.current.find((x) => x.key === `bar:${seat}`)
+        : tableId === FIRE ? fireSeats.current.find((x) => x.key === `fire:${seat}`) : null;
+      const ch = lounge ? { at: lounge.at, yaw: lounge.yaw, taken: false, key: lounge.key }
+        : (() => { const c = chairs.current.find((c2) => c2.tableId === tableId && c2.seat === seat); return c ? { at: c.at, yaw: c.yaw, taken: c.taken, key: `${tableId}:${seat}` } : null; })();
       if (!m || !ch || ch.taken || m.avatar.seated) return false;
       m.goal = ch.at.clone(); m.heading = { tableId, seat, yaw: ch.yaw };
-      lightChair(`${tableId}:${seat}`);
+      lightChair(ch.key);
       return true;
     },
     standBeside: (tableId, seat) => {
@@ -884,6 +947,14 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         ))}
       </div>
       {!state.manifest ? <div className="lounge-loading-inline"><p className="hint">Walking in…</p></div> : null}
+      {over ? (
+        <div className="lounge-who" style={{ left: over.x, top: over.y }} aria-hidden="true">
+          <strong>{over.name}</strong>
+          {over.agent ? <span className="lounge-who-agent">{over.agent}</span> : null}
+          <span className="lounge-who-doing">{over.doing}</span>
+          {over.said ? <span className="lounge-who-said">“{over.said}”</span> : null}
+        </div>
+      ) : null}
       <div className="lounge-help hint">Walk with W A S D or the arrow keys, or click the floor. Click a free chair to sit down. Scroll to zoom; right-drag to look around.</div>
     </div>
   );

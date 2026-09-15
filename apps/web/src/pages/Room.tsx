@@ -21,7 +21,7 @@ import { TableNewPage } from './TableNewPage';
 import { RoomPage } from './RoomPage';
 import { FiresidePage } from './FiresidePage';
 import { LoadingBar } from '../components/LoadingBar';
-import { ClubHousePrompt } from '../components/ClubHousePrompt';
+import { ClubHousePrompt, type ClubHouseChoice } from '../components/ClubHousePrompt';
 import { PlayPage } from './PlayPage';
 import { SignInPage } from './SignInPage';
 import { TablesPage } from './TablesPage';
@@ -109,22 +109,23 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
    * arrive the room asks whether to go through — and if a night is near, says which night, who the guest is and
    * who is coming for them. Asked once a session and it takes no for an answer.
    */
-  const [prompt, setPrompt] = useState<{ clubId: string; name: string; night: Night | null } | null>(null);
+  const [prompt, setPrompt] = useState<ClubHouseChoice[] | null>(null);
   const askedClubHouse = useRef(false);
   useEffect(() => {
     if (askedClubHouse.current || !clubs || clubs.length === 0) return;
     if (r.page !== 'home' && r.page !== 'tables') return;   // only on arrival, never mid-errand
     try { if (sessionStorage.getItem(CLUB_ASK_KEY) === '1') { askedClubHouse.current = true; return; } } catch { /* ask anyway */ }
     askedClubHouse.current = true;
-    const club = clubs[0]!;
     let alive = true;
-    api.getClub(club.clubId, session.token)
-      .then((v) => {
-        if (!alive) return;
+    // EVERY club house the person belongs to, each with its near night — the question is which one, and a club
+    // whose read fails is still offered by name rather than dropped out of the list.
+    void Promise.all(clubs.map(async (club): Promise<ClubHouseChoice> => {
+      try {
+        const v = await api.getClub(club.clubId, session.token);
         const soon = (v.nights ?? []).filter((n) => !n.cancelledAt).find((n) => n.startsAt - Date.now() < NEAR_MS);
-        setPrompt({ clubId: club.clubId, name: v.name, night: soon ?? null });
-      })
-      .catch(() => alive && setPrompt({ clubId: club.clubId, name: club.name, night: null }));
+        return { clubId: club.clubId, name: v.name, night: soon ?? null };
+      } catch { return { clubId: club.clubId, name: club.name, night: null }; }
+    })).then((rows) => { if (alive) setPrompt(rows); });
     return () => { alive = false; };
   }, [clubs, r.page, session.token]);
   const closePrompt = () => { try { sessionStorage.setItem(CLUB_ASK_KEY, '1'); } catch { /* asked once either way */ } setPrompt(null); };
@@ -187,17 +188,19 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
   const ready = stakeStage(treasury) === 'ready';
 
   return (
-    <div className="room">
+    /* THE ROOM IS PLAYED FULL SCREEN (2026-09-15). The 3D room is a place you look around in, and the rail
+       and the page's side column were taking a third of the window off a view whose whole point is how much
+       of the room you can see. Everything the rail offers is one press away through "Leave the room". */
+    <div className={`room${r.page === 'room' ? ' room-immersive' : ''}`}>
       <LoadingBar show={clubs == null} />
-      {prompt ? (
+      {prompt && prompt.length ? (
         <ClubHousePrompt
-          clubName={prompt.name}
-          night={prompt.night}
-          onEnter={() => { const to = roomHash(prompt.clubId); closePrompt(); goTo(to); }}
+          clubs={prompt}
+          onEnter={(clubId) => { const to = roomHash(clubId); closePrompt(); goTo(to); }}
           onDismiss={closePrompt}
         />
       ) : null}
-      <Rail r={r} clubs={clubs} invitations={invitations} />
+      {r.page === 'room' ? null : <Rail r={r} clubs={clubs} invitations={invitations} />}
       <main className="room-main">
         {r.page === 'tables' ? (
           <>

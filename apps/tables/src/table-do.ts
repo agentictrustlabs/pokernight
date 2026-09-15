@@ -743,7 +743,10 @@ export class PokerTableDO extends DurableObject<Env> {
     // §2: a body is presence, not authority). No cards, no stacks: seat numbers and ids only.
     if (request.method === 'GET' && path === '/seats') {
       const state = this.state;
-      return json({ seats: state ? this.snap(state).seats.map((s) => ({ seat: s.seat, playerId: s.playerId, kind: this.players[s.playerId]?.kind ?? 'human' })) : [] });
+      // THE NAME COMES WITH THE SEAT (2026-09-15). The room draws whoever a table seats, and without a name it
+      // could only write "seated" over the chair — and a name is also how the room matches a player to their
+      // camera in the club's huddle, so a nameless seat could never show a face either.
+      return json({ seats: state ? this.snap(state).seats.map((s) => ({ seat: s.seat, playerId: s.playerId, kind: this.players[s.playerId]?.kind ?? 'human', ...((this.players[s.playerId]?.name ?? this.names[s.playerId]) ? { name: this.players[s.playerId]?.name ?? this.names[s.playerId] } : {}) })) : [] });
     }
     if (request.method === 'GET' && path === '/ledger') {
       return json(this.ledgerFor(url.searchParams.get('playerId')));

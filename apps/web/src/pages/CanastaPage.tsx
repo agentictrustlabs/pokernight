@@ -15,6 +15,7 @@ import {
 } from '../lib/canastaSocket';
 import { Identity } from '../components/Identity';
 import { useLeaveTable } from '../lib/useLeaveTable';
+import { roomToReturnTo } from '../lib/fromRoom';
 import { Brand } from '../components/Brand';
 import { GuestDrawer } from '../components/GuestDrawer';
 import { clubHash } from '../lib/routes';
@@ -350,6 +351,19 @@ export function CanastaPage({
         </span>
         <span className="spacer" />
         <span className="meta">
+          {/* THE WAY OUT IS ALWAYS ON SCREEN (2026-09-15). The seat bar carries one too, but it lives in the
+              side column — on a narrow window that column is below the fold, so somebody sitting at a table
+              waiting for a second player had no visible way to stand up at all. The top bar is never off the
+              screen, so the call and the way out both belong here. */}
+          {club && mySeat != null ? <HuddleAffordance scope={clubScope_} scopeName={`${club.name} · this table`} compact /> : null}
+          {mySeat != null && mySitOut ? (
+            <button type="button" className="tag seat-tag out" onClick={() => send({ type: 'sit-in' })}>Sit back in</button>
+          ) : null}
+          {mySeat != null ? (
+            <button type="button" className="tag leave-tag" disabled={leaving} onClick={leave}>
+              {leaving ? 'Leaving…' : roomToReturnTo() ? 'Stand up' : 'Leave the table'}
+            </button>
+          ) : null}
           <SoundToggle />
           <span className={`conn ${state.connection}`}>{state.connection}</span>
           {session ? <Identity session={session} onSignOut={onSignOut} /> : <a href="#/">sign in</a>}

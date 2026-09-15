@@ -342,6 +342,22 @@ export function TablePage({
         </span>
         <span className="spacer" />
         <span className="meta">
+          {/* THE WAY OUT IS ALWAYS ON SCREEN (2026-09-15). The seat bar carries one too, but it lives in the
+              side column — on a narrow window that column is below the fold, so somebody sitting at a table
+              waiting for a second player had no visible way to stand up at all. The top bar is never off the
+              screen, so the call and the way out both belong here. */}
+          {/* SITTING OUT IS THE OTHER ONE PEOPLE LOOK FOR, and it was in the same column as the way out. */}
+          {meAtTable ? (
+            <button type="button" className={`tag seat-tag${meAtTable.status === 'sitting-out' ? ' out' : ''}`} onClick={() => send({ type: meAtTable.status === 'sitting-out' ? 'sit-in' : 'sit-out' })}>
+              {meAtTable.status === 'sitting-out' ? 'Sit back in' : 'Sit out'}
+            </button>
+          ) : null}
+          {club && mySeat != null ? <HuddleAffordance scope={clubScope_} scopeName={`${club.name} · this table`} compact /> : null}
+          {mySeat != null ? (
+            <button type="button" className="tag leave-tag" disabled={leaving} onClick={leave}>
+              {leaving ? 'Leaving…' : backToRoom ? 'Stand up' : 'Leave table'}
+            </button>
+          ) : null}
           <SoundToggle />
           <span className={`conn ${state.connection}`}>{state.connection}</span>
           {session ? <Identity session={session} onSignOut={onSignOut} /> : <a href="#/">sign in</a>}

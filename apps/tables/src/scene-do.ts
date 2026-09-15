@@ -94,7 +94,7 @@ export class SceneDO extends DurableObject<Env> {
     const url = new URL(request.url);
     if (request.method === 'POST' && url.pathname === '/layout') {
       // The Worker lays the room's tables out on anchors — the club's open tables, in order; the pickup hall's.
-      const b = (await request.json()) as { roomId: string; name: string; tables: Array<{ tableId: string; name: string; game?: string; seats: number; seated: number; occupants?: Array<{ seat: number; playerId: string; kind: string }> }> };
+      const b = (await request.json()) as { roomId: string; name: string; tables: Array<{ tableId: string; name: string; game?: string; seats: number; seated: number; occupants?: Array<{ seat: number; playerId: string; kind: string; name?: string }> }> };
       this.roomId = b.roomId; this.roomName = b.name;
       this.tables = b.tables.slice(0, TABLE_ANCHORS.length).map((t, i) => ({ ...t, anchor: TABLE_ANCHORS[i]! }));
       // A body in the room whose person the table seats is drawn in that chair; one no table seats stands.

@@ -418,8 +418,14 @@ export function App() {
         // own words, with where to finish it. Silence was a person sitting down with the house coach and no
         // idea that anything had been tried.
         if (outcome.defaultsError) {
-          const coaches = authRef.current?.home.origin ? `${authRef.current.home.origin.replace(/\/$/, '')}/coaches` : null;
-          setError(`Your Home signed you in but could not finish setting you up — ${outcome.defaultsError}.${coaches ? ` You can hire your coach at your Home: ${coaches}` : ''}`);
+          const home = authRef.current?.home.origin ? authRef.current.home.origin.replace(/\/$/, '') : null;
+          // A GRANT OLDER THAN THE RECORDS IS NOT A MYSTERY, IT IS ONE SIGNATURE (2026-09-15). `record_scope_denied`
+          // means the person's agent holds a storage grant signed before these record types existed, and no amount
+          // of trying again here will widen it — the fix is one press at their own Home, so say which press.
+          const scopeBehind = /record_scope_denied|scope/i.test(outcome.defaultsError);
+          setError(scopeBehind
+            ? `Your Home signed you in, but your agent's storage grant is older than the card room's records (${outcome.defaultsError}). Refresh it once at your Home — Today → what your agent knows about you → Refresh the grant${home ? ` (${home})` : ''} — then come back and sign in again and your coach will be set up.`
+            : `Your Home signed you in but could not finish setting you up — ${outcome.defaultsError}.${home ? ` You can hire your coach at your Home: ${home}/coaches` : ''}`);
         }
       })
       .catch((e: unknown) =>

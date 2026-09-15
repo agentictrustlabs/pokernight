@@ -249,6 +249,7 @@ export class ParticipantAvatar {
   private upperArmL: pc.GraphNode | null = null;
   private cheerPulse = 0; // a winner's arms going up, seated or standing
   private seatBlend = 0; // 0 standing … 1 sitting, eased
+  private nodPulse = 0;  // a greeting, when somebody looks at you
   private posed = new Map<keyof typeof BONES, pc.GraphNode>();
   private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
@@ -298,6 +299,16 @@ export class ParticipantAvatar {
   bone(name: keyof typeof BONES): pc.GraphNode | null { return this.body ? findAny(this.body, BONES[name]) : null; }
   /** The right hand's world position (the dealer deals from here) — null until dressed. */
   get dealHand(): pc.Vec3 | null { const h = this.bone('handR'); return h ? h.getPosition().clone() : null; }
+  /** Somebody is looking at you: nod back, once. */
+  nod(): void { if (this.nodPulse <= 0.01) this.nodPulse = 1; }
+  /** The nod itself, layered on the head after the gaze — a dip and back over about half a second. */
+  applyNod(dt: number): void {
+    if (this.nodPulse <= 0.001 || !this.head) { this.nodPulse = Math.max(0, this.nodPulse - dt * 2); return; }
+    const dip = Math.sin(this.nodPulse * Math.PI) * 16;
+    const right = new pc.Vec3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    this.head.setRotation(new pc.Quat().setFromAxisAngle(right, -dip).mul(this.head.getRotation()));
+    this.nodPulse = Math.max(0, this.nodPulse - dt * 2);
+  }
   /** Reach with the dealing arm now — a card leaving the hand, or chips pushed out. */
   dealFlick(): void { this.dealPulse = 1; }
   /**

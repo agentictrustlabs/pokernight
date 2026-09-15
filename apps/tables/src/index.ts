@@ -637,10 +637,10 @@ async function layoutRoom(env: Env, roomId: string, name: string, clubId: string
   const listed = r.ok ? ((await r.json()) as TableSummary[] | { tables?: TableSummary[] }) : [];
   const tables = (Array.isArray(listed) ? listed : listed.tables ?? []).filter((t) => (t.game ?? 'poker') === 'poker');
   // Who sits where, from each table — the room draws a body in the chair the TABLE says.
-  const seatsBy: Record<string, Array<{ seat: number; playerId: string; kind: string }>> = {};
+  const seatsBy: Record<string, Array<{ seat: number; playerId: string; kind: string; name?: string }>> = {};
   await Promise.all(tables.slice(0, 4).map(async (t) => {
     const r2 = await table(env, t.tableId).fetch('https://table/seats').catch(() => null);
-    seatsBy[t.tableId] = r2?.ok ? ((await r2.json()) as { seats: Array<{ seat: number; playerId: string; kind: string }> }).seats : [];
+    seatsBy[t.tableId] = r2?.ok ? ((await r2.json()) as { seats: Array<{ seat: number; playerId: string; kind: string; name?: string }> }).seats : [];
   }));
   const res = await room(env, roomId).fetch('https://room/layout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roomId, name, tables: tables.map((t) => ({ tableId: t.tableId, name: t.name, game: t.game ?? 'poker', seats: t.config.seats, seated: t.seated, occupants: seatsBy[t.tableId] ?? [] })) }) });
   return ((await res.json()) as { manifest: RoomManifest }).manifest;
