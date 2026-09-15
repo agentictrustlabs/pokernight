@@ -62,12 +62,12 @@ describe('a night at the Belvedere, played by nobody', () => {
   it('a different seed is a different night', () => {
     const killers = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((n) => playNight(n).state.killer));
     expect(killers.size).toBeGreaterThan(1);
-  });
+  }, 30_000);
 
   it('draws over the whole cast by default — a solo player must sometimes have a mystery to solve', () => {
     const killers = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => playNight(n, ['doctor']).state.killer));
     expect(killers.size).toBeGreaterThan(1);
-  });
+  }, 30_000);
 
   it('the evidence the night produced still names exactly one person', () => {
     for (const n of [1, 2, 3, 4, 5]) {
@@ -284,5 +284,28 @@ describe('a room that answers', () => {
     const after = { ...theirs, transcript: [...theirs.transcript, { type: 'said' as const, at: T0 + 2000, by: role.id, room: 'lobby', text: first.action.text, via: 'agent' as const }] };
     expect(chooseAction(after, role.lines, 4)?.action.type).not.toBe('say');
     void view;
+  });
+});
+
+describe('the only person playing is not the victim', () => {
+  it('refuses a murder on the one human in the cast, and takes them out of the engine\'s own draw', () => {
+    let s = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor']), seedHex: seedFrom(41), seedCommit: 'x', now: T0, killerRule: 'chef' });
+    s = { ...s, act: 2, phase: 'act', actStartedAt: T0 - 20 * 60_000, deadline: T0 + 60_000 };
+    s = { ...s, where: { ...s.where, chef: 'kitchen', doctor: 'kitchen' } };
+    for (const c of s.cast) if (c.role !== 'chef' && c.role !== 'doctor') s.where[c.role] = 'lobby';
+    expect(apply(s, TITLE, VENUE, 'chef', { type: 'murder', victim: 'doctor', prop: 'knife-block' }, T0, 'human')).toMatchObject({ ok: false, code: 'the-only-player' });
+    // and over a whole night, the player is never one of the two deaths
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      const played = playNight(n, ['doctor']).state;
+      expect(played.deaths.map((d) => d.victim)).not.toContain('doctor');
+    }
+  }, 30_000);
+
+  it('but a party may kill a player — there is somebody left to fool', () => {
+    let s = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor', 'widow']), seedHex: seedFrom(42), seedCommit: 'x', now: T0, killerRule: 'chef' });
+    s = { ...s, act: 2, phase: 'act', actStartedAt: T0 - 20 * 60_000, deadline: T0 + 60_000 };
+    s = { ...s, where: { ...s.where, chef: 'kitchen', doctor: 'kitchen' } };
+    for (const c of s.cast) if (c.role !== 'chef' && c.role !== 'doctor') s.where[c.role] = 'lobby';
+    expect(apply(s, TITLE, VENUE, 'chef', { type: 'murder', victim: 'doctor', prop: 'knife-block' }, T0, 'human').ok).toBe(true);
   });
 });

@@ -89,7 +89,10 @@ export function chooseAction(view: MysteryView, lines: CastLines, tick: number):
 
   // 2. You are the one taking chances, and the room is empty but for one.
   if (you.killer && you.opportunity?.ready && room.people.length === 1 && room.people[0] && view.deaths.length < 2) {
-    return { action: { type: 'murder', victim: room.people[0].role, prop: you.opportunity.prop } };
+    // …but never the only person playing: the engine refuses it, and asking anyway wastes the chance.
+    const humans = view.cast.filter((c) => c.operator === 'human');
+    const soleHuman = humans.length === 1 && humans[0]?.role === room.people[0].role;
+    if (!soleHuman) return { action: { type: 'murder', victim: room.people[0].role, prop: you.opportunity.prop } };
   }
 
   // 3. There is a body in this room and you have not finished looking at it.

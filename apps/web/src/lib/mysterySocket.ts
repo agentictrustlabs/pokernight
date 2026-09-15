@@ -18,9 +18,13 @@ export class MysterySocket {
   private ws: WebSocket | null = null;
   private closed = false;
   private retry = 0;
+  private beat: ReturnType<typeof setInterval> | null = null;
   readonly state: MysteryClientState = { view: null, staging: null, connection: 'connecting', error: null };
   constructor(private readonly stagingId: string, private readonly token: string, private readonly onChange: () => void) {
     this.connect();
+    // A HEARTBEAT, because the clock only runs while somebody is here: every beat tells the staging that
+    // somebody still is, and re-arms it if its own alarm was lost with a restart.
+    this.beat = setInterval(() => { if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'ping' })); }, 20_000);
   }
   private connect(): void {
     if (this.closed) return;
@@ -62,5 +66,5 @@ export class MysterySocket {
   pause(on: boolean): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'pause', on }));
   }
-  close(): void { this.closed = true; this.ws?.close(1000, 'left'); }
+  close(): void { this.closed = true; if (this.beat) { clearInterval(this.beat); this.beat = null; } this.ws?.close(1000, 'left'); }
 }

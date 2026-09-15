@@ -188,10 +188,23 @@ function stageDeath(s: MysteryState, title: Title, victim: RoleId, room: RoomId,
   return push(s, { type: 'died', at: now, victim, room, act: s.act });
 }
 
+/**
+ * THE ONE PLAYER IS NOT THE VICTIM.
+ *
+ * A party can kill a player — they still talk, they still watch, and their death is somebody's problem to
+ * explain. A SOLO night cannot: the only person in it would spend the rest of the evening reading a
+ * transcript of agents. So with one human in the cast, that human is not available to be murdered — by the
+ * engine's own choice or by an agent killer's.
+ */
+export function mayBeKilled(s: MysteryState, victim: RoleId): boolean {
+  const humans = s.cast.filter((c) => c.operator === 'human');
+  return !(humans.length === 1 && humans[0]?.role === victim);
+}
+
 /** Who dies, when the engine is the one choosing: never the killer, and never a person if an agent will do. */
 function chooseVictim(s: MysteryState, title: Title, preferRoom?: RoomId): RoleId | null {
   const seed = hexToBytes(s.seedHex ?? '00');
-  const pool = aliveRoles(s).filter((r) => r !== s.killer);
+  const pool = aliveRoles(s).filter((r) => r !== s.killer && mayBeKilled(s, r));
   if (!pool.length) return null;
   const inRoom = preferRoom ? pool.filter((r) => s.where[r] === preferRoom) : [];
   const order = seededShuffle(inRoom.length ? inRoom : pool, seed);
@@ -349,6 +362,7 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       if (now < chanceOpensAt(s, title)) return no('too-soon', 'Not yet. The night is young and everybody is still counting heads.');
       const present = peopleIn(s, here);
       if (!present.includes(action.victim)) return no('not-here', 'They are not in this room.');
+      if (!mayBeKilled(s, action.victim)) return no('the-only-player', 'Not the only person playing tonight — there would be nobody left to fool.');
       if (present.length !== 2) return no('not-alone', 'Not while somebody else is in the room.');
       events.push(...stageDeath(s, title, action.victim, here, action.prop, now));
       break;

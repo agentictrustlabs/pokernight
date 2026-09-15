@@ -572,7 +572,26 @@ part, both walk into the same hotel, Alice is the killer and Bob is not told.
 7. **Record scopes.** `cardroom.mystery.night` and `cardroom.mystery.character` are two new vault record types:
    four registrations and a grant re-issue per agent, the road every record type here has walked.
 
-## 16. Acceptance
+## 16. What playing it changed (2026-09-15)
+
+Five rules came out of watching a night rather than out of this document, and they are in the engine now:
+
+1. **What you heard, you heard.** Redaction asked where a character is NOW, so walking through a door
+   un-remembered the whole first act. Every room-scoped event carries its witnesses (`saw`).
+2. **A chance does not open at the door.** The killer took act two ten seconds in — not a mystery, an accident
+   of scheduling. `Title.murderAfter` (halfway, here) binds the player who is the killer and an agent alike.
+3. **The one person playing is not the victim.** A party may kill a player; a solo player would spend the
+   evening reading a transcript of agents.
+4. **A night catches up.** The clock runs only while somebody is here (the attention rule), so a staging left
+   alone stops where it stood — and the next read or reconnect advances it to now, bounded, before answering.
+5. **One character answers, not all of them.** A room where nothing replies reads as furniture; seven replies
+   to one question is a chorus. Everybody in the room derives the same answerer from the words themselves.
+
+A whole short night, played on the deployment: three acts, two deaths (`Mme Perrin` in the ski room in act I,
+`Dr Halloran` in the kitchen in act II), accusations, and a reveal whose published seed hashes to the
+commitment posted at curtain-up — checked outside the app with `sha256`.
+
+## 17. Acceptance
 
 - A person with no WebGL, no microphone and no agent of their own can play a whole mystery and reach the reveal.
 - The reveal's seed hashes to the commitment posted at curtain-up, and recomputing the draw from it names the

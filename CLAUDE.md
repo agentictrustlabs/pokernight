@@ -292,7 +292,15 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   or for another part). `checkTitle` proves a title solvable before anybody plays it — every possible
   killer narrowed to exactly themselves by the traits two deaths give up — and it runs in the package's
   own tests. What P2–P4 still owe (`.cast` agents, role archetypes at the Home, the director, the 3D venue)
-  is §14 of the spec. The third game and the first that is not a table: ONE engine (`packages/mystery`)
+  is §14 of the spec. Its own invariants, learned by playing it: NOBODY LOOKING, NOTHING HAPPENS — the clock
+  and the cast run only while a socket is open, and the night CATCHES UP (`catchUp`, bounded) the moment
+  somebody reads or reconnects, so a staging left alone stops where it stood rather than running an empty
+  hotel or waking up an act behind; WHAT YOU HEARD, YOU HEARD (every room-scoped event carries who was in the
+  room at the time — redacting on where somebody is NOW un-remembers the first act the moment they walk
+  through a door); A CHANCE DOES NOT OPEN AT THE DOOR (`murderAfter`, halfway through an act, for a human
+  killer and an agent alike); THE ONE PERSON PLAYING IS NOT THE VICTIM (a party may kill a player — a solo
+  player would spend the evening reading a transcript); and ONE CHARACTER ANSWERS, NOT ALL OF THEM (everybody
+  in a room derives the same answerer from the words, so a question gets a reply and not a chorus). The third game and the first that is not a table: ONE engine (`packages/mystery`)
   and many TITLES as content; venue · title · staging are three separate things; every character is a CUSTODIED
   agent (`.cast`, a vertical type over `person`) cast in a ROLE that is an ARCHETYPE in a new `mystery` skills
   context; the engine owns facts and the director service owns only words; the killer is drawn by the seed,

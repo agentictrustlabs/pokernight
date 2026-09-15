@@ -162,6 +162,10 @@ export class MysteryDO extends DurableObject<Env> {
     }
     if (request.method === 'GET' && url.pathname === '/view') {
       const playerId = url.searchParams.get('playerId') ?? '';
+      // A READ IS A LOOK. The clock only runs while somebody is here, so a night left alone stops where it
+      // stood — and then the first person back must see where it stands NOW, not the act it was halfway
+      // through last night. Catching up is the engine's own `tick`, run until it has nothing left to do.
+      this.catchUp();
       // A NIGHT BEING CAST IS A NIGHT. It has no state yet — no killer, no clue, nothing drawn — but it has
       // parts and people who have taken them, and the club's page is asking about exactly that.
       if (!this.state && !this.meta) return json({ error: 'no such night' }, 404);
@@ -175,6 +179,7 @@ export class MysteryDO extends DurableObject<Env> {
       const [client, server] = [pair[0], pair[1]];
       this.ctx.acceptWebSocket(server, [playerId]);
       server.serializeAttachment({ playerId, name: decodeURIComponent(request.headers.get('x-player-name') ?? '') } satisfies Attachment);
+      this.catchUp();
       await this.arm();
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -230,7 +235,9 @@ export class MysteryDO extends DurableObject<Env> {
     let m: Incoming | null = null;
     try { m = JSON.parse(typeof message === 'string' ? message : new TextDecoder().decode(message)) as Incoming; } catch { m = null; }
     if (!m?.type || !this.state) return;
-    if (m.type === 'ping') return;
+    // ANY TRAFFIC RE-ARMS THE CLOCK. A socket that survived a restart, or one whose alarm was lost with an
+    // eviction, heals on its next heartbeat instead of leaving the night frozen with somebody watching it.
+    if (m.type === 'ping') { this.catchUp(); await this.arm(); return; }
     if (m.type === 'join') { this.send(ws, { type: 'staging', staging: this.summary(), view: this.viewOf(who.playerId) }); await this.arm(); return; }
     if (m.type === 'pause') {
       // THE HOLD IS THE TABLE'S, REUSED: everything stops, including the characters, and the clock gives back
@@ -291,6 +298,21 @@ export class MysteryDO extends DurableObject<Env> {
     if (ticked.events.length) { this.state = ticked.state; changed = true; }
     if (changed) { this.save(); this.tellEverybody(); }
     if (this.state.phase !== 'revealed') await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+  }
+
+  /**
+   * THE NIGHT CATCHES UP. `tick` advances at most one phase per call, so a night that sat out an act and a
+   * half needs several — bounded, because a loop in a Durable Object is a loop nobody can stop.
+   */
+  private catchUp(): void {
+    const pair = this.state ? stagingOf(this.state.title) : null;
+    if (!this.state || !pair || this.paused) return;
+    for (let i = 0; i < 8; i++) {
+      const out = tick(this.state, pair.title, pair.venue, Date.now());
+      if (!out.events.length) break;
+      this.state = out.state;
+    }
+    this.save();
   }
 
   private async arm(): Promise<void> {
