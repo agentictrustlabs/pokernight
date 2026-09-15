@@ -227,16 +227,24 @@ export class ParticipantAvatar {
   bone(name: string): pc.GraphNode | null { return this.body?.findByName(name) ?? null; }
   /** The right hand's world position (the dealer deals from here) — null until dressed. */
   get dealHand(): pc.Vec3 | null { const h = this.body?.findByName('hand_r'); return h ? h.getPosition().clone() : null; }
-  /** Flick the dealing arm toward the felt now — one card just left the hand. */
+  /** Reach with the dealing arm now — a card leaving the hand, or chips pushed out. */
   dealFlick(): void { this.dealPulse = 1; }
-  /** After the clip: the dealing flick, layered on the right arm in local space, decaying over ~0.35 s. */
+  /**
+   * AFTER THE CLIP: the reach, layered on the right arm IN THE BONE'S OWN FRAME, out and back over ~0.45 s.
+   *
+   * THE AXIS WAS MEASURED, not guessed (scratch `armaxis.cjs`): on this rig +X on `upperarm_r` carries the hand
+   * UP AND FORWARD — 0.26 m at 40° — which is the dealing motion; Z, which this used at first, slid the hand
+   * sideways 0.17 m and read as nothing. The delta POST-multiplies the clip's local rotation, so it is the
+   * bone's own frame, exactly as the probe measured it.
+   */
   applyDeal(dt: number): void {
-    if (this.dealPulse <= 0.001 || !this.upperArmR || !this.foreArmR) { this.dealPulse = Math.max(0, this.dealPulse - dt * 3); return; }
-    const p = this.dealPulse; const swing = Math.sin(p * Math.PI); // out and back within the pulse
-    const u = this.upperArmR.getLocalRotation().clone(); const f = this.foreArmR.getLocalRotation().clone();
-    this.upperArmR.setLocalRotation(new pc.Quat().setFromEulerAngles(0, 0, -swing * 28).mul(u));
-    this.foreArmR.setLocalRotation(new pc.Quat().setFromEulerAngles(0, 0, -swing * 34).mul(f));
-    this.dealPulse = Math.max(0, this.dealPulse - dt * 3);
+    if (this.dealPulse <= 0.001 || !this.upperArmR || !this.foreArmR) { this.dealPulse = Math.max(0, this.dealPulse - dt * 2.2); return; }
+    const swing = Math.sin(this.dealPulse * Math.PI); // 0 → out → 0 as the pulse decays
+    const du = new pc.Quat().setFromEulerAngles(swing * 52, 0, 0);
+    const df = new pc.Quat().setFromEulerAngles(swing * 46, 0, 0);
+    this.upperArmR.setLocalRotation(this.upperArmR.getLocalRotation().clone().mul(du));
+    this.foreArmR.setLocalRotation(this.foreArmR.getLocalRotation().clone().mul(df));
+    this.dealPulse = Math.max(0, this.dealPulse - dt * 2.2);
   }
   /** for the walk scripts: which state the graph is in */
   get debug(): Record<string, unknown> { const an = this.anim; return { dressed: !!this.body, state: an?.baseLayer?.activeState, playing: an?.playing, playable: an?.playable, speed: this.speed, seated: !!this.seat, talking: this.talk }; }

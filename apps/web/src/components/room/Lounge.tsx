@@ -140,6 +140,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     a.root.addChild(sun);
 
     let plateClock = 0;
+    // `framerender` carries no dt; the main update loop hands it over (see the layering note below)
+    let lastDt = 1 / 60;
     // walking, clicking, the follow camera — every frame
     a.keyboard!.on(pc.EVENT_KEYDOWN, (e: pc.KeyboardEvent) => { const k = keyOf(e.key ?? -1); if (k) { keys.current.add(k); if (me.current) me.current.goal = null; e.event?.preventDefault(); } });
     a.keyboard!.on(pc.EVENT_KEYUP, (e: pc.KeyboardEvent) => { const k = keyOf(e.key ?? -1); if (k) keys.current.delete(k); });
@@ -162,6 +164,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       else { me.current.goal = new pc.Vec3(hit.x, 0, hit.z); me.current.heading = null; }
     });
     a.on('update', (dt: number) => {
+      lastDt = dt;
       const m = me.current;
       if (m && m.avatar.seated) {
         // in the chair: the body is where the seat is; the camera looks over its right shoulder, above the chair
@@ -261,10 +264,19 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     deckSide.diffuse = new pc.Color(0.92, 0.9, 0.85); deckSide.update();
     // the walk scripts read the bodies' states through this; nothing in the app does
     (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot };
-    // GAZE, after the clips have posed the bodies: a seated body looks at whoever is acting at its table (or the
-    // felt); a standing body looks at the nearest person within a few steps, the one talking first; yours looks
-    // where the others do. Cheap — a dozen bodies, a dozen distances.
-    a.on('postupdate', (dt: number) => {
+    /**
+     * LAYERED ON TOP OF THE CLIPS — the gaze and the dealing reach — on `framerender`.
+     *
+     * THE HOOK MATTERS AND THERE IS NO `postupdate` IN THIS ENGINE. A frame runs `frameupdate` → `update` (where
+     * the anim system poses every skeleton) → `framerender` → `render`. A handler on a name the app never fires
+     * is simply never called and nothing says so: `postupdate` cost the heads their look and the dealer their
+     * reach, silently, until the dealer's pulse was seen never to decay.
+     *
+     * A seated body looks at whoever is acting at its table (or the felt); a standing body looks at the nearest
+     * person within a few steps, the one talking first. Cheap — a dozen bodies, a dozen distances.
+     */
+    a.on('framerender', () => {
+      const dt = lastDt;
       const all: Array<{ avatar: ParticipantAvatar; name: string }> = [];
       if (me.current) all.push(me.current);
       for (const b of bodies.current.values()) all.push(b);
