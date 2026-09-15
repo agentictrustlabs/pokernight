@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AuthState } from '../App';
-import type { AppSession, TableSummary } from '../lib/types';
+import type { AppSession, Night, TableSummary } from '../lib/types';
 import { ApiError, api, type ClubInvitation, type ClubListing } from '../lib/api';
 import { Rail } from '../components/Rail';
-import type { Route } from '../lib/routes';
+
+/** Asked once a session, and remembered so a refresh does not ask again. */
+const CLUB_ASK_KEY = 'pokernight.clubhouse.asked';
+/** How close a night has to be for the invitation to name it: the evening of, rather than any night at all. */
+const NEAR_MS = 14 * 60 * 60 * 1000;
+import { goTo, roomHash, type Route } from '../lib/routes';
 import type { TreasuryView } from '../lib/treasury';
 import { stakeStage } from '../lib/stake';
 import { ClubPage } from './ClubPage';
@@ -15,6 +20,8 @@ import { NewClubPage } from './NewClubPage';
 import { TableNewPage } from './TableNewPage';
 import { RoomPage } from './RoomPage';
 import { FiresidePage } from './FiresidePage';
+import { LoadingBar } from '../components/LoadingBar';
+import { ClubHousePrompt } from '../components/ClubHousePrompt';
 import { PlayPage } from './PlayPage';
 import { SignInPage } from './SignInPage';
 import { TablesPage } from './TablesPage';
@@ -97,6 +104,31 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
   }, [loadTreasury, moneyStamp]);
 
   const [invitations, setInvitations] = useState<ClubInvitation[]>([]);
+  /**
+   * THE CLUB HOUSE, OFFERED ONCE. Somebody in a club almost always came for that club, so when the rail's clubs
+   * arrive the room asks whether to go through — and if a night is near, says which night, who the guest is and
+   * who is coming for them. Asked once a session and it takes no for an answer.
+   */
+  const [prompt, setPrompt] = useState<{ clubId: string; name: string; night: Night | null } | null>(null);
+  const askedClubHouse = useRef(false);
+  useEffect(() => {
+    if (askedClubHouse.current || !clubs || clubs.length === 0) return;
+    if (r.page !== 'home' && r.page !== 'tables') return;   // only on arrival, never mid-errand
+    try { if (sessionStorage.getItem(CLUB_ASK_KEY) === '1') { askedClubHouse.current = true; return; } } catch { /* ask anyway */ }
+    askedClubHouse.current = true;
+    const club = clubs[0]!;
+    let alive = true;
+    api.getClub(club.clubId, session.token)
+      .then((v) => {
+        if (!alive) return;
+        const soon = (v.nights ?? []).filter((n) => !n.cancelledAt).find((n) => n.startsAt - Date.now() < NEAR_MS);
+        setPrompt({ clubId: club.clubId, name: v.name, night: soon ?? null });
+      })
+      .catch(() => alive && setPrompt({ clubId: club.clubId, name: club.name, night: null }));
+    return () => { alive = false; };
+  }, [clubs, r.page, session.token]);
+  const closePrompt = () => { try { sessionStorage.setItem(CLUB_ASK_KEY, '1'); } catch { /* asked once either way */ } setPrompt(null); };
+
   const loadClubs = useCallback(async () => {
     // The two reads are INDEPENDENT and fire together: a club list that is slow or never comes back must not
     // hide an invitation. `await`-ing the clubs first held the invitations behind a Home round trip, so somebody
@@ -156,6 +188,15 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
 
   return (
     <div className="room">
+      <LoadingBar show={clubs == null} />
+      {prompt ? (
+        <ClubHousePrompt
+          clubName={prompt.name}
+          night={prompt.night}
+          onEnter={() => { const to = roomHash(prompt.clubId); closePrompt(); goTo(to); }}
+          onDismiss={closePrompt}
+        />
+      ) : null}
       <Rail r={r} clubs={clubs} invitations={invitations} />
       <main className="room-main">
         {r.page === 'tables' ? (

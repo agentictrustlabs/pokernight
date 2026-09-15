@@ -155,8 +155,11 @@ export function ClubPage({
         <div className="club-actions">
           {/* NO HUDDLE AT CLUB LEVEL (2026-09-15). A call belongs to a place people are sitting in — a table or
               the bar — not to the club as an abstraction, where nobody is and anybody may be. */}
-          {host ? <a className="button" href={newTableHash(clubId)}>+ Open a table</a> : null}
-          <a className="button quiet" href={roomHash(clubId)} title="Walk into the club's lounge — the tables in a room, the people in it">Enter the room</a>
+          {/* THE ROOM IS THE CLUB (2026-09-15), so it is the loud action and opening a table is the host's
+              quiet one beside it. A member does not need anybody's permission to come and play: they walk in,
+              see who is about, and sit down at a table that is already there. */}
+          <a className="button primary" href={roomHash(clubId)} title="Walk into the club house — the tables in a room, the people in it">Enter the club house →</a>
+          {host ? <a className="button quiet" href={newTableHash(clubId)}>+ Open a table</a> : null}
         </div>
       </header>
       <nav className="side-tabs club-tabs" role="tablist" aria-label="The club">

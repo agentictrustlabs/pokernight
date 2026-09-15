@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { AppSession } from '../lib/types';
 import { RoomSocket } from '../lib/roomSocket';
-import { api as tables, roomApi as api, tableSocketUrl } from '../lib/api';
+import { api as api2, api as tables, roomApi as api, tableSocketUrl } from '../lib/api';
+import { nightWhen } from '../lib/nights';
+import type { MissionVisit, Night } from '../lib/types';
 import { leaveSeat, takeSeat } from '../lib/roomSeat';
 import { cameFromRoom, forgetRoom, rememberSeat, takeSeatPlace } from '../lib/fromRoom';
 import { TableSocket, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
@@ -70,6 +72,19 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
     const relayout = setInterval(() => { void api.room(roomId, session.token).catch(() => undefined); }, 8000);
     return () => { clearInterval(relayout); s.close(); sock.current = null; };
   }, [roomId, session.token]);
+  /** The club's night, when one is on or close — read once when the page opens. */
+  const [tonight, setTonight] = useState<{ night: Night; visit: MissionVisit | null } | null>(null);
+  useEffect(() => {
+    if (!clubId) return;
+    let alive = true;
+    api2.getClub(clubId, session.token).then((v) => {
+      if (!alive) return;
+      const n = (v.nights ?? []).filter((x) => !x.cancelledAt).find((x) => x.startsAt - Date.now() < 14 * 60 * 60 * 1000);
+      setTonight(n ? { night: n, visit: n.visit ?? (n.mission ? { mission: n.mission, status: 'invited' } : null) } : null);
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [clubId, session.token]);
+
   const onZone = useCallback((z: string | null) => setZone(z), []);
   const seatedTableId = (() => { const s0 = sock.current; const me = s0?.state.you ? s0.state.people.get(s0.state.you) : undefined; const t = me?.seatedAt && s0?.state.manifest ? s0.state.manifest.tables.find((x) => x.tableId === me.seatedAt!.tableId) : null; return t && (t.game ?? DRAWN_GAME) === DRAWN_GAME ? t.tableId : null; })();
   useEffect(() => {
@@ -192,6 +207,22 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
         </div>
       </header>
       {s?.state.error ? <div className="form-error">{s.state.error}</div> : null}
+      {/* WHAT IS ON TONIGHT, said on the way in. Walking into a club house during one of its nights and being
+          told nothing about it is the room keeping a secret everybody else in it already knows. */}
+      {tonight ? (
+        <div className="room-tonight" role="status">
+          <span className="tag">tonight</span>
+          <strong>{tonight.night.title ?? 'Club night'}</strong>
+          <span className="hint">{nightWhen(tonight.night, Date.now()).day} at {nightWhen(tonight.night, Date.now()).time}</span>
+          {tonight.visit ? (
+            <span className="room-tonight-guest">
+              ♦ {tonight.visit.mission.name}
+              {tonight.visit.representative ? ` · ${tonight.visit.representative.name} is here for them` : ''}
+              {' — '}<a href={fireHash(clubId)}>meet them by the fire</a>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <div className="room-scene">
         <Suspense fallback={<div className="lounge-loading"><p className="hint">Loading the lounge…</p></div>}>
           {s ? <Lounge ref={lounge} socket={s} state={s.state} onZone={onZone} onSitRequest={onSitRequest} board={board} /> : null}

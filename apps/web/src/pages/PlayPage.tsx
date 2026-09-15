@@ -1,4 +1,3 @@
-import { MissionsSection } from '../components/MissionsSection';
 import { useEffect, useState } from 'react';
 import type { AppSession, TableSummary } from '../lib/types';
 import { ApiError, api } from '../lib/api';
@@ -28,8 +27,8 @@ export function PlayPage({ session }: { session: AppSession }) {
       <PracticeCard session={session} game="canasta" />
       <PracticeCard session={session} game="poker" />
       <Running session={session} />
-      {/* THE MISSIONS on the front door of the room too — the map, and registering one. */}
-      <MissionsSection signedIn variant="play" />
+      {/* NO MISSIONS HERE (2026-09-15). Somebody who has just come in came to play; the missions have a page
+          of their own and a row in the rail, and a map on the front door for anybody still deciding. */}
     </div>
   );
 }
