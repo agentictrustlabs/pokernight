@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { RealtimeKitProvider, useRealtimeKitSelector } from '@cloudflare/realtimekit-react';
 import type { RoomState } from '../../lib/roomSocket';
 import { useClubHuddle } from '../huddle/ClubHuddleProvider';
+import { setSpeaking } from './speaking';
 
 /**
  * VOICE, PLACED (docs/SPATIAL-ROOM.md §3.1, phase 1 step 3). The club's huddle is the room's meeting; each
@@ -26,6 +27,11 @@ interface Voice { source: MediaStreamAudioSourceNode; panner: PannerNode; track:
 
 function Panners({ state }: { state: RoomState }) {
   const joined = useRealtimeKitSelector((m) => m.participants.joined.toArray()) as unknown as Tracked[];
+  // who the huddle hears right now — the bodies read it to move their mouths (speaking.ts)
+  const active = useRealtimeKitSelector((m) => m.participants.active.toArray()) as unknown as Tracked[];
+  const self = useRealtimeKitSelector((m) => m.self) as unknown as Tracked;
+  useEffect(() => { setSpeaking([...active.filter((p) => p.audioEnabled).map((p) => p.name), ...(self?.audioEnabled && active.some((p) => p.id === self.id) ? [self.name] : [])]); }, [active, self]);
+  useEffect(() => () => setSpeaking([]), []);
   const ctx = useRef<AudioContext | null>(null);
   const voices = useRef(new Map<string, Voice>());
   const stateRef = useRef(state); stateRef.current = state;

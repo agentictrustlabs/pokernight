@@ -297,6 +297,15 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   dock's `<audio>` elements stay ATTACHED but muted (`HuddleCtx.spatial`): a remote WebRTC track flows into Web
   Audio only while some media element holds it. The hall has no huddle (no `hall` scope at the Home yet).
   Walk: scratch `voice-walk.cjs` (fake media; `window.__spatialVoices` counts placed voices).
+- **A BODY IS TOLD WHAT IT IS DOING, NEVER HOW TO MOVE A LIMB** (2026-09-14, `components/room/embodiment.ts`,
+  spec §3.6). `ParticipantAvatar` takes semantic acts — `place`, `walkTo`, `sitAt(seat)`, `stand`, `lookAt`,
+  `gesture`, `talking` — and ONE PlayCanvas anim state graph for everybody makes them happen on ONE rigged human
+  (Quaternius' CC0 mannequin, `public/room/mannequin.glb`, trimmed with gltf-transform; licence beside it).
+  Presence, the `scene.*` skills and the Mystery Night's cues all speak that vocabulary; the block `Figure` is
+  gone. Traps: a container's animation ASSETS are named `<file>/animation/<i>` — the clip's name is on the TRACK
+  (`asset.resource.name`); a state assigned no track plays a placeholder of duration `MAX_VALUE` and the body
+  stands in a T-pose. Playwright's fake camera is `--use-fake-device-for-media-stream` (not `-capture`).
+  Walk: scratch `body-walk.cjs` (standing, walking, seen by another, seated, seen seated; `window.__lounge`).
 - **A MISSION IS A GUEST AT THE TABLE, and the club still holds no money.** A mission organisation
   hosts one Night as guest dealer. That is a social role: it never carries hidden cards, the deck, a
   rake, a payout approval, or any reach into a player's account, and inviting a mission to host must

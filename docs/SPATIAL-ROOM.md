@@ -1,6 +1,6 @@
 # The Room — a 3D card room with people in it
 
-**Status:** specification, 2026-09-14; **phase 1 steps 1–4 built the same day** (renderer: PlayCanvas; step 3 —
+**Status:** specification, 2026-09-14; **phase 1 steps 1–4 built the same day, then the bodies replaced with rigged humans (§3.6)** (renderer: PlayCanvas; step 3 —
 voice placed by body — for a club's lounge, on the club's huddle; step 4 — `components/huddle/Portrait.tsx`, the
 huddle's face at the seat on the flat board and on the name plate over the body, matched by name, camera or
 lit initial, ring when speaking, mic dot) — `SceneDO` (migration v6),
@@ -92,7 +92,7 @@ flowchart LR
 | Piece | Choice | Why |
 | --- | --- | --- |
 | Renderer | **PlayCanvas** (`playcanvas` engine, `pc.Application` on a canvas the page owns), lazy-loaded (the Leaflet pattern: never at module time) — chosen over three.js 2026-09-14 | The PlayCanvas **editor** authors the lounge and the bodies as scenes/assets a team can work on without code; the engine's asset pipeline (glTF, animation, lightmaps) and physics come built in; the HUD stays React over the canvas, name plates are HTML projected with `worldToScreen` |
-| Bodies | **glTF humanoids** authored/imported in the PlayCanvas editor (VRM converts to glTF; the `anim` component drives idle/walk/sit), 4–6 stock bodies + palette; a person's choice kept in their vault | A standard skeleton and a large free ecosystem; no rigging of our own; capsules stand in until the first bodies are authored |
+| Bodies | **glTF humanoids** — §3.6: one CC0 rigged human and one anim state graph for everybody now; Avaturn/Mixamo bodies retargeted onto it later; authored/imported in the PlayCanvas editor (VRM converts to glTF; the `anim` component drives idle/walk/sit), 4–6 stock bodies + palette; a person's choice kept in their vault | A standard skeleton and a large free ecosystem; no rigging of our own; capsules stand in until the first bodies are authored |
 | Faces | The participant's `MediaStreamTrack` → `THREE.VideoTexture` on a face plane on the head (camera on), or a **portrait ring** with initials (camera off) | Kumospace's "video in the world", on a character |
 | Audio | RealtimeKit audio track → `AudioContext` → `PannerNode` (HRTF) at the body's position; a table is a "quiet zone" (seated voices carry to the table, the bar fades) | Spatial voice is what makes a room a room |
 | Movement | WASD / click-to-walk / touch joystick; third-person follow camera; seated camera behind the cards | Decentraland's walk, without a world |
@@ -168,7 +168,40 @@ says, not the chair they walked to. Every table-side rule — pace, attention, p
 | Record | vault put `cardroom.room.visit` (who you sat with, when, which night) — counts, never a transcript | Through Queues from `SceneDO` to the person's agent, like `poker.record`; opt-in, and the coach never sees it |
 | Ontology | `cr:Room` (⊑ at:Place), `cr:Avatar` (⊑ prov:Entity, facet of at:Person), `cr:Presence` (⊑ at:Participation: `cr:standsAt` anchor/table, `cr:seatedAt`), `cr:SceneCue` (⊑ at:Event) | The scene's vocabulary is the card room's, published beside clubs and missions |
 
-### 3.6 Cloudflare — the whole estate for it
+### 3.6 Embodiment — bodies, clips and scenes are bought, not built (decided 2026-09-14)
+
+The block figure proved the interfaces — presence, seats, placed voice, portraits — and is retired. The room
+does not hand-animate a person, and it must scale to **Mystery Night**, where there are many scenes, many
+characters and scripted moments. So the layers are separated and each one is off-the-shelf and open:
+
+```
+A2A participant → Player Embodiment → Avatar template → Animation controller → Scene
+   (who)          (semantic acts)     (one rigged GLB)   (one anim state graph)   (glTF, anchors by name)
+```
+
+| Layer | What | Off the shelf | File |
+| --- | --- | --- | --- |
+| Semantic acts | `place`, `walkTo`, `sitAt(seat)`, `stand`, `lookAt`, `gesture`, `talking(on)` — what presence says now and what the `scene.*` skills will say; **nothing above this line moves a limb** | — | `components/room/embodiment.ts` `ParticipantAvatar` |
+| Body | ONE rigged humanoid GLB, loaded once per app (`AvatarLibrary`) and instantiated per participant; per-person palette by material tint | **Quaternius Universal Animation Library mannequin, CC0** (`public/room/mannequin.glb`, trimmed with gltf-transform to the 12 clips used: 880 KB, 354 KB gzipped) | `embodiment.ts` |
+| Clips | idle, talking, walk, sit down, seated, seated talking, stand up, interact, pick up, dance | the same library (46 clips available; Universal Base Characters and UAL 2 share the rig) | in the GLB |
+| Controller | ONE PlayCanvas **anim state graph** for everybody: `START → Idle \| Seated`, `Idle ⇄ Walk` on `speed`, `Idle ⇄ Talk` and `Seated ⇄ SeatedTalk` on `talking`, `Idle → SitDown → Seated → StandUp → Idle` on `seated`, one-shots on `gesture` | PlayCanvas `anim` component (`AnimStateGraph`, transitions with `exitTime`, later layer masks for seated lower body + talking upper body) | `embodiment.ts` `GRAPH` |
+| Seats | a `Seat { at, yaw }` anchor per chair (`chairOf`): the seated anchor is where the feet go, the clip puts the hips on the chair; approach point, camera anchor and look target derive from it | — | `Lounge.tsx` |
+| Scene | built-in primitives today; next: a glTF scene with anchors as **named nodes** (`door`, `bar`, `fire`, `lectern`, `table.N`, `table.N.seat.M`) so a Blender/PlayCanvas-editor scene drops in and the runtime reads its anchors by name | Blender / PlayCanvas editor, glTF | `Lounge.tsx` scenery effect |
+| Cues | `SceneCue` (§5.8): lights, a line at an anchor, a camera move, a gesture by name — a script a host writes for a night | — | phase 4 |
+
+**Retargeting.** Every humanoid the room draws is on ONE skeleton (the library's Rigify `DEF-*` bones), so the
+clips are shared by node name across bodies and the graph never changes. A person's own avatar from
+**Avaturn** or a **Mixamo**-rigged GLB is a different skeleton: it is retargeted ONCE, offline (Blender's
+retarget script, or the library re-exported onto the Mixamo rig), stored as a GLB whose clips carry the same
+names, and referenced from the person's `cardroom.avatar` record. The runtime keeps one code path.
+
+**Efficiency, for many scenes.** One skinned mesh instance per body, one shared graph, clips resampled and
+quantized at build; bodies beyond ~25 m get `anim.playing = false` and a still pose; faces are HTML
+portraits (no video textures until §5.4's near-field case); scenes are static glTF with baked lightmaps and
+named anchors, so a new scene is an asset, not code. Semantic state (position, seat, anim state, look target)
+is what crosses the wire — never frames.
+
+### 3.7 Cloudflare — the whole estate for it
 
 | Need | Service | Note |
 | --- | --- | --- |
