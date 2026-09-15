@@ -184,6 +184,10 @@ export class ParticipantAvatar {
   private head: pc.GraphNode | null = null;
   private gaze: pc.Vec3 | null = null;
   private gazeYaw = 0; private gazePitch = 0;
+  /** the right arm, for a procedural dealing reach applied after the clip */
+  private upperArmR: pc.GraphNode | null = null;
+  private foreArmR: pc.GraphNode | null = null;
+  private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow') {
     this.entity = new pc.Entity('avatar');
@@ -215,11 +219,25 @@ export class ParticipantAvatar {
     this.entity.addChild(body);
     this.body = body;
     this.head = body.findByName('Head');
+    this.upperArmR = body.findByName('upperarm_r'); this.foreArmR = body.findByName('lowerarm_r');
   }
 
   private get anim(): pc.AnimComponent | null { return this.body?.anim ?? null; }
   /** A bone's world position and rotation this frame (the dealer's hand, for the deck) — null until dressed. */
   bone(name: string): pc.GraphNode | null { return this.body?.findByName(name) ?? null; }
+  /** The right hand's world position (the dealer deals from here) — null until dressed. */
+  get dealHand(): pc.Vec3 | null { const h = this.body?.findByName('hand_r'); return h ? h.getPosition().clone() : null; }
+  /** Flick the dealing arm toward the felt now — one card just left the hand. */
+  dealFlick(): void { this.dealPulse = 1; }
+  /** After the clip: the dealing flick, layered on the right arm in local space, decaying over ~0.35 s. */
+  applyDeal(dt: number): void {
+    if (this.dealPulse <= 0.001 || !this.upperArmR || !this.foreArmR) { this.dealPulse = Math.max(0, this.dealPulse - dt * 3); return; }
+    const p = this.dealPulse; const swing = Math.sin(p * Math.PI); // out and back within the pulse
+    const u = this.upperArmR.getLocalRotation().clone(); const f = this.foreArmR.getLocalRotation().clone();
+    this.upperArmR.setLocalRotation(new pc.Quat().setFromEulerAngles(0, 0, -swing * 28).mul(u));
+    this.foreArmR.setLocalRotation(new pc.Quat().setFromEulerAngles(0, 0, -swing * 34).mul(f));
+    this.dealPulse = Math.max(0, this.dealPulse - dt * 3);
+  }
   /** for the walk scripts: which state the graph is in */
   get debug(): Record<string, unknown> { const an = this.anim; return { dressed: !!this.body, state: an?.baseLayer?.activeState, playing: an?.playing, playable: an?.playable, speed: this.speed, seated: !!this.seat, talking: this.talk }; }
 

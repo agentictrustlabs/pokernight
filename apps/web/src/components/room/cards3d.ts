@@ -56,8 +56,8 @@ export class Deck3D {
   /** A card lying on the felt at (x, H, z), its top edge pointing `yaw` — the way the seat's owner reads it. */
   card(code: string | null, x: number, y: number, z: number, yaw: number, parent: pc.Entity, lift = 0): pc.Entity {
     const e = new pc.Entity('card');
-    e.addComponent('render', { type: 'plane', material: this.material(code), castShadows: false, receiveShadows: true });
-    e.setLocalScale(0.063 * 3.2, 1, 0.088 * 3.2); // a real card is small from a chair; 3.2× reads from the far side
+    e.addComponent('render', { type: 'plane', material: this.material(code), castShadows: false, receiveShadows: false });
+    e.setLocalScale(0.063 * 4.4, 1, 0.088 * 4.4); // oversized on purpose: a card must read from the far side of the felt
     e.setLocalPosition(x, y + lift, z); e.setLocalEulerAngles(0, yaw * 180 / Math.PI, 0);
     parent.addChild(e);
     return e;

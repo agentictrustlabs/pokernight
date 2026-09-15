@@ -97,15 +97,11 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
 
   const [invitations, setInvitations] = useState<ClubInvitation[]>([]);
   const loadClubs = useCallback(async () => {
-    try {
-      setClubs((await api.listClubs(session.token)).clubs);
-    } catch {
-      // The rail shows "Reading…" rather than "you are in none", which is the honest answer to a
-      // question we asked and did not get back.
-    }
-    // Invitations beside the clubs, and never blocking them: an inbox that cannot be read leaves the
-    // rail as it was — the message at their Home still says.
-    api.listInvitations(session.token).then((r) => setInvitations(r.invitations)).catch(() => undefined);
+    // The two reads are INDEPENDENT and fire together: a club list that is slow or never comes back must not
+    // hide an invitation. `await`-ing the clubs first held the invitations behind a Home round trip, so somebody
+    // just invited — who is in no clubs yet and whose clubs read is the slowest there is — saw nothing.
+    void api.listClubs(session.token).then((r) => setClubs(r.clubs)).catch(() => undefined);
+    void api.listInvitations(session.token).then((r) => setInvitations(r.invitations)).catch(() => undefined);
   }, [session.token]);
   useEffect(() => {
     void loadClubs();

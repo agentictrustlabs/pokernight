@@ -7,6 +7,7 @@ import { Portrait } from '../huddle/Portrait';
 import { AvatarLibrary, ParticipantAvatar, RoomKit, type Seat } from './embodiment';
 import { isSpeaking } from './speaking';
 import { Deck3D } from './cards3d';
+import { Chips3D } from './chips3d';
 
 /**
  * THE LOUNGE — the scene, on PlayCanvas (docs/SPATIAL-ROOM.md §3.1, phase 1 steps 1–2; PlayCanvas chosen
@@ -63,7 +64,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const library = useRef<AvatarLibrary | null>(null);
   const kit = useRef<RoomKit | null>(null);
   const deck = useRef<Deck3D | null>(null);
+  const chips = useRef<Chips3D | null>(null);
   const felt = useRef<pc.Entity | null>(null);
+  /** the count of chips each seat has already pushed toward the pot this street, so raising THROWS the new chips */
+  const pushed = useRef<Map<number, number>>(new Map());
   /** THE DEALER at each table — a body standing at the ring's gap, whose hands the cards come from. */
   const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3; deck: pc.Entity }>());
   /** cards in the air: from the dealer's hand to their place on the felt, one after another */
@@ -71,6 +75,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   /** which cards were already on the felt last time, so only the NEW ones are dealt (keyed by hand) */
   const dealt = useRef<{ handNo: number; ids: Set<string> }>({ handNo: -1, ids: new Set() });
   const feltSig = useRef('');
+  const chipRoot = useRef<pc.Entity | null>(null);
+  const chipSig = useRef('');
+  const chipHand = useRef(-1);
+  const chipFlights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; t: number; delay: number }>>([]);
   /** the camera is placed, not flown, the first time it has a body to follow */
   const camSettled = useRef(false);
   const [kitReady, setKitReady] = useState(false);
@@ -118,7 +126,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     a.root.addChild(camera);
 
     const sun = new pc.Entity('sun');
-    sun.addComponent('light', { type: 'directional', color: new pc.Color(1, 0.96, 0.88), intensity: 1.1, castShadows: true, shadowBias: 0.2, normalOffsetBias: 0.05, shadowResolution: 1024, shadowDistance: 30 });
+    // SHADOWS THAT DO NOT SPECKLE THE FELT: the table and the cards are flat receivers, and a 1024 map over 30 m
+    // (~3 cm a texel, hard-filtered) put a grain of shadow acne over every flat thing while the curved bodies looked
+    // fine. A 2048 map over 22 m with 5-tap PCF and a little more bias is smooth on both; the cards receive none.
+    sun.addComponent('light', { type: 'directional', color: new pc.Color(1, 0.96, 0.88), intensity: 1.1, castShadows: true, shadowType: pc.SHADOW_PCF5_32F, shadowBias: 0.3, normalOffsetBias: 0.08, shadowResolution: 2048, shadowDistance: 22 });
     sun.setEulerAngles(55, 30, 0);
     a.root.addChild(sun);
 
@@ -146,11 +157,11 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // back, down at the felt — the table is what a seated person looks at
         m.avatar.update(dt);
         const p = m.avatar.pos, yaw = m.avatar.yaw;
-        const behind = new pc.Vec3(p.x - Math.sin(yaw) * 1.25 + Math.cos(yaw) * 0.55, 2.0, p.z - Math.cos(yaw) * 1.25 - Math.sin(yaw) * 0.55);
+        const behind = new pc.Vec3(p.x - Math.sin(yaw) * 1.05 + Math.cos(yaw) * 0.45, 2.75, p.z - Math.cos(yaw) * 1.05 - Math.sin(yaw) * 0.45);
         // arriving already in the chair, the camera is simply there — no swoop down from the door over the felt
         if (!camSettled.current) { camera.setPosition(behind); camSettled.current = true; }
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
-        camera.lookAt(p.x + Math.sin(yaw) * 2.3, 0.72, p.z + Math.cos(yaw) * 2.3);
+        camera.lookAt(p.x + Math.sin(yaw) * 1.9, 0.72, p.z + Math.cos(yaw) * 1.9);
       } else if (m) {
         const av = m.avatar; const pos = av.pos;
         let dx = 0, dz = 0;
@@ -187,9 +198,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       for (const bt of bots.current.values()) bt.update(dt);
       for (const dl of dealers.current.values()) {
         dl.avatar.update(dt);
-        // the deck rides in the left hand; the cards fly from wherever it is
-        const h = dl.avatar.bone('hand_l');
-        if (h) { const hp = h.getPosition(); dl.deck.setPosition(hp.x, hp.y + 0.03, hp.z); dl.deck.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); dl.hand.set(hp.x, hp.y + 0.05, hp.z); }
+        // the deck rides in the LEFT hand; the cards leave from the RIGHT (dealing) hand
+        const l = dl.avatar.bone('hand_l');
+        if (l) { const hp = l.getPosition(); dl.deck.setPosition(hp.x, hp.y + 0.03, hp.z); dl.deck.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
+        const r = dl.avatar.dealHand; if (r) dl.hand.copy(r);
       }
       for (const b of bodies.current.values()) { b.avatar.talking(isSpeaking(b.name)); b.avatar.update(dt); }
       // cards in the air: an arc from the dealer's hand to the felt, a quarter second each, one after another
@@ -203,6 +215,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         f.entity.setEulerAngles((1 - e) * 35, (f.yawFrom + (f.yawTo - f.yawFrom + 2 * Math.PI) * e) * 180 / Math.PI, 0);
       }
       flights.current = flights.current.filter((f) => f.t < 1);
+      for (const f of chipFlights.current) { f.t = Math.min(1, f.t + dt / 0.3); const e = 1 - (1 - f.t) * (1 - f.t); const p = new pc.Vec3().lerp(f.from, f.to, e); p.y += Math.sin(e * Math.PI) * 0.12; f.entity.setLocalPosition(p); }
+      chipFlights.current = chipFlights.current.filter((f) => f.t < 1);
       // the plates follow their bodies on screen — at 25 Hz, which is what text over a body needs
       plateClock += dt;
       if (plateClock >= 0.04) {
@@ -221,9 +235,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     library.current = new AvatarLibrary(a, ROOM_DIR); library.current.load();
     kit.current = new RoomKit(a, KIT_URL); kit.current.ready(() => setKitReady(true));
     deck.current = new Deck3D(a);
+    chips.current = new Chips3D(a);
     deckSide.diffuse = new pc.Color(0.92, 0.9, 0.85); deckSide.update();
     // the walk scripts read the bodies' states through this; nothing in the app does
-    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights };
+    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot };
     // GAZE, after the clips have posed the bodies: a seated body looks at whoever is acting at its table (or the
     // felt); a standing body looks at the nearest person within a few steps, the one talking first; yours looks
     // where the others do. Cheap — a dozen bodies, a dozen distances.
@@ -232,7 +247,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (me.current) all.push(me.current);
       for (const b of bodies.current.values()) all.push(b);
       for (const bt of bots.current.values()) all.push({ avatar: bt, name: '' });
-      for (const dl of dealers.current.values()) { dl.avatar.applyGaze(dt); }
+      for (const dl of dealers.current.values()) { dl.avatar.applyGaze(dt); dl.avatar.applyDeal(dt); }
       const acting = actingRef.current;
       for (const b of all) {
         const av = b.avatar;
@@ -247,7 +262,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     });
     a.start();
     app.current = a;
-    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; deck.current = null; felt.current = null; bodies.current.clear(); bots.current.clear(); dealers.current.clear(); flights.current = []; me.current = null; scenery.current = null; plateRef.current.clear(); };
+    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; deck.current = null; felt.current = null; bodies.current.clear(); bots.current.clear(); dealers.current.clear(); flights.current = []; chipFlights.current = []; chipRoot.current = null; me.current = null; scenery.current = null; plateRef.current.clear(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -405,6 +420,39 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     for (const [id, dl] of [...dealers.current]) if (!seenDealers.has(id)) { dl.avatar.destroy(); dl.deck.destroy(); dealers.current.delete(id); plateRef.current.delete(`dealer:${id}`); }
   }, [state.people, state.you, state.manifest]);
 
+  // ── CHIPS: each seat's street bet pushed toward the pot, and the pot pile — rebuilt when any bet changes ──
+  useEffect(() => {
+    const a = app.current; const ch = chips.current;
+    const manifest = state.manifest; const you = state.you ? state.people.get(state.you) : undefined;
+    const t = board && manifest ? manifest.tables.find((x) => x.tableId === board.tableId) : undefined; const an = t ? manifest!.anchors[t.anchor] : undefined;
+    if (!a || !ch || !board || !manifest || !you?.seatedAt || you.seatedAt.tableId !== board.tableId || !t || !an) { chipRoot.current?.destroy(); chipRoot.current = null; return; }
+    const v = board.view; const cx = an.x, cz = an.y;
+    const sig = JSON.stringify([v.hand?.handNo ?? -1, v.seats.map((s2) => [s2.seat, s2.stack, s2.inHand?.streetBet ?? 0]), v.hand?.pots.map((p) => p.amount) ?? []]);
+    if (sig === chipSig.current && chipRoot.current) return;
+    const fresh = new pc.Entity('chips-root'); a.root.addChild(fresh);
+    const H = 0.79;
+    // each seat's own stack sits just in front of its cards; its street bet is pushed a third of the way to the middle
+    for (const seat of v.seats) {
+      const ang = (seat.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
+      if (seat.stack > 0) ch.pile(seat.stack, cx + sx * 1.02, H, cz + sz * 1.02, fresh, 0.06);
+      const bet = seat.inHand?.streetBet ?? 0;
+      if (bet > 0) {
+        const bx = cx + sx * 0.6, bz = cz + sz * 0.6;
+        const { entity, top } = ch.pile(bet, bx, H, bz, fresh);
+        // NEW chips this street fly in from where the seat sits — "throwing out chips"
+        const was = pushed.current.get(seat.seat) ?? 0;
+        if (bet > was) { const from = new pc.Vec3(cx + sx * 1.02, H + 0.06, cz + sz * 1.02); chipFlights.current.push({ entity, from, to: entity.getLocalPosition().clone(), t: 0, delay: 0 }); entity.setLocalPosition(from); }
+        pushed.current.set(seat.seat, bet);
+        void top;
+      } else pushed.current.set(seat.seat, 0);
+    }
+    const pot = (v.hand?.pots.reduce((s2, p) => s2 + p.amount, 0) ?? 0);
+    if (pot > 0) ch.pile(pot, cx, H, cz - 0.28, fresh, 0.06);
+    // a new hand clears what was pushed
+    if (chipHand.current !== (v.hand?.handNo ?? -1)) { pushed.current.clear(); chipHand.current = v.hand?.handNo ?? -1; }
+    chipRoot.current?.destroy(); chipRoot.current = fresh; chipSig.current = sig;
+  }, [board, state.manifest, state.people, state.you]);
+
   // ── THE FELT: the seated table's cards, pot and turn, laid on its table from the view ──
   // The community cards run across the centre, turned to your chair; each seat's two cards lie on the felt in
   // front of it, turned to that seat, face down unless the view shows them (yours; a showdown). Cards are
@@ -442,21 +490,23 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (dealer && !dealt.current.ids.has(id)) {
         // it starts in the dealer's hand and arrives in order; the dealer reaches for the deck once per round of dealing
         const to = e.getPosition().clone(); e.setPosition(dealer.hand);
-        flights.current.push({ entity: e, from: dealer.hand.clone(), to, yawFrom: dealer.avatar.yaw, yawTo: yaw, t: 0, delay: n * 0.16 });
-        if (n === 0) dealer.avatar.gesture('pickUp');
+        const delay = n * 0.16;
+        flights.current.push({ entity: e, from: dealer.hand.clone(), to, yawFrom: dealer.avatar.yaw, yawTo: yaw, t: 0, delay });
+        // the dealing arm flicks as each card leaves — scheduled to match this card's delay
+        window.setTimeout(() => dealer.avatar.dealFlick(), delay * 1000);
         n++;
       }
       dealt.current.ids.add(id);
     };
     if (v.hand) {
-      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.24; lay(`board:${i}`, c, cx + rx * o, cz + rz * o, yourAng + Math.PI, i * 0.0005); });
+      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.31; lay(`board:${i}`, c, cx + rx * o, cz + rz * o, yourAng + Math.PI, i * 0.0005); });
     }
     for (const seat of v.seats) {
       if (!seat.inHand || seat.inHand.folded) continue;
       const ang = (seat.seat / t.seats) * Math.PI * 2; const sx = Math.sin(ang), sz = Math.cos(ang);
       const px = Math.cos(ang), pz = -Math.sin(ang); // across that seat's own line
       const cards = seat.inHand.holeCards ?? [null, null];
-      cards.forEach((c, i) => { const o = (i - 0.5) * 0.14; lay(`hole:${seat.seat}:${i}`, c, cx + sx * 1.3 + px * o, cz + sz * 1.3 + pz * o, ang + Math.PI, i * 0.0005); });
+      cards.forEach((c, i) => { const o = (i - 0.5) * 0.19; lay(`hole:${seat.seat}:${i}`, c, cx + sx * 1.3 + px * o, cz + sz * 1.3 + pz * o, ang + Math.PI, i * 0.0005); });
     }
   }, [board, state.manifest, state.people, state.you]);
 
