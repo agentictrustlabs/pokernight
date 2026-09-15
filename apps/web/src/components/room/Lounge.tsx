@@ -224,13 +224,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (m) m.avatar.talking(isSpeaking(m.name));
       // the others ease toward their last pose; mouths move for whoever the huddle hears
       for (const bt of bots.current.values()) bt.update(dt);
-      for (const dl of dealers.current.values()) {
-        dl.avatar.update(dt);
-        // the deck rides in the LEFT hand; the cards leave from the RIGHT (dealing) hand
-        const l = dl.avatar.bone('handL');
-        if (l) { const hp = l.getPosition(); dl.deck.setPosition(hp.x, hp.y + 0.03, hp.z); dl.deck.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
-        const r = dl.avatar.dealHand; if (r) dl.hand.copy(r);
-      }
+      for (const dl of dealers.current.values()) dl.avatar.update(dt);
       for (const b of bodies.current.values()) { b.avatar.talking(isSpeaking(b.name)); b.avatar.update(dt); }
       // cards in the air: an arc from the dealer's hand to the felt, a quarter second each, one after another
       for (const f of flights.current) {
@@ -284,7 +278,15 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (me.current) all.push(me.current);
       for (const b of bodies.current.values()) all.push(b);
       for (const bt of bots.current.values()) all.push({ avatar: bt, name: '' });
-      for (const dl of dealers.current.values()) { dl.avatar.applySeat(dt); dl.avatar.applyGaze(dt); dl.avatar.applyDeal(dt); }
+      for (const dl of dealers.current.values()) {
+        dl.avatar.applySeat(dt); dl.avatar.applyGaze(dt); dl.avatar.applyDeal(dt);
+        // THE DECK IS PLACED HERE, NOT IN `update`: `applySeat` drops the whole body by the height of a seat
+        // after the update loop has run, so a deck placed from the hand earlier is left floating exactly that
+        // far above it — a white slab hanging over the felt with nothing holding it.
+        const l = dl.avatar.bone('handL');
+        if (l) { const hp = l.getPosition(); dl.deck.setPosition(hp.x, hp.y + 0.03, hp.z); dl.deck.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0); }
+        const r = dl.avatar.dealHand; if (r) dl.hand.copy(r);
+      }
       const acting = actingRef.current;
       for (const b of all) {
         const av = b.avatar;
@@ -294,7 +296,10 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
           for (const o of all) { if (o === b) continue; const d = o.avatar.pos.distance(av.pos); const talks = o.name ? isSpeaking(o.name) : false; if (d < bd && (talks || !bestTalks)) { bd = d; best = o.avatar; bestTalks = talks; } }
           av.lookHead(best ? new pc.Vec3(best.pos.x, best.seated ? 1.1 : 1.55, best.pos.z) : null);
         }
-        av.applyGaze(dt);
+        // EVERY body gets the whole layer, not just its gaze: the seat pose, the dealing/pushing reach and the
+        // winner's cheer. These were the dealers' alone for a while — which is why a seated player's own reach
+        // and celebration never showed, while the dealer's did.
+        av.applySeat(dt); av.applyGaze(dt); av.applyDeal(dt); av.applyCheer(dt);
       }
     });
     a.start();
@@ -466,6 +471,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     if (!a || !ch || !board || !manifest || !you?.seatedAt || you.seatedAt.tableId !== board.tableId || !t || !an) { chipRoot.current?.destroy(); chipRoot.current = null; return; }
     const v = board.view; const cx = an.x, cz = an.y;
     if (chipHand.current !== (v.hand?.handNo ?? -1)) { pushed.current.clear(); chipHand.current = v.hand?.handNo ?? -1; }
+    let collected = false;
+    const rxOf = (p2: RoomPerson, tt: typeof t) => Math.cos((p2.seatedAt!.seat / tt.seats) * Math.PI * 2);
+    const rzOf = (p2: RoomPerson, tt: typeof t) => -Math.sin((p2.seatedAt!.seat / tt.seats) * Math.PI * 2);
     const sig = JSON.stringify([v.hand?.handNo ?? -1, v.seats.map((s2) => [s2.seat, s2.stack, s2.inHand?.streetBet ?? 0]), v.hand?.pots.map((p) => p.amount) ?? []]);
     if (sig === chipSig.current && chipRoot.current) return;
     const fresh = new pc.Entity('chips-root'); a.root.addChild(fresh);
@@ -489,10 +497,25 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         }
         pushed.current.set(seat.seat, bet);
         void top;
-      } else pushed.current.set(seat.seat, 0);
+      } else {
+        // THE STREET ENDED AND THE DEALER COLLECTS. A bet that was there last time and is gone now went into the
+        // pot, so it is flown from where it sat to the middle rather than simply vanishing — which is the part of
+        // a dealer's job that makes a pot look like it was built out of the bets.
+        const was = pushed.current.get(seat.seat) ?? 0;
+        if (was > 0) {
+          const bx = cx + sx * 0.72 + Math.cos(ang) * 0.34, bz = cz + sz * 0.72 - Math.sin(ang) * 0.34;
+          const { entity } = ch.pile(was, bx, H, bz, fresh);
+          const to = new pc.Vec3(cx + rxOf(you, t) * 1.05, H, cz + rzOf(you, t) * 1.05);
+          chipFlights.current.push({ entity, from: entity.getLocalPosition().clone(), to, t: 0, delay: 0.1 });
+          collected = true;
+        }
+        pushed.current.set(seat.seat, 0);
+      }
     }
     const pot = (v.hand?.pots.reduce((s2, p) => s2 + p.amount, 0) ?? 0);
     { const yourAng = (you.seatedAt.seat / t.seats) * Math.PI * 2; const rx = Math.cos(yourAng), rz = -Math.sin(yourAng); if (pot > 0) ch.pile(pot, cx + rx * 1.05, H, cz + rz * 1.05, fresh, 0.08); }
+    // the dealer reaches across for what they have just gathered in
+    if (collected) dealers.current.get(board.tableId)?.avatar.dealFlick();
     chipRoot.current?.destroy(); chipRoot.current = fresh; chipSig.current = sig;
   }, [board, state.manifest, state.people, state.you]);
 
@@ -519,6 +542,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const from = new pc.Vec3(cx, H + 0.04, cz - 0.2);
       chipFlights.current.push({ entity, from, to: entity.getLocalPosition().clone(), t: 0, delay: 0.25 });
       entity.setLocalPosition(from);
+      // the dealer pushes it across, as a dealer does
+      dealers.current.get(board.tableId)?.avatar.dealFlick();
       // the winner says so: a body that is in the room celebrates, a seat that is only an occupant does not
       const winner = board.view.seats.find((s2) => s2.seat === award.seat)?.playerId;
       const av = winner === state.you ? me.current?.avatar : winner ? bodies.current.get(winner)?.avatar : undefined;
@@ -571,14 +596,14 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     const dealer = dealers.current.get(board.tableId);
     let n = 0;
     // the community row is propped toward YOUR chair — this is your own felt; each seat sees its own
-    const tiltToward = (e: pc.Entity, ang: number) => { e.setLocalEulerAngles(-22, (ang + Math.PI) * 180 / Math.PI, 0); };
+    const tiltToward = (e: pc.Entity, ang: number) => { e.setLocalEulerAngles(-7, (ang + Math.PI) * 180 / Math.PI, 0); };
     const lay = (id: string, code: string | null, x: number, z: number, yaw: number, lift: number): pc.Entity => {
       const e = d.card(code, x, H, z, yaw, root, lift);
       if (dealer && !dealt.current.ids.has(id)) {
         // it starts in the dealer's hand and arrives in order; the dealer reaches for the deck once per round of dealing
         const to = e.getPosition().clone(); e.setPosition(dealer.hand);
         const delay = n * 0.16;
-        flights.current.push({ entity: e, from: dealer.hand.clone(), to, yawFrom: dealer.avatar.yaw, yawTo: yaw, t: 0, delay, tilt: id.startsWith('board:') ? -22 : 0 });
+        flights.current.push({ entity: e, from: dealer.hand.clone(), to, yawFrom: dealer.avatar.yaw, yawTo: yaw, t: 0, delay, tilt: id.startsWith('board:') ? -7 : 0 });
         // the dealing arm flicks as each card leaves — scheduled to match this card's delay
         window.setTimeout(() => dealer.avatar.dealFlick(), delay * 1000);
         n++;
@@ -587,7 +612,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       return e;
     };
     if (v.hand) {
-      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.36; const e = lay(`board:${i}`, c, cx + rx * o, cz + rz * o, yourAng + Math.PI, 0.03 + i * 0.0005); e.setLocalScale(0.063 * 5.2, 1, 0.088 * 5.2); tiltToward(e, yourAng); });
+      v.hand.board.forEach((c, i) => { const o = (i - 2) * 0.33; const e = lay(`board:${i}`, c, cx + rx * o, cz + rz * o, yourAng + Math.PI, 0.045 + i * 0.0005); e.setLocalScale(0.063 * 4.6, 1, 0.088 * 4.6); tiltToward(e, yourAng); });
     }
     for (const seat of v.seats) {
       if (!seat.inHand || seat.inHand.folded) continue;

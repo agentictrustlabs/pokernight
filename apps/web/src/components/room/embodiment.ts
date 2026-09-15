@@ -37,6 +37,7 @@ const BONES = {
   head: ['Head', 'mixamorig:Head', 'DEF-head', 'head'],
   armR: ['RightArm', 'mixamorig:RightArm', 'upperarm_r', 'DEF-upper_arm.R'],
   foreR: ['RightForeArm', 'mixamorig:RightForeArm', 'lowerarm_r', 'DEF-forearm.R'],
+  foreL: ['LeftForeArm', 'mixamorig:LeftForeArm', 'lowerarm_l', 'DEF-forearm.L'],
   armL: ['LeftArm', 'mixamorig:LeftArm', 'upperarm_l', 'DEF-upper_arm.L'],
   handR: ['RightHand', 'mixamorig:RightHand', 'hand_r', 'DEF-hand.R'],
   handL: ['LeftHand', 'mixamorig:LeftHand', 'hand_l', 'DEF-hand.L'],
@@ -60,12 +61,22 @@ const BONES = {
  */
 const SEAT_POSE: Array<[keyof typeof BONES, number]> = [
   ['thighL', 60], ['thighR', 60],   // thighs forward, knee just under hip height
-  ['shinL', -55], ['shinR', -55],   // shins down to the floor — MORE fold raises the foot, not lowers it
+  ['shinL', -40], ['shinR', -40],   // shins down to the floor — MORE fold raises the foot, not lowers it
   ['spine', 4],                      // a little forward over the table
-  ['armL', 28], ['armR', 28],        // arms down and forward, toward the felt
+  ['armL', 12], ['armR', 12],        // upper arms barely forward — this rig cannot rest hands ON the felt
+                                     // without the forearms folding through it (swept, seatsweep.cjs), so they
+                                     // hang naturally at the sides instead of clipping the table
+  ['foreL', 10], ['foreR', 10],
 ];
 /** How far the hips drop when the legs fold — the difference between standing and sitting on a 0.45 m seat. */
 let SEAT_DROP = 0.42;
+/**
+ * And how far the body SHIFTS BACK onto the chair. The room walks you to where your FEET go, a step in front of
+ * the seat; sitting puts the hips over the pad behind that, with the knees forward of them. Without this the
+ * geometry is right and the person is still sitting on air in front of their chair — which reads, exactly, as
+ * "standing in the chair".
+ */
+const SEAT_BACK = 0.30;
 // The pose is TUNED AGAINST MEASUREMENTS, not guessed: `scratch/seatsweep.cjs` sweeps these while reading the
 // hip, knee and foot heights back, because a thigh's rotation changes what the shin's own axis means and no
 // amount of reasoning from a standing body survives that.
@@ -328,19 +339,22 @@ export class ParticipantAvatar {
       const n = this.posed.get(key); if (!n) continue;
       n.setLocalRotation(n.getLocalRotation().clone().mul(new pc.Quat().setFromEulerAngles(deg * k, 0, 0)));
     }
-    const p = this.entity.getPosition();
-    this.entity.setPosition(p.x, -SEAT_DROP * k, p.z);
+    const p = this.entity.getPosition(); const back = SEAT_BACK * k;
+    this.entity.setPosition(p.x - Math.sin(this.yaw) * back, -SEAT_DROP * k, p.z - Math.cos(this.yaw) * back);
   }
-  /** The winner's arms, layered after the clip like the reach. Measured: −Y on an upper arm is the one that lifts. */
+  /**
+   * The winner's arms, layered after the clip like the reach. MEASURED (scratch `liftaxis.cjs`): −X raises BOTH
+   * upper arms, by about half a metre at 80° — the Y this first used moved a hand by a centimetre, which is to
+   * say the celebration was invisible.
+   */
   applyCheer(dt: number): void {
-    if (this.cheerPulse <= 0.001 || !this.upperArmR || !this.upperArmL) { this.cheerPulse = Math.max(0, this.cheerPulse - dt * 0.7); return; }
+    if (this.cheerPulse <= 0.001 || !this.upperArmR || !this.upperArmL) { this.cheerPulse = Math.max(0, this.cheerPulse - dt * 0.55); return; }
     const p = this.cheerPulse;
-    const lift = Math.sin(p * Math.PI) * (0.65 + 0.35 * Math.sin(p * Math.PI * 6)); // up, with two pumps in it
-    const r = new pc.Quat().setFromEulerAngles(0, -lift * 95, 0);
-    const l = new pc.Quat().setFromEulerAngles(0, lift * 95, 0);
-    this.upperArmR.setLocalRotation(this.upperArmR.getLocalRotation().clone().mul(r));
-    this.upperArmL.setLocalRotation(this.upperArmL.getLocalRotation().clone().mul(l));
-    this.cheerPulse = Math.max(0, this.cheerPulse - dt * 0.7);
+    const lift = Math.sin(p * Math.PI) * (0.7 + 0.3 * Math.sin(p * Math.PI * 6)); // up, with two pumps in it
+    const q = new pc.Quat().setFromEulerAngles(-lift * 105, 0, 0);
+    this.upperArmR.setLocalRotation(this.upperArmR.getLocalRotation().clone().mul(q));
+    this.upperArmL.setLocalRotation(this.upperArmL.getLocalRotation().clone().mul(q));
+    this.cheerPulse = Math.max(0, this.cheerPulse - dt * 0.55); // ~1.8 s of arms in the air
   }
   /** for the walk scripts: which state the graph is in */
   get debug(): Record<string, unknown> { const an = this.anim; return { dressed: !!this.body, state: an?.baseLayer?.activeState, playing: an?.playing, playable: an?.playable, speed: this.speed, seated: !!this.seat, talking: this.talk }; }
