@@ -154,7 +154,7 @@ function Hero({ live }: { live: LiveLobby }) {
         <h1 className="hero-title">
           Play together.
           <br />
-          Grow closer.
+          Gather and grow closer.
           <br />
           Meet the mission.
         </h1>
@@ -167,19 +167,19 @@ function Hero({ live }: { live: LiveLobby }) {
             `#missions` — anchors into sections further down this same page — so "Start a club" answered with
             more of the page you were already reading instead of a screen for starting a club. Each one is its
             own page now, and each of those pages stands on its own for somebody who arrives at it cold. */}
+        {/* ONE WAY IN, AND A LIST OF ERRANDS (2026-09-15). Four buttons of similar weight made arriving a
+            decision; almost everybody who lands here wants the same thing, so that is one button, and the rest
+            are a short directed list beside it — each going to a page that stands on its own. */}
         <div className="hero-actions">
-          <a className="cta" href={NEW_CLUB_HASH}>
-            Start a club
-          </a>
-          <a className="cta-welcome" href="#/signin">
+          <a className="cta-welcome cta-big" href="#/signin">
             Come play or hang out
           </a>
-          <a className="cta-quiet" href={MISSIONS_HASH}>
-            The missions
-          </a>
-          <a className="cta-quiet" href="#how">
-            How it works
-          </a>
+          <ul className="hero-links">
+            <li><a href="#/signup"><strong>First time? Sign up and play</strong><span>A name and one trip to your Home.</span></a></li>
+            <li><a href={NEW_CLUB_HASH}><strong>Start a club</strong><span>For the group you already meet with.</span></a></li>
+            <li><a href={MISSIONS_HASH}><strong>The missions</strong><span>Who comes as a guest, and from where.</span></a></li>
+            <li><a href="#how"><strong>How it works</strong><span>A night, end to end.</span></a></li>
+          </ul>
         </div>
         <div className="hero-live">
           {live.tables == null ? (

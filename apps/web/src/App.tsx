@@ -30,6 +30,7 @@ import { Brand } from './components/Brand';
 import { PRODUCT_MARK } from './lib/brand';
 import { MissionRegisterPage } from './pages/MissionRegisterPage';
 import { NewClubPage } from './pages/NewClubPage';
+import { SignUpPage } from './pages/SignUpPage';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
 import { NewBuild } from './components/NewBuild';
@@ -627,7 +628,13 @@ export function App() {
         <Landing auth={auth} onLogin={login} session={session} />
       ) : (
         <div className="page">
-          {r.page === 'signin' || !session ? <SignInPage auth={auth} onLogin={login} /> : <Room r={r} session={session} auth={auth} onLogin={login} moneyStamp={moneyStamp} />}
+          {r.page === 'signup' && !session ? (
+            <SignUpPage auth={auth} onLogin={login} />
+          ) : r.page === 'signin' || !session ? (
+            <SignInPage auth={auth} onLogin={login} />
+          ) : (
+            <Room r={r} session={session} auth={auth} onLogin={login} moneyStamp={moneyStamp} />
+          )}
         </div>
       )}
       {/* WANT A HOLD'EM COACH? The sheet existed from the day the question did (ca49c53) and was never

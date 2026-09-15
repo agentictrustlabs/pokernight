@@ -6549,3 +6549,22 @@ button.tag.guest {
 }
 .cta-welcome:hover { filter: brightness(1.06); text-decoration: none; }
 .signin-welcome { margin: 0 0 0.2rem; }
+
+/* THE HERO'S ONE CHOICE, and the errands beside it. The button is the size of the decision it represents; the
+   list is quiet, evenly weighted, and each row says where it goes rather than only naming it. */
+.hero-actions { display: flex; align-items: flex-start; gap: 2rem; flex-wrap: wrap; }
+.cta-big { font-size: 1.05rem; padding: 0.85rem 1.6rem; }
+.hero-links { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; min-width: 16rem; }
+.hero-links a {
+  display: grid; gap: 0.05rem; padding: 0.4rem 0.6rem; border-radius: var(--radius);
+  text-decoration: none; color: inherit; border-left: 2px solid transparent;
+}
+.hero-links a:hover { background: rgba(255, 255, 255, 0.07); border-left-color: #d9b26a; text-decoration: none; }
+.hero-links strong { font-size: 0.92rem; font-weight: 650; }
+.hero-links span { font-size: 0.78rem; opacity: 0.72; }
+/* Signing up is its own page: the three steps first, then the one form. */
+.signup-card { max-width: 32rem; }
+.signup-steps { margin: 0.4rem 0 1rem; padding-left: 1.1rem; display: grid; gap: 0.35rem; }
+.signup-steps li { font-size: 0.9rem; }
+.signup-back { margin-top: 0.8rem; }
+@media (max-width: 720px) { .hero-actions { gap: 1.2rem; } .hero-links { min-width: 0; } }

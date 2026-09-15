@@ -40,7 +40,7 @@ import { fmtAsset } from '../lib/money';
  * Every failure — the config not loading, a cancelled ceremony, a Home that will not mint — lands
  * here as a sentence and a way onward, never a blank screen.
  */
-export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: AppSession) => void }) {
+export function SignInPanel({ auth, onLogin, startSigningUp = false, showSwitch = true }: { auth: AuthState; onLogin: (s: AppSession) => void; startSigningUp?: boolean; showSwitch?: boolean }) {
   const { config, configError, busy, error } = auth;
   const homeHost = config?.home.origin ? safeHost(config.home.origin) : null;
   const personas = auth.personas;
@@ -52,7 +52,7 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
    * the name box waits behind "first time here".
    */
   const [returning] = useState(() => { try { return localStorage.getItem(EVER_KEY) === '1'; } catch { return false; } });
-  const [signingUp, setSigningUp] = useState(false);
+  const [signingUp, setSigningUp] = useState(startSigningUp);
 
   return (
     <div className="signin">
@@ -123,9 +123,11 @@ export function SignInPanel({ auth, onLogin }: { auth: AuthState; onLogin: (s: A
               Use a phone number, an email address or a social account at your Home{homeHost ? ` (${homeHost})` : ''}. No
               password to set, nothing to install.
             </p>
-            <button className="link-button" type="button" onClick={() => setSigningUp(!signingUp)} disabled={busy}>
-              {signingUp ? '← Been here before? Just come in' : 'First time here? Set your name up →'}
-            </button>
+            {showSwitch ? (
+              <button className="link-button" type="button" onClick={() => setSigningUp(!signingUp)} disabled={busy}>
+                {signingUp ? '← Been here before? Just come in' : 'First time here? Set your name up →'}
+              </button>
+            ) : null}
           </div>
 
           {personas.length > 0 ? <DemoUsers auth={auth} homeHost={homeHost} /> : null}

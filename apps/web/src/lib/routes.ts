@@ -51,6 +51,7 @@ export type Route =
    */
   | { page: 'about' }
   | { page: 'signin' }
+  | { page: 'signup' }
   /** `practice` asks the table page to set the table up rather than wait to be told. */
   | { page: 'table'; tableId: string; practice?: boolean }
   /**
@@ -122,6 +123,7 @@ export function route(hash: string): Route {
   if (join?.[1]) return { page: 'join', clubId: join[1].toLowerCase() };
   // `new` is checked BEFORE the id, and a club id is a UUID, so the two can never be confused.
   if (/^\/clubs\/new\/?$/.test(path)) return { page: 'newClub' };
+  if (/^\/signup\/?$/.test(path)) return { page: 'signup' };
   if (/^\/bar\/?$/.test(path)) return { page: 'bar' };
   if (/^\/fire\/?$/.test(path)) return { page: 'fire' };
   const clubBar = /^\/clubs\/([^/?#]+)\/bar\/?$/.exec(path);

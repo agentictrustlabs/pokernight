@@ -291,6 +291,13 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   socket on the way, so removing them at once made everybody watch them VANISH and reappear seconds later. The
   body lingers; a reconnect inside the grace cancels the removal and is seamless. The room page also POSES INTO
   THE CHAIR BEFORE IT NAVIGATES, and the seat's page poses the moment the manifest lands rather than on a timer.
+- **THE FRONT DOOR IS ONE CHOICE AND A LIST OF ERRANDS** (2026-09-15): "Come play or hang out" is the button,
+  and beside it a quiet, evenly-weighted list — sign up, start a club, the missions, how it works — each row
+  saying where it goes and each going to a PAGE that stands on its own. Four buttons of similar weight had made
+  arriving a decision, when almost everybody who lands here wants the same thing.
+- **SIGNING UP IS ITS OWN PAGE** (`#/signup`, `pages/SignUpPage.tsx`): three lines of what happens, the name,
+  and the same one trip to the Home. `SignInPanel` takes `startSigningUp` / `showSwitch` so the page opens
+  straight into its sign-up half without the door-swapping link.
 - **SIGNING UP AND COMING BACK ARE TWO DOORS** (2026-09-15, `SignInPanel`): "what should we call you" belongs to
   sign-up and waits behind "first time here"; a returning player gets one press. Whether this browser has ever
   held a session (`pokernight.ever`) is the only honest thing the page can know before anybody signs in, and a
