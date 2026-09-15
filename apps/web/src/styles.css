@@ -6521,3 +6521,16 @@ button.tag.guest {
 @media (max-width: 720px) { .topbar-secondary { display: none; } }
 .signin-consent > summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-soft); }
 .signin-consent > summary:hover { color: var(--ink); }
+
+/* THE BAR — the room's congregation area. Warmer than the felt pages: this is the half of the night that is
+   people rather than cards. */
+.bar-head { border-bottom: 1px solid var(--rule); }
+.bar-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem; }
+.bar-guest h2 { margin: 0.2rem 0 0.4rem; }
+.bar-rep { margin: 0.2rem 0; }
+.bar-note { margin: 0.4rem 0; padding-left: 0.8rem; border-left: 3px solid var(--rule); color: var(--ink-soft); }
+.bar-missions { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+/* The club's roster: who runs it, and who is actually about. */
+.tag-host { background: color-mix(in srgb, var(--brand, #7a5c1e) 18%, var(--surface)); color: var(--ink); font-weight: 600; }
+.tag-here { background: color-mix(in srgb, var(--live-on) 18%, var(--surface)); color: color-mix(in srgb, var(--live-on) 70%, var(--ink)); }
+.table-which { margin-left: 0.4rem; font-size: 0.72rem; color: var(--ink-soft); }

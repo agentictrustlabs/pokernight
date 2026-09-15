@@ -121,10 +121,15 @@ export function TableList({
                 // Whether this client can draw the table it is about to offer a seat at.
                 const drawable = hasBoard(t.game);
                 const room = seatsFree(t) > 0;
+                // TWO TABLES WITH THE SAME NAME are two rows nobody can tell apart — and a night's tables are
+                // all named for the night, so this is the normal case rather than a corner one. Where a name
+                // repeats, the table's own short id goes beside it; where it does not, nothing is added.
+                const sameName = tables.filter((x) => x.name === t.name).length > 1;
                 return (
                   <tr key={t.tableId}>
                     <td>
                       <a href={`#/t/${encodeURIComponent(t.tableId)}`}>{t.name}</a>
+                      {sameName ? <span className="table-which mono" title={t.tableId}>#{t.tableId.slice(0, 4)}</span> : null}
                       {t.mission ? <span className="table-guest">♦ {t.mission.name}</span> : null}
                     </td>
                     <td className="mono">{stakeLabel(t)}</td>
@@ -161,9 +166,22 @@ export function TableList({
                               await api.closeTable(t.tableId, session.token, t.club);
                               onChanged?.();
                             } catch (e) {
-                              // The room refuses a SEATED table by name, and that sentence is the
-                              // useful one — somebody has to stand up before this can happen.
-                              setCloseErr(e instanceof ApiError ? e.message : `${t.name} could not be closed.`);
+                              // A SEATED TABLE IS REFUSED, and until now that was the end of it: the host was
+                              // told to stand them up first with no way to do it, which pins a table open for
+                              // good once somebody walks away from a seat. Offer it, say exactly what it does.
+                              const msg = e instanceof ApiError ? e.message : `${t.name} could not be closed.`;
+                              const seated = /still has \d+ player/.test(msg);
+                              if (seated && window.confirm(`${msg}\n\nStand everybody up and close it? Their chips are cashed out the ordinary way — the same path their own "leave" takes.`)) {
+                                try {
+                                  const detail = await api.getTable(t.tableId, session.token);
+                                  const seats = (detail.view?.seats ?? []) as Array<{ seat: number }>;
+                                  for (const st of seats) await api.clearSeat(t.tableId, st.seat, session.token).catch(() => undefined);
+                                  await api.closeTable(t.tableId, session.token, t.club);
+                                  onChanged?.();
+                                } catch (e2) {
+                                  setCloseErr(e2 instanceof ApiError ? e2.message : `${t.name} could not be closed.`);
+                                }
+                              } else setCloseErr(msg);
                             } finally {
                               setClosing(null);
                             }

@@ -335,7 +335,9 @@ export function TablePage({
             </button>
           ) : null}
           {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}
-          {club ? <HuddleAffordance scope={clubScope_} scopeName={club.name} compact /> : null}
+          {/* SITTING IS THE TICKET: the call belongs to the people at this table, so a spectator watching it
+              does not get one. Stand up and it goes; sit down and it is there. */}
+          {club && mySeat != null ? <HuddleAffordance scope={clubScope_} scopeName={`${club.name} · this table`} compact /> : null}
           {/* The settlement mode travels with the table's NAME, so it is on screen from the moment
               the page opens and before anyone can reach a seat. */}
           <SettlementTag settlement={settlement} rate={tableRate(settlement, chipValue, assetSymbol)} withRate />

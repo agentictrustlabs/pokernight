@@ -304,6 +304,18 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   giving the seat up there returns to the room it was taken from — WHICH room is remembered in `sessionStorage`,
   because the board has no idea where you were standing and the hall and each club's lounge are different
   places. The table's leave button reads "Stand up" when there is a room to go back to.
+- **THREE PLACES YOU SIT: A TABLE, THE FIRESIDE, THE BAR** (2026-09-15, `pages/FiresidePage.tsx`). A table is
+  where a hand is played. THE FIRESIDE is where the night's GUEST is met — six chairs on an arc facing a hearth
+  that actually burns, and the mission's own representative hosts the call there. THE BAR is a place to talk
+  with no guest. All three are taken the same way (walk up, the chair lights, sit) and all three open a 2D page;
+  `BAR` / `FIRE` are the pseudo-table ids the room uses to tell them from a real seat.
+- **A HUDDLE BELONGS TO A SEAT, NOT TO A CLUB OR A ROOM** (2026-09-15): a call is offered at a table you are
+  SITTING at (`mySeat != null`), at the fireside and at the bar — never on the club page or in the room, where
+  nobody is sitting and anybody may be. A spectator at a table gets no call.
+- **A HOST MAY CLEAR A TABLE** (`mayManageTable` in `apps/tables/src/index.ts`): whoever opened a table or a host
+  of its club may stand somebody up at it, not only an operator. Telling a host to "stand them up first" while
+  giving them no way to do it pinned a table open for good once anybody walked away from a seat. A stranger's
+  session is refused 403 (authenticated, not permitted); no session at all is still the operator gate's 401.
 - **THE ROOM IS A PLACE; A TABLE IS A THING IN IT** (2026-09-14, `docs/SPATIAL-ROOM.md`). `SceneDO` (one per room:
   `hall`, `club:<id>`; migration v6) holds presence — who stands where, in which zone — and NOTHING about cards; the
   Worker admits by the club's standing and lays the lobby's poker tables on the lounge's anchors on every entry.

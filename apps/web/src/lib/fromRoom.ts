@@ -13,6 +13,7 @@
  * "where I was standing".
  */
 const KEY = 'pokernight.room.from';
+const SEAT_KEY = 'pokernight.room.seat';
 
 /** Remember the room a seat was taken from, so leaving the seat can go back to it. */
 export function cameFromRoom(roomHash: string): void {
@@ -27,4 +28,23 @@ export function roomToReturnTo(): string | null {
 /** Standing up has happened (or the seat was taken some other way): forget the room. */
 export function forgetRoom(): void {
   try { sessionStorage.removeItem(KEY); } catch { /* nothing to forget */ }
+}
+
+/**
+ * WHICH CHAIR, so standing up puts you back beside it.
+ *
+ * Standing up used to drop a person wherever presence happened to have them — which, after a trip out to the
+ * flat board and back, is the middle of the room or the door. You stood up from a chair; you should be next to
+ * that chair, facing the table you were just at.
+ */
+export function rememberSeat(tableId: string, seat: number): void {
+  try { sessionStorage.setItem(SEAT_KEY, JSON.stringify({ tableId, seat })); } catch { /* the body just stands where it is */ }
+}
+export function takeSeatPlace(): { tableId: string; seat: number } | null {
+  try {
+    const raw = sessionStorage.getItem(SEAT_KEY); if (!raw) return null;
+    sessionStorage.removeItem(SEAT_KEY);
+    const v = JSON.parse(raw) as { tableId?: unknown; seat?: unknown };
+    return typeof v.tableId === 'string' && typeof v.seat === 'number' ? { tableId: v.tableId, seat: v.seat } : null;
+  } catch { return null; }
 }

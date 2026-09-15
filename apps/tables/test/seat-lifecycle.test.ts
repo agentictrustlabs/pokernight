@@ -268,14 +268,27 @@ describe('DELETE /tables/:id/seat/:seat — the operator clear', () => {
     expect(wrong.error).not.toContain(OPERATOR_TOKEN);
   });
 
-  /** A player SESSION is not operator authority, however valid it is. There is no admin role. */
-  it('is not reachable with an ordinary player session', async () => {
+  /**
+   * A player SESSION IS NOT OPERATOR AUTHORITY, and it is not the table's owner either — but since 2026-09-15
+   * whoever OPENED a table, or a HOST of its club, may stand somebody up at it (the same people who may close
+   * it: telling a host to "stand them up first" while giving them no way to is a dead end that pins a table
+   * open for good). So a stranger's session is refused 403 — authenticated, not permitted — rather than 401.
+   */
+  it('is refused to a session that neither opened the table nor hosts its club', async () => {
     const table = await createTableViaHttp('sessions are not operators', {});
     const s = await devSession('Not An Operator');
     const res = await SELF.fetch(`http://tables.test/tables/${table.tableId}/seat/0`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${s.token}` },
     });
+    expect(res.status).toBe(403);
+    expect((await res.json() as { error: string }).error).toMatch(/opened this table|hosts its club|can do that/);
+  });
+
+  /** No session at all is still the operator gate's answer, and it still says nothing about the token. */
+  it('is not reachable with no session and no operator token', async () => {
+    const table = await createTableViaHttp('no session no token', {});
+    const res = await SELF.fetch(`http://tables.test/tables/${table.tableId}/seat/0`, { method: 'DELETE' });
     expect(res.status).toBe(401);
     expect((await res.json() as { refused: string }).refused).toBe('operator');
   });

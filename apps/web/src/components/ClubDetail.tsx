@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppSession, ClubView, KnownPerson, Night } from '../lib/types';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, roomApi } from '../lib/api';
 import { CHARTER_BLURB, canInvite, confirmsRetire, retireConsequences, standingLabel } from '../lib/clubs';
 import { NameCheck, useNameCheck } from './NameCheck';
 import { startClubCharter, startMembershipInvite, type AuthConfig } from '../lib/home';
@@ -42,6 +42,37 @@ export function People({ view, session, config, onChanged }: { view: ClubView; s
    */
   const [err, setErr] = useState<string | null>(null);
   void onChanged;
+  /**
+   * WHO IS ACTUALLY IN THE ROOM, beside their name. A roster says who belongs; it says nothing about who is
+   * here right now, which is the thing you want to know before you walk in. The club's own room answers it.
+   */
+  const [present, setPresent] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let alive = true;
+    // BOTH ROOMS, because a member is in one or the other and "somewhere else" is the answer that confuses.
+    const read = async () => {
+      const where = new Map<string, string>();
+      const look = async (roomId: string, label: string) => {
+        try {
+          const r = await roomApi.room(roomId, session.token);
+          const manifest = r.manifest as { tables?: Array<{ tableId: string; name: string }> } | undefined;
+          for (const p of (r.people ?? []) as Array<{ playerId?: string; seatedAt?: { tableId: string }; zone?: string | null }>) {
+            const who = String(p.playerId ?? '').replace(/^home:/, '').toLowerCase();
+            const named = (id?: string | null) => (id ? manifest?.tables?.find((t) => t.tableId === id)?.name ?? null : null);
+            const seated = named(p.seatedAt?.tableId);
+            const standing = p.zone === 'bar' ? 'at the bar' : p.zone === 'fire' ? 'by the fire' : p.zone === 'lectern' ? 'at the lectern' : named(p.zone) ? `by ${named(p.zone)}` : null;
+            where.set(who, seated ? `sitting at ${seated}` : standing ?? label);
+          }
+        } catch { /* a room that cannot be read simply reports nobody */ }
+      };
+      await look(`club:${view.clubId}`, 'in the club’s room');
+      await look('hall', 'in the hall');
+      if (alive) setPresent(where);
+    };
+    void read();
+    const t = setInterval(read, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, [view.clubId, session.token]);
   return (
     <section className="panel club-detail">
       <h2>{view.roster.length === 1 ? 'One member' : `${view.roster.length} members`}</h2>
@@ -50,7 +81,8 @@ export function People({ view, session, config, onChanged }: { view: ClubView; s
         {view.roster.map((m) => (
           <li key={m.agent}>
             <span className="cr-name">{m.name}</span>
-            {m.host ? <span className="tag">host</span> : null}
+            {m.host ? <span className="tag tag-host">host · club admin</span> : null}
+            {present.get(m.agent.toLowerCase()) ? <span className="tag tag-here">● {present.get(m.agent.toLowerCase())}</span> : null}
           </li>
         ))}
       </ul>

@@ -3,18 +3,19 @@ import type { AppSession } from '../lib/types';
 import { RoomSocket } from '../lib/roomSocket';
 import { api as tables, roomApi as api, tableSocketUrl } from '../lib/api';
 import { leaveSeat, takeSeat } from '../lib/roomSeat';
-import { cameFromRoom, forgetRoom } from '../lib/fromRoom';
+import { cameFromRoom, forgetRoom, rememberSeat, takeSeatPlace } from '../lib/fromRoom';
 import { TableSocket, initialState, reduce, setConnection, type TableState } from '../lib/tableSocket';
 import { ActionBar } from '../components/ActionBar';
 import { Card } from '../components/Card';
 import { DRAWN_GAME } from '../lib/games';
 import type { Action } from '../lib/types';
 import type { LoungeHandle } from '../components/room/Lounge';
+import { BAR, FIRE } from '../components/room/Lounge';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { useClubHuddle } from '../components/huddle/ClubHuddleProvider';
 import { clubScope } from '../lib/huddle';
 import { SpatialVoice } from '../components/room/SpatialVoice';
-import { clubHash, HOME_HASH, roomHash } from '../lib/routes';
+import { barHash, clubHash, fireHash, HOME_HASH, roomHash } from '../lib/routes';
 
 /** The scene is a separate chunk — three.js never loads for a page that has no room (the Leaflet rule). */
 /** Can this browser draw the room? Asked of a throwaway canvas whose context is released at once. */
@@ -22,6 +23,8 @@ function hasWebGL(): boolean {
   if (typeof document === 'undefined') return false;
   try { const c = document.createElement('canvas'); const gl = (c.getContext('webgl2') || c.getContext('webgl')) as WebGLRenderingContext | null; if (!gl) return false; gl.getExtension('WEBGL_lose_context')?.loseContext(); return true; } catch { return false; }
 }
+/** How long after standing up the room will not send you back to the table presence still thinks you are at. */
+const STAND_GRACE_MS = 15_000;
 /** The stack a play-money seat is taken with from the room — the practice table's, for the same reason. */
 const ROOM_STACK = 200;
 const Lounge = lazy(() => import('../components/room/Lounge').then((m) => ({ default: m.Lounge })));
@@ -90,6 +93,10 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
    */
   const onSitRequest = useCallback(async (tableId: string, seat: number) => {
     setSitError(null);
+    // A STOOL AT THE BAR is a seat too, but nothing is dealt there: it opens the guest's half of the night.
+    if (tableId === BAR) { setSitting({ tableId, seat, phase: 'sitting' }); location.hash = barHash(clubId); return; }
+    // A CHAIR BY THE FIRE opens the guest's half of the night, where the mission's own representative hosts.
+    if (tableId === FIRE) { setSitting({ tableId, seat, phase: 'sitting' }); location.hash = fireHash(clubId); return; }
     try {
       const t = await tables.getTable(tableId, session.token);
       if (t.settlement !== 'play-money') { location.hash = `#/t/${encodeURIComponent(tableId)}`; return; }
@@ -102,14 +109,43 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
       await api.room(roomId, session.token).catch(() => undefined);
       // SAT DOWN: the hand is played on the flat board, which is where cards are readable and the coach lives.
       // Standing up there comes back to this room (lib/fromRoom.ts).
-      cameFromRoom(roomHash(clubId));
+      cameFromRoom(roomHash(clubId)); rememberSeat(tableId, seat);
       location.hash = `#/t/${encodeURIComponent(tableId)}`;
     } catch (e) { setSitError(e instanceof Error ? e.message : String(e)); } finally { setSitting(null); }
   }, [roomId, session.token]);
+  /**
+   * ALREADY IN A CHAIR WHEN YOU WALK IN? Then you are AT THE TABLE, and the table is the flat board.
+   *
+   * Sitting is one state, not two: a person who refreshed, followed a link, or came back to the room while the
+   * hand they are in is still running should land on their cards, not on a 3D view of the back of their own
+   * head. The guard is the one that matters — standing up clears the seat, but presence takes a moment to catch
+   * up, and without it the room would send you straight back to the table you had just left.
+   */
+  const stoodAt = useRef(0);
+  useEffect(() => {
+    if (!seatedTableId || sitting) return;
+    if (Date.now() - stoodAt.current < STAND_GRACE_MS) return;
+    cameFromRoom(roomHash(clubId));
+    const st = sock.current?.state;
+    const me2 = st?.you ? st.people.get(st.you) : undefined;
+    if (me2?.seatedAt) rememberSeat(me2.seatedAt.tableId, me2.seatedAt.seat);
+    location.hash = `#/t/${encodeURIComponent(seatedTableId)}`;
+  }, [seatedTableId, sitting, clubId]);
+
+  /** Back from the board having stood up: put the body beside the chair it left, not wherever presence had it. */
+  const manifestReady = !!sock.current?.state.manifest;
+  useEffect(() => {
+    if (!manifestReady || seatedTableId) return;
+    const place = takeSeatPlace();
+    if (place) { stoodAt.current = Date.now(); lounge.current?.standBeside(place.tableId, place.seat); }
+  }, [manifestReady, seatedTableId]);
+
   const walkToSeat = (tableId: string, seat: number) => { setSitError(null); if (lounge.current?.walkToSeat(tableId, seat)) setSitting({ tableId, seat, phase: 'walking' }); };
   const standUp = async (tableId: string) => {
-    setSitError(null); setSitting({ tableId, seat: -1, phase: 'standing' });
-    try { const r = await leaveSeat(tableSocketUrl(tableId, session.token)); if (!r.ok) setSitError(r.reason); forgetRoom(); await api.room(roomId, session.token).catch(() => undefined); } finally { setSitting(null); }
+    setSitError(null); stoodAt.current = Date.now(); setSitting({ tableId, seat: -1, phase: 'standing' });
+    const st0 = sock.current?.state; const seatNow = (() => { const m2 = st0?.you ? st0.people.get(st0.you) : undefined; return m2?.seatedAt?.seat ?? null; })();
+    try { const r = await leaveSeat(tableSocketUrl(tableId, session.token)); if (!r.ok) setSitError(r.reason); forgetRoom();
+      if (seatNow != null) lounge.current?.standBeside(tableId, seatNow); await api.room(roomId, session.token).catch(() => undefined); } finally { setSitting(null); }
   };
   const s = sock.current;
   // VOICE IN A CLUB'S LOUNGE: the club's huddle is the room's meeting; while you are in it here, every voice
@@ -139,7 +175,7 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
           <h1>{seatedTable ? `Seated at ${seatedTable.name}` : zone ? (table ? `At ${table.name}` : zone === 'bar' ? 'At the bar' : zone === 'fire' ? 'By the fire' : zone === 'lectern' ? 'At the lectern' : 'In the room') : 'In the room'}{sittingOut ? <span className="room-out-tag"> · sitting out</span> : null}</h1>
         </div>
         <div className="room-meta">
-          {scope ? <HuddleAffordance scope={scope} scopeName={manifest?.name ?? 'the club'} compact /> : null}
+          {/* Nor at room level: walk to a table or the bar and sit down, and the call is there. */}
           <span className={`conn ${s?.state.connection ?? 'connecting'}`}>{s?.state.connection ?? 'connecting'}</span>
           <span className="hint">{people.length === 1 ? 'You are the only one here' : `${people.length} here`}</span>
           <a className="small" href={clubId ? clubHash(clubId) : HOME_HASH}>Leave the room</a>

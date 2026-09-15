@@ -10,7 +10,7 @@ import { describeMoment, fmtSeats, pickFeaturedTable, stakeLabel, summarizeLobby
 import { SignInPanel } from '../components/SignInPanel';
 import { brandLine } from '../lib/brand';
 import { hasBoard } from '../lib/games';
-import { HOME_HASH } from '../lib/routes';
+import { HOME_HASH, MISSIONS_HASH, NEW_CLUB_HASH } from '../lib/routes';
 
 const POLL_MS = 15000;
 
@@ -163,19 +163,18 @@ function Hero({ live }: { live: LiveLobby }) {
           Their people join the conversation, share their work and answer questions. Getting to know them is the point. Giving is a separate
           choice, and never a condition of playing.
         </p>
-        {/* TWO DOORS, because two different people arrive here. A host comes to set a night up; far
-            more often somebody comes to play cards and has never heard of a club. The second door used
-            to be missing entirely, and the only call to action was the one that asks you to organise
-            something. Both lead to sign-in — and sign-in lands on Play, so the second one is a promise
-            that is actually kept. */}
+        {/* EVERY DOOR IS A PLACE, not a scroll position (2026-09-15). These used to be `#signin` and
+            `#missions` — anchors into sections further down this same page — so "Start a club" answered with
+            more of the page you were already reading instead of a screen for starting a club. Each one is its
+            own page now, and each of those pages stands on its own for somebody who arrives at it cold. */}
         <div className="hero-actions">
-          <a className="cta" href="#signin">
+          <a className="cta" href={NEW_CLUB_HASH}>
             Start a club
           </a>
-          <a className="cta-quiet" href="#signin">
+          <a className="cta-quiet" href="#/signin">
             Or just play a hand
           </a>
-          <a className="cta-quiet" href="#missions">
+          <a className="cta-quiet" href={MISSIONS_HASH}>
             The missions
           </a>
           <a className="cta-quiet" href="#how">

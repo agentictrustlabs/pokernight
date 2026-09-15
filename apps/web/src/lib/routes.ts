@@ -36,6 +36,8 @@ export type Route =
   | { page: 'newTable'; clubId?: string; night?: string }
   /** THE ROOM (docs/SPATIAL-ROOM.md): a club's lounge, or the hall. */
   | { page: 'room'; clubId?: string }
+  | { page: 'bar'; clubId?: string }
+  | { page: 'fire'; clubId?: string }
   | { page: 'missions' }
   | { page: 'newMission' }
   | { page: 'mission'; entryId: string }
@@ -83,6 +85,15 @@ export function newTableHash(clubId?: string | null, night?: string | null): str
 }
 
 /** The room: a club's lounge, or the pickup hall. */
+/** THE FIRESIDE of a room, where the night's guest is met. */
+export function fireHash(clubId?: string | null): string {
+  return clubId ? `#/clubs/${encodeURIComponent(clubId)}/fire` : '#/fire';
+}
+/** THE BAR of a room — a place to talk, with no guest. */
+export function barHash(clubId?: string | null): string {
+  return clubId ? `#/clubs/${encodeURIComponent(clubId)}/bar` : '#/bar';
+}
+
 export function roomHash(clubId?: string | null): string {
   return clubId ? `#/clubs/${encodeURIComponent(clubId)}/room` : '#/hall';
 }
@@ -111,6 +122,12 @@ export function route(hash: string): Route {
   if (join?.[1]) return { page: 'join', clubId: join[1].toLowerCase() };
   // `new` is checked BEFORE the id, and a club id is a UUID, so the two can never be confused.
   if (/^\/clubs\/new\/?$/.test(path)) return { page: 'newClub' };
+  if (/^\/bar\/?$/.test(path)) return { page: 'bar' };
+  if (/^\/fire\/?$/.test(path)) return { page: 'fire' };
+  const clubBar = /^\/clubs\/([^/?#]+)\/bar\/?$/.exec(path);
+  if (clubBar) return { page: 'bar', clubId: decodeURIComponent(clubBar[1]!) };
+  const clubFire = /^\/clubs\/([^/?#]+)\/fire\/?$/.exec(path);
+  if (clubFire) return { page: 'fire', clubId: decodeURIComponent(clubFire[1]!) };
   const clubRoom = /^\/clubs\/([^/?#]+)\/room\/?$/.exec(path);
   if (clubRoom?.[1]) return { page: 'room', clubId: decodeURIComponent(clubRoom[1]) };
   if (/^\/hall\/?$/.test(path)) return { page: 'room' };

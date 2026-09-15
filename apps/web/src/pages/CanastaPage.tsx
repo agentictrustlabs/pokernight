@@ -345,7 +345,7 @@ export function CanastaPage({
             </button>
           ) : null}
           {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}
-          {club ? <HuddleAffordance scope={clubScope_} scopeName={club.name} compact /> : null}
+          {club && mySeat != null ? <HuddleAffordance scope={clubScope_} scopeName={`${club.name} · this table`} compact /> : null}
 
           {state.view ? <span className="num">round #{state.view.roundNo}</span> : null}
         </span>

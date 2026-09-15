@@ -28,6 +28,14 @@ const ROOM_DIR = '/room';
 const KIT_URL = '/room/lounge-kit.glb';
 const CHAIR_R = 1.78; // where a seated body's feet go, from the table's centre — knees under the rail, as at a real table
 const HOLE_R = 1.05; // a seat's own cards, from the centre — far enough in that a big card never laps the rail
+/** The table id the room uses to mean "a stool at the bar" rather than a seat at a table. */
+export const BAR = 'bar';
+/** …and "a chair by the fire", where the guest is met. */
+export const FIRE = 'fire';
+const FIRE_SEATS = 6;
+const FIRE_R = 2.6; // how far the ring of chairs sits from the hearth
+const SEAT_PICK_PX = 110; // how near the POINTER must be, on screen, for a seat to be the one you mean
+const CHAIR_PICK = 1.5; // how near a click or the pointer must be to a chair to mean that chair
 const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
 const deckSide = new pc.StandardMaterial();
@@ -50,6 +58,8 @@ export interface LoungeProps {
 export interface LoungeHandle {
   /** Walk to this chair; `onSitRequest` fires on arrival. */
   walkToSeat: (tableId: string, seat: number) => boolean;
+  /** Stand the body beside this chair, facing the table — where somebody who just stood up should be. */
+  standBeside: (tableId: string, seat: number) => boolean;
 }
 
 interface BodyHandle { avatar: ParticipantAvatar; name: string }
@@ -102,6 +112,12 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const chairs = useRef<Array<{ tableId: string; seat: number; at: pc.Vec3; yaw: number; taken: boolean }>>([]);
   /** every chair's own entity, so the one somebody is walking to can change colour */
   const chairEntities = useRef(new Map<string, pc.Entity>());
+  /** The bar's stools — seats too, but they lead to the guest rather than to a hand. */
+  const barStoolEntities = useRef(new Map<string, pc.Entity>());
+  const barSeats = useRef<Array<{ key: string; at: pc.Vec3; yaw: number }>>([]);
+  /** The fireside's chairs — where the night's guest is met. */
+  const fireChairEntities = useRef(new Map<string, pc.Entity>());
+  const fireSeats = useRef<Array<{ key: string; at: pc.Vec3; yaw: number }>>([]);
   /** the chair currently lit, and the materials it had before */
   const litChair = useRef<{ key: string; restore: Array<[pc.MeshInstance, pc.Material]> } | null>(null);
   /** House bots in chairs — bodies for occupants no person in the room owns. */
@@ -155,12 +171,97 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     // walking, clicking, the follow camera — every frame
     a.keyboard!.on(pc.EVENT_KEYDOWN, (e: pc.KeyboardEvent) => { const k = keyOf(e.key ?? -1); if (k) { keys.current.add(k); if (me.current) me.current.goal = null; e.event?.preventDefault(); } });
     a.keyboard!.on(pc.EVENT_KEYUP, (e: pc.KeyboardEvent) => { const k = keyOf(e.key ?? -1); if (k) keys.current.delete(k); });
+    /**
+     * THE ORBIT DRAG IS A CAPTURED POINTER, not a stream of mouse events.
+     *
+     * Right-dragging past the edge of the canvas used to let go of the drag and hand the browser its own
+     * context menu, in the middle of looking around. Capturing the pointer keeps every move and the release
+     * with the canvas wherever the cursor goes, and the menu is suppressed at the WINDOW while a drag is live —
+     * suppressing it on the canvas alone never sees the press that happened outside it.
+     */
+    const noMenu = (e: Event) => { if (camCtl.current.dragging) e.preventDefault(); };
     c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('wheel', (e) => { e.preventDefault(); const k = camCtl.current; k.zoom = Math.max(0.45, Math.min(2.4, k.zoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); }, { passive: false });
-    a.mouse!.on(pc.EVENT_MOUSEUP, () => { camCtl.current.dragging = false; });
-    a.mouse!.on(pc.EVENT_MOUSEMOVE, (e: pc.MouseEvent) => { const k = camCtl.current; if (!k.dragging) return; k.yaw -= e.dx * 0.006; k.pitch = Math.max(-0.5, Math.min(0.6, k.pitch + e.dy * 0.004)); });
+    window.addEventListener('contextmenu', noMenu);
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 2 && e.button !== 1) return;
+      e.preventDefault();
+      camCtl.current.dragging = true;
+      try { c.setPointerCapture(e.pointerId); } catch { /* the window listener still holds the menu off */ }
+    };
+    const onMove = (e: PointerEvent) => {
+      const k = camCtl.current;
+      // SELF-HEALING: a drag that ended outside the window never sends a pointerup, so the flag stuck true and
+      // every hover after it was swallowed — "at some point I cannot hover over seats any more". No buttons
+      // held means no drag, whatever we last believed.
+      if (k.dragging && e.buttons === 0) { k.dragging = false; return; }
+      if (!k.dragging) return;
+      k.yaw -= e.movementX * 0.006;
+      k.pitch = Math.max(-0.22, Math.min(0.6, k.pitch + e.movementY * 0.004));
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!camCtl.current.dragging) return;
+      camCtl.current.dragging = false;
+      try { c.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+    };
+    const dropDrag = () => { camCtl.current.dragging = false; };
+    window.addEventListener('blur', dropDrag);
+    c.addEventListener('pointerleave', (e) => { if ((e as PointerEvent).buttons === 0) dropDrag(); });
+    c.addEventListener('pointerdown', onDown);
+    c.addEventListener('pointermove', onMove);
+    c.addEventListener('pointerup', onUp);
+    c.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointerup', onUp);
+    // ZOOM AND TILT ARE BOUNDED. Wound all the way in and down, the camera ended up inside the body at floor
+    // level: you could not see the room, could not tell where you were pointing, and could not walk anywhere.
+    c.addEventListener('wheel', (e) => { e.preventDefault(); const k = camCtl.current; k.zoom = Math.max(0.7, Math.min(2.2, k.zoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); }, { passive: false });
+    a.mouse!.on(pc.EVENT_MOUSEMOVE, (e: pc.MouseEvent) => {
+      if (camCtl.current.dragging) return;
+      // THE CHAIR UNDER THE POINTER LIGHTS UP, so picking one is aiming at a thing rather than guessing at a spot.
+      if (!me.current || me.current.avatar.seated) return;
+      if (me.current.heading && me.current.goal) return; // mid-walk to a chosen chair: leave that one lit
+      const hit = floorAt(camera, e.x, e.y);
+      const seat = pickSeat(e.x, e.y, hit);
+      lightChair(seat ? seat.key : null);
+    });
+    /** Where on the floor a screen point lands, or null when it points at the sky. */
+    const floorAt = (cam: pc.Entity, sx: number, sy: number): pc.Vec3 | null => {
+      const from = cam.camera!.screenToWorld(sx, sy, cam.camera!.nearClip);
+      const to = cam.camera!.screenToWorld(sx, sy, cam.camera!.farClip);
+      const ray = new pc.Ray(from, to.sub(from).normalize());
+      const hit = new pc.Vec3();
+      return new pc.Plane(pc.Vec3.UP, 0).intersectsRay(ray, hit) ? hit : null;
+    };
+    /**
+     * THE SEAT UNDER THE POINTER — picked ON SCREEN, not on the floor.
+     *
+     * Floor distance was the first attempt and it fails exactly where people use it: standing back from a
+     * table, the point under the cursor is metres from any chair even though the chair is plainly what the
+     * cursor is over, so nothing lit and nothing could be picked. Screen distance is what a person actually
+     * means by "that one", and it works at any range. The floor is still the fallback, for a cursor over bare
+     * carpet near a seat.
+     */
+    const pickSeat = (sx: number, sy: number, hit: pc.Vec3 | null): { key: string; at: pc.Vec3; yaw: number; tableId: string; seat: number } | null => {
+      const out = new pc.Vec3();
+      let best: { key: string; at: pc.Vec3; yaw: number; tableId: string; seat: number } | null = null;
+      let bestPx = SEAT_PICK_PX;
+      const consider = (key: string, at: pc.Vec3, yaw: number, tableId: string, seat: number) => {
+        camera.camera!.worldToScreen(new pc.Vec3(at.x, 0.55, at.z), out);
+        if (out.z <= 0) return; // behind the camera
+        const d = Math.hypot(out.x - sx, out.y - sy);
+        if (d < bestPx) { bestPx = d; best = { key, at, yaw, tableId, seat }; }
+      };
+      for (const ch of chairs.current) if (!ch.taken) consider(`${ch.tableId}:${ch.seat}`, ch.at, ch.yaw, ch.tableId, ch.seat);
+      for (const st of barSeats.current) consider(st.key, st.at, st.yaw, BAR, Number(st.key.slice(4)));
+      for (const st of fireSeats.current) consider(st.key, st.at, st.yaw, FIRE, Number(st.key.slice(5)));
+      if (best || !hit) return best;
+      let fd = CHAIR_PICK;
+      for (const ch of chairs.current) { if (ch.taken) continue; const d = Math.hypot(ch.at.x - hit.x, ch.at.z - hit.z); if (d < fd) { fd = d; best = { key: `${ch.tableId}:${ch.seat}`, at: ch.at, yaw: ch.yaw, tableId: ch.tableId, seat: ch.seat }; } }
+      for (const st of barSeats.current) { const d = Math.hypot(st.at.x - hit.x, st.at.z - hit.z); if (d < fd) { fd = d; best = { key: st.key, at: st.at, yaw: st.yaw, tableId: BAR, seat: Number(st.key.slice(4)) }; } }
+      for (const st of fireSeats.current) { const d = Math.hypot(st.at.x - hit.x, st.at.z - hit.z); if (d < fd) { fd = d; best = { key: st.key, at: st.at, yaw: st.yaw, tableId: FIRE, seat: Number(st.key.slice(5)) }; } }
+      return best;
+    };
     a.mouse!.on(pc.EVENT_MOUSEDOWN, (e: pc.MouseEvent) => {
-      if (e.button === pc.MOUSEBUTTON_RIGHT || e.button === pc.MOUSEBUTTON_MIDDLE) { const k = camCtl.current; k.dragging = true; return; }
+      if (e.button === pc.MOUSEBUTTON_RIGHT || e.button === pc.MOUSEBUTTON_MIDDLE) return; // the captured pointer drag owns these
       if (!me.current || e.button !== pc.MOUSEBUTTON_LEFT) return;
       const from = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.nearClip);
       const to = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.farClip);
@@ -168,9 +269,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const hit = new pc.Vec3();
       if (!new pc.Plane(pc.Vec3.UP, 0).intersectsRay(ray, hit)) return;
       // A CLICK NEAR A FREE CHAIR is "sit there": walk to it and, on arrival, ask the table for the seat.
-      let best: (typeof chairs.current)[number] | null = null; let bd = 0.9;
-      for (const ch of chairs.current) { if (ch.taken) continue; const d = Math.hypot(ch.at.x - hit.x, ch.at.z - hit.z); if (d < bd) { bd = d; best = ch; } }
-      if (best && !me.current.avatar.seated) { me.current.goal = best.at.clone(); me.current.heading = { tableId: best.tableId, seat: best.seat, yaw: best.yaw }; lightChair(`${best.tableId}:${best.seat}`); }
+      const seat = pickSeat(e.x, e.y, hit);
+      if (seat && !me.current.avatar.seated) { me.current.goal = seat.at.clone(); me.current.heading = { tableId: seat.tableId, seat: seat.seat, yaw: seat.yaw }; lightChair(seat.key); }
       else { me.current.goal = new pc.Vec3(hit.x, 0, hit.z); me.current.heading = null; lightChair(null); }
     });
     a.on('update', (dt: number) => {
@@ -226,11 +326,14 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // A PERSON'S OWN VIEW OF THE ROOM. The camera used to sit 4.2 m up and stare at the body, so walking in
         // meant looking down at the floor: you could not see the room you had just entered, or who was in it.
         // Just over the shoulder at head height, aimed ACROSS the room, shows the place instead of the carpet.
-        const cc = camCtl.current; const cy = av.yaw + cc.yaw; const dist = 3.6 * cc.zoom, up = Math.max(1.3, (2.35 + cc.pitch * 3.5) * cc.zoom);
+        // LOOKING AT THE ROOM, slightly down: high enough to see the floor, the tables and who is at them, low
+        // enough that it is still a person's view and not a map. Bounded below so a wound-in zoom cannot put the
+        // camera at table level, where you lose the room and cannot tell where you are pointing.
+        const cc = camCtl.current; const cy = av.yaw + cc.yaw; const dist = 4.2 * cc.zoom, up = Math.max(2.4, (3.3 + cc.pitch * 3.5) * cc.zoom);
         const behind = new pc.Vec3(Math.max(-10.5, Math.min(10.5, pos.x - Math.sin(cy) * dist)), up, Math.max(-10.5, Math.min(10.5, pos.z - Math.cos(cy) * dist)));
         if (!camSettled.current) { camera.setPosition(behind); camSettled.current = true; }
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
-        camera.lookAt(pos.x + Math.sin(cy) * 4.5, 1.45, pos.z + Math.cos(cy) * 4.5);
+        camera.lookAt(pos.x + Math.sin(cy) * 3.8, 1.05, pos.z + Math.cos(cy) * 3.8);
       }
       if (m) m.avatar.talking(isSpeaking(m.name));
       // the others ease toward their last pose; mouths move for whoever the huddle hears
@@ -271,10 +374,12 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     chips.current = new Chips3D(a);
     deckSide.diffuse = new pc.Color(0.92, 0.9, 0.85); deckSide.update();
     chairLit.diffuse = new pc.Color(0.85, 0.66, 0.26); chairLit.emissive = new pc.Color(0.30, 0.22, 0.05); chairLit.update();
-    hatFelt.diffuse = new pc.Color(0.10, 0.12, 0.13); hatFelt.gloss = 0.2; hatFelt.update();   // dark felt
-    hatBand.diffuse = new pc.Color(0.12, 0.45, 0.28); hatBand.update();                          // a card-room green band
+    // RED, not felt-black: a dark hat on a dark body is another player from across the room. The dealer is the
+    // one person you must be able to find at a glance, so the hat is the loudest thing in the scene.
+    hatFelt.diffuse = new pc.Color(0.78, 0.11, 0.11); hatFelt.emissive = new pc.Color(0.16, 0.01, 0.01); hatFelt.gloss = 0.35; hatFelt.update();
+    hatBand.diffuse = new pc.Color(0.07, 0.08, 0.09); hatBand.update();
     // the walk scripts read the bodies' states through this; nothing in the app does
-    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot, litChair, chairEntities };
+    (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot, litChair, chairEntities, barSeats, fireSeats };
     /**
      * LAYERED ON TOP OF THE CLIPS — the gaze and the dealing reach — on `framerender`.
      *
@@ -320,7 +425,11 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     });
     a.start();
     app.current = a;
-    return () => { ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; deck.current = null; felt.current = null; bodies.current.clear(); bots.current.clear(); dealers.current.clear(); flights.current = []; chipFlights.current = []; chipRoot.current = null; sweepRoot.current = null; me.current = null; scenery.current = null; plateRef.current.clear(); };
+    return () => {
+      window.removeEventListener('contextmenu', noMenu); window.removeEventListener('pointerup', onUp); window.removeEventListener('blur', dropDrag);
+      c.removeEventListener('pointerdown', onDown); c.removeEventListener('pointermove', onMove);
+      c.removeEventListener('pointerup', onUp); c.removeEventListener('pointercancel', onUp);
+      ro.disconnect(); a.destroy(); app.current = null; library.current = null; kit.current = null; deck.current = null; felt.current = null; bodies.current.clear(); bots.current.clear(); dealers.current.clear(); flights.current = []; chipFlights.current = []; chipRoot.current = null; sweepRoot.current = null; me.current = null; scenery.current = null; plateRef.current.clear(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -332,7 +441,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     if (manifestRef.current === manifest && sceneryStamp.current === stamp) return;
     manifestRef.current = manifest; sceneryStamp.current = stamp;
     const furnished = kitReady && !!k?.loaded;
-    scenery.current?.destroy(); chairEntities.current.clear(); litChair.current = null;
+    scenery.current?.destroy(); chairEntities.current.clear(); barStoolEntities.current.clear(); barSeats.current = [];
+    fireChairEntities.current.clear(); fireSeats.current = []; litChair.current = null;
     for (const [id, pl] of [...plateRef.current]) if (pl.kind === 'table' || pl.kind === 'anchor') plateRef.current.delete(id);
     const root = new pc.Entity('scenery'); a.root.addChild(root); scenery.current = root;
     const mat = (r: number, g: number, b: number, extra: Partial<pc.StandardMaterial> = {}) => { const m = new pc.StandardMaterial(); m.diffuse = new pc.Color(r, g, b); Object.assign(m, extra); m.update(); return m; };
@@ -363,7 +473,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         add('box', c, [Math.sin(ang) * r, 0.42, Math.cos(ang) * r], [0.5, 0.08, 0.5], ang * 180 / Math.PI);
         add('box', c, [Math.sin(ang) * (r + 0.22), 0.7, Math.cos(ang) * (r + 0.22)], [0.5, 0.6, 0.06], ang * 180 / Math.PI);
       }
-      add('cone', shade, [0, 3.4, 0], [1.2, 0.5, 1.2]);
+      // NO FIXTURE, JUST THE LIGHT: a shade hanging over the felt sat between the camera and the table from
+      // every seated view, and a room reads better lit than furnished with lamps.
       const lamp = new pc.Entity('lamp'); lamp.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.94, 0.8), intensity: 2.2, range: 10, castShadows: false }); lamp.setLocalPosition(0, 3.1, 0); g.addChild(lamp);
       plateRef.current.set(`table:${t.tableId}`, { id: `table:${t.tableId}`, kind: 'table', text: t.name, sub: `${t.seated}/${t.seats} seated`, world: new pc.Vec3(p.x, 1.9, p.y) });
     }
@@ -373,22 +484,50 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (furnished) {
         for (let i = -2; i < 2; i++) k!.place('kitchenBar', root, bx, bz + i * 1.08 + 0.54, yaw + 90);
         k!.place('kitchenBarEnd', root, bx, bz - 2.16 - 0.125, yaw + 90); k!.place('kitchenBarEnd', root, bx, bz + 2.16 + 0.125, yaw + 90);
-        for (let i = -1; i <= 1; i++) k!.place('stoolBar', root, bx + 0.9, bz + i * 1.2, yaw + 90);
-        k!.place('lampRoundFloor', root, bx - 0.9, bz - 2.9, 0); k!.place('lampRoundFloor', root, bx - 0.9, bz + 2.9, 0);
+        for (let i = -1; i <= 1; i++) { const e = k!.place('stoolBar', root, bx + 0.9, bz + i * 1.2, yaw + 90); if (e) barStoolEntities.current.set(`bar:${i + 1}`, e); }
+
       } else { prim('box', wood, [bx, 0.55, bz], [1, 1.1, 5]); prim('box', brass, [bx, 1.12, bz], [1.2, 0.06, 5.2]); }
-      plateRef.current.set('anchor:bar', { id: 'anchor:bar', kind: 'anchor', text: 'The bar', world: new pc.Vec3(bx, 1.8, bz) });
+      // The stools are SEATS: a body's feet go a step out from the counter, turned to it.
+      barSeats.current = [-1, 0, 1].map((i, n) => ({ key: `bar:${n}`, at: new pc.Vec3(bx + 1.35, 0, bz + i * 1.2), yaw: -Math.PI / 2 }));
+      plateRef.current.set('anchor:bar', { id: 'anchor:bar', kind: 'anchor', text: 'The bar · meet the guest', world: new pc.Vec3(bx, 1.8, bz) });
     }
     if (a2.fire) {
-      prim('box', mat(0.36, 0.29, 0.23), [a2.fire.x, 0.8, a2.fire.y], [0.6, 1.6, 2.2]);
+      /**
+       * THE FIRESIDE — where the night's guest is met, so it is a circle of chairs and not a decoration.
+       *
+       * The hearth is against the wall and the room is to its −X side, so everything faces BACK toward it:
+       * the seats used to be dropped at fixed angles and half of them looked at the wall. Six chairs now sit on
+       * an arc centred on the hearth, each turned to face it, with the fire itself burning in the opening.
+       */
+      const fx = a2.fire.x, fz = a2.fire.y;
+      // the hearth: a surround, a back wall, and a mantel over the opening
+      prim('box', mat(0.30, 0.24, 0.20), [fx + 0.1, 0.9, fz], [0.5, 1.8, 2.6]);
+      prim('box', mat(0.22, 0.17, 0.14), [fx - 0.12, 0.55, fz], [0.22, 1.1, 1.7]);
+      prim('box', mat(0.36, 0.29, 0.23), [fx - 0.05, 1.5, fz], [0.7, 0.14, 2.9]);
+      // THE FIRE ITSELF, burning in the opening rather than implied by a stray light
+      const embers = mat(0.95, 0.35, 0.08); embers.emissive = new pc.Color(1.0, 0.45, 0.12); embers.update();
+      const flame = mat(1.0, 0.72, 0.25); flame.emissive = new pc.Color(1.0, 0.66, 0.22); flame.update();
+      prim('box', embers, [fx - 0.2, 0.18, fz], [0.22, 0.28, 1.3]);
+      prim('cone', flame, [fx - 0.2, 0.52, fz - 0.35], [0.3, 0.55, 0.3]);
+      prim('cone', flame, [fx - 0.2, 0.62, fz], [0.36, 0.75, 0.36]);
+      prim('cone', flame, [fx - 0.2, 0.5, fz + 0.35], [0.28, 0.5, 0.28]);
       if (furnished) {
-        // a rug, a sofa facing the hearth and a chair each side
-        k!.place('rugRound', root, a2.fire.x - 2.2, a2.fire.y, 0);
-        k!.place('loungeSofa', root, a2.fire.x - 3.4, a2.fire.y, 90);
-        k!.place('loungeChair', root, a2.fire.x - 2.0, a2.fire.y - 1.9, 0); k!.place('loungeChair', root, a2.fire.x - 2.0, a2.fire.y + 1.9, 180);
-        k!.place('pottedPlant', root, a2.fire.x - 0.6, a2.fire.y + 2.2, 0);
+        k!.place('rugRound', root, fx - 2.6, fz, 0);
+        k!.place('pottedPlant', root, fx - 0.5, fz + 2.6, 0);
       }
-      const fire = new pc.Entity('fire'); fire.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.6, 0.24), intensity: 1.6, range: 7 }); fire.setLocalPosition(a2.fire.x - 0.6, 0.5, a2.fire.y); root.addChild(fire);
-      plateRef.current.set('anchor:fire', { id: 'anchor:fire', kind: 'anchor', text: 'The fire', world: new pc.Vec3(a2.fire.x, 1.9, a2.fire.y) });
+      // SIX COMFORTABLE SEATS ON AN ARC, every one of them looking at the fire.
+      fireSeats.current = [];
+      for (let i = 0; i < FIRE_SEATS; i++) {
+        const spread = Math.PI * 1.05;                       // a little over half a circle, opening toward the room
+        const ang = Math.PI - spread / 2 + (i / (FIRE_SEATS - 1)) * spread; // measured from +X, so π looks back at the hearth
+        const sx = fx + Math.cos(ang) * FIRE_R, sz = fz + Math.sin(ang) * FIRE_R;
+        const toFire = Math.atan2(fx - sx, fz - sz);          // the yaw that faces the hearth
+        if (furnished) { const e = k!.place('loungeChair', root, sx, sz, toFire * 180 / Math.PI, CHAIR_SCALE); if (e) fireChairEntities.current.set(`fire:${i}`, e); }
+        // the body sits a step in front of the chair, facing the fire
+        fireSeats.current.push({ key: `fire:${i}`, at: new pc.Vec3(sx + Math.sin(toFire) * 0.3, 0, sz + Math.cos(toFire) * 0.3), yaw: toFire });
+      }
+      const fire = new pc.Entity('fire'); fire.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.62, 0.26), intensity: 2.6, range: 9 }); fire.setLocalPosition(fx - 0.35, 0.7, fz); root.addChild(fire);
+      plateRef.current.set('anchor:fire', { id: 'anchor:fire', kind: 'anchor', text: 'The fire · meet the guest', world: new pc.Vec3(fx, 2.1, fz) });
     }
     if (furnished) {
       // the room's dressing: a doorway where you come in, bookcases and plants along the walls, lamps in the corners
@@ -396,7 +535,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       k!.place('bookcaseOpen', root, -4, -10.6, 0); k!.place('bookcaseOpen', root, 4, -10.6, 0);
       k!.place('bookcaseOpen', root, -10.6, -6, 90); k!.place('bookcaseOpen', root, 10.6, -7, -90);
       for (const [x, z] of [[-10.3, 10.3], [10.3, 10.3], [-10.3, -10.3], [10.3, -10.3]] as const) k!.place('pottedPlant', root, x, z, 0);
-      k!.place('lampRoundFloor', root, -10.3, 0, 0); k!.place('lampRoundFloor', root, 10.3, 1, 0);
+
     }
     if (a2.lectern) { prim('box', wood, [a2.lectern.x, 0.6, a2.lectern.y], [0.5, 1.2, 0.5]); plateRef.current.set('anchor:lectern', { id: 'anchor:lectern', kind: 'anchor', text: "♦ The guest's lectern", world: new pc.Vec3(a2.lectern.x, 1.7, a2.lectern.y) }); }
   }, [state.manifest, kitReady]);
@@ -666,7 +805,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     if (cur && cur.key === key) return;
     if (cur) { for (const [mi, m] of cur.restore) mi.material = m; litChair.current = null; }
     if (!key) return;
-    const e = chairEntities.current.get(key); if (!e) return;
+    const e = chairEntities.current.get(key) ?? barStoolEntities.current.get(key) ?? fireChairEntities.current.get(key); if (!e) return;
     const restore: Array<[pc.MeshInstance, pc.Material]> = [];
     for (const r of e.findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) { restore.push([mi, mi.material]); mi.material = chairLit; }
     litChair.current = { key, restore };
@@ -680,7 +819,20 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       lightChair(`${tableId}:${seat}`);
       return true;
     },
-  }), []);
+    standBeside: (tableId, seat) => {
+      const m = me.current; const manifest = manifestRef.current;
+      const t = manifest?.tables.find((x) => x.tableId === tableId); const an = t ? manifest!.anchors[t.anchor] : undefined;
+      if (!m || !t || !an) return false;
+      // a step outside the chair, turned to the felt: you stood up from here, so this is where you are
+      const ang = (seat / t.seats) * Math.PI * 2;
+      const r = CHAIR_R + 0.95;
+      const x = an.x + Math.sin(ang) * r, z = an.y + Math.cos(ang) * r;
+      m.avatar.stand(); m.avatar.place(x, z, ang + Math.PI); m.goal = null; m.heading = null;
+      lightChair(null);
+      socket.pose(x, z, ang + Math.PI);
+      return true;
+    },
+  }), [socket]);
 
   return (
     <div className="lounge" ref={host}>

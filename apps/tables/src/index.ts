@@ -1831,12 +1831,40 @@ app.post('/tables/:id/seat-agent', async (c) => {
  * A cleared seat cashes out through the same path as a voluntary stand-up, so the chips go back to
  * that player's treasury rather than being stranded on the table or quietly kept by the house.
  */
+/**
+ * WHO MAY MANAGE A TABLE: whoever opened it, or a HOST OF ITS CLUB. The same answer for closing a table and for
+ * standing somebody up at one, because they are the same job — a host cannot retire a table they are not
+ * allowed to clear, and telling them to "stand them up first" while giving them no way to do it is a dead end.
+ */
+async function mayManageTable(c: Context<{ Bindings: Env }>, tableId: string): Promise<{ ok: true } | { ok: false; status: 401 | 403 | 404; error: string }> {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return { ok: false, status: 401, error: 'unauthenticated' };
+  const got = await table(c.env, tableId).fetch('https://table/summary');
+  if (!got.ok) return { ok: false, status: 404, error: 'no such table' };
+  const meta = (await got.json()) as { createdBy?: string; club?: string };
+  if (meta.createdBy !== undefined && meta.createdBy === session.playerId) return { ok: true };
+  if (meta.club) {
+    const agent = agentOf(session);
+    const answer = agent ? await standingAt(c.env, meta.club, agent) : null;
+    if (answer?.standing === 'host') return { ok: true };
+  }
+  return { ok: false, status: 403, error: 'only whoever opened this table, or a host of its club, can do that' };
+}
+
+/**
+ * Stand a player up. THE OPERATOR MAY, and so may whoever opened the table or hosts its club — a seat that
+ * somebody walked away from otherwise pins the table open for good. The stand-up is the ordinary one inside the
+ * object: the chips are cashed out through the same path a person's own "leave" takes, never discarded.
+ */
 app.delete('/tables/:id/seat/:seat', async (c) => {
   const seat = Number(c.req.param('seat'));
   if (!Number.isInteger(seat) || seat < 0 || seat > 8) return c.json({ error: 'bad seat' }, 400);
   const gate = await checkOperator(c.env, c.req.raw);
-  // Never logged, never echoed: the refusal says which gate closed and nothing about the token.
-  if (!gate.ok) return c.json({ error: gate.reason, refused: 'operator' }, gate.status);
+  if (!gate.ok) {
+    // Never logged, never echoed: a refusal says which gate closed and nothing about the token.
+    const mine = await mayManageTable(c, c.req.param('id'));
+    if (!mine.ok) return c.json({ error: mine.status === 401 ? gate.reason : mine.error, ...(mine.status === 401 ? { refused: 'operator' } : {}) }, mine.status === 401 ? gate.status : mine.status);
+  }
   return passthrough(await table(c.env, c.req.param('id')).fetch(`https://table/seat/${seat}`, { method: 'DELETE' }));
 });
 

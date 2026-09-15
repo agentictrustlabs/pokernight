@@ -500,6 +500,9 @@ export const api = {
    * The table's own condition is that nobody is seated: a seat holds chips, and at a settled table
    * those chips are money.
    */
+  /** Stand a player up — whoever opened the table, or a host of its club. The chips cash out the ordinary way. */
+  clearSeat: (tableId: string, seat: number, token: string) =>
+    request<{ ok: true } | Record<string, unknown>>(`/tables/${encodeURIComponent(tableId)}/seat/${seat}`, { method: 'DELETE' }, token),
   closeTable: (tableId: string, token: string, club?: string) =>
     request<{ retired: true; tableId: string; name: string }>(
       `/tables/${encodeURIComponent(tableId)}${club ? `?club=${encodeURIComponent(club)}` : ''}`,

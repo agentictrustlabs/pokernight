@@ -14,6 +14,7 @@ import { MissionsPage } from './MissionsPage';
 import { NewClubPage } from './NewClubPage';
 import { TableNewPage } from './TableNewPage';
 import { RoomPage } from './RoomPage';
+import { FiresidePage } from './FiresidePage';
 import { PlayPage } from './PlayPage';
 import { SignInPage } from './SignInPage';
 import { TablesPage } from './TablesPage';
@@ -169,6 +170,10 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
           </>
         ) : r.page === 'newClub' ? (
           <NewClubPage config={auth.config} session={session} />
+        ) : r.page === 'bar' ? (
+          <FiresidePage session={session} clubId={r.clubId ?? null} place="bar" />
+        ) : r.page === 'fire' ? (
+          <FiresidePage session={session} clubId={r.clubId ?? null} place="fire" />
         ) : r.page === 'room' ? (
           <RoomPage session={session} clubId={r.clubId ?? null} />
         ) : r.page === 'newTable' ? (
