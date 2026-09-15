@@ -309,6 +309,14 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   that actually burns, and the mission's own representative hosts the call there. THE BAR is a place to talk
   with no guest. All three are taken the same way (walk up, the chair lights, sit) and all three open a 2D page;
   `BAR` / `FIRE` are the pseudo-table ids the room uses to tell them from a real seat.
+- **A SEAT'S ANGLE USES THE TABLE'S CONVENTION, always**: a seat at angle `a` sits at `(sin a, cos a) · r` from
+  the centre, the chair piece is turned `a` degrees, and the BODY's yaw is `a + π`. That one demonstrably faces
+  inward; deriving it afresh with cos/sin and an `atan2` is what left the fireside's chairs looking at the wall.
+- **A HIGHLIGHT CLONES THE MATERIAL THAT IS THERE and only adds emissive.** Swapping in a foreign
+  `StandardMaterial` made the kit's chairs VANISH under the pointer instead of lighting up.
+- **THE FIRESIDE AND THE BAR KEEP THEIR OWN PRESENCE** (`FiresidePage` opens a `RoomSocket` and poses at the
+  anchor): sitting down leaves the 3D room for a 2D page, so without it the two people who had both sat down
+  could not see each other at all — each alone in a room about meeting people.
 - **A HUDDLE BELONGS TO A SEAT, NOT TO A CLUB OR A ROOM** (2026-09-15): a call is offered at a table you are
   SITTING at (`mySeat != null`), at the fireside and at the bar — never on the club page or in the room, where
   nobody is sitting and anybody may be. A spectator at a table gets no call.

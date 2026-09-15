@@ -507,24 +507,27 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // THE FIRE ITSELF, burning in the opening rather than implied by a stray light
       const embers = mat(0.95, 0.35, 0.08); embers.emissive = new pc.Color(1.0, 0.45, 0.12); embers.update();
       const flame = mat(1.0, 0.72, 0.25); flame.emissive = new pc.Color(1.0, 0.66, 0.22); flame.update();
-      prim('box', embers, [fx - 0.2, 0.18, fz], [0.22, 0.28, 1.3]);
-      prim('cone', flame, [fx - 0.2, 0.52, fz - 0.35], [0.3, 0.55, 0.3]);
-      prim('cone', flame, [fx - 0.2, 0.62, fz], [0.36, 0.75, 0.36]);
-      prim('cone', flame, [fx - 0.2, 0.5, fz + 0.35], [0.28, 0.5, 0.28]);
+      prim('box', embers, [fx - 0.18, 0.16, fz], [0.3, 0.3, 1.5]);
+      prim('cone', flame, [fx - 0.18, 0.62, fz - 0.4], [0.42, 0.85, 0.42]);
+      prim('cone', flame, [fx - 0.18, 0.78, fz], [0.5, 1.15, 0.5]);
+      prim('cone', flame, [fx - 0.18, 0.58, fz + 0.4], [0.38, 0.78, 0.38]);
       if (furnished) {
         k!.place('rugRound', root, fx - 2.6, fz, 0);
         k!.place('pottedPlant', root, fx - 0.5, fz + 2.6, 0);
       }
       // SIX COMFORTABLE SEATS ON AN ARC, every one of them looking at the fire.
+      // THE SAME CONVENTION THE TABLE'S CHAIRS USE, because that one demonstrably faces inward: a seat at angle
+      // `a` sits at (sin a, cos a) · r, the chair piece is turned `a`, and the body's own yaw is `a + π`.
+      // Deriving it afresh with cos/sin and an atan2 is what had them all looking at the wall.
       fireSeats.current = [];
+      const spread = Math.PI * 0.9;              // an open horseshoe…
+      const centre = -Math.PI / 2;               // …centred on −X, which is where the room is from this hearth
       for (let i = 0; i < FIRE_SEATS; i++) {
-        const spread = Math.PI * 1.05;                       // a little over half a circle, opening toward the room
-        const ang = Math.PI - spread / 2 + (i / (FIRE_SEATS - 1)) * spread; // measured from +X, so π looks back at the hearth
-        const sx = fx + Math.cos(ang) * FIRE_R, sz = fz + Math.sin(ang) * FIRE_R;
-        const toFire = Math.atan2(fx - sx, fz - sz);          // the yaw that faces the hearth
-        if (furnished) { const e = k!.place('loungeChair', root, sx, sz, toFire * 180 / Math.PI, CHAIR_SCALE); if (e) fireChairEntities.current.set(`fire:${i}`, e); }
-        // the body sits a step in front of the chair, facing the fire
-        fireSeats.current.push({ key: `fire:${i}`, at: new pc.Vec3(sx + Math.sin(toFire) * 0.3, 0, sz + Math.cos(toFire) * 0.3), yaw: toFire });
+        const a = centre - spread / 2 + (i / (FIRE_SEATS - 1)) * spread;
+        const sx = fx + Math.sin(a) * FIRE_R, sz = fz + Math.cos(a) * FIRE_R;
+        if (furnished) { const e = k!.place(CHAIR_PIECE, root, sx, sz, a * 180 / Math.PI, CHAIR_SCALE); if (e) fireChairEntities.current.set(`fire:${i}`, e); }
+        // the body's feet sit a little in front of the chair, facing the hearth
+        fireSeats.current.push({ key: `fire:${i}`, at: new pc.Vec3(fx + Math.sin(a) * (FIRE_R - CHAIR_BACK), 0, fz + Math.cos(a) * (FIRE_R - CHAIR_BACK)), yaw: a + Math.PI });
       }
       const fire = new pc.Entity('fire'); fire.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.62, 0.26), intensity: 2.6, range: 9 }); fire.setLocalPosition(fx - 0.35, 0.7, fz); root.addChild(fire);
       plateRef.current.set('anchor:fire', { id: 'anchor:fire', kind: 'anchor', text: 'The fire · meet the guest', world: new pc.Vec3(fx, 2.1, fz) });
@@ -807,7 +810,16 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     if (!key) return;
     const e = chairEntities.current.get(key) ?? barStoolEntities.current.get(key) ?? fireChairEntities.current.get(key); if (!e) return;
     const restore: Array<[pc.MeshInstance, pc.Material]> = [];
-    for (const r of e.findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) { restore.push([mi, mi.material]); mi.material = chairLit; }
+    for (const r of e.findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) {
+      const was = mi.material as pc.StandardMaterial;
+      restore.push([mi, was]);
+      // its OWN material, glowing — never a foreign one, which is how a chair could vanish under the pointer
+      const lit = was.clone();
+      lit.emissive = new pc.Color(0.55, 0.40, 0.08);
+      lit.emissiveIntensity = 1;
+      lit.update();
+      mi.material = lit;
+    }
     litChair.current = { key, restore };
   };
 
@@ -820,9 +832,21 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       return true;
     },
     standBeside: (tableId, seat) => {
-      const m = me.current; const manifest = manifestRef.current;
+      const m = me.current; if (!m) return false;
+      // THE FIRESIDE AND THE BAR are seats too: leaving one is standing up from it, so you come back to it.
+      if (tableId === FIRE || tableId === BAR) {
+        const list = tableId === FIRE ? fireSeats.current : barSeats.current;
+        const st = list.find((x) => Number(x.key.slice(x.key.indexOf(':') + 1)) === seat) ?? list[0];
+        if (!st) return false;
+        const back = 0.9;
+        const x = st.at.x - Math.sin(st.yaw) * back, z = st.at.z - Math.cos(st.yaw) * back;
+        m.avatar.stand(); m.avatar.place(x, z, st.yaw); m.goal = null; m.heading = null;
+        lightChair(null); socket.pose(x, z, st.yaw);
+        return true;
+      }
+      const manifest = manifestRef.current;
       const t = manifest?.tables.find((x) => x.tableId === tableId); const an = t ? manifest!.anchors[t.anchor] : undefined;
-      if (!m || !t || !an) return false;
+      if (!t || !an) return false;
       // a step outside the chair, turned to the felt: you stood up from here, so this is where you are
       const ang = (seat / t.seats) * Math.PI * 2;
       const r = CHAIR_R + 0.95;

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import type { AppSession, ClubView, MissionVisit } from '../lib/types';
 import { api, type MissionListing } from '../lib/api';
+import { RoomSocket } from '../lib/roomSocket';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { clubScope } from '../lib/huddle';
 import { fireHash, missionHash, roomHash } from '../lib/routes';
@@ -40,6 +41,27 @@ export function FiresidePage({ session, clubId, place = 'fire' }: { session: App
   const fireside = place === 'fire';
   const title = fireside ? 'The fireside' : 'The bar';
 
+  /**
+   * WHO ELSE IS HERE. Sitting down by the fire takes you out of the 3D room and onto this page, and until now
+   * that meant the two people who had both sat down could not see each other at all — each was alone in a room
+   * about meeting people. So the page keeps its own presence in the same room object and stands your body at
+   * the hearth: everyone here shows up in the list, and anybody still walking about sees you sitting there.
+   */
+  const roomId = clubId ? `club:${clubId}` : 'hall';
+  const [, bump] = useReducer((n: number) => n + 1, 0);
+  const sock = useRef<RoomSocket | null>(null);
+  useEffect(() => {
+    const s2 = new RoomSocket(roomId, session.token, undefined, bump);
+    sock.current = s2;
+    // stand at the anchor so the zone the room derives is this one
+    const at = setInterval(() => {
+      const an = s2.state.manifest?.anchors?.[fireside ? 'fire' : 'bar'];
+      if (an) { s2.pose(an.x - (fireside ? 2.2 : -1.2), an.y, fireside ? Math.PI / 2 : -Math.PI / 2); clearInterval(at); }
+    }, 700);
+    return () => { clearInterval(at); s2.close(); sock.current = null; };
+  }, [roomId, session.token, fireside]);
+  const here = [...(sock.current?.state.people.values() ?? [])].filter((p) => p.zone === (fireside ? 'fire' : 'bar'));
+
   return (
     <div className="stack bar-page">
       <header className="page-head bar-head">
@@ -54,11 +76,24 @@ export function FiresidePage({ session, clubId, place = 'fire' }: { session: App
         </p>
         <div className="bar-actions">
           {scope ? <HuddleAffordance scope={scope} scopeName={`${club?.name ?? 'the club'} · ${title.toLowerCase()}`} /> : <span className="hint">The hall has no call of its own yet — a club’s does.</span>}
-          <a className="small" href={roomHash(clubId)}>← Back to the room</a>
+          <a className="small" href={roomHash(clubId)}>Stand up · back to the room</a>
         </div>
       </header>
 
       {err ? <div className="form-error">{err}</div> : null}
+
+      <section className="panel bar-here">
+        <h2 className="eyebrow-h">{here.length === 0 ? 'Nobody else is here yet' : here.length === 1 ? 'One person here' : `${here.length} people here`}</h2>
+        <ul className="bar-people">
+          {here.map((p) => (
+            <li key={p.playerId}>
+              <span className="cr-name">{p.name}</span>
+              {p.playerId === sock.current?.state.you ? <span className="tag">you</span> : null}
+            </li>
+          ))}
+        </ul>
+        {here.length <= 1 ? <p className="hint">Anyone in the room can walk over and sit down — the chairs are by the {fireside ? 'fire' : 'bar'}.</p> : null}
+      </section>
 
       {!fireside ? (
         <section className="panel bar-guest">

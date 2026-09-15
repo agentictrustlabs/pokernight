@@ -6534,3 +6534,5 @@ button.tag.guest {
 .tag-host { background: color-mix(in srgb, var(--brand, #7a5c1e) 18%, var(--surface)); color: var(--ink); font-weight: 600; }
 .tag-here { background: color-mix(in srgb, var(--live-on) 18%, var(--surface)); color: color-mix(in srgb, var(--live-on) 70%, var(--ink)); }
 .table-which { margin-left: 0.4rem; font-size: 0.72rem; color: var(--ink-soft); }
+.bar-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.bar-people .cr-name { font-weight: 600; }

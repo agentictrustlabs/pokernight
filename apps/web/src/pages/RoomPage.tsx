@@ -94,9 +94,11 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
   const onSitRequest = useCallback(async (tableId: string, seat: number) => {
     setSitError(null);
     // A STOOL AT THE BAR is a seat too, but nothing is dealt there: it opens the guest's half of the night.
-    if (tableId === BAR) { setSitting({ tableId, seat, phase: 'sitting' }); location.hash = barHash(clubId); return; }
+    // LEAVING THESE IS STANDING UP, so the seat is remembered the same way a table's is: coming back puts the
+    // body beside the chair it left, not wherever presence last had it.
+    if (tableId === BAR) { setSitting({ tableId, seat, phase: 'sitting' }); cameFromRoom(roomHash(clubId)); rememberSeat(tableId, seat); location.hash = barHash(clubId); return; }
     // A CHAIR BY THE FIRE opens the guest's half of the night, where the mission's own representative hosts.
-    if (tableId === FIRE) { setSitting({ tableId, seat, phase: 'sitting' }); location.hash = fireHash(clubId); return; }
+    if (tableId === FIRE) { setSitting({ tableId, seat, phase: 'sitting' }); cameFromRoom(roomHash(clubId)); rememberSeat(tableId, seat); location.hash = fireHash(clubId); return; }
     try {
       const t = await tables.getTable(tableId, session.token);
       if (t.settlement !== 'play-money') { location.hash = `#/t/${encodeURIComponent(tableId)}`; return; }
