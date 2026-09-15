@@ -98,6 +98,18 @@ export interface Title {
   clues: ClueDef[];
   /** The death the night opens on, staged by the engine at the first interlude. */
   openingDeath: { room: RoomId; prop: PropId };
+  /**
+   * WHEN THE KILLER SPARES SOMEBODY — what the house says, and where the night gives up its evidence instead.
+   *
+   * A killer who does not take their chance changes the story, and the story has to let them: nobody dies, the
+   * act turns on something else, and the two traits that second death would have given up turn up another way
+   * — a room turned over, a witness, a thing left behind. THE NIGHT GIVES UP ITS EVIDENCE EITHER WAY; only the
+   * body is optional. Without this a declining killer would either be overruled by the engine (which is not a
+   * choice) or leave a mystery nobody could solve (which is not a mystery).
+   */
+  spared: { interlude: string; room: RoomId; prop: PropId };
+  /** What the killer may leave behind to point somewhere else: props, and the traits a plant may imply. */
+  plantable?: { props: PropId[]; traits: string[] };
   /** How many traits of the killer each death gives up. */
   evidencePerDeath: number;
   /** How long the accusations last. */
@@ -128,6 +140,16 @@ export type Operator = 'human' | 'agent';
 
 export interface Casting {
   role: RoleId;
+  /**
+   * WHAT THINKS FOR THIS CHARACTER.
+   *
+   * `human` — the person acts, and nothing is asked of anybody. `agent` — the agent named below is asked
+   * `mystery.act` at its own endpoint, which is where a role's skill artifacts do their work. `rules` — the
+   * house plays it from the engine's own policy, which costs nobody anything and never keeps the night
+   * waiting. A staging mixes all three, and a miss on an `agent` call falls back to `rules` for that moment
+   * rather than leaving a character standing still.
+   */
+  mind?: 'human' | 'agent' | 'rules';
   /** The agent playing the part: a person's own (`ryan.me`), a character they custody (`hilda.cast`). */
   agent: string;
   name: string;
@@ -138,6 +160,11 @@ export interface Casting {
 }
 
 export interface Death { victim: RoleId; room: RoomId; prop: PropId; act: number; evidence: ClueId[]; found: ClueId[]; at: number }
+/**
+ * SOMETHING THE NIGHT LEFT BEHIND WITHOUT A BODY: the evidence of a death that did not happen, or a thing the
+ * killer planted to point elsewhere. Searched exactly as a death's room is searched.
+ */
+export interface Trace { room: RoomId; prop: PropId; act: number; evidence: ClueId[]; found: ClueId[]; at: number; kind: 'spared' | 'planted'; by?: RoleId }
 
 /**
  * WHAT YOU HEARD, YOU HEARD.
@@ -151,10 +178,12 @@ export type MysteryEvent =
   | { type: 'whispered'; at: number; by: RoleId; to: RoleId; room: RoomId; text: string }
   | { type: 'moved'; at: number; who: RoleId; from: RoomId; to: RoomId; saw?: RoleId[] }
   | { type: 'found'; at: number; who: RoleId; clue: ClueId; room: RoomId }
+  | { type: 'planted'; at: number; by: RoleId; clue: ClueId; room: RoomId }
   | { type: 'shared'; at: number; by: RoleId; to: RoleId | null; clue: ClueId; room: RoomId; saw?: RoleId[] }
   | { type: 'claimed'; at: number; by: RoleId; kind: 'alibi' | 'testimony'; about: RoleId; text: string; room: RoomId; saw?: RoleId[] }
   | { type: 'accused'; at: number; by: RoleId; against: RoleId; clues: ClueId[]; room: RoomId | null; saw?: RoleId[] }
   | { type: 'died'; at: number; victim: RoleId; room: RoomId; act: number }
+  | { type: 'spared'; at: number; room: RoomId; act: number }
   | { type: 'cue'; at: number; text: string; by: 'house' | 'director' }
   | { type: 'act'; at: number; act: number; phase: Phase; deadline: number | null }
   | { type: 'revealed'; at: number; killer: RoleId; seed: string };
@@ -169,7 +198,9 @@ export type MysteryAction =
   | { type: 'testify'; about: RoleId; text: string }
   | { type: 'alibi'; for: RoleId }
   | { type: 'accuse'; against: RoleId; clues: ClueId[] }
-  | { type: 'murder'; victim: RoleId; prop: PropId };
+  | { type: 'murder'; victim: RoleId; prop: PropId }
+  /** THE KILLER'S OTHER HAND: leave something at a prop that points at somebody it is not. */
+  | { type: 'plant'; prop: PropId; trait: string };
 
 /** The whole of a staging, JSON-only, and replayable from (seed, the actions applied to it). */
 export interface MysteryState {
@@ -199,6 +230,8 @@ export interface MysteryState {
   examined: Record<RoleId, PropId[]>;
   publicClues: ClueId[];
   deaths: Death[];
+  /** What was left behind with nobody dead — a spared act's evidence, and anything the killer planted. */
+  traces: Trace[];
   claims: Array<{ by: RoleId; kind: 'alibi' | 'testimony'; about: RoleId; text: string; at: number }>;
   accusations: Array<{ by: RoleId; against: RoleId; clues: ClueId[]; at: number }>;
   log: MysteryEvent[];
@@ -210,7 +243,13 @@ export interface MysteryState {
 export interface Refusal { ok: false; code: string; reason: string }
 export type Applied = { ok: true; state: MysteryState; events: MysteryEvent[] } | Refusal;
 
-export interface ViewPerson { role: RoleId; name: string; operator: Operator; agent: string; alive: boolean; look: Look }
+export interface ViewPerson {
+  role: RoleId; name: string; operator: Operator; agent: string; alive: boolean; look: Look;
+  /** What is thinking for them right now — so a room can say "played by their own agent" and mean it. */
+  mind?: 'human' | 'agent' | 'rules';
+  /** The PERSON behind a character somebody is playing, by their own name. How a voice is matched to a body. */
+  playedBy?: string;
+}
 export interface ViewClue { id: ClueId; kind: 'fact' | 'evidence'; text: string; public: boolean }
 
 export interface MysteryView {
@@ -231,6 +270,11 @@ export interface MysteryView {
     killer: boolean;
     /** The killer's opportunity this act, in their view alone — and whether the night is old enough yet. */
     opportunity?: { room: RoomId; prop: PropId; propName: string; ready: boolean; readyAt: number };
+    /**
+     * WHAT COULD BE LEFT HERE, and who it would point at. The killer's alone, and only while they are
+     * standing somewhere a thing could plausibly be left. One trail per night.
+     */
+    plant?: { prop: PropId; propName: string; used: boolean; options: Array<{ trait: string; text: string; points: Array<{ role: RoleId; name: string }> }> };
   } | null;
   room: {
     id: RoomId; name: string; blurb: string;
@@ -238,6 +282,8 @@ export interface MysteryView {
     props: Array<{ id: PropId; name: string; examined: boolean }>;
     doors: Array<{ id: RoomId; name: string; open: boolean }>;
     death: { victim: RoleId; searched: boolean } | null;
+    /** Something here to find, with nobody dead: a room turned over, or a thing left to be found. */
+    trace: { searched: boolean } | null;
   } | null;
   cast: ViewPerson[];
   /** The hotel's rooms by name — no secret (the doors show most of it) and it lets a line name a place. */
@@ -249,6 +295,10 @@ export interface MysteryView {
   accusation: { against: RoleId; clues: ClueId[] } | null;
   reveal: {
     killer: RoleId; killerName: string; seed: string; rule: KillerRule;
+    /** Did the second death come? A killer who spared somebody gets that said out loud. */
+    spared: boolean;
+    /** What the killer left to point elsewhere, and at what. Named, because a planted trail is a lie. */
+    planted: Array<{ clue: ClueId; trait: string }>;
     correct: RoleId[]; fooled: Array<{ by: RoleId; against: RoleId }>; missed: ClueId[];
   } | null;
 }

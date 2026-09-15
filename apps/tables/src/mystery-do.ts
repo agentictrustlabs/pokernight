@@ -18,8 +18,11 @@ import { DurableObject } from 'cloudflare:workers';
 import { bytesToHex, randomSeed, seedCommit } from '@pokernight/deal';
 import {
   apply, chooseAction, isDead, openStaging, parseAction, stagingOf, tick, viewFor,
-  type Casting, type MysteryState, type MysteryView, type RoleId,
+  type Casting, type MysteryEvent, type MysteryState, type MysteryView, type RoleId,
 } from '@pokernight/mystery';
+import { MYSTERY_DIRECT_SKILL } from '@pokernight/protocol';
+import { askDirector } from './mystery-a2a.js';
+import { a2aTimeoutMs } from './a2a.js';
 import type { Env } from './env.js';
 
 interface Attachment { playerId: string; name: string }
@@ -28,6 +31,12 @@ interface Meta {
   /** A CLUB'S NIGHT rather than a night of your own: who may take a part is the club's roster, and it waits
    *  in `casting` until the host says the curtain is up. A solo night has neither. */
   club?: string; night?: string; casting?: boolean;
+  /**
+   * WHO DIRECTS. An agent, by name — the agent of whoever's night this is, or a service they name. The house
+   * spends no tokens, so the prose is thought for at somebody's own Home and costs them; a director that does
+   * not answer in the shape, or does not answer at all, leaves the title's own written line standing.
+   */
+  director?: string;
 }
 
 /** How long a character played by an agent is held back, so the room can read what it said. */
@@ -67,7 +76,7 @@ export class MysteryDO extends DurableObject<Env> {
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'POST' && url.pathname === '/open') {
-      const b = (await request.json()) as { stagingId: string; owner: string; ownerName: string; title: string; role?: RoleId; restart?: boolean; killer?: 'chance' | 'me'; pace?: 'short' | 'full' };
+      const b = (await request.json()) as { stagingId: string; owner: string; ownerName: string; title: string; role?: RoleId; restart?: boolean; killer?: 'chance' | 'me'; pace?: 'short' | 'full'; director?: string };
       const pair = stagingOf(b.title);
       if (!pair) return json({ error: `no such mystery: ${b.title}` }, 404);
       const { title, venue } = pair;
@@ -95,7 +104,7 @@ export class MysteryDO extends DurableObject<Env> {
         killerRule: b.killer === 'me' ? role : 'any',
         pace: b.pace === 'short' ? 0.25 : 1,
       });
-      this.meta = { stagingId: b.stagingId, owner: b.owner, ownerName: b.ownerName, title: title.id, role, pace: b.pace === 'short' ? 'short' : 'full' };
+      this.meta = { stagingId: b.stagingId, owner: b.owner, ownerName: b.ownerName, title: title.id, role, pace: b.pace === 'short' ? 'short' : 'full', ...(b.director ? { director: b.director } : {}) };
       this.paused = false;
       this.lastMoved = {};
       this.save();
@@ -108,7 +117,7 @@ export class MysteryDO extends DurableObject<Env> {
      * up. That is the difference between a night of your own (opened on the spot) and a night people come to.
      */
     if (request.method === 'POST' && url.pathname === '/plan') {
-      const b = (await request.json()) as { stagingId: string; club: string; night?: string; title: string; host: string; hostName: string; pace?: 'short' | 'full'; restart?: boolean };
+      const b = (await request.json()) as { stagingId: string; club: string; night?: string; title: string; host: string; hostName: string; pace?: 'short' | 'full'; restart?: boolean; director?: string };
       const pair = stagingOf(b.title);
       if (!pair) return json({ error: `no such mystery: ${b.title}` }, 404);
       if (this.state && !b.restart) return json({ ok: true, staging: this.summary(), cast: this.castList() });
@@ -117,7 +126,7 @@ export class MysteryDO extends DurableObject<Env> {
       this.meta = {
         stagingId: b.stagingId, owner: b.host, ownerName: b.hostName, title: pair.title.id,
         role: pair.title.roles[0]!.id, pace: b.pace === 'short' ? 'short' : 'full',
-        club: b.club, ...(b.night ? { night: b.night } : {}), casting: true,
+        club: b.club, ...(b.night ? { night: b.night } : {}), casting: true, ...(b.director ? { director: b.director } : {}),
       };
       this.save();
       return json({ ok: true, staging: this.summary(), cast: this.castList() });
@@ -295,7 +304,13 @@ export class MysteryDO extends DurableObject<Env> {
       }
     }
     const ticked = tick(this.state, pair.title, pair.venue, now);
-    if (ticked.events.length) { this.state = ticked.state; changed = true; }
+    if (ticked.events.length) {
+      this.state = ticked.state;
+      changed = true;
+      // A BEAT IS WHERE THE STORY IS TOLD. The engine has just decided something; the director is asked for
+      // the words that carry it, and whatever it says is narration over facts that are already settled.
+      void this.direct(ticked.events);
+    }
     if (changed) { this.save(); this.tellEverybody(); }
     if (this.state.phase !== 'revealed') await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
   }
@@ -313,6 +328,48 @@ export class MysteryDO extends DurableObject<Env> {
       this.state = out.state;
     }
     this.save();
+  }
+
+  /**
+   * THE DIRECTOR, ASKED — over A2A, at the endpoint its own card names, signed as the house.
+   *
+   * It is handed the PUBLIC view and the facts it must carry, and what can come back is prose (and at most a
+   * nod at a room or a prop that already exists). It cannot decide anything: not who did it, not what is
+   * found, not where anybody is. A miss — no such agent, no such skill, too slow, the wrong shape — leaves
+   * the title's line standing, which is why the night never depends on it.
+   */
+  private async direct(events: MysteryEvent[]): Promise<void> {
+    const m = this.meta;
+    const s = this.state;
+    const pair = s ? stagingOf(s.title) : null;
+    if (!m?.director || !s || !pair) return;
+    const facts = events.flatMap((e) => (
+      e.type === 'died' ? [`${pair.title.roles.find((r) => r.id === e.victim)?.name ?? e.victim} has been found dead in ${pair.venue.rooms.find((r) => r.id === e.room)?.name ?? e.room}.`]
+        : e.type === 'spared' ? [`Nobody died, but ${pair.venue.rooms.find((r) => r.id === e.room)?.name ?? e.room} was turned over in the dark.`]
+          : e.type === 'act' ? [`Act ${e.act} — ${e.phase}.`]
+            : []
+    ));
+    if (!facts.length) return;
+    const fallback = events.find((e) => e.type === 'cue');
+    const publicView = viewFor(s, pair.title, pair.venue, null);
+    const out = await askDirector(this.env, m.director, {
+      skill: MYSTERY_DIRECT_SKILL,
+      stagingId: m.stagingId,
+      act: s.act,
+      phase: s.phase,
+      publicView: { rooms: publicView.rooms, cast: publicView.cast.map((c) => ({ role: c.role, name: c.name, alive: c.alive })), deaths: publicView.deaths, act: publicView.act, actName: publicView.actName, objective: publicView.objective } as unknown as Record<string, unknown>,
+      facts,
+      fallback: fallback?.type === 'cue' ? fallback.text : '',
+      deadlineMs: a2aTimeoutMs(this.env),
+    }, a2aTimeoutMs(this.env)).catch((e: unknown) => ({ ok: false as const, error: String(e) }));
+    if (!out.ok) { console.warn('[mystery] the director was quiet:', out.error); return; }
+    // The narration joins the story as the house's own voice, from whoever directed it.
+    const cur = this.state;
+    if (!cur) return;
+    const line: MysteryEvent = { type: 'cue', at: Date.now(), text: out.output.cue, by: 'director' };
+    this.state = { ...cur, log: [...cur.log, line].slice(-600) };
+    this.save();
+    this.tellEverybody();
   }
 
   private async arm(): Promise<void> {

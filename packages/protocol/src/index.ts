@@ -1235,3 +1235,149 @@ export type RoomServerMessage =
   | { type: 'people'; upserts: RoomPerson[]; leaves: string[] }
   | { type: 'zone'; zone: string | null }
   | { type: 'error'; code: string; message: string };
+
+/* ═══════════════════════════ MYSTERY NIGHT — a story at a place (docs/MYSTERY-NIGHT.md) ═══════════════════════════
+ *
+ * A CHARACTER IS ASKED THE WAY A SEAT IS ASKED. `mystery.act` is to a story what `poker.act` is to a table:
+ * the staging sends the character's own redacted view and what it may legally do, and the agent answers with
+ * ONE action and ONE line. The envelope is the host's; what an action means is the engine's.
+ *
+ * THE DIRECTOR IS ASKED FOR WORDS AND NOTHING ELSE. `mystery.direct` carries the PUBLIC half of the story and
+ * the FACTS the engine has already decided, and asks for the sentences that carry them. It cannot invent a
+ * clue, move a character or name a killer, because none of those are in what comes back.
+ *
+ * WHOSE MODEL. The house spends no tokens (the rule that deleted `ANTHROPIC_API_KEY` from the persona worker):
+ * a character played by a person's own agent thinks at that person's Home, and the night's director is the
+ * agent of whoever's night it is. A character the house plays answers on rules and costs nobody anything.
+ */
+export const MYSTERY_ACT_SKILL = 'mystery.act';
+export const MYSTERY_DIRECT_SKILL = 'mystery.direct';
+export const MYSTERY_CONSULT_SKILL = 'mystery.consult';
+export const MYSTERY_SKILLS = { act: MYSTERY_ACT_SKILL, direct: MYSTERY_DIRECT_SKILL, consult: MYSTERY_CONSULT_SKILL } as const;
+
+/** What a character is told when it is its turn to do something. The view and the actions are the game's. */
+export interface SceneInput {
+  skill: string;
+  stagingId: string;
+  /** Which act, so a playbook can select the instructions written for it (the street, for a story). */
+  act: number;
+  role: string;
+  roleName: string;
+  /** Who this character is, in the words the title gave them — the part, not the plot. */
+  brief: string;
+  /** The staging as this character sees it: their room, their clue book, what they have heard. Opaque. */
+  view: GamePayload;
+  /** The verbs available here and now, named so an answer can be shaped. */
+  legal: string[];
+  deadlineMs: number;
+  /** For `mystery.consult`: what their player asked. */
+  question?: string;
+}
+
+/** What a character says back: one thing done, one thing said. Both optional — a character may just watch. */
+export const SceneOutputSchema = z.object({
+  action: GamePayloadSchema.optional(),
+  say: z.string().max(280).optional(),
+  because: z.string().max(400).optional(),
+  source: z.string().max(120).optional(),
+});
+export type SceneOutput = z.infer<typeof SceneOutputSchema>;
+
+/** HOW A CHARACTER SHOULD SHAPE ITS ANSWER — the engine's own verbs, named exactly, because the thing reading this is a model. */
+export function sceneAnswerShape(): { action: string; say: string } {
+  return {
+    action:
+      'what you do, EXACTLY one of {"type":"move","room":<room id from your doors>} | {"type":"examine","prop":<prop id in your room>} | {"type":"search","room":<your room>} | {"type":"share","clue":<a clue id you hold>,"to":<a role id in your room, or omit for everyone>} | {"type":"testify","about":<role id>,"text":<what you say you saw>} | {"type":"alibi","for":<role id>} | {"type":"accuse","against":<role id>,"clues":[<clue ids you hold>]} | {"type":"whisper","to":<role id>,"text":<words>} | {"type":"say","text":<words>} — or omit "action" to do nothing this moment',
+    say: 'one line, IN CHARACTER, first person, at most two sentences — what the room hears you say',
+  };
+}
+
+/** The two parts a character's turn is sent as: the data an answering step reads, the text a planner reads. */
+export function encodeSceneParts(input: SceneInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const shape = sceneAnswerShape();
+  const text = [
+    `${input.skill}: you are ${input.roleName} in a murder mystery, act ${input.act}.`,
+    input.brief,
+    input.question ? `Your player asks: "${input.question}".` : 'It is your moment. Stay in character, and do one thing.',
+    `Answer with ONE JSON object and nothing else: {"say": ${shape.say}, "action": ${shape.action}}.`,
+    `What you may do here: ${input.legal.join(', ')}`,
+    `The night as you see it — your room, who is in it, what you hold, what you have heard: ${JSON.stringify(input.view)}`,
+  ].join('\n');
+  return [
+    { kind: 'data', data: { skill: input.skill, input: input as unknown as Record<string, unknown>, answer: shape } },
+    { kind: 'text', text },
+  ];
+}
+
+/** What the DIRECTOR is handed: the public story, and the facts it must carry — never a private thing. */
+export interface DirectInput {
+  skill: string;
+  stagingId: string;
+  act: number;
+  phase: string;
+  /** What everybody in the story can see: the rooms, who is where, the deaths, what has been made public. */
+  publicView: GamePayload;
+  /** The things that have just happened and must be said. The director narrates these; it decides none of them. */
+  facts: string[];
+  /** The house's own line for this moment, which is what runs if the director is quiet. */
+  fallback: string;
+  deadlineMs: number;
+}
+
+export const DirectOutputSchema = z.object({
+  /** The narration, read to the room. Prose, not a decision. */
+  cue: z.string().min(1).max(900),
+  /** Optional: somewhere worth looking. A HINT, resolved against clues the engine already placed. */
+  hint: z.object({ room: z.string().max(64).optional(), prop: z.string().max(64).optional() }).optional(),
+  source: z.string().max(120).optional(),
+});
+export type DirectOutput = z.infer<typeof DirectOutputSchema>;
+
+export function encodeDirectParts(input: DirectInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const shape = {
+    cue: 'the narration — two to five sentences, present tense, the voice of the house, never naming a killer and never inventing a clue',
+    hint: 'optional {"room":<room id>,"prop":<prop id>} — somewhere worth looking, chosen from the rooms and props in the view',
+  };
+  const text = [
+    `${input.skill}: you are the house voice of a murder mystery, at act ${input.act} (${input.phase}).`,
+    'Carry these facts, exactly as given, in your own words. Invent no clue, name no killer, move nobody:',
+    ...input.facts.map((f) => `  - ${f}`),
+    `Answer with ONE JSON object and nothing else: {"cue": ${shape.cue}, "hint": ${shape.hint}}.`,
+    `The house's own line, if you have nothing better: "${input.fallback}"`,
+    `The story as everybody can see it: ${JSON.stringify(input.publicView)}`,
+  ].join('\n');
+  return [
+    { kind: 'data', data: { skill: input.skill, input: input as unknown as Record<string, unknown>, answer: shape } },
+    { kind: 'text', text },
+  ];
+}
+
+/** Pull a character's answer out of an A2A reply — a data part, or a text part holding JSON. */
+export function decodeSceneReply(parts: unknown): SceneOutput | { error: string } {
+  return decodeShaped(parts, (c) => SceneOutputSchema.safeParse(c));
+}
+export function decodeDirectReply(parts: unknown): DirectOutput | { error: string } {
+  return decodeShaped(parts, (c) => DirectOutputSchema.safeParse(c));
+}
+
+function decodeShaped<T>(parts: unknown, check: (c: unknown) => { success: true; data: T } | { success: false }): T | { error: string } {
+  if (!Array.isArray(parts)) return { error: 'reply has no parts' };
+  for (const part of parts) {
+    if (!part || typeof part !== 'object') continue;
+    const p = part as { kind?: string; data?: unknown; text?: string };
+    let candidate: unknown;
+    if (p.kind === 'data' && p.data && typeof p.data === 'object') {
+      const d = p.data as Record<string, unknown>;
+      candidate = 'cue' in d || 'say' in d || 'action' in d ? d : d['output'];
+    } else if (p.kind === 'text' && typeof p.text === 'string') {
+      // A model that wrapped its JSON in prose or a fence is still answering; find the object.
+      const m = /\{[\s\S]*\}/.exec(p.text);
+      if (!m) continue;
+      try { candidate = JSON.parse(m[0]); } catch { continue; }
+    }
+    if (!candidate) continue;
+    const r = check(candidate);
+    if (r.success) return r.data;
+  }
+  return { error: 'no answer of the right shape in the reply' };
+}

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { bytesToHex, seedCommit } from '@pokernight/deal';
 import {
   ALPINE_BELVEDERE as VENUE, BELVEDERE_SNOWFALL as TITLE, apply, chooseAction, isDead, openStaging, redactEvent,
-  tick, viewFor, type Casting, type MysteryState,
+  tick, traitsOf, viewFor, type Casting, type MysteryState,
 } from '../src/index.js';
 
 const T0 = 1_780_000_000_000;
@@ -45,12 +45,19 @@ function playNight(n: number, humans: string[] = []): { state: MysteryState; tic
 }
 
 describe('a night at the Belvedere, played by nobody', () => {
-  it('runs from curtain-up to the reveal, with two deaths and a killer', () => {
+  it('runs from curtain-up to the reveal, with a killer, a death, and the night\'s evidence either way', () => {
     const { state } = playNight(1);
     expect(state.phase).toBe('revealed');
-    expect(state.deaths).toHaveLength(2);
+    expect(state.deaths.length).toBeGreaterThanOrEqual(1);
     expect(state.cast.map((c) => c.role)).toContain(state.killer);
     expect(state.deaths.some((d) => d.victim === state.killer)).toBe(false);
+    // THE NIGHT GIVES UP ITS EVIDENCE EITHER WAY — two deaths, or one death and a room turned over — and
+    // what it gives up is enough to name one person. (How MANY pieces that takes is the killer's own traits'
+    // business: a part with three of them is named by three.)
+    const pieces = [...state.deaths.flatMap((d) => d.evidence), ...state.traces.filter((t) => t.kind === 'spared').flatMap((t) => t.evidence)];
+    expect(pieces.length).toBeGreaterThanOrEqual(TITLE.evidencePerDeath);
+    const left = TITLE.roles.filter((r) => traitsOf(TITLE, pieces).every((t) => r.traits.includes(t))).map((r) => r.id);
+    expect(left).toEqual([state.killer]);
   });
 
   it('replays byte-identically from the same seed', () => {
@@ -72,7 +79,7 @@ describe('a night at the Belvedere, played by nobody', () => {
   it('the evidence the night produced still names exactly one person', () => {
     for (const n of [1, 2, 3, 4, 5]) {
       const { state } = playNight(n);
-      const traits = state.deaths.flatMap((d) => d.evidence)
+      const traits = [...state.deaths.flatMap((d) => d.evidence), ...state.traces.filter((t) => t.kind === 'spared').flatMap((t) => t.evidence)]
         .map((id) => TITLE.clues.find((c) => c.id === id))
         .filter((c): c is Extract<typeof TITLE.clues[number], { kind: 'evidence' }> => c?.kind === 'evidence')
         .map((c) => c.trait);
@@ -190,7 +197,9 @@ describe('a short night is a whole night', () => {
       state = tick(state, TITLE, VENUE, now).state;
     }
     expect(state.phase).toBe('revealed');
-    expect(state.deaths).toHaveLength(2);
+    // nobody acted at all in this one, so the killer took no chance and the night spared somebody
+    expect(state.deaths).toHaveLength(1);
+    expect(state.traces.filter((t) => t.kind === 'spared')).toHaveLength(1);
     // and it took about a quarter of an evening, not an evening
     const minutes = (state.endedAt! - state.startedAt) / 60_000;
     expect(minutes).toBeLessThan(20);
@@ -307,5 +316,61 @@ describe('the only person playing is not the victim', () => {
     s = { ...s, where: { ...s.where, chef: 'kitchen', doctor: 'kitchen' } };
     for (const c of s.cast) if (c.role !== 'chef' && c.role !== 'doctor') s.where[c.role] = 'lobby';
     expect(apply(s, TITLE, VENUE, 'chef', { type: 'murder', victim: 'doctor', prop: 'knife-block' }, T0, 'human').ok).toBe(true);
+  });
+});
+
+describe('the killer\'s choices change the night', () => {
+  const start = (killer: string) => {
+    let s = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor']), seedHex: seedFrom(51), seedCommit: 'x', now: T0, killerRule: killer });
+    s = { ...s, act: 2, phase: 'act', actStartedAt: T0 - 20 * 60_000, deadline: T0 + 1000 };
+    return s;
+  };
+
+  it('sparing somebody is allowed, and the night still gives up what the second death would have', () => {
+    const s = start('chef');
+    const after = tick(s, TITLE, VENUE, T0 + 2000).state;
+    expect(after.deaths).toHaveLength(0);            // nothing was staged over the killer's choice
+    expect(after.traces.filter((t) => t.kind === 'spared')).toHaveLength(1);
+    const trace = after.traces[0]!;
+    expect(trace.evidence).toHaveLength(TITLE.evidencePerDeath);
+    expect(trace.room).toBe(TITLE.spared.room);
+    // and it is findable: go there and search
+    let s2: MysteryState = { ...after, act: 3, phase: 'act', where: { ...after.where, doctor: TITLE.spared.room } };
+    const found = apply(s2, TITLE, VENUE, 'doctor', { type: 'search', room: TITLE.spared.room }, T0 + 3000, 'human');
+    expect(found.ok).toBe(true);
+    if (found.ok) { s2 = found.state; expect(s2.knows.doctor).toContain(trace.evidence[0]); }
+  });
+
+  it('the house says something else happened, rather than reading the line about a scream', () => {
+    const after = tick(start('chef'), TITLE, VENUE, T0 + 2000);
+    const cue = after.events.find((e) => e.type === 'cue');
+    expect(cue?.type === 'cue' && cue.text).toBe(TITLE.spared.interlude);
+    expect(after.events.some((e) => e.type === 'spared')).toBe(true);
+  });
+
+  it('lets the killer leave a trail that points somewhere else — once, and never at themselves', () => {
+    let s = start('chef');
+    s = { ...s, where: { ...s.where, chef: 'lounge' } };
+    const mine = TITLE.roles.find((r) => r.id === 'chef')!.traits[0]!;
+    expect(apply(s, TITLE, VENUE, 'chef', { type: 'plant', prop: 'drinks-tray', trait: mine }, T0, 'human')).toMatchObject({ ok: false, code: 'yours' });
+    const notMine = 'scent:iris';
+    const planted = apply(s, TITLE, VENUE, 'chef', { type: 'plant', prop: 'drinks-tray', trait: notMine }, T0, 'human');
+    expect(planted.ok).toBe(true);
+    if (!planted.ok) return;
+    s = planted.state;
+    expect(s.traces.filter((t) => t.kind === 'planted')).toHaveLength(1);
+    expect(apply(s, TITLE, VENUE, 'chef', { type: 'plant', prop: 'drinks-tray', trait: 'hands:ink' }, T0, 'human')).toMatchObject({ ok: false, code: 'enough' });
+    // somebody else finds it, and the reveal names it for what it was
+    let s3: MysteryState = { ...s, where: { ...s.where, doctor: 'lounge' } };
+    const found = apply(s3, TITLE, VENUE, 'doctor', { type: 'search', room: 'lounge' }, T0 + 1000, 'human');
+    expect(found.ok).toBe(true);
+    if (found.ok) s3 = found.state;
+    const revealed = viewFor({ ...s3, phase: 'revealed' }, TITLE, VENUE, 'doctor');
+    expect(revealed.reveal?.planted.map((p) => p.trait)).toContain(notMine);
+  });
+
+  it('refuses a plant from anybody who is not the killer', () => {
+    const s = start('chef');
+    expect(apply(s, TITLE, VENUE, 'doctor', { type: 'plant', prop: 'drinks-tray', trait: 'scent:iris' }, T0, 'human')).toMatchObject({ ok: false, code: 'not-you' });
   });
 });

@@ -61,6 +61,7 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
         speakingTimer.current = setTimeout(() => setSpeaking(null), Math.min(6000, 1200 + e.text.length * 55));
       } else if (e.type === 'cue') sayAs('house', e.text);
       else if (e.type === 'died') sayAs('house', `${view.cast.find((c) => c.role === e.victim)?.name ?? 'somebody'} is dead.`);
+      else if (e.type === 'spared') sayAs('house', 'Nobody died. But somebody was through that room in the dark.');
     }
     spoken.current = t.length;
   }, [view?.transcript.length, view]);
@@ -159,11 +160,15 @@ function Room({ view, act, speaking }: { view: MysteryView; act: (a: unknown) =>
         <h2>{room.name}</h2>
         <p className="hint">{room.blurb}</p>
       </header>
-      {room.death ? (
+      {room.death || room.trace ? (
         <div className="mystery-body-here">
-          <strong>{view.deaths.find((d) => d.victim === room.death!.victim)?.victimName ?? room.death.victim} is here, and beyond help.</strong>
-          <button type="button" disabled={!playing || room.death.searched} onClick={() => act({ type: 'search', room: room.id })}>
-            {room.death.searched ? 'You have found everything here' : 'Search the room'}
+          <strong>
+            {room.death
+              ? `${view.deaths.find((d) => d.victim === room.death!.victim)?.victimName ?? room.death.victim} is here, and beyond help.`
+              : 'Somebody has been through this room in a hurry.'}
+          </strong>
+          <button type="button" disabled={!playing || (room.death ? room.death.searched : room.trace?.searched)} onClick={() => act({ type: 'search', room: room.id })}>
+            {(room.death ? room.death.searched : room.trace?.searched) ? 'You have found everything here' : 'Search the room'}
           </button>
         </div>
       ) : null}
@@ -214,15 +219,38 @@ function Room({ view, act, speaking }: { view: MysteryView; act: (a: unknown) =>
       </div>
       {view.you?.killer && view.you.opportunity ? (
         <div className="mystery-chance">
-          <strong>Your chance, and it is only this room.</strong>
-          <p className="hint">{view.you.opportunity.propName} is here. It has to be one of you and nobody else in the room.</p>
+          <strong>{view.you.opportunity.ready ? 'Your chance, and it is only this room.' : 'This room would do it — but not yet.'}</strong>
+          <p className="hint">
+            {view.you.opportunity.propName} is here. It has to be one of you and nobody else in the room.
+            {view.you.opportunity.ready ? '' : ' The night is young and everybody is still counting heads.'}
+          </p>
           <div className="row wrap">
             {room.people.map((p) => (
-              <button key={p.role} type="button" className="danger" disabled={room.people.length !== 1} onClick={() => act({ type: 'murder', victim: p.role, prop: view.you!.opportunity!.prop })}>
+              <button key={p.role} type="button" className="danger" disabled={room.people.length !== 1 || !view.you?.opportunity?.ready} onClick={() => act({ type: 'murder', victim: p.role, prop: view.you!.opportunity!.prop })}>
                 {room.people.length === 1 ? `…${p.name}` : `${p.name} — not while there is a witness`}
               </button>
             ))}
           </div>
+          <p className="hint">You may also do nothing. A night where nobody else dies is a different night, and it is yours to choose — the truth will still be findable, and the house will say what happened instead.</p>
+        </div>
+      ) : null}
+      {view.you?.killer && view.you.plant ? (
+        <div className="mystery-chance mystery-plant">
+          <strong>{view.you.plant.used ? 'You have left your trail.' : `Leave something at ${view.you.plant.propName}.`}</strong>
+          {view.you.plant.used ? (
+            <p className="hint">One trail is a lie; two is a pattern. You have laid yours.</p>
+          ) : (
+            <>
+              <p className="hint">A thing left where it will be found, pointing at somebody it is not. It will be named at the reveal for what it was — so choose whose it looks like.</p>
+              <div className="row wrap">
+                {view.you.plant.options.slice(0, 6).map((o) => (
+                  <button key={o.trait} type="button" className="small" onClick={() => act({ type: 'plant', prop: view.you!.plant!.prop, trait: o.trait })} title={o.text}>
+                    Point at {o.points.map((p) => p.name.split(' ').slice(-1)[0]).join(' or ')}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       ) : null}
     </section>
@@ -411,10 +439,12 @@ function Line({ e, name, clue, room, cast, speaking, you }: {
     case 'whispered': return said(e.by, <span className="m-words">{e.by === you ? `(to ${name(e.to)}) ` : '(quietly) '}{e.text}</span>, 'm-whisper');
     case 'moved': return <p className="m-move">{e.who === you ? `You go through to ${room(e.to)}.` : `${name(e.who)} goes through to ${room(e.to)}.`}</p>;
     case 'found': return <p className="m-found"><strong>You find:</strong> {clue(e.clue)}</p>;
+    case 'planted': return <p className="m-planted"><strong>You leave it where it will be found:</strong> {clue(e.clue)}</p>;
     case 'shared': return said(e.by, <>tells {e.to ? (e.to === you ? 'you' : name(e.to)) : 'the room'}: <span className="m-words">{clue(e.clue)}</span></>, 'm-shared');
     case 'claimed': return said(e.by, <><span className="m-words">{e.text}</span> <span className="tag">a claim</span></>, 'm-claim');
     case 'accused': return said(e.by, <>{e.by === you ? 'accuse' : 'accuses'} <strong>{name(e.against)}</strong>.</>, 'm-accused');
     case 'died': return <p className="m-died"><strong>{name(e.victim)} is dead</strong>, in {room(e.room)}.</p>;
+    case 'spared': return <p className="m-died"><strong>Nobody died</strong> — but somebody was through {room(e.room)} in the dark.</p>;
     case 'revealed': return <p className="m-act">The seed is published.</p>;
     default: return null;
   }
@@ -447,6 +477,8 @@ function Reveal({ view, onAgain, busy }: { view: MysteryView; onAgain: () => voi
         and the commitment was posted then: <code>{view.seedCommit.slice(0, 16)}…</code> is sha256 of{' '}
         <code>{r.seed.slice(0, 16)}…</code>. Nobody chose afterwards: not the house, not the story.
       </p>
+      {r.spared ? <p className="hint">Only one person died tonight. The second never came — which is a choice somebody made, and the house found another way to leave the same trail.</p> : null}
+      {r.planted.length ? <p className="hint">A trail was laid on purpose, pointing somewhere it should not: {r.planted.map((p) => p.trait).join(', ')}.</p> : null}
       {r.missed.length ? <p className="hint">{r.missed.length} piece{r.missed.length === 1 ? '' : 's'} of evidence nobody ever found.</p> : null}
       <button type="button" className="primary" disabled={busy} onClick={onAgain}>{busy ? 'Setting the scene…' : 'Another night'}</button>
     </section>

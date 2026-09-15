@@ -723,7 +723,8 @@ app.post('/clubs/:clubId/mystery', async (c) => {
   const stagingId = await clubStagingId(club, body.night, title);
   const res = await staging(c.env, stagingId).fetch('https://staging/plan', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ stagingId, club, night: body.night, title, host: session!.playerId, hostName: session!.name, pace: body.pace, restart: body.restart === true }),
+    // A CLUB'S NIGHT IS DIRECTED BY ITS HOST'S AGENT, for the same reason.
+    body: JSON.stringify({ stagingId, club, night: body.night, title, host: session!.playerId, hostName: session!.name, pace: body.pace, restart: body.restart === true, director: agentOf(session as never) ?? undefined }),
   });
   return c.json((await res.json()) as unknown, res.ok ? 200 : 400);
 });

@@ -21,6 +21,15 @@ export const BELVEDERE_SNOWFALL: Title = {
   // Halfway through the act, at the earliest: a killing at the door ends the act it was meant to shape.
   murderAfter: 0.5,
   openingDeath: { room: 'ski-room', prop: 'racks' },
+  // A KILLER WHO SPARES SOMEBODY changes the night; the truth still turns up, in a room turned over.
+  spared: {
+    room: 'guest-room', prop: 'suitcase',
+    interlude: 'The generator falters, and for twenty seconds the Belvedere is as dark as the mountain. When the lights come up everybody is standing where they were — and upstairs a door is open that was locked, a case has been emptied onto a bed, and whoever did it was in a hurry and left something of themselves behind.',
+  },
+  plantable: {
+    props: ['drinks-tray', 'wax-bench', 'knife-block', 'coat-stand', 'writing-desk'],
+    traits: ['boots:38', 'boots:42', 'boots:44', 'scent:pine-wax', 'scent:iris', 'scent:kitchen-smoke', 'hands:ink', 'hands:calloused', 'gloves:leather', 'gloves:wool', 'left-handed', 'limp', 'keys:master'],
+  },
 
   roles: [
     {

@@ -6793,3 +6793,5 @@ button.tag.guest {
 .mystery-parts li > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .mystery-parts li .hint { font-size: 0.8rem; }
 .mystery-plan .row.wrap { gap: 0.5rem; align-items: center; }
+.mystery-plant { border-color: #6b5a2b; background: #1d1a12; }
+.m-planted { color: #d8a66a; }

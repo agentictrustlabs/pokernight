@@ -154,7 +154,7 @@ export function openStaging(args: {
   const state: MysteryState = {
     title: title.id, venue: venue.id, seedCommit, seedHex,
     cast, killer: killer.role, killerRule, pace, act: 1, actStartedAt: now, phase: 'act', deadline: now + actMs(act0.minutes, pace),
-    where, knows, examined, publicClues: [], deaths: [], claims: [], accusations: [],
+    where, knows, examined, publicClues: [], deaths: [], traces: [], claims: [], accusations: [],
     log: [
       { type: 'cue', at: now, text: act0.opening, by: 'house' },
       { type: 'act', at: now, act: 1, phase: 'act', deadline: now + actMs(act0.minutes, pace) },
@@ -168,7 +168,9 @@ const clone = (s: MysteryState): MysteryState => ({
   ...s,
   cast: s.cast.slice(),
   where: { ...s.where }, knows: { ...s.knows }, examined: { ...s.examined },
-  publicClues: s.publicClues.slice(), deaths: s.deaths.map((d) => ({ ...d, evidence: d.evidence.slice(), found: d.found.slice() })),
+  publicClues: s.publicClues.slice(),
+  deaths: s.deaths.map((d) => ({ ...d, evidence: d.evidence.slice(), found: d.found.slice() })),
+  traces: s.traces.map((t) => ({ ...t, evidence: t.evidence.slice(), found: t.found.slice() })),
   claims: s.claims.slice(), accusations: s.accusations.slice(), log: s.log.slice(),
 });
 
@@ -225,17 +227,24 @@ export function tick(state: MysteryState, title: Title, venue: Venue, now: numbe
   if (s.phase === 'act') {
     s.phase = 'interlude';
     s.deadline = now + INTERLUDE_MS;
-    events.push(...push(s, { type: 'cue', at: now, text: act.interlude, by: 'house' }));
+    // A SPARED ACT IS A DIFFERENT SCENE, and the house says so rather than reading the line about a scream.
+    const spared = s.act === 2 && s.deaths.length < 2;
+    events.push(...push(s, { type: 'cue', at: now, text: spared ? title.spared.interlude : act.interlude, by: 'house' }));
     // The night's deaths happen at the interludes: the first is the engine's, the second is the killer's —
     // and if the killer did not take it, the engine stages what they did not, so the mystery still has one.
     if (s.act === 1 && !s.deaths.length) {
       const victim = chooseVictim(s, title);
       if (victim) events.push(...stageDeath(s, title, victim, title.openingDeath.room, title.openingDeath.prop, now));
     } else if (s.act === 2 && s.deaths.length < 2) {
-      const victim = chooseVictim(s, title, s.where[s.killer]);
-      const room = victim ? s.where[victim] ?? title.openingDeath.room : title.openingDeath.room;
-      const opp = (act.opportunities ?? [])[0];
-      if (victim) events.push(...stageDeath(s, title, victim, room, opp?.prop ?? title.openingDeath.prop, now));
+      /**
+       * THE KILLER SPARED SOMEBODY, and the night is theirs to change. Nothing is staged over the top of that
+       * choice — but the evidence the second death would have given up turns up anyway, somewhere the title
+       * named, because a mystery nobody can solve is not a kindness to anybody.
+       */
+      const already = s.deaths.flatMap((d) => d.evidence);
+      const evidence = pickEvidence(title, s.killer, already, title.evidencePerDeath);
+      s.traces = [...s.traces, { room: title.spared.room, prop: title.spared.prop, act: s.act, evidence, found: [], at: now, kind: 'spared' }];
+      events.push(...push(s, { type: 'spared', at: now, room: title.spared.room, act: s.act }));
     }
     events.push(...push(s, { type: 'act', at: now, act: s.act, phase: s.phase, deadline: s.deadline }));
     return { state: s, events };
@@ -311,12 +320,18 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
     }
     case 'search': {
       if (action.room !== here) return no('not-here', 'You would have to be in there.');
+      // A BODY OR A ROOM TURNED OVER — both are things a room has to give up, and both are searched the same.
       const death = s.deaths.find((d) => d.room === here);
-      if (!death) return no('nothing-here', 'There is nothing in this room to search.');
-      const next = death.evidence.find((id) => !(s.knows[role] ?? []).includes(id));
+      const trace = s.traces.find((t) => t.room === here);
+      const mine = s.knows[role] ?? [];
+      const fromDeath = death?.evidence.find((id) => !mine.includes(id));
+      const fromTrace = trace?.evidence.find((id) => !mine.includes(id));
+      if (!death && !trace) return no('nothing-here', 'There is nothing in this room to search.');
+      const next = fromDeath ?? fromTrace;
       if (!next) return no('nothing-more', 'You have found everything this room has.');
-      s.knows[role] = [...(s.knows[role] ?? []), next];
-      s.deaths = s.deaths.map((d) => (d === death ? { ...d, found: d.found.includes(next) ? d.found : [...d.found, next] } : d));
+      s.knows[role] = [...mine, next];
+      if (fromDeath && death) s.deaths = s.deaths.map((d) => (d === death ? { ...d, found: d.found.includes(next) ? d.found : [...d.found, next] } : d));
+      else if (trace) s.traces = s.traces.map((t) => (t === trace ? { ...t, found: t.found.includes(next) ? t.found : [...t.found, next] } : t));
       events.push(...push(s, { type: 'found', at: now, who: role, clue: next, room: here }));
       break;
     }
@@ -367,6 +382,32 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
       events.push(...stageDeath(s, title, action.victim, here, action.prop, now));
       break;
     }
+    case 'plant': {
+      /**
+       * THE KILLER'S OTHER HAND. A trail that points somewhere it should not is a lie told in objects, and it
+       * is the one thing the killer can leave that the engine did not decide. It cannot point at themselves,
+       * it must be a trait the title made plantable, and it is NAMED at the reveal — a mystery has to be
+       * solvable by somebody who found everything, so a planted trail is noise that can be seen through.
+       */
+      if (role !== s.killer) return no('not-you', 'You have nothing to plant.');
+      if (s.phase !== 'act') return no('not-now', 'Not with everyone watching the clock.');
+      const kit = title.plantable;
+      if (!kit) return no('nothing-to-plant', 'There is nothing here to leave.');
+      if (!kit.props.includes(action.prop)) return no('not-there', 'Not somewhere anybody would look.');
+      const room = roomOf(venue, here);
+      if (!room?.props.some((p) => p.id === action.prop)) return no('not-here', 'That is not in this room.');
+      if (!kit.traits.includes(action.trait)) return no('not-that', 'Nothing here would suggest that.');
+      const me = roleOf(title, role);
+      if (me?.traits.includes(action.trait)) return no('yours', 'That points at you, which is the opposite of the idea.');
+      const clue = title.clues.find((c) => c.kind === 'evidence' && c.trait === action.trait);
+      if (!clue) return no('not-that', 'Nothing here would suggest that.');
+      if (s.traces.some((t) => t.kind === 'planted' && t.by === role)) return no('enough', 'One trail is a lie; two is a pattern.');
+      s.traces = [...s.traces, { room: here, prop: action.prop, act: s.act, evidence: [clue.id], found: [], at: now, kind: 'planted', by: role }];
+      // You know what you left — it is your own lie, and you will want to remember whose door it is at.
+      s.knows[role] = [...(s.knows[role] ?? []), clue.id];
+      events.push(...push(s, { type: 'planted', at: now, by: role, clue: clue.id, room: here }));
+      break;
+    }
     default:
       return no('unknown', 'That is not a thing anybody can do.');
   }
@@ -388,6 +429,7 @@ export function parseAction(raw: unknown): { ok: true; action: MysteryAction } |
     case 'alibi': return str((r as { for?: string }).for, 64) ? { ok: true, action: { type: 'alibi', for: (r as { for: string }).for } } : no('bad-action', 'alibi needs somebody');
     case 'accuse': return str((r as { against?: string }).against, 64) ? { ok: true, action: { type: 'accuse', against: (r as { against: string }).against, clues: Array.isArray((r as { clues?: unknown }).clues) ? ((r as { clues: unknown[] }).clues.filter((c) => typeof c === 'string') as string[]) : [] } } : no('bad-action', 'accuse needs somebody');
     case 'murder': return str((r as { victim?: string }).victim, 64) && str((r as { prop?: string }).prop, 64) ? { ok: true, action: { type: 'murder', victim: (r as { victim: string }).victim, prop: (r as { prop: string }).prop } } : no('bad-action', 'murder needs somebody and something');
+    case 'plant': return str((r as { prop?: string }).prop, 64) && str((r as { trait?: string }).trait, 64) ? { ok: true, action: { type: 'plant', prop: (r as { prop: string }).prop, trait: (r as { trait: string }).trait } } : no('bad-action', 'planting needs something and somewhere');
     default: return no('bad-action', 'not an action anybody can take');
   }
 }
@@ -410,6 +452,7 @@ export function redactEvent(state: MysteryState, ev: MysteryEvent, role: RoleId 
   switch (ev.type) {
     case 'cue': case 'act': case 'died': case 'revealed': return ev;
     case 'found': return ev.who === role ? ev : null;
+    case 'planted': return ev.by === role ? ev : null;
     case 'whispered': return role && (ev.by === role || ev.to === role) ? ev : null;
     case 'moved': return role === null || ev.who === role || witnessed(ev) ? ev : null;
     case 'accused': return ev.room === null || role === null || ev.by === role || witnessed(ev) ? ev : null;
@@ -426,6 +469,10 @@ function personView(state: MysteryState, title: Title, role: RoleId): ViewPerson
     operator: c?.operator ?? 'agent', agent: c?.agent ?? '',
     alive: !isDead(state, role),
     look: r?.look ?? { skin: '#d8b08a', hair: '#3b2f2a', wear: '#2b333a', accent: '#5b6b74', hairStyle: 'short' },
+    ...(c?.mind ? { mind: c.mind } : {}),
+    // A character a PERSON plays says whose voice it is — that is how a huddle's audio finds its body, and
+    // it is no secret: their name is on the cast list before the curtain goes up.
+    ...(c?.operator === 'human' && c.name ? { playedBy: c.name } : {}),
   };
 }
 
@@ -436,10 +483,22 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
   const here = role ? state.where[role] ?? null : null;
   const room = here ? roomOf(venue, here) : undefined;
   const death = here ? state.deaths.find((d) => d.room === here) : undefined;
+  const trace = here ? state.traces.find((t) => t.room === here) : undefined;
   const known = role ? state.knows[role] ?? [] : state.publicClues;
   const revealed = state.phase === 'revealed';
   const opp = role === state.killer ? (act.opportunities ?? []).find((o) => o.room === here) : undefined;
   const oppProp = opp ? roomOf(venue, opp.room)?.props.find((p) => p.id === opp.prop) : undefined;
+  // What the killer could leave here, and whose trail it would look like.
+  const kit = role === state.killer ? title.plantable : undefined;
+  const plantProp = kit && room ? room.props.find((p) => kit.props.includes(p.id)) : undefined;
+  const mine = role ? roleOf(title, role)?.traits ?? [] : [];
+  const plantOptions = kit && plantProp
+    ? kit.traits.filter((t) => !mine.includes(t)).map((t) => ({
+        trait: t,
+        text: title.clues.find((c) => c.kind === 'evidence' && c.trait === t)?.text ?? t,
+        points: title.roles.filter((r) => r.traits.includes(t)).map((r) => ({ role: r.id, name: r.name })),
+      })).filter((o) => o.points.length)
+    : [];
   return {
     title: title.id, titleName: title.name, venue: venue.id,
     act: state.act, actName: act.name, objective: act.objective, pace: state.pace,
@@ -448,6 +507,9 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
       role, name: me.name, blurb: me.blurb, secret: me.secret, alive: !isDead(state, role), look: me.look,
       killer: role === state.killer,
       ...(opp && oppProp ? { opportunity: { room: opp.room, prop: opp.prop, propName: oppProp.name, ready: Date.now() >= chanceOpensAt(state, title), readyAt: chanceOpensAt(state, title) } } : {}),
+      ...(plantProp && plantOptions.length
+        ? { plant: { prop: plantProp.id, propName: plantProp.name, used: state.traces.some((t) => t.kind === 'planted' && t.by === role), options: plantOptions } }
+        : {}),
     } : null,
     room: room && here ? {
       id: here, name: room.name, blurb: room.blurb,
@@ -455,6 +517,7 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
       props: room.props.map((p) => ({ id: p.id, name: p.name, examined: (role ? state.examined[role] ?? [] : []).includes(p.id) })),
       doors: venue.rooms.filter((r) => adjacent(venue, here, r.id)).map((r) => ({ id: r.id, name: r.name, open: act.opens.includes(r.id) })),
       death: death ? { victim: death.victim, searched: death.evidence.every((id) => known.includes(id)) } : null,
+      trace: trace ? { searched: trace.evidence.every((id) => known.includes(id)) } : null,
     } : null,
     cast: state.cast.map((c) => personView(state, title, c.role)),
     rooms: venue.rooms.map((r) => ({ id: r.id, name: r.name })),
@@ -464,9 +527,14 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
     accusation: (() => { const a = role ? state.accusations.find((x) => x.by === role) : undefined; return a ? { against: a.against, clues: a.clues } : null; })(),
     reveal: revealed ? {
       killer: state.killer, killerName: roleOf(title, state.killer)?.name ?? state.killer, seed: state.seedHex ?? '', rule: state.killerRule,
+      spared: state.deaths.length < 2,
+      planted: state.traces.filter((t) => t.kind === 'planted').flatMap((t) => t.evidence.map((id) => ({ clue: id, trait: traitsOf(title, [id])[0] ?? '' }))),
       correct: state.accusations.filter((a) => a.against === state.killer).map((a) => a.by),
       fooled: state.accusations.filter((a) => a.against !== state.killer).map((a) => ({ by: a.by, against: a.against })),
-      missed: state.deaths.flatMap((d) => d.evidence.filter((id) => !d.found.includes(id))),
+      missed: [
+        ...state.deaths.flatMap((d) => d.evidence.filter((id) => !d.found.includes(id))),
+        ...state.traces.filter((t) => t.kind === 'spared').flatMap((t) => t.evidence.filter((id) => !t.found.includes(id))),
+      ],
     } : null,
   };
 }

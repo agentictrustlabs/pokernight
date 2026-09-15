@@ -95,8 +95,14 @@ export function chooseAction(view: MysteryView, lines: CastLines, tick: number):
     if (!soleHuman) return { action: { type: 'murder', victim: room.people[0].role, prop: you.opportunity.prop } };
   }
 
-  // 3. There is a body in this room and you have not finished looking at it.
-  if (room.death && !room.death.searched) return { action: { type: 'search', room: room.id }, line: lines.found };
+  // 2b. Alone, with something worth leaving behind: a trail that points at somebody else. Once a night.
+  if (you.killer && you.plant && !you.plant.used && !room.people.length && view.act >= 2) {
+    const pick = you.plant.options[r(15) % you.plant.options.length];
+    if (pick) return { action: { type: 'plant', prop: you.plant.prop, trait: pick.trait } };
+  }
+
+  // 3. There is a body in this room, or a room turned over, and you have not finished looking.
+  if ((room.death && !room.death.searched) || (room.trace && !room.trace.searched)) return { action: { type: 'search', room: room.id }, line: lines.found };
 
   // 4. Something in this room you have not looked at.
   const unseen = room.props.filter((p) => !p.examined);
