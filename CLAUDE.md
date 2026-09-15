@@ -290,6 +290,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   join a club" and a button that says the same; the buy-in ceiling is STILL DISCLOSED but folded into a
   `<details>` — a games site does not open with money, and the person's own Home shows the same numbers again
   before anything is signed. Nothing on it is poker's: this room deals more than one game.
+- **STARTING A CLUB IS A HOST'S OWN ROAD, OPEN TO A VISITOR** (2026-09-15, `pages/NewClubPage.tsx`), the same
+  shape as a mission steward's: `#/clubs/new` renders for somebody with no session (special-cased in `App.tsx`
+  beside `newMission`), explains the road, and takes ONE trip to their Home. Sending them through the room's
+  sign-in first made them a player before it let them be a host — play money, a buy-in ceiling, a seat, a coach,
+  none of which a host came for.
 - **THE THINGS YOU DO ONCE LIVE IN THE HEADER** (`.topbar-secondary`): registering a mission is a steward's
   errand and starting a club is a host's, and neither belongs in front of somebody who came to play. Missions
   are still SHOWN everywhere (the map on the front door and on Play); only the REGISTER road moved.

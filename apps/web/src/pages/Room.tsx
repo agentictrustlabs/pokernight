@@ -168,7 +168,7 @@ function SignedIn({ r, session, auth, moneyStamp }: { r: Route; session: AppSess
             <MoneyPage session={session} config={auth.config} treasury={treasury} treasuryErr={treasuryErr} tables={tables} onChanged={loadTreasury} />
           </>
         ) : r.page === 'newClub' ? (
-          <NewClubPage config={auth.config} />
+          <NewClubPage config={auth.config} session={session} />
         ) : r.page === 'room' ? (
           <RoomPage session={session} clubId={r.clubId ?? null} />
         ) : r.page === 'newTable' ? (

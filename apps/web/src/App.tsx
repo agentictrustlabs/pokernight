@@ -24,11 +24,12 @@ import {
 } from './lib/home';
 import { describeDemoError, type DemoPersona } from './lib/demo';
 import { connectAsDemoUser, fetchDemoPersonas } from './lib/quickConnect';
-import { HOME_HASH, NEW_MISSION_HASH, clubHash, goTo, missionHash, route, takeReturn } from './lib/routes';
+import { HOME_HASH, NEW_CLUB_HASH, NEW_MISSION_HASH, clubHash, goTo, missionHash, route, takeReturn } from './lib/routes';
 import { describeSignOut, signOutTo, type SignOutReason } from './lib/session';
 import { Brand } from './components/Brand';
 import { PRODUCT_MARK } from './lib/brand';
 import { MissionRegisterPage } from './pages/MissionRegisterPage';
+import { NewClubPage } from './pages/NewClubPage';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
 import { NewBuild } from './components/NewBuild';
@@ -510,6 +511,29 @@ export function App() {
 
   // THE MISSION REGISTER FORM IS OPEN TO A VISITOR: a steward is not here to play, so the room's sign-in is
   // not their door. They fill the form, their one trip is to their Home, and the return leg signs them in.
+  // STARTING A CLUB IS A HOST'S ROAD, and it is open to a visitor for the same reason the mission form is: a
+  // person starting a club is not here to be dealt a hand, and the room's sign-in would make them a player
+  // first — play money, a buy-in ceiling, a seat, a coach — before it let them be a host.
+  if (r.page === 'newClub' && !session) {
+    return huddled(
+      <div className="app">
+        <CardDefs />
+        <div className="topbar">
+          <Brand />
+          <span className="spacer" />
+          <span className="meta"><span>clubs · start one</span></span>
+        </div>
+        <div className="page">
+          {arriving ? (
+            <div className="arriving"><div><span className="arriving-mark" aria-hidden="true">{PRODUCT_MARK}</span><p>{error ?? 'Your Home has chartered the club — opening it…'}</p></div></div>
+          ) : (
+            <NewClubPage config={config} session={null} />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (r.page === 'newMission' && !session) {
     return huddled(
       <div className="app">
@@ -571,7 +595,7 @@ export function App() {
             somebody who came to play a game. */}
         <nav className="topbar-secondary" aria-label="Set something up">
           <a href={NEW_MISSION_HASH}>Register a mission</a>
-          {session ? <a href="#/clubs/new">Start a club</a> : null}
+          <a href={NEW_CLUB_HASH}>Start a club</a>
         </nav>
         <span className="meta">
           {session ? (
