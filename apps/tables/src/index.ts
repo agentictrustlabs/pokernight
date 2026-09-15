@@ -109,12 +109,14 @@ import type { SeatAgentBody } from './table-do.js';
 import { visitOf, oneOffFrom, CLUB_ID_RE, CLUB_WIRE_SKILLS, belongs, clubDelegateAddress, clubViewFor, knownPeople, myClubs, myInvitations, nightsOf, readClub, scheduleFrom, standingAt, storeClubWire, writeClubRecord } from './clubs.js';
 import { resolveAgentName } from './naming.js';
 import { gameFor } from './games.js';
+import { DEFAULT_TITLE, TITLES, VENUES } from '@pokernight/mystery';
 import { ensurePracticeTable, practiceTableId } from './practice.js';
 import { feedPlayer, feedToken } from './feed-token.js';
 
 export { PokerTableDO } from './table-do.js';
 export { LobbyDO } from './lobby-do.js';
 export { MissionRegistryDO } from './missions.js';
+export { MysteryDO } from './mystery-do.js';
 export { SceneDO } from './scene-do.js';
 export { SessionDO } from './session-do.js';
 
@@ -645,6 +647,63 @@ async function layoutRoom(env: Env, roomId: string, name: string, clubId: string
   const res = await room(env, roomId).fetch('https://room/layout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roomId, name, tables: tables.map((t) => ({ tableId: t.tableId, name: t.name, game: t.game ?? 'poker', seats: t.config.seats, seated: t.seated, occupants: seatsBy[t.tableId] ?? [] })) }) });
   return ((await res.json()) as { manifest: RoomManifest }).manifest;
 }
+
+// ─────────────────────────────── MYSTERY NIGHT (docs/MYSTERY-NIGHT.md) ───────────────────────────────
+// A story at a place, not a game at a table: no seats, no stakes, and the whole of it in `MysteryDO` and
+// the engine it hosts. A SOLO staging is derived from its owner exactly as a practice table is — asking
+// twice is asking about the same night, so nothing has to remember that somebody has one.
+
+const MYSTERY_NS = 'pokernight:mystery:v1';
+async function soloStagingId(playerId: string, title: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`${MYSTERY_NS}:${title}:${playerId}`);
+  const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return [h.slice(0, 8), h.slice(8, 12), `4${h.slice(13, 16)}`, `${((parseInt(h[16] as string, 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}`, h.slice(20, 32)].join('-');
+}
+function staging(env: Env, stagingId: string) {
+  return env.STAGINGS.get(env.STAGINGS.idFromName(stagingId));
+}
+
+/** What can be staged here — titles and their venues, so a client can offer a choice. */
+app.get('/mysteries', (c) => c.json({
+  titles: Object.values(TITLES).map((t) => ({
+    id: t.id, name: t.name, blurb: t.blurb, tone: t.tone, venue: t.venue,
+    venueName: VENUES[t.venue]?.name ?? t.venue, acts: t.acts.length, cast: t.roles.length,
+    roles: t.roles.map((r) => ({ id: r.id, name: r.name, blurb: r.blurb })),
+  })),
+}));
+
+/** YOUR OWN NIGHT: one per person per title, made on the first ask and remade when you ask for another. */
+app.post('/mysteries/solo', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const body = (await c.req.json().catch(() => ({}))) as { title?: string; role?: string; restart?: boolean; killer?: 'chance' | 'me' };
+  const title = body.title ?? DEFAULT_TITLE;
+  if (!TITLES[title]) return c.json({ error: `no such mystery: ${title}` }, 404);
+  const stagingId = await soloStagingId(session.playerId, title);
+  const res = await staging(c.env, stagingId).fetch('https://staging/open', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stagingId, owner: session.playerId, ownerName: session.name, title, role: body.role, restart: body.restart === true, killer: body.killer === 'me' ? 'me' : 'chance' }),
+  });
+  if (!res.ok) return c.json({ error: ((await res.json()) as { error?: string }).error ?? 'could not open the night' }, 400);
+  return c.json((await res.json()) as unknown);
+});
+
+/** The staging as this person sees it — their character's view, or a watcher's. */
+app.get('/mysteries/:stagingId', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const res = await staging(c.env, c.req.param('stagingId') ?? '').fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}`);
+  return c.json((await res.json()) as unknown, res.ok ? 200 : 404);
+});
+
+/** The night's socket. `?token=` like a table's. */
+app.get('/mysteries/:stagingId/ws', async (c) => {
+  if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') return c.json({ error: 'expected websocket upgrade' }, 426);
+  const session = await resolveSession(c.env, c.req.query('token'));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const headers = new Headers({ Upgrade: 'websocket', 'x-player-id': session.playerId, 'x-player-name': encodeURIComponent(session.name) });
+  return staging(c.env, c.req.param('stagingId') ?? '').fetch('https://staging/ws', { headers });
+});
 
 /** The room's manifest and who is in it — a read, so a page can draw the lounge before the socket opens. */
 app.get('/rooms/:roomId', async (c) => {

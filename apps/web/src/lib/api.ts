@@ -562,3 +562,29 @@ export const roomApi = { room: (roomId: string, token: string) => request<{ mani
 export function roomSocketUrl(roomId: string, token: string): string {
   return `${socketBase()}/rooms/${encodeURIComponent(roomId)}/ws?token=${encodeURIComponent(token)}`;
 }
+
+/* ───────────────────────────── MYSTERY NIGHT (docs/MYSTERY-NIGHT.md) ───────────────────────────── */
+
+/** What can be staged, so the front of the house can offer a choice of mystery and of part. */
+export interface MysteryTitleSummary {
+  id: string; name: string; blurb: string; tone: string; venue: string; venueName: string;
+  acts: number; cast: number; roles: Array<{ id: string; name: string; blurb: string }>;
+}
+export interface StagingSummary {
+  stagingId: string; title: string; venue: string; role: string; act: number; phase: string;
+  deadline: number | null; seedCommit: string; paused: boolean; startedAt: number; endedAt: number | null;
+}
+
+export const mysteryApi = {
+  titles: () => request<{ titles: MysteryTitleSummary[] }>('/mysteries'),
+  /** YOUR OWN NIGHT: the same one each time you ask, until you ask for another (`restart`). */
+  solo: (body: { title?: string; role?: string; restart?: boolean; killer?: 'chance' | 'me' }, token: string) =>
+    request<{ ok: boolean; staging: StagingSummary }>('/mysteries/solo', { method: 'POST', body: JSON.stringify(body) }, token),
+  read: (stagingId: string, token: string) =>
+    request<{ staging: StagingSummary; view: unknown }>(`/mysteries/${encodeURIComponent(stagingId)}`, {}, token),
+};
+
+/** The night's socket — one character's own view down it, never the whole story. */
+export function mysterySocketUrl(stagingId: string, token: string): string {
+  return `${socketBase()}/mysteries/${encodeURIComponent(stagingId)}/ws?token=${encodeURIComponent(token)}`;
+}

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { AppSession, TableSummary } from '../lib/types';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, mysteryApi, type MysteryTitleSummary } from '../lib/api';
 import { gameLabel } from '../lib/games';
-import { TABLES_HASH } from '../lib/routes';
+import { goTo, mysteryHash, TABLES_HASH } from '../lib/routes';
 import { seatsFree, withRoom } from '../lib/lobby';
 
 /**
@@ -24,12 +24,84 @@ import { seatsFree, withRoom } from '../lib/lobby';
 export function PlayPage({ session }: { session: AppSession }) {
   return (
     <div className="play">
+      <MysteryCard session={session} />
       <PracticeCard session={session} game="canasta" />
       <PracticeCard session={session} game="poker" />
       <Running session={session} />
       {/* NO MISSIONS HERE (2026-09-15). Somebody who has just come in came to play; the missions have a page
           of their own and a row in the rail, and a map on the front door for anybody still deciding. */}
     </div>
+  );
+}
+
+/**
+ * A MYSTERY IS NOT A TABLE, and this card is where that starts (docs/MYSTERY-NIGHT.md §10).
+ *
+ * One press and you are in the Belvedere's lobby with seven characters who talk back, each played by one of
+ * the estate's own agents. Your part is yours to pick; the killer is drawn from a seed committed to before
+ * the first word, and if it is you, you will be the only one told.
+ */
+function MysteryCard({ session }: { session: AppSession }) {
+  const [titles, setTitles] = useState<MysteryTitleSummary[] | null>(null);
+  const [role, setRole] = useState('');
+  const [killer, setKiller] = useState<'chance' | 'me'>('chance');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    mysteryApi.titles().then((r) => alive && setTitles(r.titles)).catch(() => alive && setTitles([]));
+    return () => { alive = false; };
+  }, []);
+  const title = titles?.[0] ?? null;
+  return (
+    <section className="panel play-card play-mystery">
+      <div className="play-band">
+        <span className="play-suit" aria-hidden="true">♦</span>
+        <div>
+          <span className="play-kicker">{title ? `${title.venueName} · ${title.cast} parts · ${title.acts} acts` : 'Mystery Night'}</span>
+          <h2>{title ? title.name : 'A mystery night'}</h2>
+        </div>
+      </div>
+      <div className="play-body">
+        <p className="hint">{title ? title.blurb : 'A story at a place, with a cast who talk back.'}</p>
+        {title ? (
+          <label className="mystery-part">
+            Tonight
+            <select value={killer} onChange={(e) => setKiller(e.target.value as 'chance' | 'me')}>
+              <option value="chance">Let the seed decide who did it</option>
+              <option value="me">Make it me — I want to be the one who did it</option>
+            </select>
+            <span className="hint">Either way the draw is made from a seed committed to before the first word, and the reveal proves it.</span>
+          </label>
+        ) : null}
+        {title ? (
+          <label className="mystery-part">
+            Your part
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="">Whoever the house gives you</option>
+              {title.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            <span className="hint">{title.roles.find((r) => r.id === role)?.blurb ?? title.tone}</span>
+          </label>
+        ) : null}
+        {err ? <div className="form-error">{err}</div> : null}
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !title}
+          onClick={async () => {
+            if (!title) return;
+            setBusy(true); setErr(null);
+            try {
+              const r = await mysteryApi.solo({ title: title.id, killer, ...(role ? { role } : {}) }, session.token);
+              goTo(mysteryHash(r.staging.stagingId));
+            } catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false); }
+          }}
+        >
+          {busy ? 'Setting the scene…' : 'Begin the night'}
+        </button>
+      </div>
+    </section>
   );
 }
 

@@ -30,6 +30,7 @@ import { Brand } from './components/Brand';
 import { PRODUCT_MARK } from './lib/brand';
 import { MissionRegisterPage } from './pages/MissionRegisterPage';
 import { NewClubPage } from './pages/NewClubPage';
+import { MysteryPage } from './pages/MysteryPage';
 import { SignUpPage } from './pages/SignUpPage';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
@@ -577,6 +578,15 @@ export function App() {
     );
   }
 
+  // A MYSTERY IS A PLACE, AND IT TAKES THE WHOLE WINDOW — no rail, like a table (docs/MYSTERY-NIGHT.md §9).
+  if (r.page === 'mystery') {
+    return huddled(
+      <div className="app">
+        <CardDefs />
+        <MysteryPage stagingId={r.stagingId} session={session} onSignOut={signOut} />
+      </div>
+    );
+  }
   if (r.page === 'table') {
     return huddled(
       <div className="app">

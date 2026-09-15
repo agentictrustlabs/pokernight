@@ -1,5 +1,6 @@
 import type { LobbyDO } from './lobby-do.js';
 import type { MissionRegistryDO } from './missions.js';
+import type { MysteryDO } from './mystery-do.js';
 import type { SceneDO } from './scene-do.js';
 import type { SessionDO } from './session-do.js';
 import type { PokerTableDO } from './table-do.js';
@@ -12,6 +13,8 @@ export interface Env {
   MISSIONS: DurableObjectNamespace<MissionRegistryDO>;
   /** THE ROOM's presence, one object per room (`scene-do.ts`, docs/SPATIAL-ROOM.md). */
   ROOMS: DurableObjectNamespace<SceneDO>;
+  /** MYSTERY NIGHT: one object per staging (`mystery-do.ts`, docs/MYSTERY-NIGHT.md). */
+  STAGINGS: DurableObjectNamespace<MysteryDO>;
   /** One instance per playerId; holds the server-side half of a Home session (see session-do.ts). */
   SESSIONS: DurableObjectNamespace<SessionDO>;
   /** One instance per club; holds its roster and answers standing (see club-do.ts). */

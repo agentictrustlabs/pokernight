@@ -1,6 +1,7 @@
 # Mystery Night — a story at a place, played by custodied characters
 
-**Status:** specification, 2026-09-15. Nothing built yet. The third game, and the first one that is not a
+**Status:** specification, 2026-09-15 — **P1 built and live the same day** (`packages/mystery`, `MysteryDO`,
+`/mysteries/*`, `pages/MysteryPage.tsx`, the solo night with seven agents; §14 for what P2–P4 still owe). The third game, and the first one that is not a
 table: it happens at a **place**, it is played by **characters** each of which is a real Smart Agent somebody
 custodies, and its rules are a **title** — content, not a package. Companion specs: `docs/SPATIAL-ROOM.md`
 (the room, the bodies, the cues this uses), `docs/GAMES.md` (why a port exists and what it is for),
@@ -45,6 +46,11 @@ acts, two deaths.
    published when the staging opens; the cast order and the killer come out of `@pokernight/deal`'s seeded
    shuffle; at the reveal the seed is published and anybody can recompute it. The card room's one fairness
    claim, applied to a whodunnit: **nobody, including the house, chose the killer after the game began.**
+   WHO THE SEED MAY LAND ON is a rule stated before it is spent (`KillerRule`): `any` — the whole eligible
+   cast, and the default, because a solo player who was always the murderer would never once get a mystery
+   to solve; `human` — somebody with a person behind them, which is what a party wants; or a named role,
+   for whoever asks to be the one. The rule is published at the reveal beside the seed, so a night anybody
+   asked for still proves that the draw was not made afterwards.
 8. **FACTS ARE THE ENGINE'S; CLAIMS ARE THE PLAYERS'.** Lying is the game. Testimony, alibis and accusations
    are recorded as CLAIMS with a speaker and a time, never as truth, and nothing in the system — least of all
    the director — may promote a claim to a fact.

@@ -6676,3 +6676,81 @@ button.tag.guest {
 .tag.leave-tag[disabled] { opacity: 0.6; cursor: default; }
 /* With the columns gone the room can have the height as well. */
 .room-immersive .lounge { height: min(68vh, 760px); }
+
+/* ───────────────────────────── MYSTERY NIGHT (docs/MYSTERY-NIGHT.md) ─────────────────────────────
+   A story at a place: the transcript is the game, so it gets the middle of the screen and the width;
+   the room and what you can do in it sit under it, and who you are sits beside. Colder than the felt
+   — this is a hotel above the treeline in the dark, not a card room. */
+.mystery { min-height: 100vh; background: var(--mystery-bg, #101418); color: #edeae2; }
+.mystery .topbar { background: #0b0e11; border-bottom: 1px solid rgba(240, 236, 224, 0.12); }
+.mystery-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 1rem;
+  align-items: start;
+  padding: 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+@media (max-width: 900px) { .mystery-page { grid-template-columns: 1fr; } }
+.mystery-main, .mystery-side { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
+.mystery .panel {
+  background: #171d22;
+  border: 1px solid rgba(240, 236, 224, 0.14);
+  color: #edeae2;
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+}
+.mystery .panel h2 { margin: 0.1rem 0 0.3rem; }
+.mystery .panel .hint, .mystery .hint { color: #a9b3ba; }
+.mystery .eyebrow, .mystery .eyebrow-h { color: #c9a14a; letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.68rem; font-weight: 600; }
+.mystery button { background: #232b31; color: #edeae2; border: 1px solid rgba(240, 236, 224, 0.2); border-radius: 8px; padding: 0.35rem 0.7rem; cursor: pointer; }
+.mystery button:hover:not(:disabled) { background: #2d363d; }
+.mystery button:disabled { opacity: 0.45; cursor: default; }
+.mystery button.primary { background: #c9a14a; color: #15191d; border-color: #c9a14a; font-weight: 600; }
+.mystery button.danger { background: #6b2b2b; border-color: #8d3a3a; color: #f6e9e4; }
+.mystery select, .mystery input { background: #101418; color: #edeae2; border: 1px solid rgba(240, 236, 224, 0.2); border-radius: 8px; padding: 0.4rem 0.5rem; }
+.mystery .tag { border: 1px solid rgba(240, 236, 224, 0.2); border-radius: 999px; padding: 0.1rem 0.5rem; font-size: 0.72rem; }
+.mystery-clock { font-variant-numeric: tabular-nums; color: #c9a14a; }
+
+/* the transcript — what you heard and saw, and nothing that happened to somebody else */
+.mystery-transcript { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem; line-height: 1.45; }
+.mystery-transcript p { margin: 0; }
+.m-cue { font-style: italic; color: #d8d2c4; border-left: 2px solid #c9a14a; padding-left: 0.6rem; margin: 0.35rem 0 !important; }
+.m-act { text-align: center; color: #c9a14a; letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.7rem; margin: 0.5rem 0 !important; }
+.m-said strong { color: #edeae2; }
+.m-whisper { color: #9aa6ae; font-style: italic; }
+.m-move { color: #7f8b93; font-size: 0.9rem; }
+.m-found { color: #8fd0a2; }
+.m-shared { color: #9dc4d8; }
+.m-claim { color: #d8d2c4; }
+.m-accused { color: #e0b07a; }
+.m-died { color: #e08585; margin: 0.4rem 0 !important; }
+
+.mystery-say { display: flex; gap: 0.5rem; }
+.mystery-say input { flex: 1; }
+
+.mystery-room header { margin-bottom: 0.5rem; }
+.mystery-room h3 { margin: 0.7rem 0 0.3rem; }
+.row.wrap { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.mystery-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.mystery-people li { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.mystery-body-here { border: 1px solid #6b2b2b; background: #21181a; border-radius: var(--radius); padding: 0.6rem 0.8rem; display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+.mystery-chance { border: 1px solid #8d3a3a; border-radius: var(--radius); padding: 0.6rem 0.8rem; margin-top: 0.8rem; background: #1d1417; }
+
+.mystery-you.killer { border-color: #8d3a3a; }
+.mystery-secret { color: #d8d2c4; font-size: 0.92rem; }
+.mystery-killer-note { color: #e5b3b3; font-size: 0.92rem; }
+.mystery-clues ul, .mystery-cast ul { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.mystery-clues li { display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-start; font-size: 0.92rem; border-bottom: 1px solid rgba(240, 236, 224, 0.08); padding-bottom: 0.45rem; }
+.mystery-clues li.evidence { color: #8fd0a2; }
+.mystery-cast li { display: flex; gap: 0.4rem; align-items: baseline; }
+.mystery-cast li.dead strong { text-decoration: line-through; color: #8a9199; }
+.mystery-accuse { margin-top: 0.7rem; display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
+.mystery-reveal { border-color: #c9a14a; }
+.mystery-verdict { font-size: 1.05rem; }
+.mystery-proof code { background: #0b0e11; padding: 0.05rem 0.3rem; border-radius: 4px; }
+.mystery .held-banner { background: #2a2418; border: 1px solid #c9a14a; color: #edeae2; border-radius: var(--radius); padding: 0.5rem 0.8rem; }
+.mystery-part { display: flex; flex-direction: column; gap: 0.25rem; margin: 0.4rem 0 0.7rem; }
+.play-card.play-mystery .play-band { background: linear-gradient(120deg, #141a20, #24303a); }
+.play-card.play-mystery .play-suit { color: #c9a14a; }

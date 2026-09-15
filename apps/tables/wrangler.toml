@@ -39,6 +39,7 @@ bindings = [
   { name = "SESSIONS", class_name = "SessionDO" },
   { name = "MISSIONS", class_name = "MissionRegistryDO" },
   { name = "ROOMS", class_name = "SceneDO" },
+  { name = "STAGINGS", class_name = "MysteryDO" },
 ]
 
 # Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
@@ -71,6 +72,11 @@ new_sqlite_classes = ["MissionRegistryDO"]
 [[migrations]]
 tag = "v6"
 new_sqlite_classes = ["SceneDO"]
+
+# MYSTERY NIGHT (docs/MYSTERY-NIGHT.md): one object per staging — a story at a place.
+[[migrations]]
+tag = "v7"
+new_sqlite_classes = ["MysteryDO"]
 
 [[kv_namespaces]]
 binding = "CLUB_WIRES"
@@ -154,6 +160,7 @@ bindings = [
   { name = "SESSIONS", class_name = "SessionDO" },
   { name = "MISSIONS", class_name = "MissionRegistryDO" },
   { name = "ROOMS", class_name = "SceneDO" },
+  { name = "STAGINGS", class_name = "MysteryDO" },
 ]
 
 [[env.faithnet.migrations]]
@@ -180,6 +187,10 @@ new_sqlite_classes = ["MissionRegistryDO"]
 [[env.faithnet.migrations]]
 tag = "v6"
 new_sqlite_classes = ["SceneDO"]
+
+[[env.faithnet.migrations]]
+tag = "v7"
+new_sqlite_classes = ["MysteryDO"]
 
 [[env.faithnet.kv_namespaces]]
 binding = "CLUB_WIRES"

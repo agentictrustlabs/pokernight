@@ -283,8 +283,16 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   invited visit): the mission, the representative (name · agent · email/phone — host-only, stripped for members
   in `clubViewFor`), the status. OPENING A TABLE IS A PAGE (`#/tables/new`, `#/clubs/<id>/tables/new?night=`,
   `pages/TableNewPage.tsx`) — the table and the stakes side by side; the two `<details>` forms are gone.
-- **MYSTERY NIGHT IS A STORY AT A PLACE, and it is specified before it is built** — `docs/MYSTERY-NIGHT.md`
-  (2026-09-15, nothing built). The third game and the first that is not a table: ONE engine (`packages/mystery`)
+- **MYSTERY NIGHT IS A STORY AT A PLACE** — `docs/MYSTERY-NIGHT.md`; **P1 built 2026-09-15**:
+  `packages/mystery` (the pure engine + the Belvedere venue + `belvedere-snowfall`, one engine and titles as
+  CONTENT), `MysteryDO` (one object per staging, migration v7, the clock and the agent cast on its alarm),
+  `/mysteries` · `/mysteries/solo` · `/mysteries/:id` · `/mysteries/:id/ws`, and `pages/MysteryPage.tsx` at
+  `#/m/<staging>` — the place page, which is the PRIMARY client and not a fallback. A solo night is derived
+  from its owner like a practice table (same night when you ask twice; a new one when you ask for another,
+  or for another part). `checkTitle` proves a title solvable before anybody plays it — every possible
+  killer narrowed to exactly themselves by the traits two deaths give up — and it runs in the package's
+  own tests. What P2–P4 still owe (`.cast` agents, role archetypes at the Home, the director, the 3D venue)
+  is §14 of the spec. The third game and the first that is not a table: ONE engine (`packages/mystery`)
   and many TITLES as content; venue · title · staging are three separate things; every character is a CUSTODIED
   agent (`.cast`, a vertical type over `person`) cast in a ROLE that is an ARCHETYPE in a new `mystery` skills
   context; the engine owns facts and the director service owns only words; the killer is drawn by the seed,

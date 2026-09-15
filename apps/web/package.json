@@ -16,6 +16,7 @@
     "@cloudflare/realtimekit-react": "0.1.0",
     "@pokernight/engine": "workspace:*",
     "@pokernight/missions": "workspace:*",
+    "@pokernight/mystery": "workspace:*",
     "@pokernight/protocol": "workspace:*",
     "leaflet": "1.9.4",
     "playcanvas": "2.22.2",

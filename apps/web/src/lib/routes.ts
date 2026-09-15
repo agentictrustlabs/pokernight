@@ -54,6 +54,8 @@ export type Route =
   | { page: 'signup' }
   /** `practice` asks the table page to set the table up rather than wait to be told. */
   | { page: 'table'; tableId: string; practice?: boolean }
+  /** A MYSTERY NIGHT — a story at a place rather than a game at a table (docs/MYSTERY-NIGHT.md). */
+  | { page: 'mystery'; stagingId: string }
   /**
    * An invitation link. It carries the CLUB as well as the token because the token alone does not
    * say which club to ask — a club is its own object, and a global index of every invitation in the
@@ -107,6 +109,11 @@ export function missionHash(entryId: string): string {
 }
 
 /** One club's page. The one place that builds a club URL, so the shape is stated once. */
+/** A night's own page. `#/m/<staging>` — short, because it is a place you go back to. */
+export function mysteryHash(stagingId: string): string {
+  return `#/m/${encodeURIComponent(stagingId)}`;
+}
+
 export function clubHash(clubId: string): string {
   return `#/clubs/${encodeURIComponent(clubId)}`;
 }
@@ -119,6 +126,8 @@ export function route(hash: string): Route {
     const practice = new URLSearchParams(query).get('practice') === '1';
     return { page: 'table', tableId: decodeURIComponent(table[1]), ...(practice ? { practice: true } : {}) };
   }
+  const mystery = /^\/m\/([^/?#]+)/.exec(path);
+  if (mystery?.[1]) return { page: 'mystery', stagingId: decodeURIComponent(mystery[1]) };
   const join = /^\/join\/(0x[0-9a-fA-F]{40})(?:[/?#]|$)/.exec(path);
   if (join?.[1]) return { page: 'join', clubId: join[1].toLowerCase() };
   // `new` is checked BEFORE the id, and a club id is a UUID, so the two can never be confused.
