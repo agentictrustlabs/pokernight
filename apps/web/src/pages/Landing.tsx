@@ -152,9 +152,9 @@ function Hero({ live }: { live: LiveLobby }) {
       <div className="hero-inner">
         <p className="hero-eyebrow">Fellowship with a mission</p>
         <h1 className="hero-title">
-          Play together.
+          Gather, and grow closer.
           <br />
-          Gather and grow closer.
+          Play together.
           <br />
           Meet the mission.
         </h1>
