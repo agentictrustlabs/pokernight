@@ -40,6 +40,15 @@ export function forgetRoom(): void {
 export function rememberSeat(tableId: string, seat: number): void {
   try { sessionStorage.setItem(SEAT_KEY, JSON.stringify({ tableId, seat })); } catch { /* the body just stands where it is */ }
 }
+/** The same, without consuming it — the fireside needs to know which chair it is showing. */
+export function peekSeatPlace(): { tableId: string; seat: number } | null {
+  try {
+    const raw = sessionStorage.getItem(SEAT_KEY); if (!raw) return null;
+    const v = JSON.parse(raw) as { tableId?: unknown; seat?: unknown };
+    return typeof v.tableId === 'string' && typeof v.seat === 'number' ? { tableId: v.tableId, seat: v.seat } : null;
+  } catch { return null; }
+}
+
 export function takeSeatPlace(): { tableId: string; seat: number } | null {
   try {
     const raw = sessionStorage.getItem(SEAT_KEY); if (!raw) return null;

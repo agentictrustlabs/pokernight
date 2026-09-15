@@ -2,6 +2,8 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import type { AppSession, ClubView, MissionVisit } from '../lib/types';
 import { api, type MissionListing } from '../lib/api';
 import { RoomSocket } from '../lib/roomSocket';
+import { peekSeatPlace } from '../lib/fromRoom';
+import { BAR_SEATS, FIRE_SEATS, barSeat, firesideSeat } from '../lib/roomSeats';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { clubScope } from '../lib/huddle';
 import { fireHash, missionHash, roomHash } from '../lib/routes';
@@ -53,12 +55,18 @@ export function FiresidePage({ session, clubId, place = 'fire' }: { session: App
   useEffect(() => {
     const s2 = new RoomSocket(roomId, session.token, undefined, bump);
     sock.current = s2;
-    // stand at the anchor so the zone the room derives is this one
-    const at = setInterval(() => {
+    // IN THE CHAIR, AND KEEP SAYING SO. The seat is the one you took (the room remembered it); the pose is
+    // repeated rather than sent once, because a single shot fired before the manifest arrived went nowhere and
+    // left the body standing at the door for everybody still in the room.
+    const mine = peekSeatPlace();
+    const idx = mine && (mine.tableId === 'fire' || mine.tableId === 'bar') ? mine.seat : 0;
+    const hold = setInterval(() => {
       const an = s2.state.manifest?.anchors?.[fireside ? 'fire' : 'bar'];
-      if (an) { s2.pose(an.x - (fireside ? 2.2 : -1.2), an.y, fireside ? Math.PI / 2 : -Math.PI / 2); clearInterval(at); }
-    }, 700);
-    return () => { clearInterval(at); s2.close(); sock.current = null; };
+      if (!an) return;
+      const spot = fireside ? firesideSeat(an, Math.min(idx, FIRE_SEATS - 1)) : barSeat(an, Math.min(idx, BAR_SEATS - 1));
+      s2.pose(spot.x, spot.z, spot.yaw);
+    }, 2000);
+    return () => { clearInterval(hold); s2.close(); sock.current = null; };
   }, [roomId, session.token, fireside]);
   const here = [...(sock.current?.state.people.values() ?? [])].filter((p) => p.zone === (fireside ? 'fire' : 'bar'));
 

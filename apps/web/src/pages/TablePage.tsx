@@ -335,9 +335,6 @@ export function TablePage({
             </button>
           ) : null}
           {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}
-          {/* SITTING IS THE TICKET: the call belongs to the people at this table, so a spectator watching it
-              does not get one. Stand up and it goes; sit down and it is there. */}
-          {club && mySeat != null ? <HuddleAffordance scope={clubScope_} scopeName={`${club.name} · this table`} compact /> : null}
           {/* The settlement mode travels with the table's NAME, so it is on screen from the moment
               the page opens and before anyone can reach a seat. */}
           <SettlementTag settlement={settlement} rate={tableRate(settlement, chipValue, assetSymbol)} withRate />
@@ -377,6 +374,10 @@ export function TablePage({
               {meAtTable.status === 'sitting-out'
                 ? <button type="button" className="primary" onClick={() => send({ type: 'sit-in' })}>Sit back in</button>
                 : <button type="button" onClick={() => send({ type: 'sit-out' })}>Sit out</button>}
+              {/* THE CALL LIVES WITH THE SEAT. Sitting is the ticket — a spectator gets none — and the seat bar
+                  is the line people actually look at, so it belongs beside the button that gives the seat up
+                  rather than in the table's top strip half a screen away. */}
+              {club ? <HuddleAffordance scope={clubScope_} scopeName={`${club.name} · this table`} compact /> : null}
               <button type="button" className="seat-bar-leave" disabled={leaving} onClick={leave}>
                 {leaving ? 'Leaving…' : backToRoom ? 'Stand up' : 'Leave table'}
               </button>

@@ -6,6 +6,7 @@ import type { RoomSocket, RoomState } from '../../lib/roomSocket';
 import { Portrait } from '../huddle/Portrait';
 import { AvatarLibrary, ParticipantAvatar, RoomKit, type Seat } from './embodiment';
 import { isSpeaking } from './speaking';
+import { BAR_SEATS, FIRE_SEATS as FIRE_SEAT_COUNT, barSeat, firesideSeat, nearestSeatOf, type SeatSpot } from '../../lib/roomSeats';
 import { Deck3D } from './cards3d';
 import { Chips3D } from './chips3d';
 
@@ -36,6 +37,8 @@ const FIRE_SEATS = 6;
 const FIRE_R = 2.6; // how far the ring of chairs sits from the hearth
 const SEAT_PICK_PX = 110; // how near the POINTER must be, on screen, for a seat to be the one you mean
 const CHAIR_PICK = 1.5; // how near a click or the pointer must be to a chair to mean that chair
+/** Inside the walls, which stand at ±11: a click beyond this is the wall, not a destination. */
+const WALKABLE = 9.6;
 const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
 const deckSide = new pc.StandardMaterial();
@@ -271,6 +274,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // A CLICK NEAR A FREE CHAIR is "sit there": walk to it and, on arrival, ask the table for the seat.
       const seat = pickSeat(e.x, e.y, hit);
       if (seat && !me.current.avatar.seated) { me.current.goal = seat.at.clone(); me.current.heading = { tableId: seat.tableId, seat: seat.seat, yaw: seat.yaw }; lightChair(seat.key); }
+      // A CLICK ON THE WALL IS NOT A PLACE TO GO. The floor plane runs on past the walls forever, so a click
+      // anywhere above the skirting landed metres outside the room and the body set off to stand in it.
+      else if (Math.abs(hit.x) > WALKABLE || Math.abs(hit.z) > WALKABLE) { me.current.heading = null; lightChair(null); }
       else { me.current.goal = new pc.Vec3(hit.x, 0, hit.z); me.current.heading = null; lightChair(null); }
     });
     a.on('update', (dt: number) => {
@@ -488,7 +494,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
 
       } else { prim('box', wood, [bx, 0.55, bz], [1, 1.1, 5]); prim('box', brass, [bx, 1.12, bz], [1.2, 0.06, 5.2]); }
       // The stools are SEATS: a body's feet go a step out from the counter, turned to it.
-      barSeats.current = [-1, 0, 1].map((i, n) => ({ key: `bar:${n}`, at: new pc.Vec3(bx + 1.35, 0, bz + i * 1.2), yaw: -Math.PI / 2 }));
+      barSeats.current = Array.from({ length: BAR_SEATS }, (_, i) => { const sp = barSeat(a2.bar!, i); return { key: sp.key, at: new pc.Vec3(sp.x, 0, sp.z), yaw: sp.yaw }; });
       plateRef.current.set('anchor:bar', { id: 'anchor:bar', kind: 'anchor', text: 'The bar · meet the guest', world: new pc.Vec3(bx, 1.8, bz) });
     }
     if (a2.fire) {
@@ -519,15 +525,12 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // THE SAME CONVENTION THE TABLE'S CHAIRS USE, because that one demonstrably faces inward: a seat at angle
       // `a` sits at (sin a, cos a) · r, the chair piece is turned `a`, and the body's own yaw is `a + π`.
       // Deriving it afresh with cos/sin and an atan2 is what had them all looking at the wall.
+      // THE SHARED GEOMETRY (lib/roomSeats.ts), so the 2D page stands a body in the very chair this draws.
       fireSeats.current = [];
-      const spread = Math.PI * 0.9;              // an open horseshoe…
-      const centre = -Math.PI / 2;               // …centred on −X, which is where the room is from this hearth
-      for (let i = 0; i < FIRE_SEATS; i++) {
-        const a = centre - spread / 2 + (i / (FIRE_SEATS - 1)) * spread;
-        const sx = fx + Math.sin(a) * FIRE_R, sz = fz + Math.cos(a) * FIRE_R;
-        if (furnished) { const e = k!.place(CHAIR_PIECE, root, sx, sz, a * 180 / Math.PI, CHAIR_SCALE); if (e) fireChairEntities.current.set(`fire:${i}`, e); }
-        // the body's feet sit a little in front of the chair, facing the hearth
-        fireSeats.current.push({ key: `fire:${i}`, at: new pc.Vec3(fx + Math.sin(a) * (FIRE_R - CHAIR_BACK), 0, fz + Math.cos(a) * (FIRE_R - CHAIR_BACK)), yaw: a + Math.PI });
+      for (let i = 0; i < FIRE_SEAT_COUNT; i++) {
+        const sp = firesideSeat(a2.fire, i);
+        if (furnished) { const e = k!.place(CHAIR_PIECE, root, fx + Math.sin((sp.chairYawDeg * Math.PI) / 180) * FIRE_R, fz + Math.cos((sp.chairYawDeg * Math.PI) / 180) * FIRE_R, sp.chairYawDeg, CHAIR_SCALE); if (e) fireChairEntities.current.set(sp.key, e); }
+        fireSeats.current.push({ key: sp.key, at: new pc.Vec3(sp.x, 0, sp.z), yaw: sp.yaw });
       }
       const fire = new pc.Entity('fire'); fire.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.62, 0.26), intensity: 2.6, range: 9 }); fire.setLocalPosition(fx - 0.35, 0.7, fz); root.addChild(fire);
       plateRef.current.set('anchor:fire', { id: 'anchor:fire', kind: 'anchor', text: 'The fire · meet the guest', world: new pc.Vec3(fx, 2.1, fz) });
@@ -548,6 +551,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     const a = app.current; const manifest = state.manifest; const lib = library.current; if (!a || !state.you || !manifest || !lib) return;
     // WHERE A CHAIR IS: the table's anchor plus the seat's place around it, facing the felt. The seated anchor
     // is where the body's feet go; the sit clip puts the hips on the chair behind them.
+    const fireSpots = (m: RoomManifest): SeatSpot[] => (m.anchors.fire ? Array.from({ length: FIRE_SEAT_COUNT }, (_, i) => firesideSeat(m.anchors.fire!, i)) : []);
+    const barSpots = (m: RoomManifest): SeatSpot[] => (m.anchors.bar ? Array.from({ length: BAR_SEATS }, (_, i) => barSeat(m.anchors.bar!, i)) : []);
     const chairOf = (tableId: string, seat: number): Seat | null => {
       const t = manifest.tables.find((x) => x.tableId === tableId); const an = t ? manifest.anchors[t.anchor] : undefined;
       if (!t || !an) return null;
@@ -573,7 +578,15 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       }
       let b = bodies.current.get(p.playerId);
       if (!b) { const av = new ParticipantAvatar(lib, p.body, 'follow'); av.place(p.x, p.y, p.yaw); a.root.addChild(av.entity); b = { avatar: av, name: p.name }; bodies.current.set(p.playerId, b); }
-      if (chair) b.avatar.sitAt(chair); else { b.avatar.stand(); b.avatar.walkTo(p.x, p.y, p.yaw); }
+      // SOMEBODY AT THE FIRE OR THE BAR IS SITTING THERE. They have left for the 2D page and the room still
+      // holds their pose; drawn standing, a fireside of people reads as a fireside of nobody. The nearest seat
+      // to where they stand is the one they are in.
+      const lounging = !chair && (p.zone === 'fire' || p.zone === 'bar')
+        ? nearestSeatOf(p.zone === 'fire' ? fireSpots(manifest) : barSpots(manifest), p.x, p.y)
+        : null;
+      if (chair) b.avatar.sitAt(chair);
+      else if (lounging) b.avatar.sitAt({ at: new pc.Vec3(lounging.x, 0, lounging.z), yaw: lounging.yaw, centre: new pc.Vec3(manifest.anchors[p.zone!]!.x, 0, manifest.anchors[p.zone!]!.y) });
+      else { b.avatar.stand(); b.avatar.walkTo(p.x, p.y, p.yaw); }
       const head = (chair ? chair.at : new pc.Vec3(p.x, 0, p.y)).add(new pc.Vec3(0, chair ? 1.55 : 2.05, 0));
       // The agent under the name only when it IS a name — an address says nothing to anyone.
       const agentSub = p.agent && p.agent.includes('.') ? p.agent : undefined;

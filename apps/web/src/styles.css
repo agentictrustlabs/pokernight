@@ -6536,3 +6536,5 @@ button.tag.guest {
 .table-which { margin-left: 0.4rem; font-size: 0.72rem; color: var(--ink-soft); }
 .bar-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
 .bar-people .cr-name { font-weight: 600; }
+/* The seat bar holds the call as well as the seat's own buttons. */
+.seat-bar .huddle-start { margin-left: auto; }

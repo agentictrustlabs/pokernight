@@ -345,7 +345,6 @@ export function CanastaPage({
             </button>
           ) : null}
           {/* THE CLUB'S HUDDLE, from the table too: start or join the club's call without leaving the cards. */}
-          {club && mySeat != null ? <HuddleAffordance scope={clubScope_} scopeName={`${club.name} · this table`} compact /> : null}
 
           {state.view ? <span className="num">round #{state.view.roundNo}</span> : null}
         </span>
@@ -419,6 +418,8 @@ export function CanastaPage({
                 {mySitOut ? <span className="hint"> · sitting out{state.players[state.playerId ?? '']?.sitOutReason === 'disconnected' ? ' — your connection dropped' : ''}</span> : null}
               </span>
               {mySitOut ? <button type="button" className="primary" onClick={() => send({ type: 'sit-in' })}>Sit back in</button> : null}
+              {/* The call lives with the seat, beside the button that gives it up. */}
+              {club && mySeat != null ? <HuddleAffordance scope={clubScope_} scopeName={`${club.name} · this table`} compact /> : null}
               <button type="button" className="seat-bar-leave" disabled={leaving} onClick={leave}>
                 {leaving ? 'Leaving…' : 'Leave the table'}
               </button>
