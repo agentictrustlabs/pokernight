@@ -50,6 +50,10 @@ interface Meta {
  */
 const PACE_MS = 9_000;
 const TICK_MS = 2_400;
+/** How long an agent that has missed three times is left alone before being asked again. */
+const REST_MS = 120_000;
+/** How many Homes may be thinking at once for one night. More than this and the estate is the bottleneck. */
+const THINKING_AT_ONCE = 2;
 
 export class MysteryDO extends DurableObject<Env> {
   private state: MysteryState | null = null;
@@ -65,6 +69,8 @@ export class MysteryDO extends DurableObject<Env> {
   private mute = new Map<RoleId, string>();
   /** How many goes an agent has had at a part it keeps missing. */
   private misses: Record<string, number> = {};
+  /** Parts whose agent is being left alone for a while after a run of misses. */
+  private resting: Record<string, number> = {};
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -333,7 +339,8 @@ export class MysteryDO extends DurableObject<Env> {
        * moving, so a slow agent is a quieter character rather than a frozen one.
        */
       this.lastMoved[c.role] = now;
-      if (c.mind === 'agent' && c.agent && !this.thinking.has(c.role)) {
+      const rested = (this.resting[c.role] ?? 0) <= now;
+      if (c.mind === 'agent' && c.agent && rested && !this.thinking.has(c.role) && this.thinking.size < THINKING_AT_ONCE) {
         this.thinking.add(c.role);
         void this.askOne(c.role, c.agent, pair.title.id);
         continue;
@@ -417,7 +424,19 @@ export class MysteryDO extends DurableObject<Env> {
         // EVERY MISS IS SAID, not just the last one: "the part went quiet" is not a diagnosis, and the reason
         // an agent could not answer is the only thing that tells you whether to fix a card, a skill or a wire.
         console.warn(`[mystery] ${agent} missed ${role} (${misses}): ${out.error}`);
-        if (permanent || misses >= 3) {
+        /**
+         * A SLOW HOME IS NOT A BROKEN ONE. Three timeouts in a row used to hand the part to the house for the
+         * REST OF THE NIGHT, and a busy estate emptied a whole cast of its minds in two minutes. A card that
+         * cannot answer the skill is permanent; everything else is a rest — the part is played by the house
+         * for a couple of minutes and the agent is asked again after it.
+         */
+        if (!permanent && misses >= 3) {
+          this.resting[role] = Date.now() + REST_MS;
+          this.misses[role] = 0;
+          console.warn(`[mystery] ${agent} is resting on ${role} for ${Math.round(REST_MS / 1000)}s; the house plays it meanwhile`);
+          return;
+        }
+        if (permanent) {
           if (!this.mute.has(role)) { this.mute.set(role, out.error); console.warn(`[mystery] ${role} is played by the house from here: ${out.error}`); }
           const cur0 = this.state;
           if (cur0) {
@@ -489,6 +508,16 @@ export class MysteryDO extends DurableObject<Env> {
       deadlineMs: a2aTimeoutMs(this.env),
     }, a2aTimeoutMs(this.env)).catch((e: unknown) => ({ ok: false as const, error: String(e) }));
     if (!out.ok) { console.warn('[mystery] the director was quiet:', out.error); return; }
+    /**
+     * A DIRECTOR THAT REPEATS THE HOUSE HAS SAID NOTHING, and saying it twice is worse than saying it once:
+     * the room hears the same paragraph from the same voice, back to back. A cue that is substantially the
+     * line it was told not to write is dropped, and the house's own stands alone.
+     */
+    const plain = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]+/g, '').split(/\s+/).filter(Boolean);
+    const house = new Set(plain(fallback?.type === 'cue' ? fallback.text : ''));
+    const words = plain(out.output.cue);
+    const shared = house.size ? words.filter((w) => house.has(w)).length / words.length : 0;
+    if (shared > 0.72) { console.warn(`[mystery] the director wrote the house's own line back (${Math.round(shared * 100)}% of it); keeping the house's`); return; }
     // The narration joins the story as the house's own voice, from whoever directed it.
     const cur = this.state;
     if (!cur) return;
