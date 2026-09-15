@@ -230,3 +230,59 @@ describe('what you heard, you heard', () => {
     expect(later.ok).toBe(true);
   });
 });
+
+describe('a room that answers', () => {
+  const lines = TITLE.roles.find((r) => r.id === 'concierge')!.lines;
+
+  /** A view for the concierge, with one line just said to the room by somebody else. */
+  const asked = (text: string) => {
+    let s = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor']), seedHex: seedFrom(31), seedCommit: 'x', now: T0 });
+    const said = apply(s, TITLE, VENUE, 'doctor', { type: 'say', text }, T0 + 1000, 'human');
+    if (said.ok) s = said.state;
+    return viewFor(s, TITLE, VENUE, 'concierge');
+  };
+
+  /** Somebody in the room answers — exactly one of them, and every one of them agrees which. */
+  const whoAnswers = (text: string) => {
+    const view = asked(text);
+    const answered = TITLE.roles
+      .filter((r) => r.id !== 'doctor')
+      .filter((r) => {
+        const theirs = viewFor((() => { let s = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor']), seedHex: seedFrom(31), seedCommit: 'x', now: T0 }); const said = apply(s, TITLE, VENUE, 'doctor', { type: 'say', text }, T0 + 1000, 'human'); if (said.ok) s = said.state; return s; })(), TITLE, VENUE, r.id);
+        const m = chooseAction(theirs, r.lines, 3);
+        return m?.action.type === 'say' && Object.values(r.lines).includes(m.action.text);
+      })
+      .map((r) => r.id);
+    return { view, answered };
+  };
+
+  it('is answered by exactly one of the people in the room — never by a chorus', () => {
+    const { answered } = whoAnswers('Where were you at nine, exactly?');
+    expect(answered).toHaveLength(1);
+  });
+
+  it('answers an accusation differently from a greeting', () => {
+    const a = whoAnswers('I think it was you, and I can prove it.');
+    const b = whoAnswers('Good evening. Is there a drink to be had?');
+    const lineOf = (who: string[], text: string) => {
+      const role = TITLE.roles.find((r) => r.id === who[0])!;
+      const m = chooseAction(asked(text), role.lines, 3);
+      return m?.action.type === 'say' ? m.action.text : '';
+    };
+    // the same part, asked two different things, does not give the same answer
+    if (a.answered[0] === b.answered[0]) expect(lineOf(a.answered, 'I think it was you, and I can prove it.')).not.toBe(lineOf(b.answered, 'Good evening. Is there a drink to be had?'));
+    else expect(a.answered[0]).not.toBe(b.answered[0]);
+  });
+
+  it('does not answer the same line twice — it gets on with the night instead', () => {
+    const { view, answered } = whoAnswers('Where were you at nine?');
+    const role = TITLE.roles.find((r) => r.id === answered[0])!;
+    const theirs = viewFor((() => { let s = openStaging({ title: TITLE, venue: VENUE, cast: castOf(['doctor']), seedHex: seedFrom(31), seedCommit: 'x', now: T0 }); const said = apply(s, TITLE, VENUE, 'doctor', { type: 'say', text: 'Where were you at nine?' }, T0 + 1000, 'human'); if (said.ok) s = said.state; return s; })(), TITLE, VENUE, role.id);
+    const first = chooseAction(theirs, role.lines, 3);
+    expect(first?.action.type).toBe('say');
+    if (first?.action.type !== 'say') return;
+    const after = { ...theirs, transcript: [...theirs.transcript, { type: 'said' as const, at: T0 + 2000, by: role.id, room: 'lobby', text: first.action.text, via: 'agent' as const }] };
+    expect(chooseAction(after, role.lines, 4)?.action.type).not.toBe('say');
+    void view;
+  });
+});

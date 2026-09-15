@@ -54,6 +54,39 @@ export function chooseAction(view: MysteryView, lines: CastLines, tick: number):
   }
   if (view.phase !== 'act' || !room) return null;
 
+  /**
+   * SOMEBODY ASKED YOU SOMETHING. A room where you can say anything and nobody ever answers is a room of
+   * mannequins, and it is the first thing a person notices. So: if the last thing said here was said by
+   * somebody else, recently, and you have not spoken since, answer it — with the line of yours that fits
+   * what they asked. A model does this better; nothing does it faster, and the words are the part's own.
+   */
+  const spoken = view.transcript.filter((e) => e.type === 'said');
+  const last = spoken[spoken.length - 1];
+  if (last && last.type === 'said' && last.by !== you.role && view.deadline !== null) {
+    const mineAfter = spoken.some((e) => e.type === 'said' && e.by === you.role && e.at > last.at);
+    const fresh10s = last.at > (view.transcript[view.transcript.length - 1]?.at ?? last.at) - 12_000;
+    /**
+     * ONE OF THEM ANSWERS, NOT ALL OF THEM. Seven characters each replying to the same question is a chorus,
+     * which is worse than silence. Everybody in the room can see the same set of people, so everybody can
+     * work out the same answer to "whose line is this" — the one whose name hashes nearest the words.
+     */
+    // …and never the person who just spoke, which is how "nobody answered" happened the first time.
+    const inTheRoom = [you.role, ...room.people.map((p) => p.role)].filter((id) => id !== last.by).sort();
+    const answerer = inTheRoom.map((id) => ({ id, n: roll(`${id}:${last.text}`, 0) })).sort((a, b) => a.n - b.n)[0]?.id;
+    if (!mineAfter && fresh10s && answerer === you.role) {
+      const q = last.text.toLowerCase();
+      const kind: keyof CastLines =
+        /where were you|were you|alibi|at nine|all evening|prove/.test(q) ? 'deny'
+          : /who did|who killed|killer|murder|accuse|it was you|suspect/.test(q) ? 'accuse'
+            : /found|clue|evidence|register|key|letter|print|wax|photograph/.test(q) ? 'found'
+              : /dead|body|died|poor|kill/.test(q) ? 'mourn'
+                : /hello|evening|hi |welcome|drink/.test(q) ? 'greet'
+                  : 'probe';
+      const text = fresh(kind, r(14)) ?? lines[kind];
+      return { action: { type: 'say', text } };
+    }
+  }
+
   // 2. You are the one taking chances, and the room is empty but for one.
   if (you.killer && you.opportunity?.ready && room.people.length === 1 && room.people[0] && view.deaths.length < 2) {
     return { action: { type: 'murder', victim: room.people[0].role, prop: you.opportunity.prop } };
