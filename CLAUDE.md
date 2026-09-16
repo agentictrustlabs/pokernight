@@ -243,6 +243,14 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   tables; then marks the club's profile `retiredAt` at its Home (the rail skips retired clubs) and lets go of
   the wire. It NEVER touches the club's Smart Agent: that lives at the host's Home and this card room has
   never held its key — the answer returns the address so the client can say so.
+- **WHAT IS BEHIND YOU ON CAMERA IS THE ROOM YOU ARE STANDING IN** (2026-09-15,
+  `components/huddle/background.ts`). Cloudflare's RealtimeKit ships a video background transformer
+  (`@cloudflare/realtimekit-virtual-background`, lazily imported because it carries a segmentation model):
+  off, a blur, or a STILL OF THE 3D SCENE — the lounge or the Belvedere is already being drawn a few pixels
+  from the person's face, so `roomStill()` reads that canvas and their camera sits in the very room their body
+  does. It is a snapshot taken when they press it, never a per-frame render into a middleware. The setting
+  lives on `ClubHuddleProvider`, not the dock, because a middleware lives on the TRACK: turning the camera off
+  and on again makes a new one with no backdrop, so it is re-applied on `camOn`. An unsupported browser says so.
 - **A CLUB HUDDLES — voice, faces and the table, for its members whether or not they are playing**
   (Home spec 378, `club` scope; principal and id are both the club's agent). The Home's huddle service
   decides who may start, join or end from standing IT derives; the card room's `POST /clubs/:id/huddle/:op`

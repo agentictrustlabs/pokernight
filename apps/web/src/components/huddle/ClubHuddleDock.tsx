@@ -10,6 +10,7 @@ import { RealtimeKitProvider, useRealtimeKitSelector } from '@cloudflare/realtim
 import { useClubHuddle } from './ClubHuddleProvider';
 import { useFaceVideo } from './Portrait';
 import type { HuddleScope } from '../../lib/huddle';
+import type { HuddleBackdrop } from './background';
 
 type Tracked = {
   id: string; name: string;
@@ -99,6 +100,32 @@ function Media({ open }: { open: boolean }) {
   );
 }
 
+/**
+ * WHAT IS BEHIND YOU ON CAMERA (2026-09-15).
+ *
+ * Off, a blur, or THIS ROOM — a still of the lounge or the hotel you are standing in, taken the moment you
+ * press it, so your camera sits in the same place your body does. It only appears while your camera is on,
+ * because it is a thing done to your own outgoing video and there is nothing to do it to otherwise; a
+ * browser that cannot segment a video frame says so rather than failing quietly.
+ */
+function Backdrop() {
+  const h = useClubHuddle();
+  if (!h.camOn) return null;
+  if (h.backdropUnsupported) return <span className="huddle-hint" title="This browser cannot separate you from what is behind you">no backdrop here</span>;
+  const next: Record<string, HuddleBackdrop> = { none: 'blur', blur: 'room', room: 'none' };
+  const says: Record<HuddleBackdrop, string> = { none: 'Backdrop off', blur: 'Blurred', room: 'This room' };
+  const hasScene = typeof document !== 'undefined' && !!document.querySelector('.lounge canvas, .venue canvas');
+  const step = () => {
+    let want = next[h.backdrop] ?? 'blur';
+    if (want === 'room' && !hasScene) want = 'none'; // nothing drawn to stand in
+    h.setBackdrop(want);
+  };
+  return (
+    <button type="button" className={`huddle-btn${h.backdrop === 'none' ? '' : ' on'}`} onClick={step}
+      title="What is behind you on camera">{says[h.backdrop]}</button>
+  );
+}
+
 export function ClubHuddleDock() {
   const h = useClubHuddle();
   const [open, setOpen] = useState(false);
@@ -130,6 +157,7 @@ export function ClubHuddleDock() {
             <button type="button" className="huddle-btn quiet" onClick={() => (drag.floating ? drag.dock() : drag.detach())} title={drag.floating ? 'Put it back in the corner' : 'Float it — then drag it anywhere by its title'}>{drag.floating ? 'Dock' : 'Float'}</button>
             <button type="button" className={`huddle-btn${h.micOn ? ' on' : ''}`} onClick={() => void h.toggleMic()} aria-pressed={h.micOn} title={h.micOn ? 'Mute' : 'Unmute'}>{h.micOn ? 'Mic on' : 'Mic off'}</button>
             <button type="button" className={`huddle-btn${h.camOn ? ' on' : ''}`} onClick={() => void h.toggleCam()} aria-pressed={h.camOn} title={h.camOn ? 'Camera off' : 'Camera on'}>{h.camOn ? 'Camera on' : 'Camera off'}</button>
+            <Backdrop />
             <button type="button" className={`huddle-btn${h.screenOn ? ' on' : ''}`} onClick={() => void h.toggleScreen()} aria-pressed={h.screenOn} title={h.screenOn ? 'Stop sharing' : 'Share your screen'}>Screen</button>
             <button type="button" className="huddle-btn leave" onClick={() => void h.leave()} disabled={!!h.busy}>Leave</button>
             {canEnd ? <button type="button" className="huddle-btn end" onClick={() => { if (confirm('End this huddle for everyone?')) void h.end(); }} disabled={!!h.busy}>End</button> : null}

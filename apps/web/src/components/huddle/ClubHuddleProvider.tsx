@@ -10,6 +10,7 @@
  * the SDK and out of scope.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { roomStill, setBackdrop, type HuddleBackdrop } from './background';
 import { useRealtimeKitClient } from '@cloudflare/realtimekit-react';
 import type { AppSession } from '../../lib/types';
 import type { AuthConfig } from '../../lib/home';
@@ -43,6 +44,11 @@ interface HuddleCtx {
   /** THE ROOM IS PLACING THE VOICES: the dock keeps its <audio> elements attached but silent. */
   spatial: boolean;
   setSpatial: (on: boolean) => void;
+  /** What is behind you on camera: nothing, a blur, or a still of the room you are standing in. */
+  backdrop: HuddleBackdrop;
+  setBackdrop: (b: HuddleBackdrop) => void;
+  /** True where the browser cannot do it at all, so the control can say so instead of failing quietly. */
+  backdropUnsupported: boolean;
 }
 
 const Ctx = createContext<HuddleCtx | null>(null);
@@ -56,6 +62,13 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
   const [camOn, setCamOn] = useState(false);
   const [screenOn, setScreenOn] = useState(false);
   const [spatial, setSpatial] = useState(false);
+  /**
+   * WHAT IS BEHIND YOU. Kept here rather than in the dock because it survives walking from the lounge to a
+   * table, and because turning the camera OFF and on again has to put it back — a middleware lives on the
+   * track, and a new track has none.
+   */
+  const [backdrop, setBackdropState] = useState<HuddleBackdrop>('none');
+  const [backdropUnsupported, setBackdropUnsupported] = useState(false);
   const meetingRef = useRef(meeting);
   meetingRef.current = meeting;
   const offered = huddlesOffered(config, session);
@@ -115,6 +128,17 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
 
   // After a toggle the SDK's own flag is the truth (a permission prompt may be refused): read it back.
   const toggleMic = useCallback(async () => { const m = meetingRef.current; if (!m) return; try { if (m.self.audioEnabled) await m.self.disableAudio(); else await m.self.enableAudio(); } catch (e) { setError(e instanceof Error ? `Microphone: ${e.message}` : String(e)); } finally { setMicOn(!!meetingRef.current?.self.audioEnabled); } }, []);
+  const applyBackdrop = useCallback(async (want: HuddleBackdrop) => {
+    const m = meetingRef.current;
+    if (!m) { setBackdropState(want); return; }
+    const got = await setBackdrop(m, want, want === 'room' ? roomStill() : null);
+    if (got === 'unsupported') { setBackdropUnsupported(true); setBackdropState('none'); return; }
+    setBackdropUnsupported(false);
+    setBackdropState(got);
+  }, []);
+  // A NEW TRACK CARRIES NO MIDDLEWARE: turning the camera off and on again would lose the backdrop silently.
+  useEffect(() => { if (camOn && backdrop !== 'none') void applyBackdrop(backdrop); }, [camOn]);
+
   const toggleCam = useCallback(async () => { const m = meetingRef.current; if (!m) return; try { if (m.self.videoEnabled) await m.self.disableVideo(); else await m.self.enableVideo(); } catch (e) { setError(e instanceof Error ? `Camera: ${e.message}` : String(e)); } finally { setCamOn(!!meetingRef.current?.self.videoEnabled); } }, []);
   const toggleScreen = useCallback(async () => { const m = meetingRef.current; if (!m) return; try { if (m.self.screenShareEnabled) await m.self.disableScreenShare(); else await m.self.enableScreenShare(); } catch (e) { setError(e instanceof Error ? `Screen: ${e.message}` : String(e)); } finally { setScreenOn(!!meetingRef.current?.self.screenShareEnabled); } }, []);
 
@@ -136,8 +160,9 @@ export function ClubHuddleProvider({ session, config, children }: { session: App
 
   const value = useMemo<HuddleCtx>(() => ({
     offered, current, meeting, busy, error, micOn, camOn, screenOn, spatial, setSpatial,
+    backdrop, backdropUnsupported, setBackdrop: (b: HuddleBackdrop) => void applyBackdrop(b),
     start: (s, n) => enter('start', s, n), join: (s, n) => enter('join', s, n), leave, end, toggleMic, toggleCam, toggleScreen, peek, dismissError: () => setError(null),
-  }), [spatial, offered, current, meeting, busy, error, micOn, camOn, screenOn, enter, leave, end, toggleMic, toggleCam, toggleScreen, peek]);
+  }), [spatial, backdrop, backdropUnsupported, applyBackdrop, offered, current, meeting, busy, error, micOn, camOn, screenOn, enter, leave, end, toggleMic, toggleCam, toggleScreen, peek]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

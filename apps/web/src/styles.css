@@ -6781,6 +6781,8 @@ button.tag.guest {
 .mystery-cast li { align-items: center; flex-wrap: wrap; }
 /* THE PART'S OWN COSTUME BOX: a swatch of the cloth and its name, the one being worn marked. */
 .mystery-you-facts { margin: 0.1rem 0 0; letter-spacing: 0.02em; }
+/* the dock says so when a browser cannot separate you from what is behind you */
+.huddle-hint { font-size: 0.72rem; opacity: 0.65; align-self: center; padding: 0 0.3rem; }
 /* WHAT YOU ARE LOOKING AT: a flyout over the right of the picture, so the thing stays visible beside its words. */
 .mystery-venue-wrap { position: relative; }
 .mystery-inspector { position: absolute; top: 0.6rem; right: 0.6rem; width: min(19rem, 46%); z-index: 3;

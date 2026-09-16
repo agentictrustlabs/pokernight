@@ -14,6 +14,7 @@
   "dependencies": {
     "@agenticprimitives/connect-client": "1.0.0-alpha.14",
     "@cloudflare/realtimekit-react": "0.1.0",
+    "@cloudflare/realtimekit-virtual-background": "0.0.2",
     "@pokernight/engine": "workspace:*",
     "@pokernight/missions": "workspace:*",
     "@pokernight/mystery": "workspace:*",

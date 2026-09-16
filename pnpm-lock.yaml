@@ -248,6 +248,9 @@ importers:
       '@cloudflare/realtimekit-react':
         specifier: 0.1.0
         version: 0.1.0(react@18.3.1)
+      '@cloudflare/realtimekit-virtual-background':
+        specifier: 0.0.2
+        version: 0.0.2
       '@pokernight/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -702,6 +705,9 @@ packages:
     resolution: {integrity: sha512-+vHP5yUsAF+s1+sGTgZVlBZGhWozxp8bGEsLbDkwee8Nwvn1dmgvUWxGj8N4cP0xnDp8usx54m4iqNMt6OvpWw==}
     peerDependencies:
       react: '>=16.8.6'
+
+  '@cloudflare/realtimekit-virtual-background@0.0.2':
+    resolution: {integrity: sha512-4rP9zswpnDwizlfZdf/Ym4AzZiKCQedK4/BqkWhxqk05SKCYNp9nIW+OEot/2dVJgA5/O9mR3X5hoZ5/EGURhw==}
 
   '@cloudflare/realtimekit@0.1.0':
     resolution: {integrity: sha512-mB16in1jn/KyG5yVJc9HWTPGY+PJHjD1cHk2nA50BDSr5LRjnrCC1HO+mRMl38YtaKpFNjRaJ8mHiEkFpHF00Q==}
@@ -2972,6 +2978,8 @@ snapshots:
     dependencies:
       '@cloudflare/realtimekit': 0.1.0
       react: 18.3.1
+
+  '@cloudflare/realtimekit-virtual-background@0.0.2': {}
 
   '@cloudflare/realtimekit@0.1.0':
     dependencies:
