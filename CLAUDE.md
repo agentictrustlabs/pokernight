@@ -346,6 +346,19 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   imported; GeoSPARQL, BOT/IFC, CIDOC-CRM, FRBR, Propp and the BBC Storyline ontology are borrowed PATTERNS,
   named in each header and imported by none. `st:order` carries sequence, because RDF is a set and a story is
   an order. Editing the hotel or the story means editing the TTL and running the generator — never the .ts.
+- **A STORY IS EXECUTABLE DRAMA, AND A CHOICE IS A CONSEQUENCE THE NIGHT CARRIES** (2026-09-16,
+  `docs/PLACE-AND-STORY.md` "The second layer"). Six modules under `story.ttl` — intent, social, epistemic,
+  dramaturgy, performance, place-compat — and `story.data.ttl`, which makes each archetype an
+  `at:CapabilityRealizationContract`. `belvedere-snowfall-v2.ttl` writes every part a Goal, a Stake and a CHOICE
+  with two options whose consequences set OUTCOMES (`books:told`, `hotel:selling`…) and, by shape and by code,
+  touch no canon. The engine's `choose` action (own part, once, in or after its act) records the outcome and says
+  the consequence in the room; the view carries `choices` and `outcomes`; Your Part shows "Before you". THE
+  GENERATOR READS `<story>-v2.ttl` BESIDE THE BASE and emits `choices`. `pnpm check:capabilities` fails the build
+  on any capability id that is not the protocol's own (contracts, skill frontmatter, registry scripts, written
+  effects); `pnpm check:place` answers whether a story can run in a place with a BINDING WITNESS per requirement
+  or the exact reason it cannot (the Belvedere without its piste door fails `repose`). The piste door is in the
+  A-box and NOT in the 3D plan: `place-to-plan.mjs` emits only doors between `pl:Room`s. `pnpm gen:story`
+  regenerates all three compiled files.
 - **MYSTERY NIGHT IS A STORY AT A PLACE** — `docs/MYSTERY-NIGHT.md`; **P1 built 2026-09-15**:
   `packages/mystery` (the pure engine + the Belvedere venue + `belvedere-snowfall`, one engine and titles as
   CONTENT), `MysteryDO` (one object per staging, migration v7, the clock and the agent cast on its alarm),

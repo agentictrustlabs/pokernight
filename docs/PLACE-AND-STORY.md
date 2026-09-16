@@ -77,3 +77,46 @@ Four for the upper ontologies — one per job around a played story — and eigh
 
 Write one file: `~/skills/ontology/<your-story>.ttl`, an A-box over `story.ttl` that names `bv:hotel` and
 joins to its features by key. Run `story-to-title.mjs` and `story-to-archetypes.mjs`. You describe no walls.
+
+## The second layer: a story that is executable, not just described (2026-09-16)
+
+A third-party review of the first cut made one point that mattered: the ontology described a story the way a
+programme note does — who is in it, what they hide, what can be found — and nothing in it could tell two
+evenings apart. Everything that made a night differ from the last was a language model's sentence. Six modules
+answer that, all under `story.ttl` and all extending Agentic Trust rather than each other:
+
+| module | what it adds | the `at:` term it extends |
+|---|---|---|
+| `story-intent.ttl` | a part's Goal, Stake, ValueConflict; a **Choice** with two or more options, each with a **Consequence** that sets an `outcomeKey` and `touchesCanon false` (a SHACL shape refuses anything else) | `at:Goal`, `at:Plan`, `at:PlanStep` |
+| `story-social.ttl` | social practices (the private question, the bargain, the confrontation, the gathering), social acts and what may be said back, fictional obligations kept disjoint from real mandates | `dul:Description`, `at:CommunicativeAct` |
+| `story-epistemic.ttl` | who could have seen what, records and their delivery, hypotheses, **Arguments** whose premises are clues, with `combination all|any`, defeaters and assumptions | `at:Belief`, `at:Observation` |
+| `story-dramaturgy.ttl` | **storylets** with eligibility rules over outcomes, delivered evidence and who is together; pacing; spotlight; the early-solve path a story must declare | `at:Constraint` |
+| `story-performance.ttl` | responsibility slots with due-by and fallback, cast profiles, substitution, hand-back, spoiler exposure, retention scope, conformance | `at:ResponsibilityAssignment`, `at:ExecutionTrace` |
+| `place-compat.ttl` | what a story REQUIRES of a place — gathering, private, repose, feature, route, outdoors — and the **binding witness** each requirement gets when it is met | `at:Constraint`, `at:RoleBinding` |
+
+`story.data.ttl` makes the archetypes contracts: each names the capability it requires (`mystery.act`,
+`mystery.direct`, `mystery.consult`), the projections it reads and the effects it writes, as an
+`at:CapabilityRealizationContract`. `belvedere-snowfall-v2.ttl` is the Belvedere story's second layer — a
+goal, a stake and a choice for every one of the eight parts, arcs, endings, four practices, eight storylets, the
+early-solve path, four responsibility slots, three cast profiles, seven place requirements, two arguments.
+
+**What reaches the app.** `story-to-title.mjs` reads the v2 file when it sits beside the base and emits each
+part's `choices`; the engine takes a `choose` action (your own part's choice, once, in or after its act), sets an
+OUTCOME on the state, and writes a `chose` event whose words are the consequence's own — heard by whoever was
+in the room, like everything else. Nothing in that path reads the killer, the backstory or the evidence, which
+is how "never touches canon" is enforced in code as well as in the shape. The view carries `choices` (before
+you) and `outcomes` (the night's, public); Your Part shows the question and its options under "Before you".
+
+**Two checkers, run in CI.**
+- `pnpm check:capabilities` — one catalogue (the protocol's own skill constants) and every archetype contract,
+  skill frontmatter, registry script and written effect checked against it. The review found `story.ack-cue` in
+  one file and `story.cue.ack` in another; this is the thing that makes that a failed build.
+- `pnpm check:place [story.ttl…] --place place.ttl` — can this story run in this place, with a binding witness
+  per requirement or the exact reason it cannot. The Belvedere passes all seven; the same building with the
+  piste door removed fails **repose**: "a body can lie in ski-room, but none of those has 2 ways in — the alibi
+  has nothing to turn on". That refusal is an authoring conversation, which is the point.
+
+**A door onto the grounds is real to the story and absent from the plan.** The ski room's piste door is in
+`belvedere.ttl` (shut, unlocked, to `bv:grounds`) because the alibi turns on it; `place-to-plan.mjs` emits only
+openings between `pl:Room`s because the 3D plan is where bodies can be put, and the grounds are not. The plan's
+round-trip stayed identical.

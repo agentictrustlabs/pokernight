@@ -13,7 +13,7 @@
  *
  *   node scripts/story-to-title.mjs [path/to/belvedere-snowfall.ttl] > packages/mystery/src/titles/belvedere-snowfall.generated.ts
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { Parser, Store, DataFactory } from 'n3';
 
 const { namedNode } = DataFactory;
@@ -23,6 +23,10 @@ const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 const src = process.argv[2] ?? `${process.env.HOME}/skills/ontology/belvedere-snowfall.ttl`;
 
 const store = new Store(new Parser().parse(readFileSync(src, 'utf8')));
+// THE SECOND LAYER: the intent module — goals, stakes and the CHOICES each part faces — lives in `<story>-v2.ttl`
+// beside the base A-box, and is read when it is there. It never rewrites canon; it only adds what a part can decide.
+const v2 = src.replace(/\.ttl$/, '-v2.ttl');
+if (existsSync(v2)) store.addQuads(new Parser().parse(readFileSync(v2, 'utf8')));
 const one = (s, p) => store.getObjects(s, namedNode(p), null)[0] ?? null;
 const all = (s, p) => store.getObjects(s, namedNode(p), null);
 const lit = (s, p) => { const o = one(s, p); return o ? o.value : null; };
@@ -118,6 +122,24 @@ for (const p of parts) {
   L.push(`      blurb: ${j(lit(p, `${ST}brief`))},`);
   L.push(`      secret: ${j(lit(secret, `${RDFS}comment`))},`);
   L.push(`      traits: [${traits.map(j).join(', ')}],`);
+  const choices = all(p, `${ST}faces`).map((c) => c.value);
+  if (choices.length) {
+    L.push(`      choices: [`);
+    for (const c of choices) {
+      const act = num(one(c, `${ST}openedBy`), `${ST}actNumber`);
+      L.push(`        {`);
+      L.push(`          id: ${j(lit(c, `${ST}choiceKey`))}, act: ${act},`);
+      L.push(`          question: ${j(lit(c, `${ST}question`))},`);
+      L.push(`          options: [`);
+      for (const o of all(c, `${ST}hasOption`).map((x) => x.value)) {
+        const cons = one(o, `${ST}leadsToConsequence`);
+        L.push(`            { id: ${j(lit(o, `${ST}optionKey`))}, label: ${j(lit(o, `${RDFS}label`))}, outcome: ${j(lit(cons, `${ST}outcomeKey`))}, consequence: ${j(lit(cons, `${RDFS}label`))} },`);
+      }
+      L.push(`          ],`);
+      L.push(`        },`);
+    }
+    L.push(`      ],`);
+  }
   L.push(`      lines: {`);
   for (const k of ['greet', 'probe', 'deny', 'accuse', 'mourn', 'found']) L.push(`        ${k}: ${j(lit(voice, `${ST}line-${k}`))},`);
   L.push(`      },`);

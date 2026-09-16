@@ -389,3 +389,47 @@ describe('a night opened by an older engine', () => {
     expect(() => viewFor(before, TITLE, VENUE, 'doctor')).not.toThrow();
   });
 });
+
+/**
+ * A CHOICE IS A CONSEQUENCE, NOT A SENTENCE (2026-09-16). The v2 A-box writes each part a decision with two
+ * options; taking one sets an outcome the whole night can read and writes what it changed into the room —
+ * and never, by construction, touches who did it. Only your own choice; only once; only once its act has come.
+ */
+describe('choices with consequences', () => {
+  const open = () => openStaging({ title: TITLE, venue: VENUE, cast: castOf(['concierge']), seedHex: seedFrom(7), seedCommit: seedCommit(new Uint8Array(1)), now: T0 });
+  it('every part has a choice, every choice two options with different outcomes, and no option names the killer', () => {
+    for (const r of TITLE.roles) {
+      expect(r.choices?.length, r.id).toBeGreaterThan(0);
+      for (const c of r.choices ?? []) {
+        expect(c.options.length).toBeGreaterThanOrEqual(2);
+        expect(new Set(c.options.map((o) => o.outcome)).size).toBe(c.options.length);
+        for (const o of c.options) expect(o.consequence.toLowerCase()).not.toMatch(/killer|murderer|did it/);
+      }
+    }
+  });
+  it('is not before you until its act, then sets an outcome exactly once, heard by the room', () => {
+    let s = open();
+    const c = TITLE.roles.find((r) => r.id === 'concierge')!.choices![0]!;
+    const [first, second] = [c.options[0]!, c.options[1]!];
+    expect(viewFor(s, TITLE, VENUE, 'concierge').choices).toEqual([]);
+    const early = apply(s, TITLE, VENUE, 'concierge', { type: 'choose', choice: c.id, option: first.id }, T0 + 1, 'human');
+    expect(early.ok).toBe(false);
+    s = { ...s, act: c.act };
+    expect(viewFor(s, TITLE, VENUE, 'concierge').choices.map((x) => x.id)).toEqual([c.id]);
+    const killerBefore = s.killer;
+    const r = apply(s, TITLE, VENUE, 'concierge', { type: 'choose', choice: c.id, option: first.id }, T0 + 2, 'human');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.killer).toBe(killerBefore);
+    expect(r.state.outcomes).toEqual([{ key: first.outcome, by: 'concierge', choice: c.id, option: first.id, at: T0 + 2 }]);
+    const v = viewFor(r.state, TITLE, VENUE, 'heiress');
+    expect(v.outcomes).toEqual([{ key: first.outcome, by: 'concierge' }]);
+    const heard = v.transcript.find((e) => e.type === 'chose');
+    expect(heard && heard.type === 'chose' ? heard.text : '').toBe(first.consequence);
+    expect(viewFor(r.state, TITLE, VENUE, 'concierge').choices).toEqual([]);
+    const again = apply(r.state, TITLE, VENUE, 'concierge', { type: 'choose', choice: c.id, option: second.id }, T0 + 3, 'human');
+    expect(again.ok).toBe(false);
+    const theirs = apply(r.state, TITLE, VENUE, 'heiress', { type: 'choose', choice: c.id, option: second.id }, T0 + 3, 'human');
+    expect(theirs.ok).toBe(false);
+  });
+});

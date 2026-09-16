@@ -70,9 +70,12 @@ for (const room of rooms) {
     .sort((a, b) => a.label.localeCompare(b.label, 'en', { numeric: true }));
   lines.push(`    spots: [${stations.map((s) => `[${n(s.x)}, ${n(s.z)}]`).join(', ')}],`);
 
+  // ONLY DOORS BETWEEN ROOMS become the plan's doors: the 3D plan walks people room to room, and an opening onto
+  // the grounds (the ski room's piste door) is real in the place, real to the story's requirements, and NOT a
+  // place the app can put a body — so it is a fact of the A-box that the plan leaves out on purpose.
   const doors = all(room, `${PL}hasOpening`)
-    .map((d) => ({ to: roomKey(one(d, `${PL}leadsTo`)), x: num(d, `${PL}atX`), z: num(d, `${PL}atZ`) }))
-    .filter((d) => d.to);
+    .map((d) => ({ to: roomKey(one(d, `${PL}leadsTo`)), toIri: one(d, `${PL}leadsTo`)?.value, x: num(d, `${PL}atX`), z: num(d, `${PL}atZ`) }))
+    .filter((d) => d.to && rooms.includes(d.toIri));
   lines.push(`    doors: { ${doors.map((d) => `${/^[a-z][a-z0-9]*$/i.test(d.to) ? d.to : j(d.to)}: [${n(d.x)}, ${n(d.z)}]`).join(', ')} },`);
 
   const repose = all(room, `${PL}hasAnchor`).find((a) => lit(a, `${PL}anchorRole`) === 'repose');

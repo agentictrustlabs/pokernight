@@ -6821,6 +6821,9 @@ button.tag.guest {
   color: #9aa3ab; font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.2rem; }
 .mystery-inspector-close:hover { color: #e8eef2; }
 @media (max-width: 899px) { .mystery-inspector { width: auto; left: 0.6rem; } }
+.mystery-choices { margin: 0.6rem 0 0.2rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.mystery-choice { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.4rem 0.5rem; border-left: 2px solid var(--gold, #c9a45c); }
+.mystery-choice p { margin: 0; }
 .mystery-wardrobe, .mystery-part-media { margin: 0.6rem 0 0.2rem; display: flex; flex-direction: column; gap: 0.3rem; }
 /* the parts the house is playing, offered to somebody who walked in after the curtain */
 .mystery-takeover { list-style: none; margin: 0.5rem 0 0.3rem; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }

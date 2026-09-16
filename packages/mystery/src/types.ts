@@ -103,6 +103,22 @@ export interface Role {
   traits: string[];
   canBeKiller: boolean;
   lines: { greet: string; probe: string; deny: string; accuse: string; mourn: string; found: string };
+  /**
+   * A CHOICE WRITTEN FOR THIS PART (2026-09-16): a question they will face, two or more options, and what each
+   * changes. Consequences set OUTCOMES — mutable facts about the night that storylets, the director and the
+   * epilogue read — and may never touch canon: the culprit, the backstory and the evidence are the same
+   * whichever way anybody chooses. This is what makes two evenings differ because people chose differently
+   * rather than because a model wrote a different sentence.
+   */
+  choices?: ChoiceDef[];
+}
+
+export interface ChoiceDef {
+  id: string;
+  /** The act in which it can first be faced. */
+  act: number;
+  question: string;
+  options: Array<{ id: string; label: string; outcome: string; consequence: string }>;
 }
 
 /** A clue that is simply true about the world and is found by examining a thing. */
@@ -234,6 +250,8 @@ export type MysteryEvent =
   | { type: 'shared'; at: number; by: RoleId; to: RoleId | null; clue: ClueId; room: RoomId; saw?: RoleId[] }
   | { type: 'claimed'; at: number; by: RoleId; kind: 'alibi' | 'testimony'; about: RoleId; text: string; room: RoomId; saw?: RoleId[] }
   | { type: 'accused'; at: number; by: RoleId; against: RoleId; clues: ClueId[]; room: RoomId | null; saw?: RoleId[] }
+  /** A part took an option of a choice written for them. Public when the consequence is; the wording is the consequence's own. */
+  | { type: 'chose'; at: number; by: RoleId; choice: string; option: string; outcome: string; text: string; room: RoomId; saw?: RoleId[] }
   | { type: 'died'; at: number; victim: RoleId; room: RoomId; act: number }
   | { type: 'spared'; at: number; room: RoomId; act: number }
   | { type: 'cue'; at: number; text: string; by: 'house' | 'director' }
@@ -251,6 +269,8 @@ export type MysteryAction =
   | { type: 'alibi'; for: RoleId }
   /** Change into another of your own part's outfits. Never a clue and never in the transcript. */
   | { type: 'dress'; outfit: string }
+  /** Take one option of a choice written for your own part. Sets an outcome; touches no canon. */
+  | { type: 'choose'; choice: string; option: string }
   | { type: 'accuse'; against: RoleId; clues: ClueId[] }
   | { type: 'murder'; victim: RoleId; prop: PropId }
   /** THE KILLER'S OTHER HAND: leave something at a prop that points at somebody it is not. */
@@ -287,6 +307,8 @@ export interface MysteryState {
   /** What was left behind with nobody dead — a spared act's evidence, and anything the killer planted. */
   traces: Trace[];
   claims: Array<{ by: RoleId; kind: 'alibi' | 'testimony'; about: RoleId; text: string; at: number }>;
+  /** MUTABLE FACTS ABOUT THE NIGHT set by choices — `books:told`, `hotel:selling` — and by whom. Never canon. */
+  outcomes: Array<{ key: string; by: RoleId; choice: string; option: string; at: number }>;
   accusations: Array<{ by: RoleId; against: RoleId; clues: ClueId[]; at: number }>;
   log: MysteryEvent[];
   startedAt: number;
@@ -349,6 +371,8 @@ export interface MysteryView {
   /** What this character has heard and seen, in order — the redacted log. */
   transcript: MysteryEvent[];
   accusation: { against: RoleId; clues: ClueId[] } | null;
+  outcomes: Array<{ key: string; by: RoleId }>;
+  choices: Array<{ id: string; question: string; options: Array<{ id: string; label: string }> }>;
   reveal: {
     killer: RoleId; killerName: string; seed: string; rule: KillerRule;
     /** Did the second death come? A killer who spared somebody gets that said out loud. */

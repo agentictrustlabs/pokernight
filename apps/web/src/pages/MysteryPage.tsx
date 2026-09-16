@@ -537,6 +537,32 @@ function Wardrobe({ you, view, act }: { you: NonNullable<MysteryView['you']>; vi
   );
 }
 
+/**
+ * WHAT IS BEFORE YOU (2026-09-16). A choice written for your part — a question, two ways to answer it, and
+ * a consequence the night will carry. It is a card in Your Part rather than a prompt in the room, because a
+ * choice is something you decide when YOU are ready and not when a scene happens to raise it; and it is put
+ * as the question and the two labels only — what each costs is found out by taking it, the way it is in a story.
+ */
+function Choices({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
+  const you = view.you;
+  if (!you?.alive || !view.choices?.length) return null;
+  return (
+    <div className="mystery-choices">
+      <span className="eyebrow-h">Before you</span>
+      {view.choices.map((c) => (
+        <div key={c.id} className="mystery-choice">
+          <p className="muted small">{c.question}</p>
+          <div className="row wrap">
+            {c.options.map((o) => (
+              <button key={o.id} type="button" className="mystery-outfit" onClick={() => act({ type: 'choose', choice: c.id, option: o.id })}>{o.label}</button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** WHO YOU ARE. The secret is yours; so, for exactly one person all night, is the other thing. */
 function You({ view, act, scope, scopeName, takePart }: { view: MysteryView; act: (a: unknown) => void; scope: HuddleScope | null; scopeName: string; takePart: (role: string) => Promise<void> }) {
   const [idea, setIdea] = useState<{ action: MysteryAction; text: string } | null>(null);
@@ -559,6 +585,7 @@ function You({ view, act, scope, scopeName, takePart }: { view: MysteryView; act
       </div>
       <p>{you.blurb}</p>
       <Wardrobe you={you} view={view} act={act} />
+      <Choices view={view} act={act} />
       <PartMedia scope={scope} scopeName={scopeName} />
       <p className="mystery-secret"><strong>Nobody knows:</strong> {you.secret}</p>
       {you.killer ? (
@@ -723,6 +750,7 @@ function Line({ e, name, clue, room, cast, speaking, you }: {
     case 'shared': return said(e.by, <>tells {e.to ? (e.to === you ? 'you' : name(e.to)) : 'the room'}: <span className="m-words">{clue(e.clue)}</span></>, 'm-shared');
     case 'claimed': return said(e.by, <><span className="m-words">{e.text}</span> <span className="tag">a claim</span></>, 'm-claim');
     case 'accused': return said(e.by, <>{e.by === you ? 'accuse' : 'accuses'} <strong>{name(e.against)}</strong>.</>, 'm-accused');
+    case 'chose': return said(e.by, <>{e.by === you ? 'decide' : 'decides'}: <em>{e.text}</em></>, 'm-chose');
     case 'died': return <p className="m-died"><strong>{name(e.victim)} is dead</strong>, in {room(e.room)}.</p>;
     case 'spared': return <p className="m-died"><strong>Nobody died</strong> — but somebody was through {room(e.room)} in the dark.</p>;
     case 'revealed': return <p className="m-act">The seed is published.</p>;

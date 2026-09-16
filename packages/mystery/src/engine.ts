@@ -154,7 +154,7 @@ export function openStaging(args: {
   const state: MysteryState = {
     title: title.id, venue: venue.id, seedCommit, seedHex,
     cast, killer: killer.role, killerRule, pace, act: 1, actStartedAt: now, phase: 'act', deadline: now + actMs(act0.minutes, pace),
-    where, knows, examined, publicClues: [], deaths: [], traces: [], claims: [], accusations: [],
+    where, knows, examined, publicClues: [], deaths: [], traces: [], claims: [], accusations: [], outcomes: [],
     log: [
       { type: 'cue', at: now, text: act0.opening, by: 'house' },
       { type: 'act', at: now, act: 1, phase: 'act', deadline: now + actMs(act0.minutes, pace) },
@@ -302,6 +302,25 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
      * in the room can see. You may only wear your OWN part's wardrobe: a free colour picker would let the
      * concierge turn up in the heiress's furs, and half of a mystery is telling people apart.
      */
+    /**
+     * A CHOICE, TAKEN (2026-09-16). Only a choice written for YOUR part; only once; only in or after the act
+     * it opens. It sets an OUTCOME — a mutable fact the night carries from here — and writes an event whose
+     * words are the consequence's own, heard by whoever is in the room. It touches no canon: nothing here can
+     * reach the culprit, the backstory or the evidence, because nothing here reads them.
+     */
+    case 'choose': {
+      const mine = roleOf(title, role);
+      const ch = (mine?.choices ?? []).find((c) => c.id === action.choice);
+      if (!ch) return no('not-yours', 'That is not a choice written for you.');
+      if (s.act < ch.act) return no('not-yet', 'That is not before you yet.');
+      if ((s.outcomes ?? []).some((o) => o.by === role && o.choice === ch.id)) return no('chosen', 'You have already chosen.');
+      const opt = ch.options.find((o) => o.id === action.option);
+      if (!opt) return no('bad-action', 'Not one of the options.');
+      s.outcomes = [...(s.outcomes ?? []), { key: opt.outcome, by: role, choice: ch.id, option: opt.id, at: now }];
+      events.push({ type: 'chose', at: now, by: role, choice: ch.id, option: opt.id, outcome: opt.outcome, text: opt.consequence, room: here, saw: peopleIn(s, here) });
+      s.log = [...s.log, ...events];
+      return { ok: true, state: s, events };
+    }
     case 'dress': {
       const mine = roleOf(title, role);
       const owns = (mine?.look.wardrobe ?? []).some((w) => w.id === action.outfit);
@@ -453,6 +472,7 @@ export function parseAction(raw: unknown): { ok: true; action: MysteryAction } |
     case 'testify': return str((r as { about?: string }).about, 64) && str((r as { text?: string }).text) ? { ok: true, action: { type: 'testify', about: (r as { about: string }).about, text: (r as { text: string }).text } } : no('bad-action', 'testify needs somebody and words');
     case 'alibi': return str((r as { for?: string }).for, 64) ? { ok: true, action: { type: 'alibi', for: (r as { for: string }).for } } : no('bad-action', 'alibi needs somebody');
     case 'dress': return str((r as { outfit?: string }).outfit, 64) ? { ok: true, action: { type: 'dress', outfit: (r as { outfit: string }).outfit } } : no('bad-action', 'dressing needs an outfit');
+    case 'choose': return str((r as { choice?: string }).choice, 64) && str((r as { option?: string }).option, 64) ? { ok: true, action: { type: 'choose', choice: (r as { choice: string }).choice, option: (r as { option: string }).option } } : no('bad-action', 'choosing needs a choice and an option');
     case 'accuse': return str((r as { against?: string }).against, 64) ? { ok: true, action: { type: 'accuse', against: (r as { against: string }).against, clues: Array.isArray((r as { clues?: unknown }).clues) ? ((r as { clues: unknown[] }).clues.filter((c) => typeof c === 'string') as string[]) : [] } } : no('bad-action', 'accuse needs somebody');
     case 'murder': return str((r as { victim?: string }).victim, 64) && str((r as { prop?: string }).prop, 64) ? { ok: true, action: { type: 'murder', victim: (r as { victim: string }).victim, prop: (r as { prop: string }).prop } } : no('bad-action', 'murder needs somebody and something');
     case 'plant': return str((r as { prop?: string }).prop, 64) && str((r as { trait?: string }).trait, 64) ? { ok: true, action: { type: 'plant', prop: (r as { prop: string }).prop, trait: (r as { trait: string }).trait } } : no('bad-action', 'planting needs something and somewhere');
@@ -482,6 +502,7 @@ export function redactEvent(state: MysteryState, ev: MysteryEvent, role: RoleId 
     case 'whispered': return role && (ev.by === role || ev.to === role) ? ev : null;
     case 'moved': return role === null || ev.who === role || witnessed(ev) ? ev : null;
     case 'accused': return ev.room === null || role === null || ev.by === role || witnessed(ev) ? ev : null;
+    case 'chose': return role === null || ev.by === role || witnessed(ev) ? ev : null;
     case 'said': case 'shared': case 'claimed': return role === null || ev.by === role || witnessed(ev) ? ev : null;
     default: return null;
   }
@@ -563,6 +584,10 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
     clues: known.map((id) => clueOf(title, id)).filter((c): c is ClueDef => !!c).map((c) => ({ id: c.id, kind: c.kind, text: c.text, public: state.publicClues.includes(c.id) })),
     deaths: state.deaths.map((d) => ({ victim: d.victim, victimName: roleOf(title, d.victim)?.name ?? d.victim, room: d.room, roomName: roomOf(venue, d.room)?.name ?? d.room, act: d.act })),
     transcript: state.log.map((e) => redactEvent(state, e, role)).filter((e): e is MysteryEvent => !!e),
+    /** THE NIGHT'S OUTCOMES so far — mutable facts choices have set, public to everybody (the consequence was said in a room; the fact of it is the night's). */
+    outcomes: (state.outcomes ?? []).map((o) => ({ key: o.key, by: o.by })),
+    /** THE CHOICES BEFORE YOU: written for your part, open in this act, not yet taken. */
+    choices: role ? (roleOf(title, role)?.choices ?? []).filter((c) => state.act >= c.act && !(state.outcomes ?? []).some((o) => o.by === role && o.choice === c.id)).map((c) => ({ id: c.id, question: c.question, options: c.options.map((o) => ({ id: o.id, label: o.label })) })) : [],
     accusation: (() => { const a = role ? state.accusations.find((x) => x.by === role) : undefined; return a ? { against: a.against, clues: a.clues } : null; })(),
     reveal: revealed ? {
       killer: state.killer, killerName: roleOf(title, state.killer)?.name ?? state.killer, seed: state.seedHex ?? '', rule: state.killerRule,

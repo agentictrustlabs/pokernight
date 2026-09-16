@@ -43,6 +43,16 @@ export const BELVEDERE_SNOWFALL_FROM_ONTOLOGY: Title = {
       blurb: "You have run the Belvedere for nineteen winters. You know which door sticks and who came down late.",
       secret: "You have been letting one guest stay all season without paying, and the books do not show it.",
       traits: ["keys:master", "boots:42", "gloves:wool"],
+      choices: [
+        {
+          id: "concierge:books", act: 2,
+          question: "The heiress asks you straight: is there a room let out of the books? Tell her now, or find her support first.",
+          options: [
+            { id: "tell", label: "Tell her, tonight, in front of whoever is there", outcome: "books:told", consequence: "The heiress knows, and so does the room. Her decision about the hotel is made with the books open; the staff learn the concierge told the truth when it cost him." },
+            { id: "wait", label: "Deny it for now and go to the widow first", outcome: "books:hidden", consequence: "The books stay shut tonight. If the register is read closely, the concierge is caught in the lie rather than credited with the truth." },
+          ],
+        },
+      ],
       lines: {
         greet: "The pass will not open before morning. Please, stay where it is warm.",
         probe: "I see everyone who crosses this lobby. Not everyone remembers that.",
@@ -66,6 +76,16 @@ export const BELVEDERE_SNOWFALL_FROM_ONTOLOGY: Title = {
       blurb: "The resort is yours since your father died on the mountain two winters ago.",
       secret: "The will is being contested, and you have known for a week who is contesting it.",
       traits: ["scent:iris", "boots:38", "gloves:leather"],
+      choices: [
+        {
+          id: "heiress:hotel", act: 2,
+          question: "Restore the Belvedere on somebody else's terms, or sell it and be done with the mountain.",
+          options: [
+            { id: "restore", label: "Fund the restoration, with conditions", outcome: "hotel:restoring", consequence: "The hotel has a future and she has allies in it. Whoever ran the books answers to her now." },
+            { id: "sell", label: "Sell it, and say so tonight", outcome: "hotel:selling", consequence: "Everybody whose winter depends on the Belvedere hears it. The concierge and the chef have nothing left to protect, which changes what they will say." },
+          ],
+        },
+      ],
       lines: {
         greet: "My father built this place. I would rather it not be remembered for tonight.",
         probe: "You knew him, did you not? Before.",
@@ -89,6 +109,16 @@ export const BELVEDERE_SNOWFALL_FROM_ONTOLOGY: Title = {
       blurb: "You teach the guests to ski and you know the mountain better than the map does.",
       secret: "You were on the slope the night of the accident two winters ago, and you have never said so.",
       traits: ["scent:pine-wax", "boots:44", "hands:calloused"],
+      choices: [
+        {
+          id: "instructor:friend", act: 2,
+          question: "You know who was late off the hill. Name them, or defend them and say only what you saw yourself.",
+          options: [
+            { id: "name", label: "Name them", outcome: "party:named", consequence: "The room has a name it did not have. The instructor is believed and has lost a friend." },
+            { id: "defend", label: "Defend them, and admit the limits of what you saw", outcome: "party:unnamed", consequence: "Loyalty, at the price of being doubted. The room has to find the name another way — and it can." },
+          ],
+        },
+      ],
       lines: {
         greet: "Nobody goes out in this. I have told them twice.",
         probe: "Everybody keeps asking me about two winters ago.",
@@ -112,6 +142,16 @@ export const BELVEDERE_SNOWFALL_FROM_ONTOLOGY: Title = {
       blurb: "You winter here for your chest, and tonight you are the only one who can certify a death.",
       secret: "You certified the old man’s death two winters ago in nine minutes, and took a cheque for it.",
       traits: ["hands:ink", "boots:44", "gloves:leather"],
+      choices: [
+        {
+          id: "doctor:certificate", act: 3,
+          question: "Somebody says the old man's death was certified in nine minutes. Challenge it, or let the confident timeline stand.",
+          options: [
+            { id: "challenge", label: "Challenge the timeline, and admit your part in it", outcome: "accident:reopened", consequence: "The accident two winters ago is a question again. The doctor is diminished and, for once, believed." },
+            { id: "stand", label: "Let it stand", outcome: "accident:closed", consequence: "The old story holds, and the room's hypothesis about tonight builds on it — which is how a room ends up sure and wrong." },
+          ],
+        },
+      ],
       lines: {
         greet: "Keep everyone in one room and out of the cold. That is my whole advice.",
         probe: "You are asking me what I saw. I am asking you the same thing.",
@@ -135,6 +175,16 @@ export const BELVEDERE_SNOWFALL_FROM_ONTOLOGY: Title = {
       blurb: "You feed eight people and hear all of them, because nobody lowers their voice near a kitchen.",
       secret: "You have been buying somebody’s silence with dinners since November.",
       traits: ["scent:kitchen-smoke", "boots:42", "hands:calloused"],
+      choices: [
+        {
+          id: "chef:knife", act: 2,
+          question: "The knife is back in the block and it is wet. Say you washed it and why, or say nothing and let them wonder.",
+          options: [
+            { id: "admit", label: "Admit the lapse", outcome: "knife:explained", consequence: "One suspicion off the table, and a chef who looks honest because he was." },
+            { id: "silent", label: "Say nothing", outcome: "knife:unexplained", consequence: "Suspicion falls where it will. The kitchen is searched, and the cold room with it." },
+          ],
+        },
+      ],
       lines: {
         greet: "Sit. Eat. Whatever else is happening, it will happen after the soup.",
         probe: "People say things in my kitchen they would not say in your lounge.",
@@ -158,6 +208,16 @@ export const BELVEDERE_SNOWFALL_FROM_ONTOLOGY: Title = {
       blurb: "You came to write about a beautiful hotel in a beautiful place.",
       secret: "You came for the accident two winters ago, and you have the file in your case.",
       traits: ["hands:ink", "boots:38", "left-handed"],
+      choices: [
+        {
+          id: "journalist:source", act: 2,
+          question: "You have enough to print. Say what you have now, or protect the source and wait until it is verified.",
+          options: [
+            { id: "print", label: "Say it now", outcome: "source:burned", consequence: "The room hears the accident story before it hears the evidence. Somebody in this house will never speak to her again." },
+            { id: "protect", label: "Protect the source", outcome: "source:kept", consequence: "The story waits and the source stays. The room reaches the accident by evidence, or not at all." },
+          ],
+        },
+      ],
       lines: {
         greet: "Do not mind me. I write things down; it is a habit, not a threat.",
         probe: "Two winters ago. Were you here?",
@@ -181,6 +241,16 @@ export const BELVEDERE_SNOWFALL_FROM_ONTOLOGY: Title = {
       blurb: "You brought the last party up before the pass closed, and you will bring them down.",
       secret: "You know exactly who came down the mountain late, two winters ago, because you waited for them.",
       traits: ["scent:pine-wax", "boots:42", "limp"],
+      choices: [
+        {
+          id: "guide:outside", act: 2,
+          question: "Somebody wants to go out to the woodshed for the prints before the snow takes them. Take them, or refuse and keep everybody in.",
+          options: [
+            { id: "take", label: "Take them out", outcome: "prints:seen", consequence: "The prints at the woodshed are seen before the snow covers them. Somebody's claim about being indoors has a witness against it." },
+            { id: "refuse", label: "Keep everybody in", outcome: "prints:lost", consequence: "Nobody goes out and nobody is hurt. The prints are gone by morning and the outside alibi has to be broken some other way — which it can be." },
+          ],
+        },
+      ],
       lines: {
         greet: "The pass is shut till the plough comes. I would not try the road.",
         probe: "I count people up and I count them down. I am good at it.",
@@ -204,6 +274,16 @@ export const BELVEDERE_SNOWFALL_FROM_ONTOLOGY: Title = {
       blurb: "You have the best room, you are in mourning, and you have been here a fortnight.",
       secret: "The name in the register is not yours, and one person here knows your real one.",
       traits: ["scent:iris", "boots:38", "keys:master"],
+      choices: [
+        {
+          id: "widow:name", act: 2,
+          question: "The register says one name and the luggage another. Explain it before you are asked, or wait to be asked.",
+          options: [
+            { id: "explain", label: "Explain it now", outcome: "widow:explained", consequence: "Why she is here is on the table. She is pitied rather than suspected, and the money thread has a new end to pull." },
+            { id: "wait", label: "Wait to be asked", outcome: "widow:unexplained", consequence: "The discrepancy stands until somebody reads the register. When they do, she is the one who did not say." },
+          ],
+        },
+      ],
       lines: {
         greet: "I came here to be left alone. It appears I have failed.",
         probe: "You look at me as though we have met.",

@@ -13,7 +13,7 @@
  *
  *   node scripts/story-to-archetypes.mjs [outDir]     # default ~/skills/archetypes
  */
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { Parser, Store, DataFactory } from 'n3';
 
 const { namedNode } = DataFactory;
@@ -24,10 +24,41 @@ const src = `${process.env.HOME}/skills/ontology/belvedere-snowfall.ttl`;
 const outDir = process.argv[2] ?? `${process.env.HOME}/skills/archetypes`;
 
 const store = new Store(new Parser().parse(readFileSync(src, 'utf8')));
+// the intent layer — what each part wants, what it would cost, and the choice they will face — when it is there
+const v2 = src.replace(/\.ttl$/, '-v2.ttl');
+if (existsSync(v2)) store.addQuads(new Parser().parse(readFileSync(v2, 'utf8')));
 const one = (s, p) => store.getObjects(s, namedNode(p), null)[0] ?? null;
 const all = (s, p) => store.getObjects(s, namedNode(p), null);
 const lit = (s, p) => one(s, p)?.value ?? null;
 const num = (s, p) => { const v = lit(s, p); return v === null ? null : Number(v); };
+/**
+ * WHAT YOU WANT, AND WHAT YOU WILL HAVE TO DECIDE. A part with a goal behaves like somebody who wants
+ * something, which is the difference between a suspect and a witness; a part with a written choice can make an
+ * evening differ from the last one by deciding, not by a model wording it differently. The consequences are
+ * given in full — you are the one choosing, and you may choose knowing what it costs.
+ */
+const wantSection = (p) => {
+  const goal = one(p, `${ST}pursues`), stake = one(p, `${ST}atStake`), torn = one(p, `${ST}torn`);
+  const choices = all(p, `${ST}faces`);
+  if (!goal && !choices.length) return '';
+  const out = [];
+  if (goal) {
+    out.push('', '## What you want tonight', '', `**${lit(goal, `${RDFS}label`)}.**`);
+    if (stake) out.push('', `What it would cost you: ${lit(stake, `${RDFS}label`)}.`);
+    if (torn) out.push(`What you are torn between: ${lit(torn, `${RDFS}label`)}.`);
+  }
+  for (const c of choices) {
+    const act = num(one(c, `${ST}openedBy`), `${ST}actNumber`);
+    out.push('', `## What you will have to decide (from act ${act})`, '', `> ${lit(c, `${ST}question`)}`, '');
+    for (const o of all(c, `${ST}hasOption`)) {
+      const cons = one(o, `${ST}leadsToConsequence`);
+      out.push(`- **${lit(o, `${RDFS}label`)}** (\`${lit(cons, `${ST}outcomeKey`)}\`) — ${lit(cons, `${RDFS}label`)}`);
+    }
+    out.push('', `You take it with \`{"type":"choose","choice":"${lit(c, `${ST}choiceKey`)}","option":"<option>"}\` — once, and only when you mean it. Neither option changes who did it; both change the night.`);
+  }
+  out.push('');
+  return out.join('\n');
+};
 const story = store.getSubjects(namedNode(`${RDF}type`), namedNode(`${ST}Story`), null)[0].value;
 const byOrder = (a, b) => (num(a, `${ST}order`) ?? 0) - (num(b, `${ST}order`) ?? 0);
 const parts = all(story, `${ST}hasPart`).map((p) => p.value).sort(byOrder);
@@ -93,7 +124,7 @@ ${aboutYou.length ? `\nThings that can be found that point this way: ${aboutYou.
 
 ## What you are for, structurally
 ${fns.length ? fns.map((f) => `- ${f}`).join('\n') : '- One of the eight. Nobody in this house is decoration.'}
-
+${wantSection(p)}
 ## How you sound
 
 ${['greet', 'probe', 'deny', 'accuse', 'mourn', 'found'].map((k) => `- **${k === 'found' ? 'when somebody finds something' : k}** — “${line(k)}”`).join('\n')}
