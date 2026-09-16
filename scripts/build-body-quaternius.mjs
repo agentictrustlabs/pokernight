@@ -59,6 +59,9 @@ const heldTalk = slice(sitting, SIT_ENTER + 0.25, Math.min(duration(sitting), SI
 const RENAME = {
   Idle: 'Idle_Loop', Walk: 'Walk_Loop', Standing: 'Sitting_Exit',
   Clapping: 'Interact', Punch: 'PickUp_Table', Jump: 'Dance_Loop',
+  // A BODY THAT IS DEAD IS LYING DOWN, and the pack authored that on this very rig. The room plays it once and
+  // holds the last frame, so a victim is found where they fell rather than standing about being not alive.
+  Death: 'Death_Pose',
 };
 const keep = new Set([enter, held, heldTalk]);
 for (const a of root.listAnimations()) {

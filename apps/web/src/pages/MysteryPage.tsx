@@ -180,7 +180,7 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
           <aside className="mystery-side">
             <You view={view} act={act} />
             <Clues view={view} act={act} />
-            <Cast view={view} act={act} speaking={speaking} />
+            <Cast view={view} act={act} speaking={speaking} lookAt={(role) => venue.current?.lookAt(role) ?? false} />
           </aside>
         </div>
       )}
@@ -421,8 +421,15 @@ function Clues({ view, act }: { view: MysteryView; act: (a: unknown) => void }) 
 }
 
 /** THE CAST, and — when it is time — the one thing the night is for. */
-function Cast({ view, act, speaking }: { view: MysteryView; act: (a: unknown) => void; speaking: string | null }) {
+function Cast({ view, act, speaking, lookAt }: { view: MysteryView; act: (a: unknown) => void; speaking: string | null; lookAt: (role: string) => boolean }) {
   const [pick, setPick] = useState<string>('');
+  /**
+   * A NAME IN THIS LIST IS A PERSON IN A ROOM (2026-09-15). Pressing one turns the camera on them where they
+   * are standing — and on a victim where they are LYING, which in a murder mystery is the view worth having.
+   * Somebody in another room cannot be shown from this one, so the row says where the camera could not go
+   * rather than the picture swinging at nothing.
+   */
+  const [missed, setMissed] = useState<string | null>(null);
   const open = view.phase === 'accusations' || (view.phase === 'act' && view.act >= 3);
   return (
     <section className="panel mystery-cast">
@@ -430,9 +437,13 @@ function Cast({ view, act, speaking }: { view: MysteryView; act: (a: unknown) =>
       <ul>
         {view.cast.map((p) => (
           <li key={p.role} className={p.alive ? '' : 'dead'}>
-            <Face look={p.look} name={p.name} size={28} speaking={speaking === p.role} dead={!p.alive} />
-            <strong>{p.name}</strong>
-            <span className="hint">{p.role === view.you?.role ? 'you' : p.operator === 'human' ? 'a person' : 'an agent'}{p.alive ? '' : ' · dead'}</span>
+            <button type="button" className="mystery-cast-row" onClick={() => setMissed(lookAt(p.role) ? null : p.role)}
+              title={p.alive ? `Look at ${p.name}` : `Look at ${p.name} where they were found`}>
+              <Face look={p.look} name={p.name} size={28} speaking={speaking === p.role} dead={!p.alive} />
+              <strong>{p.name}</strong>
+              <span className="hint">{p.role === view.you?.role ? 'you' : p.operator === 'human' ? 'a person' : 'an agent'}{p.alive ? '' : ' · dead'}</span>
+            </button>
+            {missed === p.role ? <em className="hint mystery-elsewhere">not in this room</em> : null}
           </li>
         ))}
       </ul>

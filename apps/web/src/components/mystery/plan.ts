@@ -35,6 +35,13 @@ export interface RoomPlan {
   spots: Array<[number, number]>;
   /** Where each door out of this room sits in the wall, by the room it leads to. */
   doors: Record<string, [number, number]>;
+  /**
+   * WHERE A BODY LIES IN THIS ROOM, if one does. A death happens IN a room and the story says where — at the
+   * foot of the racks, by the hearth, at the bottom of the service stair — so the drawing says where too,
+   * rather than leaving a victim in the middle of the floor like a dropped parcel. `yaw` is which way they
+   * fell. The room's own narration and this should agree; when they do, walking in on it tells the story.
+   */
+  deathAt?: { x: number; z: number; yaw?: number };
   things: Placed[];
 }
 
@@ -45,17 +52,66 @@ export const BELVEDERE_PLAN: Record<string, RoomPlan> = {
     w: 8, d: 7, floor: '#5b4a3a', wall: '#3a4a52', accent: '#c9a14a',
     spots: [[-3, 1], [-1.5, 2.2], [0, 1], [1.5, 2.2], [3, 1], [-2, -1.5], [2, -1.5], [0, -2.6]],
     doors: { lounge: [7.4, 0], 'ski-room': [-7.4, 0], 'guest-room': [0, -6.4] },
+    deathAt: { x: 1.4, z: 1.8, yaw: 40 },
     things: [
-      { piece: 'sideTable', x: 0, z: 4.6, yaw: 180, scale: 1.6 },
-      // THE GUEST REGISTER ITSELF, open on the desk: a leather cover with two leaves of paper tipped up from it.
-      // The prop was a bare side table and the page said "the register" over it, which is a label standing in
-      // for a thing. What you can examine should be the thing you can see (2026-09-15).
-      { prim: { shape: 'box', size: [0.52, 0.045, 0.36], colour: '#3a2418' }, x: 0, z: 4.6, y: 0.61, yaw: 6, prop: 'register', label: 'the register' },
-      { prim: { shape: 'box', size: [0.24, 0.012, 0.33], colour: '#e8e2d2' }, x: -0.12, z: 4.6, y: 0.64, yaw: 6, tilt: -7 },
-      { prim: { shape: 'box', size: [0.24, 0.012, 0.33], colour: '#f2ece0' }, x: 0.12, z: 4.6, y: 0.64, yaw: 6, tilt: 7 },
-      { prim: { shape: 'cylinder', size: [0.018, 0.16, 0.018], colour: '#1d1d22' }, x: 0.2, z: 4.44, y: 0.66, lean: 68 },
-      { piece: 'bookcaseOpen', x: -3.2, z: 5.2, yaw: 180, prop: 'keyboard', label: 'the keys' },
-      { piece: 'chairRounded', x: 3.6, z: 4.4, yaw: 200, prop: 'coat-stand', label: 'the coats' },
+      /**
+       * THE RECEPTION DESK, BUILT RATHER THAN BORROWED (2026-09-15).
+       *
+       * A side table scaled up is a side table scaled up: too tall to write on, and the ledger laid on top of
+       * it floated where the piece's own top was not. A desk is five boxes and every dimension is ours — the
+       * counter stands at 0.78 m, which is what a person leans on, and the register sits ON it because the
+       * number is the same number.
+       */
+      { prim: { shape: 'box', size: [2.4, 0.07, 0.78], colour: '#5a4230' }, x: 0, z: 4.6, y: 0.745 },
+      { prim: { shape: 'box', size: [2.4, 0.71, 0.08], colour: '#4a3626' }, x: 0, z: 4.24, y: 0.355 },
+      { prim: { shape: 'box', size: [2.4, 0.71, 0.08], colour: '#4a3626' }, x: 0, z: 4.96, y: 0.355 },
+      { prim: { shape: 'box', size: [0.08, 0.71, 0.78], colour: '#4a3626' }, x: -1.16, z: 4.6, y: 0.355 },
+      { prim: { shape: 'box', size: [0.08, 0.71, 0.78], colour: '#4a3626' }, x: 1.16, z: 4.6, y: 0.355 },
+      // THE GUEST REGISTER, open on the counter: a leather cover with two leaves tipped up from it, and a pen.
+      // What you can examine should be the thing you can see — it was a label over a bare table (2026-09-15).
+      { prim: { shape: 'box', size: [0.52, 0.045, 0.36], colour: '#3a2418' }, x: 0, z: 4.55, y: 0.803, yaw: 6, prop: 'register', label: 'the register' },
+      { prim: { shape: 'box', size: [0.24, 0.012, 0.33], colour: '#e8e2d2' }, x: -0.12, z: 4.55, y: 0.829, yaw: 6, tilt: -7 },
+      { prim: { shape: 'box', size: [0.24, 0.012, 0.33], colour: '#f2ece0' }, x: 0.12, z: 4.55, y: 0.829, yaw: 6, tilt: 7 },
+      { prim: { shape: 'cylinder', size: [0.018, 0.16, 0.018], colour: '#1d1d22' }, x: 0.26, z: 4.42, y: 0.84, lean: 74 },
+      // a brass bell, because a reception desk without one is a table
+      { prim: { shape: 'cylinder', size: [0.13, 0.055, 0.13], colour: '#b99a4a' }, x: -0.72, z: 4.5, y: 0.808 },
+      { prim: { shape: 'cylinder', size: [0.03, 0.05, 0.03], colour: '#cdb265' }, x: -0.72, z: 4.5, y: 0.855 },
+      /**
+       * THE KEY BOARD IS A BOARD WITH KEYS ON IT. It was a bookcase against the wall labelled "the keys", so
+       * leaning in to look at it showed shelving. Fifteen hooks in three rows, a tag on most of them and a gap
+       * where one is missing — which is the whole point of looking at a key board in a hotel at night.
+       */
+      { prim: { shape: 'box', size: [1.15, 0.78, 0.05], colour: '#43301f' }, x: -3.2, z: 6.78, y: 1.42, prop: 'keyboard', label: 'the keys' },
+      { prim: { shape: 'box', size: [1.02, 0.66, 0.02], colour: '#2a1d13' }, x: -3.2, z: 6.74, y: 1.42 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.58, z: 6.7, y: 1.6 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.39, z: 6.7, y: 1.6 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.2, z: 6.7, y: 1.6 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.01, z: 6.7, y: 1.6 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -2.82, z: 6.7, y: 1.6 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.58, z: 6.7, y: 1.42 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.39, z: 6.7, y: 1.42 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.01, z: 6.7, y: 1.42 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -2.82, z: 6.7, y: 1.42 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.58, z: 6.7, y: 1.24 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.39, z: 6.7, y: 1.24 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.2, z: 6.7, y: 1.24 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -3.01, z: 6.7, y: 1.24 },
+      { prim: { shape: 'box', size: [0.055, 0.13, 0.015], colour: '#d8cba8' }, x: -2.82, z: 6.7, y: 1.24 },
+      /**
+       * THE COAT STAND HAS COATS ON IT. It was a chair — a chair with nothing on it, under a label that said
+       * "the coats" — and a guest's coat is one of the few things in a snowed-in hotel worth going through.
+       */
+      { prim: { shape: 'cylinder', size: [0.42, 0.05, 0.42], colour: '#3b2a1c' }, x: 3.6, z: 4.4, y: 0.025, prop: 'coat-stand', label: 'the coats' },
+      { prim: { shape: 'cylinder', size: [0.075, 1.72, 0.075], colour: '#4a3626' }, x: 3.6, z: 4.4, y: 0.88 },
+      { prim: { shape: 'cylinder', size: [0.05, 0.3, 0.05], colour: '#4a3626' }, x: 3.46, z: 4.4, y: 1.69, lean: 74 },
+      { prim: { shape: 'cylinder', size: [0.05, 0.3, 0.05], colour: '#4a3626' }, x: 3.74, z: 4.4, y: 1.69, lean: -74 },
+      { prim: { shape: 'cylinder', size: [0.05, 0.3, 0.05], colour: '#4a3626' }, x: 3.6, z: 4.26, y: 1.69, tilt: 74 },
+      // a heavy loden coat and a pale one, hanging with their shoulders on the pegs
+      { prim: { shape: 'box', size: [0.44, 0.96, 0.2], colour: '#2f4034' }, x: 3.36, z: 4.42, y: 1.16, yaw: 8 },
+      { prim: { shape: 'box', size: [0.3, 0.22, 0.24], colour: '#35473a' }, x: 3.36, z: 4.42, y: 1.6, yaw: 8 },
+      { prim: { shape: 'box', size: [0.42, 0.88, 0.19], colour: '#8d7c62' }, x: 3.84, z: 4.38, y: 1.2, yaw: -6 },
+      { prim: { shape: 'box', size: [0.29, 0.2, 0.22], colour: '#9b8a6e' }, x: 3.84, z: 4.38, y: 1.61, yaw: -6 },
+      { prim: { shape: 'box', size: [0.26, 0.5, 0.16], colour: '#5b3f3a' }, x: 3.6, z: 4.2, y: 1.34 },
       { piece: 'rugRound', x: 0, z: 0, scale: 2.4 },
       { piece: 'pottedPlant', x: -6.4, z: -4.6 },
       { piece: 'pottedPlant', x: 6.4, z: -4.6 },
@@ -70,6 +126,7 @@ export const BELVEDERE_PLAN: Record<string, RoomPlan> = {
     w: 7.5, d: 7, floor: '#4b3b2e', wall: '#42352f', accent: '#c9702a',
     spots: [[-2.6, 0.6], [-1, 1.8], [0.6, 0.6], [2.2, 1.8], [3.4, 0], [-3.6, -1.4], [1.4, -2.2], [-1, -2.6]],
     doors: { lobby: [-7.1, 0], kitchen: [7.1, 0] },
+    deathAt: { x: -0.6, z: 1.9, yaw: 200 },   // by the hearth
     things: [
       // the hearth, which actually burns
       { prim: { shape: 'box', size: [3.4, 2.2, 0.8], colour: '#6b6560' }, x: 0, z: 6.2 },
@@ -88,6 +145,7 @@ export const BELVEDERE_PLAN: Record<string, RoomPlan> = {
     w: 7, d: 6, floor: '#4a4a4a', wall: '#37423f', accent: '#8fa7a0',
     spots: [[-2.4, 0.4], [-0.8, 1.6], [0.8, 0.4], [2.4, 1.6], [3.4, -0.6], [-3.4, -1.6], [1.2, -2.4], [-1.4, -2.6]],
     doors: { lounge: [-6.6, 0], 'guest-room': [6.6, 0] },
+    deathAt: { x: 1.2, z: -1.4, yaw: 300 },  // between the range and the cold store
     things: [
       { piece: 'kitchenBar', x: -1.2, z: 3.8 },
       { piece: 'kitchenBar', x: 1.2, z: 3.8 },
@@ -104,6 +162,7 @@ export const BELVEDERE_PLAN: Record<string, RoomPlan> = {
     w: 6.5, d: 6, floor: '#5a4636', wall: '#4a4048', accent: '#8a6f8c',
     spots: [[-2.2, 0.4], [-0.6, 1.6], [1, 0.4], [2.4, 1.4], [3, -0.8], [-3, -1.6], [0.8, -2.4], [-1.2, -2.6]],
     doors: { lobby: [0, -5.4], kitchen: [-6.1, 0] },
+    deathAt: { x: -1.8, z: 1.2, yaw: 130 },  // at the turn of the corridor
     things: [
       // a bed, which the kit has not got
       { prim: { shape: 'box', size: [2.2, 0.5, 3.2], colour: '#4c3f38' }, x: -3.4, z: 2.6 },
@@ -121,6 +180,8 @@ export const BELVEDERE_PLAN: Record<string, RoomPlan> = {
     w: 6.5, d: 6, floor: '#3f4a4e', wall: '#2f3a3e', accent: '#7fb0c4',
     spots: [[-2.2, 0.6], [-0.6, 1.8], [1, 0.6], [2.4, 1.6], [3, -0.6], [-3, -1.6], [0.8, -2.4], [-1.2, -2.8]],
     doors: { lobby: [6.1, 0] },
+    // "Somebody is lying at the foot of the racks" — the opening says it, so this is where they are.
+    deathAt: { x: -3.1, z: 2.2, yaw: 24 },
     things: [
       { piece: 'bookcaseOpen', x: -4.2, z: 3.4 },
       { piece: 'bookcaseOpen', x: -1.6, z: 3.4 },

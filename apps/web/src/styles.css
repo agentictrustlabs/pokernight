@@ -6778,7 +6778,15 @@ button.tag.guest {
 .mystery-people li { gap: 0.55rem; }
 .mystery-you-head { display: flex; align-items: center; gap: 0.7rem; }
 .mystery-you-head h2 { margin: 0; }
-.mystery-cast li { align-items: center; }
+.mystery-cast li { align-items: center; flex-wrap: wrap; }
+/* A NAME IN THE CAST LIST IS A BUTTON that turns the camera on that person in the room — so it has to look
+   pressable and keep the row's own layout, which a bare <button> does not. */
+.mystery-cast-row { display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 0;
+  background: none; border: 0; padding: 0.12rem 0.2rem; margin: -0.12rem -0.2rem; border-radius: 6px;
+  color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mystery-cast-row:hover, .mystery-cast-row:focus-visible { background: rgba(255, 255, 255, 0.07); }
+.mystery-cast-row strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mystery-elsewhere { flex-basis: 100%; padding-left: 2.2rem; opacity: 0.8; }
 /* the night's top strip keeps its name, its act and its clock on one line */
 .mystery .topbar .meta { flex-wrap: nowrap; white-space: nowrap; }
 .mystery .topbar .meta strong { overflow: hidden; text-overflow: ellipsis; max-width: 42vw; }

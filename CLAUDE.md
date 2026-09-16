@@ -289,7 +289,14 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   ages, tones and builds come off two body files, and `figure` says which body plays them with nothing inferred from
   a name. **A DOOR IS A LEAF ON A HINGE**: the kit's own panel hangs nowhere near its frame, so the leaf is a box
   hinged at one edge of the opening, MEASURED from the frame that is there; it swings as the body reaches it and the
-  staging is not asked to move you until it is open. **WHAT YOU EXAMINE IS A THING YOU CAN SEE** — the register is a
+  staging is not asked to move you until it is open. **THE NIGHT OPENS ON THE WHOLE ROOM FROM ABOVE** — a doll's
+  house, everybody separated on the floor with their names readable — because the first thing a player needs is who
+  is here and where; at eye height the room was a thin band with every plate piled on every other. Height rides the
+  pitch, and the distance shortens as it climbs or a high camera looks at the roof from the next valley.
+  **A NAME IN THE CAST LIST IS A PERSON IN A ROOM**: pressing one turns the camera on them, and on a victim where
+  they are LYING — `room.death` says a death happened here and the PLAN says where a body lies in this room
+  (`deathAt`), so the ski room is the foot of the racks and not a line of text. The dead play the body's own death
+  clip (`Death_Pose`, kept by the build script) and are never walked or turned again. **WHAT YOU EXAMINE IS A THING YOU CAN SEE** — the register is a
   ledger on the desk and the racks are skis, not a label over a side table — and arriving at one leans the camera in
   over your shoulder to frame the OBJECT (its bounding box, not its spot on the floor: aiming at the floor put the
   camera under the desk). A planned primitive honours its shape, its height and its tilt; before that everything was

@@ -32,6 +32,8 @@ export interface VenueHandle {
   approach: (prop: string) => boolean;
   /** Walk to a door and go through it. False when this room has no such door. */
   goThrough: (room: string) => boolean;
+  /** Turn the camera on this character, wherever they are standing — or lying — in this room. */
+  lookAt: (role: string) => boolean;
 }
 
 export interface VenueProps {
@@ -63,7 +65,16 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
   const goingTo = useRef<{ room: string; at: number } | null>(null);
   /** Which room we came from, so we enter the next one through its door rather than appearing in it. */
   const cameFrom = useRef<string | null>(null);
-  const camCtl = useRef({ yaw: 0, pitch: 0.22, zoom: 1 });
+  /**
+   * THE NIGHT OPENS ON THE WHOLE ROOM, FROM ABOVE (2026-09-15).
+   *
+   * It used to open at eye height across the floor, which put the room in a thin band across the middle of
+   * the picture with every name plate piled on top of every other and half the cast behind somebody else.
+   * The first thing a player needs is WHO IS HERE AND WHERE — so the camera starts high and looking down, a
+   * doll's-house view of the room with everybody separated on the floor, and drops toward eye level as you
+   * pitch it down or zoom in. Nothing is locked: right-drag still goes anywhere.
+   */
+  const camCtl = useRef({ yaw: 0, pitch: 0.62, zoom: 1 });
   const viewRef = useRef(view); viewRef.current = view;
   const actRef = useRef(act); actRef.current = act;
   const onPersonRef = useRef(onPerson); onPersonRef.current = onPerson;
@@ -89,7 +100,8 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
    * desk, the skis on the rack — and stays there while the clue is read, then eases back out to the room.
    * Any click, any key, or the next act lets go of it, so it is never somewhere you are stuck.
    */
-  const focus = useRef<{ at: pc.Vec3; until: number } | null>(null);
+  const focus = useRef<{ at: pc.Vec3; until: number; tight?: boolean } | null>(null);
+  const lookAtRef = useRef<((role: string) => boolean) | null>(null);
 
   // ── the application, once ──
   useEffect(() => {
@@ -232,6 +244,21 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       light(`door:${room}`);
       return true;
     };
+    /**
+     * GO AND LOOK AT SOMEBODY (2026-09-15). Pressing a name in "everyone here tonight" turns the camera on
+     * that person where they stand, and on a victim where they FELL — which is the one view in a murder
+     * mystery worth having, because how a body is lying is half of what a detective has to go on. Somebody in
+     * another room cannot be shown from this one; the page says so rather than the camera swinging at nothing.
+     */
+    const lookAtPerson = (role: string): boolean => {
+      const b = bodies.current.get(role);
+      if (!b) return false;
+      const head = b.bone('head');
+      const at = head ? head.getPosition().clone() : new pc.Vec3(b.pos.x, 1.3, b.pos.z);
+      focus.current = { at, until: Date.now() + 9000, tight: true };
+      return true;
+    };
+    lookAtRef.current = lookAtPerson;
     walkers.current = { toProp, toDoor };
     // the walk scripts read the venue through this, the way they read the lounge; nothing in the app does
     (window as unknown as { __venue?: unknown }).__venue = { bodies, doors, props, camera, goal, goingTo, pc };
@@ -304,7 +331,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       // fixed distance puts the camera inside the furniture of the small one and across the hall from the big.
       const cc = camCtl.current;
       const size = roomSize.current;
-      const dist = (size * 0.8 + 2.6) * cc.zoom;
+      const dist = (size * 0.62 + 2.2) * cc.zoom;
       const f = focus.current && focus.current.until > Date.now() ? focus.current : (focus.current = null);
       if (f) {
         // OVER YOUR SHOULDER AT THE THING: stand the camera behind where your body is, low, and frame the
@@ -316,14 +343,21 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
         const bx = f.at.x - from.x, bz = f.at.z - from.z;
         const len = Math.max(0.3, Math.hypot(bx, bz));
         const ux = bx / len, uz = bz / len;
-        const want = new pc.Vec3(f.at.x - ux * 1.35 - uz * 0.85, f.at.y + 0.72, f.at.z - uz * 1.35 + ux * 0.85);
+        const back = f.tight ? 2.1 : 1.35, side = f.tight ? 1.35 : 0.85, up = f.tight ? 0.5 : 0.72;
+        const want = new pc.Vec3(f.at.x - ux * back - uz * side, f.at.y + up, f.at.z - uz * back + ux * side);
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), want, Math.min(1, dt * 2.6)));
         camera.lookAt(f.at.x, f.at.y, f.at.z);
       } else {
-        const x = Math.sin(cc.yaw) * dist;
-        const z = -Math.cos(cc.yaw) * dist;
-        camera.setPosition(camera.getPosition().lerp(camera.getPosition(), new pc.Vec3(x, 2.6 + size * 0.16 + cc.pitch * 5, z - size * 0.28), Math.min(1, dt * 3)));
-        camera.lookAt(0, 0.95, size * 0.04);
+        // HEIGHT RIDES THE PITCH: all the way up is over the room looking down, all the way down is at the
+        // height of the people in it. The distance shortens as it climbs, or a high camera drifts out of the
+        // room entirely and looks at the roof of it from the next valley.
+        const climb = cc.pitch / 0.75;
+        const high = 1.9 + size * (0.35 + climb * 1.25);
+        const back = dist * (1 - climb * 0.42);
+        const x = Math.sin(cc.yaw) * back;
+        const z = -Math.cos(cc.yaw) * back;
+        camera.setPosition(camera.getPosition().lerp(camera.getPosition(), new pc.Vec3(x, high, z - size * 0.1), Math.min(1, dt * 3)));
+        camera.lookAt(0, 0.6, 0);
       }
       stride(dt);
       for (const [role, b] of bodies.current) { b.talking(speakingRef.current === role); b.update(dt); }
@@ -461,11 +495,23 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
     const lib = library.current;
     const plan = BELVEDERE_PLAN[roomId];
     if (!a || !lib || !plan) return;
+    /**
+     * THE VICTIM IS IN THE ROOM THEY DIED IN (2026-09-15).
+     *
+     * `room.death` says a death happened here and whose it was; the dead are not in `room.people`, so without
+     * this the ski room was a room with a line of text about a body in it. The body is drawn where the PLAN
+     * says a body lies in this room — the foot of the racks, the turn of the corridor — in the pose its own
+     * death clip ends in, and it is never walked or turned again.
+     */
+    const victim = view.room?.death?.victim ?? null;
     const here = [...(view.room?.people ?? []).map((p) => p.role), ...(view.you ? [view.you.role] : [])];
+    if (victim && !here.includes(victim)) here.push(victim);
     const seen = new Set(here);
     here.forEach((role, i) => {
-      const spot = plan.spots[i % plan.spots.length]!;
-      const mine = role === view.you?.role;
+      const gone = role === victim;
+      const lies = plan.deathAt ?? { x: 0, z: 0, yaw: 0 };
+      const spot: [number, number] = gone ? [lies.x, lies.z] : plan.spots[i % plan.spots.length]!;
+      const mine = role === view.you?.role && !gone;
       let b = bodies.current.get(role);
       if (!b) {
         // WHAT THE PART WEARS is the title's choice; a hash of the name is what it was before, and it dressed
@@ -493,21 +539,26 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
          */
         const back = mine && cameFrom.current ? doors.current.get(cameFrom.current) : null;
         if (back) { b.place(back.at.x * 0.85, back.at.z * 0.85, Math.atan2(-back.at.x, -back.at.z)); goal.current = new pc.Vec3(0, 0, -2.2); }
+        else if (gone) b.place(spot[0], spot[1], ((lies.yaw ?? 0) * Math.PI) / 180);
         else b.place(mine ? 0 : spot[0], mine ? -2.2 : spot[1], mine ? 0 : Math.atan2(-spot[0], -spot[1]));
         bodies.current.set(role, b);
+      } else if (gone) {
+        b.place(spot[0], spot[1], ((lies.yaw ?? 0) * Math.PI) / 180);
       } else if (!mine) {
         b.stand();
         b.walkTo(spot[0], spot[1], Math.atan2(-spot[0], -spot[1]));
       }
+      b.dead(gone);
       // YOUR OWN BODY SURVIVES THE ROOM CHANGE and is walked in by the room's own effect, where the doors are.
     });
     for (const [role, b] of [...bodies.current]) if (!seen.has(role)) { b.destroy(); bodies.current.delete(role); }
-  }, [roomId, view.room?.people.map((p) => p.role).join(','), view.you?.role]);
+  }, [roomId, view.room?.people.map((p) => p.role).join(','), view.you?.role, view.room?.death?.victim]);
 
   // The page's own controls walk the same walk the picture does.
   useImperativeHandle(ref, () => ({
     approach: (prop: string) => walkers.current?.toProp(prop) ?? false,
     goThrough: (room: string) => walkers.current?.toDoor(room) ?? false,
+    lookAt: (role: string) => lookAtRef.current?.(role) ?? false,
   }), []);
 
   return (

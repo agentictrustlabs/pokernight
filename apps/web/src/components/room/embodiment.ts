@@ -31,6 +31,8 @@ const CLIPS = {
   interact: ['Interact', 'Wave', 'Waving'],
   pickUp: ['PickUp_Table', 'PickUp', 'Pick_Up'],
   dance: ['Dance_Loop', 'Dance', 'Dancing'],
+  /** Lying where they fell. Played once, and the last frame held — a victim is not a looping animation. */
+  dead: ['Death_Pose', 'Death', 'Dying', 'Dead'],
 } as const;
 /** Bones the room drives itself — the gaze, the dealing reach, the deck in the off hand. */
 const BONES = {
@@ -103,11 +105,18 @@ const GRAPH = {
       { name: 'Interact', speed: 1, loop: false },
       { name: 'PickUp', speed: 1, loop: false },
       { name: 'Dance', speed: 1, loop: false },
+      { name: 'Dead', speed: 1, loop: false },
     ],
     transitions: [
       // a body that is already in a chair when it appears starts seated, not sitting down
       { from: 'START', to: 'Seated', priority: 0, conditions: [{ parameterName: 'seated', predicate: pc.ANIM_EQUAL_TO, value: true }] },
+      { from: 'START', to: 'Dead', priority: 0, conditions: [{ parameterName: 'dead', predicate: pc.ANIM_EQUAL_TO, value: true }] },
       { from: 'START', to: 'Idle', priority: 1 },
+      // DEATH INTERRUPTS EVERYTHING, from wherever the body was; nothing transitions back out of it.
+      { from: 'Idle', to: 'Dead', time: 0.2, priority: 0, conditions: [{ parameterName: 'dead', predicate: pc.ANIM_EQUAL_TO, value: true }] },
+      { from: 'Talk', to: 'Dead', time: 0.2, priority: 0, conditions: [{ parameterName: 'dead', predicate: pc.ANIM_EQUAL_TO, value: true }] },
+      { from: 'Walk', to: 'Dead', time: 0.2, priority: 0, conditions: [{ parameterName: 'dead', predicate: pc.ANIM_EQUAL_TO, value: true }] },
+      { from: 'Seated', to: 'Dead', time: 0.2, priority: 0, conditions: [{ parameterName: 'dead', predicate: pc.ANIM_EQUAL_TO, value: true }] },
       { from: 'Idle', to: 'Walk', time: 0.2, conditions: [{ parameterName: 'speed', predicate: pc.ANIM_GREATER_THAN, value: 0.25 }] },
       { from: 'Talk', to: 'Walk', time: 0.2, conditions: [{ parameterName: 'speed', predicate: pc.ANIM_GREATER_THAN, value: 0.25 }] },
       { from: 'Walk', to: 'Idle', time: 0.25, conditions: [{ parameterName: 'speed', predicate: pc.ANIM_LESS_THAN, value: 0.25 }] },
@@ -135,6 +144,7 @@ const GRAPH = {
     seated: { name: 'seated', type: pc.ANIM_PARAMETER_BOOLEAN, value: false },
     talking: { name: 'talking', type: pc.ANIM_PARAMETER_BOOLEAN, value: false },
     gesture: { name: 'gesture', type: pc.ANIM_PARAMETER_INTEGER, value: 0 },
+    dead: { name: 'dead', type: pc.ANIM_PARAMETER_BOOLEAN, value: false },
   },
 };
 // Seated states run the body's OWN idle (and its talking variant) — `applySeat` bends it into the chair.
@@ -142,7 +152,7 @@ const GRAPH = {
 // the Quaternius base characters come with a real sit-down, a real seated idle and a real stand-up, and posing
 // idle over those made a woman sit with her arms out and her back tipped. The two land in the same place — the
 // native clip drops the hips 0.37 m and 0.28 m back, the pose 0.42 m and 0.30 m — so a chair fits either.
-const STATE_CLIP: Record<string, keyof typeof CLIPS> = { Idle: 'idle', Talk: 'talk', Walk: 'walk', SitDown: 'idle', Seated: 'idle', SeatedTalk: 'talk', StandUp: 'idle', Interact: 'interact', PickUp: 'pickUp', Dance: 'dance' };
+const STATE_CLIP: Record<string, keyof typeof CLIPS> = { Idle: 'idle', Talk: 'talk', Walk: 'walk', SitDown: 'idle', Seated: 'idle', SeatedTalk: 'talk', StandUp: 'idle', Interact: 'interact', PickUp: 'pickUp', Dance: 'dance', Dead: 'dead' };
 const NATIVE_SEAT_CLIP: Record<string, keyof typeof CLIPS> = { SitDown: 'sitDown', Seated: 'seated', SeatedTalk: 'seatedTalk', StandUp: 'standUp' };
 
 /** A glTF container loaded once per application and handed to whoever asked, in order. */
@@ -358,6 +368,7 @@ export class ParticipantAvatar {
   private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   private nativeSeat = false;
+  private isDead = false;
   constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', readonly which: Figure = 'm', private readonly look?: BodyLook) {
     this.entity = new pc.Entity('avatar');
     // The FIGURE decides which GLB is instantiated; the LIBRARY still holds every outfit, because the two
@@ -420,6 +431,7 @@ export class ParticipantAvatar {
     }
     if (missing.length) console.warn('[room] this body has no clip for:', missing.join(', '), '— see docs/AVATARS.md');
     anim.setBoolean('seated', !!this.seat);
+    anim.setBoolean('dead', this.isDead);
     this.entity.addChild(body);
     this.body = body;
     this.head = findAny(body, BONES.head);
@@ -515,6 +527,13 @@ export class ParticipantAvatar {
   sitAt(seat: Seat): void { this.seat = seat; this.target.copy(seat.at); this.targetYaw = seat.yaw; this.anim?.setBoolean('seated', true); }
   /** Out of the chair. */
   stand(): void { if (!this.seat) return; this.seat = null; this.anim?.setBoolean('seated', false); }
+  /**
+   * LYING WHERE THEY FELL. A victim is drawn in the room the death happened in, in the pose the body's own
+   * death clip ends in — which is the difference between "Kai Brunner is dead" as a line of text and a thing
+   * you walked in on. Nothing transitions out: the dead do not get up.
+   */
+  dead(is: boolean): void { this.isDead = is; this.anim?.setBoolean('dead', is); }
+  get isGone(): boolean { return this.isDead; }
   get seated(): boolean { return !!this.seat; }
   get seatCentre(): pc.Vec3 | null { return this.seat?.centre ? new pc.Vec3(this.seat.centre.x, 0.95, this.seat.centre.z) : null; }
   /** Mouth moving: the talking loops, standing or seated. */
