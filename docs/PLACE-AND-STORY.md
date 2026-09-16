@@ -127,3 +127,25 @@ renders `at:SemanticCluster` members and all 59 new classes were in no cluster. 
 `story.clusters.ttl` / `place.clusters.ttl` — it is an editorial judgement about how the ontology is explained,
 not a derivation — so `register-place-story.mjs` refuses to upload a context with an orphan class and names it.
 Story is twelve clusters over 94 classes; place is six over 40.
+
+## The Belvedere is a domain, not just data (2026-09-16)
+
+Both Belvedere contexts were registered as pure A-box — every individual typed from `place.ttl` or
+`story.ttl`, not one class of their own — so the registry answered `/classes` with zero for both and the
+Graph had nothing to draw. Each now has a T-box and a cluster cut beside its data, like every other domain
+in the estate.
+
+`belvedere.tbox.ttl` is 28 classes in four cuts. The one that earns its keep is features sorted by **what
+they do for a story** rather than what they are made of: a register, a larder book and a photograph on the
+piano *remember*; a key board, a knife block and a ski rack show what is *missing*; a wax bench, a coat stand
+and a balcony rail take a *mark* off whoever touched them; the hearth *destroys*. A second story staged here
+asks "what in this building remembers?" and gets an answer without knowing one object's name.
+
+`belvedere-snowfall.tbox.ttl` is 26 in five. Its own best cut is evidence by **how it came to exist**,
+because that decides what can be argued about it. A trace cannot lie but can be borrowed. A written record
+names somebody but was written by somebody. An absence needs no witness and is the hardest to explain away.
+This story leans on absence five times and on written record five, which is now visible in the data.
+
+Every individual is typed **twice** — its upper class and its domain class, added and never substituted.
+Nothing here runs a reasoner, so a generator that asks for `pl:Room` must keep finding five of them. Both
+generators were re-run and produced byte-identical output.

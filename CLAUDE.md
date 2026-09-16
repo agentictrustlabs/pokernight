@@ -346,6 +346,13 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   imported; GeoSPARQL, BOT/IFC, CIDOC-CRM, FRBR, Propp and the BBC Storyline ontology are borrowed PATTERNS,
   named in each header and imported by none. `st:order` carries sequence, because RDF is a set and a story is
   an order. Editing the hotel or the story means editing the TTL and running the generator — never the .ts.
+- **A DOMAIN NEEDS A T-BOX OR THERE IS NOTHING TO LOOK AT** (2026-09-16). Both Belvedere contexts were
+  registered as pure A-box, so the skills app's Graph drew nothing for either: its Model view renders classes
+  in semantic clusters and they declared no class of their own. Each now has `<name>.tbox.ttl` +
+  `<name>.clusters.ttl` beside its data (hotel 28 classes in 4 cuts, story 26 in 5), and every individual is
+  typed TWICE — upper class and domain class, ADDED and never substituted, because nothing here runs a
+  reasoner and `place-to-plan.mjs` must keep finding five `pl:Room`s. Re-running both generators after the
+  retyping produced byte-identical output, which is the check that it was additive.
 - **A STORY IS EXECUTABLE DRAMA, AND A CHOICE IS A CONSEQUENCE THE NIGHT CARRIES** (2026-09-16,
   `docs/PLACE-AND-STORY.md` "The second layer"). Six modules under `story.ttl` — intent, social, epistemic,
   dramaturgy, performance, place-compat — and `story.data.ttl`, which makes each archetype an
