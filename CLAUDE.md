@@ -327,6 +327,25 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   over your shoulder to frame the OBJECT (its bounding box, not its spot on the floor: aiming at the floor put the
   camera under the desk). A planned primitive honours its shape, its height and its tilt; before that everything was
   a box standing on the floor whatever the plan said. `window.__venue` is the walk scripts' handle, like `__lounge`.
+- **THE PLACE AND THE STORY ARE ONTOLOGIES, AND THE APP IS GENERATED FROM THEM** (2026-09-16,
+  `docs/PLACE-AND-STORY.md`). The Hôtel Belvedere was described three times — coordinates for the renderer,
+  rooms and props for the engine, prose for the director — and descriptions of one thing kept in several places
+  drift, which is how "the guest register" became a bare side table with a label over it. Now: `~/skills`
+  carries two UPPER ontologies (`place.ttl` — buildings, rooms, open spaces, openings, features, geometry,
+  ambience, holding no plot; `story.ttl` — the work, acts, parts, evidence against claims, and the three jobs
+  around a played story: the WRIGHT who may decide anything, the DIRECTOR who may decide nothing, and the
+  CONSPIRATOR who is offered chances and may decline) and two A-BOX domains under them (`belvedere.ttl`,
+  `belvedere-snowfall.ttl`). `scripts/place-to-plan.mjs` and `scripts/story-to-title.mjs` COMPILE those into
+  `plan.generated.ts` and `belvedere-snowfall.generated.ts`; `story-to-archetypes.mjs` writes the eight part
+  archetypes. Compiled, never loaded — the scene is built on a lazy canvas in a browser and a thousand triples
+  there would be a download for nothing. THE TWO DOCUMENTS HOLD NO IDENTIFIERS OF EACH OTHER: they join on one
+  string per thing (`st:foundAtKey` ↔ `pl:featureKey`), so a second story here is a new file, not a fork.
+  Both generators were proven by round-trip — 5 rooms and 93 things, 8 parts, 3 acts and 28 clues identical to
+  the hand-written files, whole suite green. AGENTIC TRUST IS THE UPPER BOTH EXTEND (`at:Location`,
+  `at:Geometry`, `at:spatiallyWithin`, `at:Commitment`, `at:ExecutionTrace`); PROV-O and DOLCE+DnS are
+  imported; GeoSPARQL, BOT/IFC, CIDOC-CRM, FRBR, Propp and the BBC Storyline ontology are borrowed PATTERNS,
+  named in each header and imported by none. `st:order` carries sequence, because RDF is a set and a story is
+  an order. Editing the hotel or the story means editing the TTL and running the generator — never the .ts.
 - **MYSTERY NIGHT IS A STORY AT A PLACE** — `docs/MYSTERY-NIGHT.md`; **P1 built 2026-09-15**:
   `packages/mystery` (the pure engine + the Belvedere venue + `belvedere-snowfall`, one engine and titles as
   CONTENT), `MysteryDO` (one object per staging, migration v7, the clock and the agent cast on its alarm),
