@@ -54,6 +54,8 @@ export interface Look {
    * a per-character outfit is a new 140-byte swatch (docs/AVATARS.md) and not a code change.
    */
   body?: string;
+  /** Which figure plays them. The title says; nothing is inferred from a name. */
+  figure?: 'm' | 'f';
   hairStyle: 'short' | 'long' | 'bun' | 'cap' | 'bald' | 'curls';
   facial?: 'moustache' | 'beard' | 'stubble';
   accessory?: 'glasses' | 'veil' | 'scarf' | 'goggles' | 'pearls';

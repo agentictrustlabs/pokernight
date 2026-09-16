@@ -158,6 +158,14 @@ export class ContainerLibrary {
 }
 
 export const SKIN_WORDS = ['oak', 'slate', 'brass', 'rose', 'moss', 'ink'];
+/**
+ * OUTFITS THAT ARE NOT IN THE RANDOM DRAW.
+ *
+ * `SKIN_WORDS` is what a body is dressed in when nobody said — six palettes, handed out by a hash. A costume
+ * belongs to a JOB and must never be dealt to a passer-by: the dealer's evening blacks (`tux`) are worn by
+ * the one person at the table whose job is different, and by nobody else in the room.
+ */
+export const COSTUMES = ['tux'];
 
 /**
  * THE BODY every participant is instantiated from — one rigged, clothed, ordinary human (CC0,
@@ -167,10 +175,26 @@ export const SKIN_WORDS = ['oak', 'slate', 'brass', 'rose', 'moss', 'ink'];
  */
 export class AvatarLibrary extends ContainerLibrary {
   private skins = new Map<string, pc.Asset>();
+  /** The other figure, loaded the first time somebody asks for it (`person-f.glb`, the same rig and clips). */
+  private other: ContainerLibrary | null = null;
   constructor(app: pc.Application, private readonly dir: string) { super(app, `${dir}/person.glb`, 'person.glb'); }
+
+  /**
+   * TWO FIGURES, ONE RIG.
+   *
+   * A room where everybody has the same build is a room of one person copied, and the first thing anybody
+   * notices is that Alice is not a woman. Both bodies come off the same skeleton with the same clip names
+   * (`scripts/check-body.mjs` proves it before either ships), so the animation graph, the seated pose, the
+   * gaze layer and every outfit swatch are shared — a second figure costs one download and no code.
+   */
+  figure(which: 'm' | 'f'): ContainerLibrary {
+    if (which !== 'f') return this;
+    if (!this.other) { this.other = new ContainerLibrary(this.app, `${this.dir}/person-f.glb`, 'person-f.glb'); this.other.load(); }
+    return this.other;
+  }
   /** The outfit for this palette word, loading it the first time it is asked for. */
   skin(word: string, fn: (t: pc.Texture) => void): void {
-    const w = SKIN_WORDS.includes(word) ? word : 'slate';
+    const w = SKIN_WORDS.includes(word) || COSTUMES.includes(word) ? word : 'slate';
     let asset = this.skins.get(w);
     if (!asset) {
       asset = new pc.Asset(`skin-${w}`, 'texture', { url: `${this.dir}/skin-${w}.png` }, { srgb: true });
@@ -253,9 +277,11 @@ export class ParticipantAvatar {
   private posed = new Map<keyof typeof BONES, pc.GraphNode>();
   private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
-  constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow') {
+  constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', private readonly which: 'm' | 'f' = 'm') {
     this.entity = new pc.Entity('avatar');
-    library.ready((asset) => this.dress(asset, library));
+    // The FIGURE decides which GLB is instantiated; the LIBRARY still holds every outfit, because the two
+    // bodies share a rig and a UV layout and therefore share swatches.
+    library.figure(which).ready((asset) => this.dress(asset, library));
   }
 
   private dress(asset: pc.Asset, library: AvatarLibrary): void {

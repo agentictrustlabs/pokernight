@@ -418,7 +418,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
         // the chef in the heiress's plum.
         const look = view.cast.find((c) => c.role === role)?.look;
         const wears = look?.body && BODIES.includes(look.body) ? look.body : BODIES[Math.abs(hash(role)) % BODIES.length]!;
-        b = new ParticipantAvatar(lib, wears, mine ? 'direct' : 'follow');
+        b = new ParticipantAvatar(lib, wears, mine ? 'direct' : 'follow', look?.figure === 'f' ? 'f' : 'm');
         a.root.addChild(b.entity);
         /**
          * YOU COME IN THROUGH THE DOOR YOU CAME THROUGH. Standing somebody in the middle of a room they have
