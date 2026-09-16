@@ -52,6 +52,18 @@ const PACE_MS = 9_000;
 const TICK_MS = 2_400;
 /** How long an agent that has missed three times is left alone before being asked again. */
 const REST_MS = 120_000;
+/**
+ * NOBODY HERE, NOBODY ASKED — AND AN OPEN SOCKET IS A TAB, NOT A PERSON (2026-09-15).
+ *
+ * Every wake of this alarm may ask a character's agent for a line, and that agent is a language model at
+ * somebody's Home. A night left open in a tab overnight is therefore not idle: it is a hotel full of models
+ * talking to each other, billed to the people who custody them, with nobody reading a word of it. The clock
+ * and the cast run only while somebody has actually DONE something within this window — said a line, taken an
+ * act, walked in. A ping does not count; a ping is a tab proving it is still a tab. When the window passes the
+ * object simply stops re-arming and goes quiet, and the next thing a person does starts it again, catching the
+ * night up to where the clock had got to. It is the card room's `ATTENTION_MS` rule, for tokens instead of cards.
+ */
+const ATTENTION_MS = 20 * 60_000;
 /** How many Homes may be thinking at once for one night. More than this and the estate is the bottleneck. */
 const THINKING_AT_ONCE = 2;
 
@@ -60,6 +72,8 @@ export class MysteryDO extends DurableObject<Env> {
   private meta: Meta | null = null;
   private paused = false;
   private pausedAt = 0;
+  /** When a PERSON last did something here. Pings are not people; see ATTENTION_MS. */
+  private heard = 0;
   private lastMoved: Record<string, number> = {};
   /** Who has taken which part while a club's night is casting. Empty for a night of your own. */
   private taken: Record<string, { role: RoleId; name: string }> = {};
@@ -85,14 +99,15 @@ export class MysteryDO extends DurableObject<Env> {
         if (r.k === 'meta') this.meta = JSON.parse(r.v) as Meta;
         if (r.k === 'paused') this.paused = r.v === '1';
         if (r.k === 'taken') this.taken = JSON.parse(r.v) as Record<string, { role: RoleId; name: string }>;
+        if (r.k === 'heard') this.heard = Number(r.v) || 0;
       }
     });
   }
 
   private save(): void {
     this.ctx.storage.sql.exec(
-      `INSERT OR REPLACE INTO kv (k, v) VALUES ('state', ?), ('meta', ?), ('paused', ?), ('taken', ?)`,
-      JSON.stringify(this.state), JSON.stringify(this.meta), this.paused ? '1' : '0', JSON.stringify(this.taken),
+      `INSERT OR REPLACE INTO kv (k, v) VALUES ('state', ?), ('meta', ?), ('paused', ?), ('taken', ?), ('heard', ?)`,
+      JSON.stringify(this.state), JSON.stringify(this.meta), this.paused ? '1' : '0', JSON.stringify(this.taken), String(this.heard),
     );
   }
 
@@ -138,6 +153,7 @@ export class MysteryDO extends DurableObject<Env> {
       this.paused = false;
       this.lastMoved = {};
       this.save();
+      this.heardFrom(); // opening a night, raising the curtain and taking a part are all somebody being here
       await this.arm();
       return json({ ok: true, staging: this.summary() });
     }
@@ -234,6 +250,7 @@ export class MysteryDO extends DurableObject<Env> {
       });
       this.meta = { ...this.meta, casting: false };
       this.save();
+      this.heardFrom(); // opening a night, raising the curtain and taking a part are all somebody being here
       await this.arm();
       return json({ ok: true, staging: this.summary() });
     }
@@ -257,6 +274,7 @@ export class MysteryDO extends DurableObject<Env> {
       this.ctx.acceptWebSocket(server, [playerId]);
       server.serializeAttachment({ playerId, name: decodeURIComponent(request.headers.get('x-player-name') ?? '') } satisfies Attachment);
       this.catchUp();
+      this.heardFrom(); // opening a night, raising the curtain and taking a part are all somebody being here
       await this.arm();
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -312,10 +330,12 @@ export class MysteryDO extends DurableObject<Env> {
     let m: Incoming | null = null;
     try { m = JSON.parse(typeof message === 'string' ? message : new TextDecoder().decode(message)) as Incoming; } catch { m = null; }
     if (!m?.type || !this.state) return;
-    // ANY TRAFFIC RE-ARMS THE CLOCK. A socket that survived a restart, or one whose alarm was lost with an
-    // eviction, heals on its next heartbeat instead of leaving the night frozen with somebody watching it.
+    // A PING IS NOT A PERSON. It heals a lost alarm for a night somebody IS at — a socket that survived a
+    // restart, or one whose alarm went with an eviction — but it does not count as anybody being here, or a
+    // tab left open would keep seven agents talking all night at their custodians' expense.
     if (m.type === 'ping') { this.catchUp(); await this.arm(); return; }
-    if (m.type === 'join') { this.send(ws, { type: 'staging', staging: this.summary(), view: this.viewOf(who.playerId) }); await this.arm(); return; }
+    // WALKING IN IS BEING HERE, and so is everything below: saying a line, taking an act, holding the night.
+    if (m.type === 'join') { this.heardFrom(); this.save(); this.catchUp(); this.send(ws, { type: 'staging', staging: this.summary(), view: this.viewOf(who.playerId) }); await this.arm(); return; }
     if (m.type === 'pause') {
       // THE HOLD IS THE TABLE'S, REUSED: everything stops, including the characters, and the clock gives back
       // the time it took — a night held overnight must not wake up with its act already over.
@@ -326,8 +346,10 @@ export class MysteryDO extends DurableObject<Env> {
         if (this.state.deadline !== null) this.state = { ...this.state, deadline: this.state.deadline + owed };
         this.paused = false;
       }
+      this.heardFrom();
       this.save(); await this.arm(); this.tellEverybody(); return;
     }
+    this.heardFrom();
     const role = this.roleOfPlayer(who.playerId);
     if (!role) { this.send(ws, { type: 'error', code: 'watching', message: 'You are not in this story.' }); return; }
     const raw = m.type === 'say' ? { type: 'say', text: m.text } : m.action;
@@ -350,6 +372,9 @@ export class MysteryDO extends DurableObject<Env> {
     if (!this.state || this.state.phase === 'revealed') return;
     const sockets = this.ctx.getWebSockets();
     if (!sockets.length || this.paused) return; // nobody looking, or held: nothing happens and nothing re-arms
+    // …and nobody has been HERE for twenty minutes: the tabs are open and the people are not. Nothing is asked
+    // of anybody's agent until somebody does something, which re-arms this and catches the night up.
+    if (!this.attended()) return;
     const pair = stagingOf(this.state.title);
     if (!pair) return;
     const now = Date.now();
@@ -570,8 +595,17 @@ export class MysteryDO extends DurableObject<Env> {
     this.tellEverybody();
   }
 
+  /** Has a PERSON done anything here lately? Pings do not count — a ping is a tab proving it is still a tab. */
+  private attended(): boolean { return Date.now() - this.heard < ATTENTION_MS; }
+  /** Somebody did something. The clock and the cast may run again, from wherever the night had got to. */
+  private heardFrom(): void { this.heard = Date.now(); }
+
   private async arm(): Promise<void> {
     if (!this.state || this.state.phase === 'revealed' || this.paused) return;
+    // A NIGHT NOBODY IS AT DOES NOT RE-ARM. Leaving the alarm set would wake the object every couple of
+    // seconds to decide, again, that there is nobody here — and one slip in that decision is a night of
+    // model calls nobody asked for.
+    if (!this.attended()) return;
     const at = await this.ctx.storage.getAlarm();
     if (at === null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
   }

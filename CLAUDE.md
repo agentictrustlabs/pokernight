@@ -342,7 +342,15 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   changes, which is the swap the cast list already describes. ONE PART PER PERSON PER NIGHT AND NO SWAPPING —
   not only because an abandoned character is a hole in the story, but because the killer is drawn from the cast,
   so somebody able to try parts on would have the answer in eight goes. A part a PERSON plays is never taken from
-  them and a dead one is not a part. Its own invariants, learned by playing it: NOBODY LOOKING, NOTHING HAPPENS — the clock
+  them and a dead one is not a part. Its own invariants, learned by playing it: **NOBODY HERE, NOBODY ASKED — AND AN OPEN
+  SOCKET IS A TAB, NOT A PERSON** (`ATTENTION_MS`, twenty minutes, 2026-09-15). Every wake of the alarm may ask
+  a character's agent for a line, and that agent is a language model at somebody's Home — so a night left open
+  in a tab is not idle, it is a hotel full of models talking to each other, billed to whoever custodies them,
+  with nobody reading a word. The clock and the cast run only while a PERSON has done something inside the
+  window (a line, an act, walking in, the curtain); A PING DOES NOT COUNT — it heals a lost alarm but is a tab
+  proving it is still a tab. Past the window the object stops RE-ARMING rather than waking to decide again, and
+  the next thing anybody does starts it and catches the night up. `heard` is persisted, so an eviction does not
+  reset the clock. The card room's tables have had the same rule at ten minutes since 2026-09-13. The clock
   and the cast run only while a socket is open, and the night CATCHES UP (`catchUp`, bounded) the moment
   somebody reads or reconnects, so a staging left alone stops where it stood rather than running an empty
   hotel or waking up an act behind; WHAT YOU HEARD, YOU HEARD (every room-scoped event carries who was in the

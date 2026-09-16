@@ -120,3 +120,46 @@ describe('a club\'s mystery night', () => {
     expect(b.status).toBe(401);
   });
 });
+
+/**
+ * NOBODY HERE, NOBODY ASKED.
+ *
+ * Every wake of the night's alarm may ask a character's agent for a line, and that agent is a language model
+ * at somebody's Home. A night left open in a tab is therefore not idle — it is a hotel full of models talking
+ * to each other, billed to whoever custodies them, with nobody reading a word. The clock and the cast run only
+ * while a PERSON has done something inside the attention window; a ping is a tab proving it is still a tab.
+ */
+describe('a night nobody is at', () => {
+  it('stops asking anybody once the attention window has passed, and starts again when somebody does something', async () => {
+    const me = await devSession('nobody-here');
+    const r = await SELF.fetch('http://tables.test/mysteries/solo', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${me.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'belvedere-snowfall' }),
+    });
+    const { staging } = (await r.json()) as { staging: { stagingId: string } };
+    const { env: testEnv, runInDurableObject } = await import('cloudflare:test');
+    const ns = (testEnv as unknown as { STAGINGS: DurableObjectNamespace }).STAGINGS;
+    const stub = ns.get(ns.idFromName(staging.stagingId));
+    type Peek = { attended: () => boolean; heard: number };
+    const attended = () => runInDurableObject(stub, async (o: unknown) => (o as Peek).attended());
+    const age = (ms: number) => runInDurableObject(stub, async (o: unknown) => { (o as Peek).heard -= ms; });
+
+    const s = await socket(staging.stagingId, me.token);
+    s.send({ type: 'join' });
+    await s.waitFor((m) => m.type === 'staging');
+    expect(await attended()).toBe(true);
+
+    // twenty minutes of nothing but heartbeats: the tab is open and the person is not
+    await age(20 * 60_000 + 1);
+    s.send({ type: 'ping' });
+    await sleep(120);
+    expect(await attended()).toBe(false);
+
+    // …and a person saying something starts the night again
+    s.send({ type: 'say', text: 'I am still here.' });
+    await sleep(200);
+    expect(await attended()).toBe(true);
+    s.ws.close();
+  });
+});
