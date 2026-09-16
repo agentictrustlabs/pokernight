@@ -443,6 +443,13 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - **A SEAT'S ANGLE USES THE TABLE'S CONVENTION, always**: a seat at angle `a` sits at `(sin a, cos a) · r` from
   the centre, the chair piece is turned `a` degrees, and the BODY's yaw is `a + π`. That one demonstrably faces
   inward; deriving it afresh with cos/sin and an `atan2` is what left the fireside's chairs looking at the wall.
+- **PARENTING SOMETHING ONTO A BONE INHERITS THE BONE'S SCALE** (2026-09-16). PlayCanvas `reparent` keeps a
+  node's LOCAL transform, and these rigs are authored tiny under an armature that scales them back up — the
+  head bone on all three shipped bodies carries a world scale of about 36.8. So the dealer's hat, put on the
+  head bone to make it turn and nod with the skull, became an eleven-metre red disc standing in the club room.
+  Divide the parent's measured scale back out (`hd.getWorldTransform().getScale()`, then the reciprocal as the
+  child's local scale) rather than hardcoding a number, so a body authored at 1:1 gets 1. Reading a bone's
+  POSITION is safe and is all the mystery's camera does; attaching to one is what needs this.
 - **A HIGHLIGHT CLONES THE MATERIAL THAT IS THERE and only adds emissive.** Swapping in a foreign
   `StandardMaterial` made the kit's chairs VANISH under the pointer instead of lighting up.
 - **"AT THE FIRE" IS A DISTANCE, NOT THE ROOM'S ZONE** (`isAtPlace`, `lib/roomSeats.ts`): the fire anchor's

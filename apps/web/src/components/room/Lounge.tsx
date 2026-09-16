@@ -625,6 +625,16 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
           inv.transformPoint(new pc.Vec3(p0.x, p0.y + 0.15, p0.z), local);
           dl.hat.reparent(hd);
           dl.hat.setLocalPosition(local);
+          /**
+           * AND A BONE CARRIES A SCALE. `reparent` keeps a node's LOCAL transform, so the hat inherited the
+           * head bone's world scale the moment it was put on — and these rigs are authored tiny under an
+           * armature that scales them back up, so that scale is about 36.8×. A 0.30 m brim became an
+           * eleven-metre red disc standing in the middle of the club room. Divide the parent's scale back out
+           * and the hat is the size it was modelled at, whatever rig it lands on. (Measured, not assumed:
+           * `getScale()` reads the bone that is actually there, so a body authored at 1:1 gets 1.)
+           */
+          const ws = hd.getWorldTransform().getScale();
+          dl.hat.setLocalScale(ws.x ? 1 / ws.x : 1, ws.y ? 1 / ws.y : 1, ws.z ? 1 / ws.z : 1);
           // upright in the world at the moment it is put on; from then on the head carries it
           const upright = new pc.Quat().setFromEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0);
           dl.hat.setLocalRotation(new pc.Quat().copy(hd.getRotation()).invert().mul(upright));
