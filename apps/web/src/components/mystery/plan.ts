@@ -15,6 +15,12 @@ export interface Placed {
   piece?: string;
   prim?: { shape: 'box' | 'cylinder'; size: [number, number, number]; colour: string; glow?: number };
   x: number; z: number; yaw?: number; scale?: number;
+  /**
+   * OFF THE FLOOR, AND LEANING. A primitive sits on the floor unless it is given a height, and stands upright
+   * unless it is given a tilt — which is what a ledger open on a desk and a pair of skis against a rack need.
+   * `y` is the CENTRE of the shape; `tilt` is degrees about the piece's own X, `lean` about its Z.
+   */
+  y?: number; tilt?: number; lean?: number;
   /** The prop this object IS, if it is one — what a click on it examines. */
   prop?: string;
   /** A label drawn over it, for a prop with no obvious shape. */
@@ -40,7 +46,14 @@ export const BELVEDERE_PLAN: Record<string, RoomPlan> = {
     spots: [[-3, 1], [-1.5, 2.2], [0, 1], [1.5, 2.2], [3, 1], [-2, -1.5], [2, -1.5], [0, -2.6]],
     doors: { lounge: [7.4, 0], 'ski-room': [-7.4, 0], 'guest-room': [0, -6.4] },
     things: [
-      { piece: 'sideTable', x: 0, z: 4.6, yaw: 180, scale: 1.6, prop: 'register', label: 'the register' },
+      { piece: 'sideTable', x: 0, z: 4.6, yaw: 180, scale: 1.6 },
+      // THE GUEST REGISTER ITSELF, open on the desk: a leather cover with two leaves of paper tipped up from it.
+      // The prop was a bare side table and the page said "the register" over it, which is a label standing in
+      // for a thing. What you can examine should be the thing you can see (2026-09-15).
+      { prim: { shape: 'box', size: [0.52, 0.045, 0.36], colour: '#3a2418' }, x: 0, z: 4.6, y: 0.61, yaw: 6, prop: 'register', label: 'the register' },
+      { prim: { shape: 'box', size: [0.24, 0.012, 0.33], colour: '#e8e2d2' }, x: -0.12, z: 4.6, y: 0.64, yaw: 6, tilt: -7 },
+      { prim: { shape: 'box', size: [0.24, 0.012, 0.33], colour: '#f2ece0' }, x: 0.12, z: 4.6, y: 0.64, yaw: 6, tilt: 7 },
+      { prim: { shape: 'cylinder', size: [0.018, 0.16, 0.018], colour: '#1d1d22' }, x: 0.2, z: 4.44, y: 0.66, lean: 68 },
       { piece: 'bookcaseOpen', x: -3.2, z: 5.2, yaw: 180, prop: 'keyboard', label: 'the keys' },
       { piece: 'chairRounded', x: 3.6, z: 4.4, yaw: 200, prop: 'coat-stand', label: 'the coats' },
       { piece: 'rugRound', x: 0, z: 0, scale: 2.4 },
@@ -109,8 +122,28 @@ export const BELVEDERE_PLAN: Record<string, RoomPlan> = {
     spots: [[-2.2, 0.6], [-0.6, 1.8], [1, 0.6], [2.4, 1.6], [3, -0.6], [-3, -1.6], [0.8, -2.4], [-1.2, -2.8]],
     doors: { lobby: [6.1, 0] },
     things: [
-      { piece: 'bookcaseOpen', x: -4.2, z: 3.4, prop: 'racks', label: 'the racks' },
+      { piece: 'bookcaseOpen', x: -4.2, z: 3.4 },
       { piece: 'bookcaseOpen', x: -1.6, z: 3.4 },
+      /**
+       * THE SKIS ON THE RACK. Five pairs leaning against the back wall, one pair down on the floor where the
+       * body was found, and the poles beside them — the racks were a bookcase with a label until now, and a
+       * ski room with no skis in it is the one room in the hotel nobody believes.
+       */
+      { prim: { shape: 'box', size: [0.1, 1.7, 0.02], colour: '#c94a3a' }, x: -4.75, z: 3.05, y: 0.85, lean: 7, prop: 'racks', label: 'the racks' },
+      { prim: { shape: 'box', size: [0.1, 1.7, 0.02], colour: '#c94a3a' }, x: -4.6, z: 3.05, y: 0.85, lean: 7 },
+      { prim: { shape: 'box', size: [0.1, 1.72, 0.02], colour: '#e0d7c4' }, x: -4.2, z: 3.05, y: 0.86, lean: -5 },
+      { prim: { shape: 'box', size: [0.1, 1.72, 0.02], colour: '#e0d7c4' }, x: -4.05, z: 3.05, y: 0.86, lean: -5 },
+      { prim: { shape: 'box', size: [0.1, 1.66, 0.02], colour: '#2f6f8a' }, x: -3.6, z: 3.05, y: 0.83, lean: 6 },
+      { prim: { shape: 'box', size: [0.1, 1.66, 0.02], colour: '#2f6f8a' }, x: -3.45, z: 3.05, y: 0.83, lean: 6 },
+      { prim: { shape: 'box', size: [0.1, 1.68, 0.02], colour: '#3f4a52' }, x: -1.95, z: 3.05, y: 0.84, lean: -4 },
+      { prim: { shape: 'box', size: [0.1, 1.68, 0.02], colour: '#3f4a52' }, x: -1.8, z: 3.05, y: 0.84, lean: -4 },
+      { prim: { shape: 'box', size: [0.1, 1.74, 0.02], colour: '#d2b23c' }, x: -1.35, z: 3.05, y: 0.87, lean: 5 },
+      { prim: { shape: 'box', size: [0.1, 1.74, 0.02], colour: '#d2b23c' }, x: -1.2, z: 3.05, y: 0.87, lean: 5 },
+      // poles, and a pair knocked flat at the foot of the racks
+      { prim: { shape: 'cylinder', size: [0.022, 1.3, 0.022], colour: '#8f9aa2' }, x: -2.7, z: 3.1, y: 0.65, lean: 9 },
+      { prim: { shape: 'cylinder', size: [0.022, 1.3, 0.022], colour: '#8f9aa2' }, x: -2.55, z: 3.1, y: 0.65, lean: 9 },
+      { prim: { shape: 'box', size: [0.1, 1.68, 0.02], colour: '#c94a3a' }, x: -3.1, z: 1.7, y: 0.05, tilt: 90, yaw: 24 },
+      { prim: { shape: 'box', size: [0.1, 1.68, 0.02], colour: '#c94a3a' }, x: -2.9, z: 1.55, y: 0.05, tilt: 90, yaw: 31 },
       { piece: 'sideTable', x: 2.4, z: 3.4, prop: 'wax-bench', label: 'the wax bench' },
       { prim: { shape: 'box', size: [1.2, 1, 0.8], colour: '#45525a' }, x: 4.4, z: 2.2, prop: 'boot-dryer', label: 'the boot dryer' },
       // the piste door, letting the weather in

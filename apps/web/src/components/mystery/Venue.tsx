@@ -56,7 +56,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
   const shell = useRef<pc.Entity | null>(null);
   const bodies = useRef(new Map<string, ParticipantAvatar>());
   const props = useRef(new Map<string, { at: pc.Vec3; entity: pc.Entity | null }>());
-  const doors = useRef(new Map<string, { at: pc.Vec3; frame: pc.Entity | null; leaf: pc.Entity | null }>());
+  const doors = useRef(new Map<string, { at: pc.Vec3; frame: pc.Entity | null; leaf: pc.Entity | null; swing: number }>());
   /** What is lit under the pointer right now, and the materials to put back when it is not. */
   const litNow = useRef<{ key: string; restore: Array<[pc.MeshInstance, pc.Material]> } | null>(null);
   /** A walk in progress to a door, and which room it leads to. */
@@ -81,6 +81,15 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
   /** Where your own body is walking to. YOUR body is moved by this controller, not eased by the avatar. */
   const goal = useRef<pc.Vec3 | null>(null);
   const keys = useRef(new Set<'up' | 'down' | 'left' | 'right'>());
+  /**
+   * WHAT YOU ARE LOOKING AT CLOSELY (2026-09-15).
+   *
+   * Walking up to the register and reading a line of text about it is a page, not a place. When the body
+   * arrives at a thing the camera comes in over its shoulder and frames the thing itself — the ledger on the
+   * desk, the skis on the rack — and stays there while the clue is read, then eases back out to the room.
+   * Any click, any key, or the next act lets go of it, so it is never somewhere you are stuck.
+   */
+  const focus = useRef<{ at: pc.Vec3; until: number } | null>(null);
 
   // ── the application, once ──
   useEffect(() => {
@@ -224,8 +233,11 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       return true;
     };
     walkers.current = { toProp, toDoor };
+    // the walk scripts read the venue through this, the way they read the lounge; nothing in the app does
+    (window as unknown as { __venue?: unknown }).__venue = { bodies, doors, props, camera, goal, goingTo, pc };
 
     a.mouse!.on(pc.EVENT_MOUSEDOWN, (e: pc.MouseEvent) => {
+      focus.current = null; // looking at something else is letting go of this one
       if (e.button !== pc.MOUSEBUTTON_LEFT) return;
       const hit = pick(e.x, e.y, camera);
       if (!hit) {
@@ -267,7 +279,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       let dx = 0; let dz = 0;
       if (k.has('up')) dz += 1; if (k.has('down')) dz -= 1; if (k.has('left')) dx -= 1; if (k.has('right')) dx += 1;
       if (dx || dz) {
-        goal.current = null;
+        goal.current = null; focus.current = null; // walking is looking up from what you were reading
         const len = Math.hypot(dx, dz); dx /= len; dz /= len;
         const cp = camera.getPosition();
         const heading = Math.atan2(cp.x - me.pos.x, cp.z - me.pos.z) + Math.PI;
@@ -293,10 +305,26 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       const cc = camCtl.current;
       const size = roomSize.current;
       const dist = (size * 0.8 + 2.6) * cc.zoom;
-      const x = Math.sin(cc.yaw) * dist;
-      const z = -Math.cos(cc.yaw) * dist;
-      camera.setPosition(x, 2.6 + size * 0.16 + cc.pitch * 5, z - size * 0.28);
-      camera.lookAt(0, 0.95, size * 0.04);
+      const f = focus.current && focus.current.until > Date.now() ? focus.current : (focus.current = null);
+      if (f) {
+        // OVER YOUR SHOULDER AT THE THING: stand the camera behind where your body is, low, and frame the
+        // object rather than the room. The eased move is what makes it read as leaning in to look.
+        // OVER YOUR SHOULDER AND A STEP TO THE SIDE, so your own back is not the thing in frame, and above the
+        // object looking slightly down at it — which is how a person actually leans over a desk to read it.
+        const meNow = viewRef.current.you ? bodies.current.get(viewRef.current.you.role) : null;
+        const from = meNow ? meNow.pos : new pc.Vec3(0, 0, -2.2);
+        const bx = f.at.x - from.x, bz = f.at.z - from.z;
+        const len = Math.max(0.3, Math.hypot(bx, bz));
+        const ux = bx / len, uz = bz / len;
+        const want = new pc.Vec3(f.at.x - ux * 1.35 - uz * 0.85, f.at.y + 0.72, f.at.z - uz * 1.35 + ux * 0.85);
+        camera.setPosition(camera.getPosition().lerp(camera.getPosition(), want, Math.min(1, dt * 2.6)));
+        camera.lookAt(f.at.x, f.at.y, f.at.z);
+      } else {
+        const x = Math.sin(cc.yaw) * dist;
+        const z = -Math.cos(cc.yaw) * dist;
+        camera.setPosition(camera.getPosition().lerp(camera.getPosition(), new pc.Vec3(x, 2.6 + size * 0.16 + cc.pitch * 5, z - size * 0.28), Math.min(1, dt * 3)));
+        camera.lookAt(0, 0.95, size * 0.04);
+      }
       stride(dt);
       for (const [role, b] of bodies.current) { b.talking(speakingRef.current === role); b.update(dt); }
       /**
@@ -308,11 +336,37 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       const me = viewRef.current.you ? bodies.current.get(viewRef.current.you.role) : null;
       const near = (t: pc.Vec3): boolean => !!me && Math.hypot(me.pos.x - t.x, me.pos.z - t.z) < 0.9;
       const err = errand.current;
-      if (err && (near(err.to) || Date.now() - err.at > 6000)) { errand.current = null; actRef.current({ type: 'examine', prop: err.prop }); }
+      if (err && (near(err.to) || Date.now() - err.at > 6000)) {
+        errand.current = null;
+        const p = props.current.get(err.prop);
+        // AIM AT THE OBJECT, NOT AT ITS SPOT ON THE FLOOR. The register sits on a desk and the skis stand on a
+        // rack; framing the floor beneath them put the camera under the desk looking at its underside.
+        if (p) {
+          const eye = new pc.Vec3(p.at.x, 0.8, p.at.z);
+          if (p.entity) {
+            const box = new pc.BoundingBox(); let first = true;
+            for (const r of p.entity.findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) { if (first) { box.copy(mi.aabb); first = false; } else box.add(mi.aabb); }
+            if (!first) eye.copy(box.center);
+          }
+          focus.current = { at: eye, until: Date.now() + 7000 };
+        }
+        actRef.current({ type: 'examine', prop: err.prop });
+      }
       const going = goingTo.current;
+      // THE DOOR YOU ARE WALKING TO OPENS AS YOU REACH IT, and every other door closes. It starts swinging a
+      // couple of metres out so it is open by the time you are in the frame, rather than snapping at the last step.
+      for (const [id, d] of doors.current) {
+        if (!d.leaf) continue;
+        const want = going?.room === id && me && Math.hypot(me.pos.x - d.at.x, me.pos.z - d.at.z) < 2.4 ? 1 : 0;
+        if (Math.abs(want - d.swing) < 0.002 && d.swing === want) continue;
+        d.swing += (want - d.swing) * Math.min(1, dt * 4.5);
+        if (Math.abs(want - d.swing) < 0.01) d.swing = want;
+        d.leaf.setLocalEulerAngles(0, -80 * d.swing, 0);
+      }
       if (going) {
         const d = doors.current.get(going.room);
-        if (!d || near(d.at) || Date.now() - going.at > 6000) {
+        // …and you go through it once it IS open. The backstop still fires for a body that cannot get there.
+        if (!d || (near(d.at) && d.swing > 0.8) || Date.now() - going.at > 6000) {
           goingTo.current = null;
           cameFrom.current = viewRef.current.room?.id ?? null;
           actRef.current({ type: 'move', room: going.room });
@@ -416,9 +470,20 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       if (!b) {
         // WHAT THE PART WEARS is the title's choice; a hash of the name is what it was before, and it dressed
         // the chef in the heiress's plum.
+        /**
+         * A CAST OF MANY AGES, TONES AND BUILDS OUT OF TWO BODIES (2026-09-15).
+         *
+         * The title already authors four colours per part for the portraits — skin, hair, what they wear and
+         * an accent — and the bodies the room ships name their materials by what they are. So the same four
+         * colours dress the body: the doctor's grey hair makes him the age the part says, the cast's skin
+         * tones are the ones the title chose rather than one borrowed from a single model, and a chef is not
+         * in the heiress's plum. `figure` says which body plays them, and the title says it — nothing is
+         * inferred from a name. The outfit WORD stays as the fallback for a part that names no colours.
+         */
         const look = view.cast.find((c) => c.role === role)?.look;
         const wears = look?.body && BODIES.includes(look.body) ? look.body : BODIES[Math.abs(hash(role)) % BODIES.length]!;
-        b = new ParticipantAvatar(lib, wears, mine ? 'direct' : 'follow', look?.figure === 'f' ? 'f' : 'm');
+        b = new ParticipantAvatar(lib, wears, mine ? 'direct' : 'follow', look?.figure === 'f' ? 'f' : 'm',
+          look ? { skin: look.skin, hair: look.hair, wear: look.wear, accent: look.accent } : undefined);
         a.root.addChild(b.entity);
         /**
          * YOU COME IN THROUGH THE DOOR YOU CAME THROUGH. Standing somebody in the middle of a room they have
@@ -471,7 +536,7 @@ function hash(s: string): number {
 function buildRoom(
   a: pc.Application, kit: RoomKit, root: pc.Entity, plan: RoomPlan, roomId: string,
   propMap: Map<string, { at: pc.Vec3; entity: pc.Entity | null }>,
-  doorMap: Map<string, { at: pc.Vec3; frame: pc.Entity | null; leaf: pc.Entity | null }>, view: MysteryView,
+  doorMap: Map<string, { at: pc.Vec3; frame: pc.Entity | null; leaf: pc.Entity | null; swing: number }>, view: MysteryView,
 ): void {
   const mat = (hex: string, glow = 0): pc.StandardMaterial => {
     const m = new pc.StandardMaterial();
@@ -516,7 +581,11 @@ function buildRoom(
     }
     if (!at && t.prim) {
       const m = mat(t.prim.colour, t.prim.glow ?? 0);
-      entity = prim('box', m, [t.x, t.prim.size[1] / 2, t.z], t.prim.size, t.yaw ?? 0);
+      // THE SHAPE THE PLAN ASKED FOR, at the height it asked for, at the angle it asked for. Every primitive
+      // used to be a box standing on the floor, whatever the plan said — which is why a ledger could not lie
+      // open on a desk and a ski could not lean on a rack.
+      entity = prim(t.prim.shape ?? 'box', m, [t.x, t.y ?? t.prim.size[1] / 2, t.z], t.prim.size, t.yaw ?? 0);
+      if (t.tilt || t.lean) entity.setLocalEulerAngles(t.tilt ?? 0, t.yaw ?? 0, t.lean ?? 0);
       at = new pc.Vec3(t.x, 0, t.z);
     }
     if (!at) at = new pc.Vec3(t.x, 0, t.z);
@@ -526,10 +595,36 @@ function buildRoom(
   // the doorways: a piece in the wall, and a place to click
   for (const [to, [x, z]] of Object.entries(plan.doors)) {
     const yaw = Math.abs(x) > Math.abs(z) ? (x > 0 ? 90 : 270) : (z > 0 ? 180 : 0);
-    // NO SEPARATE LEAF. The kit's door panel is its own node with its own pivot and hangs nowhere near the
-    // frame when placed beside it — a two-metre door floating in the corner of the room. The doorway itself
-    // lights as you walk to it, which says "this one is opening" without lying about geometry.
     const frame = kit.place('doorway', root, x, z, yaw, 1.1);
-    doorMap.set(to, { at: new pc.Vec3(x * 0.92, 0, z * 0.92), frame, leaf: null });
+    /**
+     * A DOOR THAT ACTUALLY OPENS (2026-09-15).
+     *
+     * The kit's own door panel is a separate node with its own pivot and hangs nowhere near the frame when
+     * placed beside it — a two-metre door floating in the corner of the room — so for a while the doorway
+     * merely LIT as you walked to it. A leaf built from a box costs nothing and is honest: it is hung on a
+     * hinge at one edge of the opening, it swings as you reach it, and the staging is not asked to move you
+     * until it is open. The opening is MEASURED from the frame that is actually there rather than guessed,
+     * so a different kit or an authored frame still gets a leaf that fits it.
+     */
+    let w = 0.86, h = 1.98;
+    if (frame) {
+      const box = new pc.BoundingBox(); let first = true;
+      for (const r of frame.findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) { if (first) { box.copy(mi.aabb); first = false; } else box.add(mi.aabb); }
+      if (!first) {
+        const across = Math.abs(Math.sin((yaw * Math.PI) / 180)) > 0.5 ? box.halfExtents.z : box.halfExtents.x;
+        w = Math.min(1.1, Math.max(0.62, across * 2 * 0.8));
+        h = Math.min(2.2, Math.max(1.7, (box.center.y + box.halfExtents.y) * 0.92));
+      }
+    }
+    const hinge = new pc.Entity(`door:${to}`);
+    hinge.setLocalPosition(x, 0, z); hinge.setLocalEulerAngles(0, yaw, 0);
+    const pivot = new pc.Entity('hinge');       // at one edge of the opening; THIS is what turns
+    pivot.setLocalPosition(-w / 2, 0, 0);
+    const leaf = prim('box', mat('#6b4a32'), [w / 2, h / 2, 0], [w, h, 0.055]);
+    const knob = prim('cylinder', mat('#b99a4a'), [w - 0.1, h * 0.47, 0.055], [0.055, 0.03, 0.055]);
+    knob.setLocalEulerAngles(90, 0, 0);
+    pivot.addChild(leaf); pivot.addChild(knob);
+    hinge.addChild(pivot); root.addChild(hinge);
+    doorMap.set(to, { at: new pc.Vec3(x * 0.92, 0, z * 0.92), frame, leaf: pivot, swing: 0 });
   }
 }

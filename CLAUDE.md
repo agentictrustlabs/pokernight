@@ -283,6 +283,17 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   invited visit): the mission, the representative (name · agent · email/phone — host-only, stripped for members
   in `clubViewFor`), the status. OPENING A TABLE IS A PAGE (`#/tables/new`, `#/clubs/<id>/tables/new?night=`,
   `pages/TableNewPage.tsx`) — the table and the stakes side by side; the two `<details>` forms are gone.
+- **THE VENUE IS THE LOUNGE'S MACHINERY, SO EVERY RULE ABOVE APPLIES TO IT** (2026-09-15). The mystery's cast wear
+  the four colours the TITLE authors for their portraits — skin, hair, what they wear and an accent — because the
+  bodies name their materials by what they are (`BodyLook` in `embodiment.ts`); that is how eight parts of different
+  ages, tones and builds come off two body files, and `figure` says which body plays them with nothing inferred from
+  a name. **A DOOR IS A LEAF ON A HINGE**: the kit's own panel hangs nowhere near its frame, so the leaf is a box
+  hinged at one edge of the opening, MEASURED from the frame that is there; it swings as the body reaches it and the
+  staging is not asked to move you until it is open. **WHAT YOU EXAMINE IS A THING YOU CAN SEE** — the register is a
+  ledger on the desk and the racks are skis, not a label over a side table — and arriving at one leans the camera in
+  over your shoulder to frame the OBJECT (its bounding box, not its spot on the floor: aiming at the floor put the
+  camera under the desk). A planned primitive honours its shape, its height and its tilt; before that everything was
+  a box standing on the floor whatever the plan said. `window.__venue` is the walk scripts' handle, like `__lounge`.
 - **MYSTERY NIGHT IS A STORY AT A PLACE** — `docs/MYSTERY-NIGHT.md`; **P1 built 2026-09-15**:
   `packages/mystery` (the pure engine + the Belvedere venue + `belvedere-snowfall`, one engine and titles as
   CONTENT), `MysteryDO` (one object per staging, migration v7, the clock and the agent cast on its alarm),

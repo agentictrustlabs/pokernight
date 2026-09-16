@@ -35,8 +35,19 @@ export const BAR = 'bar';
 export const FIRE = 'fire';
 const FIRE_SEATS = 6;
 const FIRE_R = 2.6; // how far the ring of chairs sits from the hearth
-const SEAT_PICK_PX = 110; // how near the POINTER must be, on screen, for a seat to be the one you mean
-const CHAIR_PICK = 1.5; // how near a click or the pointer must be to a chair to mean that chair
+/**
+ * HOW NEAR "OVER THE CHAIR" IS, and why it is not a number of pixels (2026-09-15).
+ *
+ * A fixed screen radius is right at one distance and wrong everywhere else: 110 px is about the chair when you
+ * are standing at the table, and about three metres of floor from the far wall — so anywhere near the table
+ * lit a seat, which is not what a person means by pointing at one. The radius is now the chair's OWN size on
+ * screen: the seat and the top of its back are projected, and the pointer has to be within a fraction of that
+ * apparent height. It shrinks as you walk away, exactly as the chair does.
+ */
+const SEAT_PICK_SPAN = 0.5;  // of the chair's apparent height — about its half-width, so the pointer is on it
+const SEAT_PICK_MIN = 14;    // a chair across a big room is still worth a click
+const SEAT_PICK_MAX = 90;    // and one under your nose must not own the whole screen
+const CHAIR_PICK = 0.7; // how near a click on the FLOOR must land to a chair to mean that chair (it is ~0.5 m wide)
 /** Inside the walls, which stand at ±11: a click beyond this is the wall, not a destination. */
 const WALKABLE = 9.6;
 const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
@@ -156,7 +167,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   /** the count of chips each seat has already pushed toward the pot this street, so raising THROWS the new chips */
   const pushed = useRef<Map<number, number>>(new Map());
   /** THE DEALER at each table — a body standing at the ring's gap, whose hands the cards come from. */
-  const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3; deck: pc.Entity; hat: pc.Entity }>());
+  const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3; deck: pc.Entity; hat: pc.Entity; hatOn?: pc.GraphNode | null }>());
   /** cards in the air: from the dealer's hand to their place on the felt, one after another */
   const flights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; yawFrom: number; yawTo: number; t: number; delay: number; tilt?: number }>>([]);
   /** which cards were already on the felt last time, so only the NEW ones are dealt (keyed by hand) */
@@ -377,19 +388,29 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
      * carpet near a seat.
      */
     const pickSeat = (sx: number, sy: number, hit: pc.Vec3 | null): { key: string; at: pc.Vec3; yaw: number; tableId: string; seat: number } | null => {
-      const out = new pc.Vec3();
+      const out = new pc.Vec3(); const foot = new pc.Vec3();
       let best: { key: string; at: pc.Vec3; yaw: number; tableId: string; seat: number } | null = null;
-      let bestPx = SEAT_PICK_PX;
-      const consider = (key: string, at: pc.Vec3, yaw: number, tableId: string, seat: number) => {
-        camera.camera!.worldToScreen(new pc.Vec3(at.x, 0.55, at.z), out);
+      // SCORED IN CHAIR-WIDTHS, not pixels: two seats at different distances are compared on how squarely the
+      // pointer sits on each, or the nearer chair wins every contest just by being bigger on screen.
+      let bestScore = 1;
+      const consider = (key: string, at: pc.Vec3, yaw: number, tableId: string, seat: number, top: number) => {
+        camera.camera!.worldToScreen(new pc.Vec3(at.x, top / 2, at.z), out);
         if (out.z <= 0) return; // behind the camera
-        const d = Math.hypot(out.x - sx, out.y - sy);
-        if (d < bestPx) { bestPx = d; best = { key, at, yaw, tableId, seat }; }
+        camera.camera!.worldToScreen(new pc.Vec3(at.x, top, at.z), foot);
+        // the chair's apparent HEIGHT on screen — half of it is from its middle to its top
+        const apparent = Math.max(1, Math.hypot(foot.x - out.x, foot.y - out.y) * 2);
+        const reach = Math.min(SEAT_PICK_MAX, Math.max(SEAT_PICK_MIN, apparent * SEAT_PICK_SPAN));
+        const score = Math.hypot(out.x - sx, out.y - sy) / reach;
+        if (score < bestScore) { bestScore = score; best = { key, at, yaw, tableId, seat }; }
       };
-      for (const ch of chairs.current) if (!ch.taken) consider(`${ch.tableId}:${ch.seat}`, ch.at, ch.yaw, ch.tableId, ch.seat);
-      for (const st of barSeats.current) consider(st.key, st.at, st.yaw, BAR, Number(st.key.slice(4)));
-      for (const st of fireSeats.current) consider(st.key, st.at, st.yaw, FIRE, Number(st.key.slice(5)));
+      for (const ch of chairs.current) if (!ch.taken) consider(`${ch.tableId}:${ch.seat}`, ch.at, ch.yaw, ch.tableId, ch.seat, 1.03);
+      for (const st of barSeats.current) consider(st.key, st.at, st.yaw, BAR, Number(st.key.slice(4)), 0.78);
+      for (const st of fireSeats.current) consider(st.key, st.at, st.yaw, FIRE, Number(st.key.slice(5)), 0.85);
       if (best || !hit) return best;
+      // THE FLOOR FALLBACK STOPS AT THE TABLE'S EDGE: a click on the felt lands within a chair's reach of the
+      // rail, and without this it walked you to whichever chair happened to be nearest instead of naming the table.
+      const mf2 = manifestRef.current;
+      if (mf2) for (const t of mf2.tables) { const an = mf2.anchors[t.anchor]; if (an && Math.hypot(hit.x - an.x, hit.z - an.y) < TABLE_SOLID) return null; }
       let fd = CHAIR_PICK;
       for (const ch of chairs.current) { if (ch.taken) continue; const d = Math.hypot(ch.at.x - hit.x, ch.at.z - hit.z); if (d < fd) { fd = d; best = { key: `${ch.tableId}:${ch.seat}`, at: ch.at, yaw: ch.yaw, tableId: ch.tableId, seat: ch.seat }; } }
       for (const st of barSeats.current) { const d = Math.hypot(st.at.x - hit.x, st.at.z - hit.z); if (d < fd) { fd = d; best = { key: st.key, at: st.at, yaw: st.yaw, tableId: BAR, seat: Number(st.key.slice(4)) }; } }
@@ -418,13 +439,17 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const ray = new pc.Ray(from, to.sub(from).normalize());
       const hit = new pc.Vec3();
       if (!new pc.Plane(pc.Vec3.UP, 0).intersectsRay(ray, hit)) return;
-      // A CLICK NEAR A FREE CHAIR is "sit there": walk to it and, on arrival, ask the table for the seat.
-      // THE FURNITURE WINS INSIDE ITS OWN FOOTPRINT. A click on a TABLE, THE FIRE or THE BAR is "that place" —
-      // the page puts its free seats along the bottom of the screen — and a chair is only picked out on the
-      // floor around it. Screen-space seat picking reaches 110 px, which from across the room covers the whole
-      // table top, so without this a click on the felt walked you to whichever chair happened to be nearest.
-      const place = pickPlace(hit);
-      const seat = place ? null : pickSeat(e.x, e.y, hit);
+      /**
+       * WHAT LIGHTS IS WHAT YOU GET (2026-09-15).
+       *
+       * The pointer lights a chair from the SEAT test and the click used to ask "is this the table?" FIRST —
+       * and a chair's back stands above floor that belongs to the table, so the ray through the very pixels
+       * that lit the chair landed on the felt and the click became "that table". The chair glowed and would
+       * not be taken. The seat is asked first now, which is safe because the seat test is the chair's own size
+       * on screen: a click on the felt is not on a chair and falls through to the place.
+       */
+      const seat = pickSeat(e.x, e.y, hit);
+      const place = seat ? null : pickPlace(hit);
       if (place) { onPickRef.current?.(place); me.current.heading = null; me.current.goal = null; lightChair(null); }
       else if (seat && !me.current.avatar.seated) { me.current.goal = seat.at.clone(); me.current.heading = { tableId: seat.tableId, seat: seat.seat, yaw: seat.yaw }; lightChair(seat.key); onPickRef.current?.(null); }
       // A CLICK ON THE WALL IS NOT A PLACE TO GO. The floor plane runs on past the walls forever, so a click
@@ -579,14 +604,36 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
          * "does not show up all the time". It is hidden until it has somewhere to be, and if the head never
          * arrives it rides at the body's own seated head height instead of nowhere.
          */
+        /**
+         * THE HAT IS WORN, NOT HUNG OVER THE HEAD (2026-09-15).
+         *
+         * Placing it each frame at the head bone's position, upright in the world, looks right only while the
+         * head is level — and the dealer spends the night looking DOWN at the felt. The skull turns about the
+         * bone at the base of it, so the crown swings forward and the hat is left sitting on the back of the
+         * head with hair in front of it. It is PARENTED to the head bone instead, once, with the offset baked
+         * in the bone's own frame: after that it turns, tilts and nods with the head, because it is on it.
+         *
+         * MEASURED on the shipped bodies: the skull's centre is 0.136 m above the head bone and its crown
+         * 0.235 m, so a brim 0.15 m up sits just above the eyes.
+         */
         const hd = dl.avatar.bone('head');
-        // THE BRIM SITS ON THE BROW, and the head bone is at the base of the skull: 0.13 m up puts the brim
-        // just above the ears on a 1.78 m body. Without a head bone the hat rides the body's own seated brow.
-        const seatedBrow = 1.38;
-        const on = hd ? hd.getPosition() : new pc.Vec3(dl.avatar.pos.x, dl.avatar.pos.y + seatedBrow, dl.avatar.pos.z);
         dl.hat.enabled = true;
-        dl.hat.setPosition(on.x, on.y + (hd ? 0.15 : 0), on.z);
-        dl.hat.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0);
+        if (hd && dl.hatOn !== hd) {
+          const p0 = hd.getPosition();
+          const inv = hd.getWorldTransform().clone().invert();
+          const local = new pc.Vec3();
+          inv.transformPoint(new pc.Vec3(p0.x, p0.y + 0.15, p0.z), local);
+          dl.hat.reparent(hd);
+          dl.hat.setLocalPosition(local);
+          // upright in the world at the moment it is put on; from then on the head carries it
+          const upright = new pc.Quat().setFromEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0);
+          dl.hat.setLocalRotation(new pc.Quat().copy(hd.getRotation()).invert().mul(upright));
+          dl.hatOn = hd;
+        } else if (!hd) {
+          // no head bone on this body: the hat rides the body's own seated brow rather than nowhere
+          dl.hat.setPosition(dl.avatar.pos.x, dl.avatar.pos.y + 1.38, dl.avatar.pos.z);
+          dl.hat.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0);
+        }
       }
       const acting = actingRef.current;
       for (const b of all) {

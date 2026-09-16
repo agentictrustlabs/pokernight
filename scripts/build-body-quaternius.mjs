@@ -74,6 +74,42 @@ for (const a of root.listAnimations()) {
 const idle = root.listAnimations().find((a) => a.getName() === 'Idle_Loop');
 slice(idle, 0, duration(idle), 'Idle_Talking_Loop');
 
+/**
+ * EVERY CLIP DRIVES EVERY BONE THE OTHERS DO.
+ *
+ * The pack's Idle animates three bones — the body and two shoulders — and leaves the rest alone, which is
+ * correct in a player where a clip starts from the bind pose and wrong in a state graph that crossfades. A
+ * bone no clip is currently writing simply KEEPS what the last one left: stop walking and the legs freeze
+ * mid-stride with a foot stretched out behind, which is what "his feet are not correct" looks like. Worse,
+ * the room composes the gaze onto the head bone each frame on top of whatever the clip wrote — with no head
+ * curve in Idle there is nothing to compose onto, so the gaze multiplies into itself and the head spins.
+ *
+ * So the union of every animated (node, path) is taken across the kept clips, and each clip is filled out
+ * with a two-key constant channel at the node's REST value for whatever it does not already drive.
+ */
+const REST = { translation: (n) => n.getTranslation(), rotation: (n) => n.getRotation(), scale: (n) => n.getScale() };
+{
+  const union = new Map(); // `${node}|${path}` → [node, path]
+  for (const a of root.listAnimations()) for (const c of a.listChannels()) union.set(`${c.getTargetNode().getName()}|${c.getTargetPath()}`, [c.getTargetNode(), c.getTargetPath()]);
+  let filled = 0;
+  for (const a of root.listAnimations()) {
+    const has = new Set(a.listChannels().map((c) => `${c.getTargetNode().getName()}|${c.getTargetPath()}`));
+    const end = duration(a);
+    for (const [k, [node, path]] of union) {
+      if (has.has(k)) continue;
+      const v = [...REST[path](node)];
+      const sampler = doc.createAnimationSampler()
+        .setInput(doc.createAccessor().setType('SCALAR').setArray(new Float32Array([0, end])))
+        .setOutput(doc.createAccessor().setType(path === 'rotation' ? 'VEC4' : 'VEC3').setArray(new Float32Array([...v, ...v])))
+        .setInterpolation('LINEAR');
+      a.addSampler(sampler);
+      a.addChannel(doc.createAnimationChannel().setTargetNode(node).setTargetPath(path).setSampler(sampler));
+      filled++;
+    }
+  }
+  console.log(`filled ${filled} missing channel(s) across ${root.listAnimations().length} clips (${union.size} driven bones)`);
+}
+
 // STAND AT HUMAN HEIGHT, FEET ON THE FLOOR. The pack authors these under an armature scaled 100×, so the raw
 // file is nearly five metres tall; everything below the scene's children scales with them.
 const before = getBounds(scene);

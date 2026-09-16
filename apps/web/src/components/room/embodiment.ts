@@ -183,7 +183,39 @@ const FIGURE_FILE: Record<Figure, string> = { m: 'person.glb', f: 'person-f.glb'
  * left exactly as the artist authored it. This is what the 32×32 palette was imitating, done properly: eight
  * people in eight outfits still cost one download per figure.
  */
-const GARMENT = /^(shirt|top|dress|jacket|coat|vest|blouse)\d*$/i;
+/**
+ * THE PARTS OF A BODY A LOOK CAN CHANGE.
+ *
+ * The bodies the room ships name their materials by what they are, so a person's appearance is four tints on
+ * four roles rather than a redrawn texture or another download. That is what lets a cast be many ages, many
+ * skin tones and many builds out of two body files: the mystery's titles already author exactly these four
+ * colours per part (`Look` in `packages/mystery`), and the card room will read them from a person's own
+ * `cardroom.look` when there is one. A material the list does not name is the artist's and is left alone.
+ */
+const GARMENT = /^(shirt|top|dress|jacket|coat|vest|blouse|details|tietexture)\d*$/i;
+const LEGWEAR = /^(pants|trousers|skirt|leggings)\d*$/i;
+const SKIN_MAT = /^skin\d*$/i;
+const HAIR_MAT = /^hair(base)?\d*$/i;
+
+/**
+ * WHAT A PERSON LOOKS LIKE, as far as the room is concerned: which body plays them and the four colours that
+ * make one body many people. Every field is optional — what is not said is left as the artist authored it.
+ * Nothing here is inferred from a name, and nothing here is a fact recorded ABOUT a person: it is a look they
+ * or their title chose.
+ */
+export interface BodyLook {
+  figure?: Figure;
+  /** Hex (`#rrggbb`), sRGB, as a designer writes them. */
+  skin?: string; hair?: string; wear?: string; accent?: string;
+}
+/** sRGB hex as a designer writes it → the linear colour the renderer works in. */
+function fromHex(hex: string): pc.Color | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1]!, 16);
+  const lin = (v: number) => Math.pow(v / 255, 2.2);
+  return new pc.Color(lin((n >> 16) & 255), lin((n >> 8) & 255), lin(n & 255));
+}
 const OUTFITS: Record<string, [number, number, number]> = {
   oak: [0.32, 0.20, 0.10], slate: [0.13, 0.17, 0.25], brass: [0.42, 0.30, 0.09],
   rose: [0.38, 0.13, 0.19], moss: [0.11, 0.24, 0.14], ink: [0.08, 0.08, 0.11],
@@ -326,7 +358,7 @@ export class ParticipantAvatar {
   private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   private nativeSeat = false;
-  constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', readonly which: Figure = 'm') {
+  constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', readonly which: Figure = 'm', private readonly look?: BodyLook) {
     this.entity = new pc.Entity('avatar');
     // The FIGURE decides which GLB is instantiated; the LIBRARY still holds every outfit, because the two
     // bodies share a rig and a UV layout and therefore share swatches.
@@ -355,12 +387,18 @@ export class ParticipantAvatar {
           // A PALETTE BODY: its UVs point at a 32×32 swatch, so the outfit IS the texture.
           const m = src.clone(); mi.material = m;
           library.skin(this.palette, (t) => { t.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST; t.magFilter = pc.FILTER_NEAREST; m.diffuseMap = t; m.update(); });
-        } else if (GARMENT.test(src.name ?? '')) {
-          // A BODY WITH ITS OWN MATERIALS: only the garment is this person's, and everything else — skin, hair,
-          // eyes, shoes — stays exactly as the artist authored it. Repainting all of them was the bug that put
-          // the old palette over a textured woman and left her looking undressed.
-          const m = src.clone(); mi.material = m;
-          m.diffuse = AvatarLibrary.outfit(this.palette); m.update();
+        } else {
+          // A BODY WITH ITS OWN MATERIALS: each named part takes the person's colour for that part, and every
+          // material the list does not name — eyes, shoes, socks — stays exactly as the artist authored it.
+          // Repainting all of them was the bug that put the old palette over a textured woman.
+          const name = src.name ?? '';
+          const look = this.look;
+          const tint = GARMENT.test(name) ? (look?.wear ? fromHex(look.wear) : AvatarLibrary.outfit(this.palette))
+            : LEGWEAR.test(name) ? (look?.accent ? fromHex(look.accent) : null)
+            : SKIN_MAT.test(name) ? (look?.skin ? fromHex(look.skin) : null)
+            : HAIR_MAT.test(name) ? (look?.hair ? fromHex(look.hair) : null)
+            : null;
+          if (tint) { const m = src.clone(); mi.material = m; m.diffuse = tint; m.update(); }
         }
       }
       render.castShadows = true;
