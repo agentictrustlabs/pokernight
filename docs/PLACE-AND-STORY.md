@@ -120,3 +120,10 @@ you) and `outcomes` (the night's, public); Your Part shows the question and its 
 `belvedere.ttl` (shut, unlocked, to `bv:grounds`) because the alibi turns on it; `place-to-plan.mjs` emits only
 openings between `pl:Room`s because the 3D plan is where bodies can be put, and the grounds are not. The plan's
 round-trip stayed identical.
+
+**A module is not published until the Graph can draw it.** The six modules registered, answered on the
+registry's `/classes`, and appeared nowhere in the Subdomains pane at skills.faithnet.io, because that pane
+renders `at:SemanticCluster` members and all 59 new classes were in no cluster. The cut is hand-authored in
+`story.clusters.ttl` / `place.clusters.ttl` — it is an editorial judgement about how the ontology is explained,
+not a derivation — so `register-place-story.mjs` refuses to upload a context with an orphan class and names it.
+Story is twelve clusters over 94 classes; place is six over 40.
