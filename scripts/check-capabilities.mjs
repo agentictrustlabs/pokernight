@@ -27,12 +27,19 @@ for (const c of data.getSubjects(namedNode('http://www.w3.org/1999/02/22-rdf-syn
   const ids = data.getObjects(c, namedNode(`${ST}requiresCapability`), null).map((o) => o.value);
   check(`contract ${c.value.split('#').pop()}`, ids);
 }
-// the skills' frontmatter
-const skillsDir = `${H}/skills/skills/mystery`;
-for (const d of readdirSync(skillsDir)) {
-  const md = readFileSync(`${skillsDir}/${d}/SKILL.md`, 'utf8');
-  const m = md.match(/^capability:\s*(\S+)/m);
-  if (m) check(`skill ${d}`, [m[1]]);
+// The skills' frontmatter, in THE NAMESPACES THIS GAME IS BUILT FROM. Not every namespace: the estate's
+// `agentic-trust`, `card-room` and `faith` skills declare a hundred capabilities this catalogue has never
+// heard of and has no business ruling on — a checker that fails on somebody else's vocabulary is a checker
+// people learn to ignore. A craft skill here that declares no capability at all (authoring is work done with
+// a person, not an act asked for over the wire) is simply skipped.
+const NAMESPACES = ['mystery', 'story', 'place'];
+const skillsRoot = `${H}/skills/skills`;
+for (const ns of NAMESPACES) {
+  for (const d of readdirSync(`${skillsRoot}/${ns}`, { withFileTypes: true }).filter((e) => e.isDirectory())) {
+    const md = readFileSync(`${skillsRoot}/${ns}/${d.name}/SKILL.md`, 'utf8');
+    const m = md.match(/^capability:\s*(\S+)/m);
+    if (m) check(`skill ${ns}/${d.name}`, [m[1]]);
+  }
 }
 // the registry scripts
 for (const f of ['register-mystery.mjs', 'register-place-story.mjs']) {
