@@ -463,7 +463,8 @@ export class MysteryDO extends DurableObject<Env> {
         roleName: part?.name ?? role,
         brief: `${part?.blurb ?? ''} ${view.you?.killer ? 'You are the one who did it, and nobody else knows.' : ''} What only you know: ${part?.secret ?? ''}`.trim(),
         view: view as unknown as Record<string, unknown>,
-        legal: ['move', 'say', 'whisper', 'examine', 'search', 'share', 'testify', 'alibi', ...(view.you?.killer ? ['murder', 'plant'] : []), ...(s0.phase === 'accusations' || s0.act >= pair.title.acts.length ? ['accuse'] : [])],
+        // A CHOICE IS LEGAL ONLY WHILE IT IS BEFORE YOU — the view lists it, the brief in the archetype says what it costs.
+        legal: ['move', 'say', 'whisper', 'examine', 'search', 'share', 'testify', 'alibi', ...(view.choices?.length ? ['choose'] : []), ...(view.you?.killer ? ['murder', 'plant'] : []), ...(s0.phase === 'accusations' || s0.act >= pair.title.acts.length ? ['accuse'] : [])],
         // THE CRAFT TRAVELS WITH THE ASK until it is a published artifact in the agent's own playbook.
         craft: [...CHARACTER_CRAFT, ...(pair.title.voice?.character ?? [])],
         deadlineMs: a2aTimeoutMs(this.env),
