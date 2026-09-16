@@ -314,6 +314,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   this app sizes up to 2× the CSS box for sharpness, and a DOM pointer event is in CSS pixels — so the venue's
   hover was testing a point up to twice as far from the middle as the cursor, and nothing lit on a 2× screen. The
   CLICK never had it, because that comes through PlayCanvas's own mouse event, which is already canvas-space.
+  **AND WHAT IS "AT" THE CURSOR IS THE THING'S OWN SIZE ON SCREEN, never a number of pixels** — the same rule as
+  the lounge's seats. A flat 90 px reach is about right beside somebody and about three metres of floor from the
+  doll's-house view, so half the lobby selected a person; the reach is a fraction of how tall the thing is on
+  screen (a third for a person, who is about that wide; over half for a thing on a table), measured from the
+  geometry actually placed for it, and candidates are scored in their own widths so the nearest does not win by
+  being biggest. Measured live: a person 29 px tall selects within about 12 px and not at 20.
   **LOOKING AT SOMETHING IS SAID OUT LOUD WHATEVER THE CAST VOICES ARE DOING** (`narrate` beside `sayAs`): the
   cast toggle is a preference about how noisy the night is; an inspection is an answer to a question the player
   just asked, and it still queues behind the story rather than talking over it. **WHAT YOU EXAMINE IS A THING YOU CAN SEE** — the register is a

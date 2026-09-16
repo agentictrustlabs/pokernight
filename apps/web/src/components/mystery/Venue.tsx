@@ -48,6 +48,9 @@ export interface VenueProps {
 }
 
 const BODIES = SKIN_WORDS;
+/** How near the pointer must be to a thing, as a share of that thing's own size on screen. */
+const PICK_MIN = 12;   // something far across a big room is still worth a click
+const PICK_MAX = 80;   // something under your nose must not own the whole picture
 const HEAD = 1.86;
 /** Metres a second, the same amble the card room's lounge walks at. */
 const WALK_SPEED = 3.4;
@@ -220,21 +223,40 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       litNow.current = { key, restore };
     };
 
-    /** What is at this screen point: the nearest prop, person or door within reach of the cursor. */
+    /**
+     * WHAT IS AT THIS SCREEN POINT — and "at" is the THING'S OWN SIZE, not a number of pixels (2026-09-15).
+     *
+     * A flat 90 px reach is about right for a person you are standing next to and about three metres of floor
+     * from the far side of the room, so from the doll's-house view half the lobby selected somebody. The reach
+     * is now a fraction of how tall the thing is ON SCREEN: it shrinks as you back away, exactly as the thing
+     * does, so pointing at somebody means pointing AT them. Candidates are then scored in their own widths
+     * rather than in pixels, or whatever is nearest the camera wins every contest just by being bigger.
+     */
     const pick = (sx: number, sy: number, cam: pc.Entity): { kind: 'prop' | 'person' | 'door'; id: string } | null => {
-      const out = new pc.Vec3();
-      interface Near { kind: 'prop' | 'person' | 'door'; id: string; d: number }
+      const out = new pc.Vec3(); const top = new pc.Vec3();
+      interface Near { kind: 'prop' | 'person' | 'door'; id: string; score: number }
       // A holder rather than a local: assigning from inside a callback is invisible to the narrowing.
       const found: { best: Near | null } = { best: null };
-      const consider = (kind: Near['kind'], id: string, at: pc.Vec3, y: number) => {
-        cam.camera!.worldToScreen(new pc.Vec3(at.x, y, at.z), out);
+      const consider = (kind: Near['kind'], id: string, at: pc.Vec3, mid: number, height: number) => {
+        cam.camera!.worldToScreen(new pc.Vec3(at.x, mid, at.z), out);
         if (out.z <= 0) return;
-        const d = Math.hypot(out.x - sx, out.y - sy);
-        if (d < 90 && (!found.best || d < found.best.d)) found.best = { kind, id, d };
+        cam.camera!.worldToScreen(new pc.Vec3(at.x, mid + height / 2, at.z), top);
+        const apparent = Math.max(1, Math.hypot(top.x - out.x, top.y - out.y) * 2);
+        // a person is about a third as wide as they are tall; a thing on a table is squarer than it is tall
+        const reach = Math.min(PICK_MAX, Math.max(PICK_MIN, apparent * (kind === 'person' ? 0.34 : 0.55)));
+        const score = Math.hypot(out.x - sx, out.y - sy) / reach;
+        if (score < 1 && (!found.best || score < found.best.score)) found.best = { kind, id, score };
       };
-      for (const [id, p] of props.current) consider('prop', id, p.at, 0.9);
-      for (const [id, b] of bodies.current) consider('person', id, b.pos, 1.2);
-      for (const [id, d] of doors.current) consider('door', id, d.at, 1.1);
+      /** How tall a thing actually is, from the geometry that was placed for it. */
+      const sizeOf = (e: pc.Entity | null, fallback: [number, number]): [number, number] => {
+        if (!e) return fallback;
+        const box = new pc.BoundingBox(); let first = true;
+        for (const r of e.findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) { if (first) { box.copy(mi.aabb); first = false; } else box.add(mi.aabb); }
+        return first ? fallback : [box.center.y, Math.max(0.25, box.halfExtents.y * 2)];
+      };
+      for (const [id, p] of props.current) { const [mid, h] = sizeOf(p.entity, [0.9, 0.9]); consider('prop', id, p.at, mid, h); }
+      for (const [id, b] of bodies.current) consider('person', id, b.pos, 0.9, 1.78);
+      for (const [id, d] of doors.current) { const [mid, h] = sizeOf(d.frame, [1.1, 2.0]); consider('door', id, d.at, mid, h); }
       return found.best ? { kind: found.best.kind, id: found.best.id } : null;
     };
 
