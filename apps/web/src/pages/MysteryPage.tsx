@@ -8,6 +8,7 @@ import { HOME_HASH } from '../lib/routes';
 import { Face } from '../components/mystery/Face';
 import type { VenueHandle } from '../components/mystery/Venue';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
+import { useClubHuddleMaybe } from '../components/huddle/ClubHuddleProvider';
 import { clubScope } from '../lib/huddle';
 /** THE ROOM, DRAWN — a separate chunk, like the lounge: the engine never loads for somebody reading the page. */
 const Venue = lazy(() => import('../components/mystery/Venue').then((m) => ({ default: m.Venue })));
@@ -112,7 +113,11 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
         <span className="meta">
           {st?.staging?.club ? (
             <HuddleAffordance scope={clubScope({ clubId: st.staging.club })} scopeName={`${view?.titleName ?? 'the night'} · this room`} compact />
-          ) : null}
+          ) : (
+            /* A NIGHT OF YOUR OWN HAS NOBODY TO TALK TO, and saying so is better than an empty corner where a
+               call would be. The huddle is the CLUB's — a solo staging has no club and no roster to ring. */
+            <span className="hint">A night of your own · no call</span>
+          )}
           {webgl ? (
             <button
               type="button"
@@ -413,6 +418,37 @@ function roleTitle(role: string): string {
 }
 
 /**
+ * YOUR OWN CAMERA AND VOICE, WHERE YOUR PART IS (2026-09-15).
+ *
+ * Turning a camera on lived in a dock at the corner of the screen, which is where a CALL lives — but in a
+ * mystery it is not a call, it is whether the other people in the room can see and hear YOU. So it sits with
+ * the rest of getting into character: this is your name, this is what you are wearing, this is your face and
+ * your voice. The controls are the club huddle's own, so a table's dock and this are the same call.
+ */
+function PartMedia() {
+  const h = useClubHuddleMaybe();
+  if (!h || !h.current || !h.meeting) return null;
+  return (
+    <div className="mystery-part-media">
+      <span className="eyebrow-h">You, in the room</span>
+      <div className="row wrap">
+        <button type="button" className={`mystery-outfit${h.micOn ? ' worn' : ''}`} aria-pressed={h.micOn}
+          onClick={() => void h.toggleMic()}>{h.micOn ? 'Voice on' : 'Voice off'}</button>
+        <button type="button" className={`mystery-outfit${h.camOn ? ' worn' : ''}`} aria-pressed={h.camOn}
+          onClick={() => void h.toggleCam()}>{h.camOn ? 'Face on' : 'Face off'}</button>
+        {h.camOn && !h.backdropUnsupported ? (
+          <button type="button" className={`mystery-outfit${h.backdrop === 'none' ? '' : ' worn'}`}
+            onClick={() => h.setBackdrop(h.backdrop === 'none' ? 'blur' : h.backdrop === 'blur' ? 'room' : 'none')}>
+            {h.backdrop === 'none' ? 'Backdrop off' : h.backdrop === 'blur' ? 'Blurred' : 'This room'}
+          </button>
+        ) : null}
+      </div>
+      <p className="hint">{h.camOn ? 'Your face hangs beside your character in the room.' : 'Nobody can see you yet.'}</p>
+    </div>
+  );
+}
+
+/**
  * WHAT YOU ARE WEARING, AND WHAT ELSE YOU OWN (2026-09-15).
  *
  * A character arrives dressed as the title dresses them, and whoever plays them may change into anything in
@@ -463,6 +499,7 @@ function You({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
       </div>
       <p>{you.blurb}</p>
       <Wardrobe you={you} view={view} act={act} />
+      <PartMedia />
       <p className="mystery-secret"><strong>Nobody knows:</strong> {you.secret}</p>
       {you.killer ? (
         <p className="mystery-killer-note"><strong>It was you.</strong> Nobody else is told this, tonight or ever — the seed said so before the night began, and the reveal will prove it. Take your chance when the room is right, and lie well.</p>

@@ -406,9 +406,16 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - **THE FIRESIDE AND THE BAR KEEP THEIR OWN PRESENCE** (`FiresidePage` opens a `RoomSocket` and poses at the
   anchor): sitting down leaves the 3D room for a 2D page, so without it the two people who had both sat down
   could not see each other at all — each alone in a room about meeting people.
-- **A HUDDLE BELONGS TO A SEAT, NOT TO A CLUB OR A ROOM** (2026-09-15): a call is offered at a table you are
-  SITTING at (`mySeat != null`), at the fireside and at the bar — never on the club page or in the room, where
-  nobody is sitting and anybody may be. A spectator at a table gets no call.
+- **A HUDDLE BELONGS TO A SEAT — AND TO THE ROOM** (2026-09-15, revised the same day): a call is offered at a
+  table you are SITTING at (`mySeat != null`), at the fireside, at the bar, and IN THE CLUB'S ROOM. The seat-only
+  rule was written when a call could only be a grid of faces, which belongs to the people sitting down together;
+  the room has since grown what that rule was missing — `SpatialVoice` places every voice at the BODY that owns
+  it and each person's camera hangs beside their own body, so the room is the one place in the club where a call
+  is a PLACE rather than a window. Sending somebody to a table to be able to say hello in the lounge was the tail
+  wagging the dog. Same club scope either way. A spectator at a table still gets no call, and a SOLO mystery has
+  no club, no roster and therefore no call — the page says so rather than leaving an empty corner.
+  **AND IN A MYSTERY THE CONTROLS LIVE IN "YOUR PART"**, beside the wardrobe: turning a camera on there is not
+  joining a call, it is whether the room can see and hear YOU — the same question as what you are wearing.
 - **A HOST MAY CLEAR A TABLE** (`mayManageTable` in `apps/tables/src/index.ts`): whoever opened a table or a host
   of its club may stand somebody up at it, not only an operator. Telling a host to "stand them up first" while
   giving them no way to do it pinned a table open for good once anybody walked away from a seat. A stranger's

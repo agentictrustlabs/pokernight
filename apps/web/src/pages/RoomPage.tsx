@@ -241,7 +241,17 @@ export function RoomPage({ session, clubId }: { session: AppSession; clubId: str
           <h1>{seatedTable ? `Seated at ${seatedTable.name}` : zone ? (table ? `At ${table.name}` : zone === 'bar' ? 'At the bar' : zone === 'fire' ? 'By the fire' : zone === 'lectern' ? 'At the lectern' : 'In the room') : 'In the room'}{sittingOut ? <span className="room-out-tag"> · sitting out</span> : null}</h1>
         </div>
         <div className="room-meta">
-          {/* Nor at room level: walk to a table or the bar and sit down, and the call is there. */}
+          {/**
+            * THE CALL IS IN THE ROOM (2026-09-15) — which reverses "a huddle belongs to a seat".
+            *
+            * That rule was written when the only thing a call could be was a grid of faces, and a grid of faces
+            * belongs to the people who are sitting down together. The room has since grown the thing the rule
+            * was missing: `SpatialVoice` places every voice at the BODY that owns it, and each person's camera
+            * hangs beside their own body — so the room is the one place in the club where a call is a PLACE
+            * rather than a window. Sending somebody to a table first to be able to say hello in the lounge was
+            * the tail wagging the dog. A table still offers its own; this is the same club scope, joined here.
+            */}
+          {scope ? <HuddleAffordance scope={scope} scopeName={`${manifest?.name ?? 'the room'} · this room`} compact /> : null}
           <span className={`conn ${s?.state.connection ?? 'connecting'}`}>{s?.state.connection ?? 'connecting'}</span>
           <span className="hint">{people.length === 1 ? 'You are the only one here' : `${people.length} here`}</span>
           <a className="small" href={clubId ? clubHash(clubId) : HOME_HASH}>Leave the room</a>

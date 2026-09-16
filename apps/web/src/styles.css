@@ -6821,7 +6821,8 @@ button.tag.guest {
   color: #9aa3ab; font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.2rem; }
 .mystery-inspector-close:hover { color: #e8eef2; }
 @media (max-width: 899px) { .mystery-inspector { width: auto; left: 0.6rem; } }
-.mystery-wardrobe { margin: 0.6rem 0 0.2rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.mystery-wardrobe, .mystery-part-media { margin: 0.6rem 0 0.2rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.mystery-part-media p.hint { margin: 0.15rem 0 0; font-size: 0.78rem; }
 .mystery-outfit { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.22rem 0.5rem 0.22rem 0.3rem;
   border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 999px; background: rgba(255, 255, 255, 0.04);
   color: inherit; font: inherit; font-size: 0.82rem; cursor: pointer; }
