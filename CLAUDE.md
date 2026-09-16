@@ -304,7 +304,19 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   **A NAME IN THE CAST LIST IS A PERSON IN A ROOM**: pressing one turns the camera on them, and on a victim where
   they are LYING — `room.death` says a death happened here and the PLAN says where a body lies in this room
   (`deathAt`), so the ski room is the foot of the racks and not a line of text. The dead play the body's own death
-  clip (`Death_Pose`, kept by the build script) and are never walked or turned again. **WHAT YOU EXAMINE IS A THING YOU CAN SEE** — the register is a
+  clip (`Death_Pose`, kept by the build script) and are never walked or turned again.
+  **THE ROOM STAYS ON THE SCREEN** (2026-09-15): the page was one long column — picture, log, then the things you
+  could do in the room — so every act meant scrolling the room away, pressing a button you could not see the
+  result of, and scrolling back. Both columns are height-bounded scrollers inside one screenful, the room's own
+  controls sit directly under the picture, and NOTHING on the page scrolls the window. Selecting a person or a
+  thing opens a FLYOUT over the picture (`Inspector`) and never moves the page.
+  **HOVER PICKS IN CANVAS PIXELS, NOT CSS PIXELS**: `worldToScreen` answers in the canvas's backing store, which
+  this app sizes up to 2× the CSS box for sharpness, and a DOM pointer event is in CSS pixels — so the venue's
+  hover was testing a point up to twice as far from the middle as the cursor, and nothing lit on a 2× screen. The
+  CLICK never had it, because that comes through PlayCanvas's own mouse event, which is already canvas-space.
+  **LOOKING AT SOMETHING IS SAID OUT LOUD WHATEVER THE CAST VOICES ARE DOING** (`narrate` beside `sayAs`): the
+  cast toggle is a preference about how noisy the night is; an inspection is an answer to a question the player
+  just asked, and it still queues behind the story rather than talking over it. **WHAT YOU EXAMINE IS A THING YOU CAN SEE** — the register is a
   ledger on the desk and the racks are skis, not a label over a side table — and arriving at one leans the camera in
   over your shoulder to frame the OBJECT (its bounding box, not its spot on the floor: aiming at the floor put the
   camera under the desk). A planned primitive honours its shape, its height and its tilt; before that everything was

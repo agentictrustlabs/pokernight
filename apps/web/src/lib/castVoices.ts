@@ -57,6 +57,20 @@ let speaking = false;
 let watchdog: ReturnType<typeof setTimeout> | null = null;
 
 /** Say a character's line. Ignored unless the person asked for voices. */
+/**
+ * SAY THIS WHETHER OR NOT THE CAST ARE SPEAKING (2026-09-15).
+ *
+ * The cast's voices are a preference about how noisy the night is — seven people talking at once is a lot.
+ * Looking at somebody or something is a QUESTION the player just asked, and an answer nobody hears is not an
+ * answer. It goes through the same queue, so it still never talks over a line of the story.
+ */
+export function narrate(text: string): void {
+  if (!synth() || !text.trim()) return;
+  queue.push({ role: 'narrator', text: text.trim().slice(0, 240) });
+  while (queue.length > QUEUE_LIMIT) queue.shift();
+  pump();
+}
+
 export function sayAs(role: string, text: string): void {
   if (!castVoicesOn() || !synth() || !text.trim()) return;
   queue.push({ role, text: text.trim().slice(0, 240) });

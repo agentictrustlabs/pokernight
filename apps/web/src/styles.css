@@ -6683,17 +6683,43 @@ button.tag.guest {
    — this is a hotel above the treeline in the dark, not a card room. */
 .mystery { min-height: 100vh; background: var(--mystery-bg, #101418); color: #edeae2; }
 .mystery .topbar { background: #0b0e11; border-bottom: 1px solid rgba(240, 236, 224, 0.12); }
+/**
+ * THE ROOM STAYS ON THE SCREEN (2026-09-15).
+ *
+ * The page was one long column: the picture, then the log, then the things you could do in the room — so
+ * every act meant scrolling the room away, pressing a button you could not see the result of, and scrolling
+ * back. Both columns are now their own height-bounded scrollers inside one screenful: the picture and the
+ * room's own controls hold the top of the left column and never move, the transcript scrolls under them, and
+ * the part/clues/cast scroll on the right. Nothing on this page scrolls the WINDOW.
+ */
 .mystery-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
   padding: 1rem;
-  max-width: 1200px;
+  max-width: 1320px;
   margin: 0 auto;
+  height: calc(100vh - 3.4rem);
+  min-height: 34rem;
 }
-@media (max-width: 900px) { .mystery-page { grid-template-columns: 1fr; } }
-.mystery-main, .mystery-side { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
+.mystery-main, .mystery-side { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; min-height: 0; }
+/* the two columns scroll inside themselves, so neither takes the other away */
+.mystery-main { overflow: hidden; }
+.mystery-side { overflow-y: auto; overscroll-behavior: contain; padding-right: 0.2rem; }
+.mystery-main > .mystery-transcript { flex: 1 1 auto; min-height: 9rem; max-height: none; }
+.mystery-main > .mystery-venue-wrap, .mystery-main > .venue { flex: 0 0 auto; }
+/* the room's controls are a strip under the picture: one line of actions, scrolled only if there are many */
+.mystery-main > .mystery-room { flex: 0 0 auto; max-height: 26vh; overflow-y: auto; overscroll-behavior: contain; }
+/* the strip is dense on purpose: it is a set of things to press, not a page to read */
+.mystery-main > .mystery-room h3 { margin: 0.45rem 0 0.2rem; }
+.mystery-main > .mystery-room header { margin-bottom: 0.3rem; }
+@media (max-width: 900px) {
+  .mystery-page { grid-template-columns: 1fr; height: auto; min-height: 0; }
+  .mystery-main, .mystery-side { overflow: visible; }
+  .mystery-main > .mystery-transcript { max-height: 46vh; }
+  .mystery-main > .mystery-room { max-height: none; }
+}
 .mystery .panel {
   background: #171d22;
   border: 1px solid rgba(240, 236, 224, 0.14);
@@ -6828,7 +6854,7 @@ button.tag.guest {
 .m-planted { color: #d8a66a; }
 
 /* THE VENUE — the room, drawn. The plates are HTML over the canvas, as the lounge's are. */
-.venue { position: relative; height: min(56vh, 520px); border-radius: var(--radius); overflow: hidden; border: 1px solid rgba(240, 236, 224, 0.16); background: #0b0e11; }
+.venue { position: relative; height: min(42vh, 460px); border-radius: var(--radius); overflow: hidden; border: 1px solid rgba(240, 236, 224, 0.16); background: #0b0e11; }
 .venue canvas { display: block; width: 100%; height: 100%; }
 .venue-loading { display: grid; place-items: center; }
 .venue-plates { position: absolute; inset: 0; pointer-events: none; }
@@ -6838,6 +6864,9 @@ button.tag.guest {
 .venue-name.speaking { color: #c9a14a; }
 .venue-thing { color: #9dc4d8; font-size: 11px; opacity: 0.85; }
 .venue-thing.lit { color: #ffd98a; opacity: 1; font-weight: 600; }
+/* a person under the pointer is marked the way a thing is — you are about to select them */
+.venue-name.lit { color: #ffd98a; }
+.venue-name.lit strong, .venue-name.lit span { color: #ffd98a; }
 .venue-door { color: #8fd0a2; font-size: 11px; }
 .venue-door.shut { color: #7f8b93; }
 .venue-help { position: absolute; left: 0.7rem; bottom: 0.5rem; margin: 0; font-size: 11px; color: #a9b3ba; }

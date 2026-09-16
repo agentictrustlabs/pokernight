@@ -3,7 +3,7 @@ import { chooseAction, TITLES, type MysteryAction, type MysteryEvent, type Myste
 import type { AppSession } from '../lib/types';
 import { mysteryApi } from '../lib/api';
 import { MysterySocket, type MysteryClientState } from '../lib/mysterySocket';
-import { castVoicesOn, hushCast, sayAs, setCastVoicesOn, voicesAvailable } from '../lib/castVoices';
+import { castVoicesOn, hushCast, narrate, sayAs, setCastVoicesOn, voicesAvailable } from '../lib/castVoices';
 import { HOME_HASH } from '../lib/routes';
 import { Face } from '../components/mystery/Face';
 import type { VenueHandle } from '../components/mystery/Venue';
@@ -169,6 +169,10 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
             {st?.staging?.club && view.room ? (
               <Suspense fallback={null}><RoomVoice view={view} /></Suspense>
             ) : null}
+            {/* WHAT YOU CAN DO IS BESIDE WHAT YOU CAN SEE (2026-09-15). These buttons — walk to a thing, go
+                through a door, speak to somebody — used to sit UNDER the whole transcript, so acting on the
+                room meant scrolling the room off the screen first, doing it blind, and scrolling back. */}
+            <Room view={view} act={act} speaking={speaking} whisperTo={whisperTo} onWhisperTo={setWhisperTo} />
             <Transcript view={view} speaking={speaking} />
             {view.phase !== 'revealed' ? (
               <form
@@ -180,7 +184,6 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
               </form>
             ) : null}
             {st?.error ? <div className="form-error">{st.error}</div> : null}
-            <Room view={view} act={act} speaking={speaking} whisperTo={whisperTo} onWhisperTo={setWhisperTo} />
           </main>
           <aside className="mystery-side">
             <You view={view} act={act} />
@@ -385,7 +388,10 @@ function Inspector({ view, looking, onClose }: { view: MysteryView; looking: { k
     const text = `${subject.name}. ${subject.lines.join(' ')}`;
     if (said.current === text) return;
     said.current = text;
-    if (castVoicesOn()) sayAs('narrator', text);
+    // LOOKING AT SOMETHING IS ASKING ABOUT IT, so it is said out loud whether or not the CAST are speaking:
+    // the cast's voices are a preference about how noisy the night is, and this is an answer to a question
+    // you just asked. It still goes through the same queue, so it never talks over a line of the story.
+    narrate(text);
   }, [subject?.name, subject?.lines.join('|')]);
   if (!subject) return null;
   return (

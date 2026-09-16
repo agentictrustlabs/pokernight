@@ -165,9 +165,20 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
         lastX = e.clientX; lastY = e.clientY;
         return;
       }
-      // WHAT IS UNDER THE POINTER LIGHTS UP, so a thing you can click looks like one.
+      /**
+       * WHAT IS UNDER THE POINTER LIGHTS UP, so a thing you can click looks like one.
+       *
+       * IN CANVAS PIXELS, NOT CSS PIXELS (2026-09-15). `worldToScreen` answers in the canvas's own
+       * coordinates — its backing store, which this app sizes up to twice the CSS box for sharpness — while a
+       * DOM pointer event is in CSS pixels. On any display where those differ (which is most of them) the
+       * hover was testing a point up to twice as far from the middle as the cursor actually was, so nothing
+       * near the edges ever lit and nothing at all lit on a 2× screen. The CLICK never had this because it
+       * comes through PlayCanvas's own mouse event, which is already in canvas pixels.
+       */
       const r = c.getBoundingClientRect();
-      const over = pick(e.clientX - r.left, e.clientY - r.top, camera);
+      const kx = r.width ? c.width / r.width : 1;
+      const ky = r.height ? c.height / r.height : 1;
+      const over = pick((e.clientX - r.left) * kx, (e.clientY - r.top) * ky, camera);
       hover.current = over?.id ?? null;
       light(over ? `${over.kind}:${over.id}` : null);
       c.style.cursor = over ? 'pointer' : 'default';
@@ -189,14 +200,19 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       if (litNow.current) { for (const [mi, was] of litNow.current.restore) mi.material = was; litNow.current = null; }
       if (!key) return;
       const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
-      const e = kind === 'prop' ? props.current.get(id)?.entity : kind === 'door' ? doors.current.get(id)?.frame : null;
+      // A PERSON IS A THING YOU CAN CLICK TOO (2026-09-15), so a body lights under the pointer the way a
+      // doorway does — the whole point of the glow is "this is what you would be selecting".
+      const e = kind === 'prop' ? props.current.get(id)?.entity
+        : kind === 'door' ? doors.current.get(id)?.frame
+        : kind === 'person' ? bodies.current.get(id)?.entity ?? null
+        : null;
       if (!e) return;
       const restore: Array<[pc.MeshInstance, pc.Material]> = [];
       for (const r of e.findComponents('render') as pc.RenderComponent[]) for (const mi of r.meshInstances) {
         const was = mi.material as pc.StandardMaterial;
         restore.push([mi, was]);
         const glow = was.clone();
-        glow.emissive = new pc.Color(0.55, 0.42, 0.12);
+        glow.emissive = kind === 'person' ? new pc.Color(0.26, 0.21, 0.08) : new pc.Color(0.55, 0.42, 0.12);
         glow.emissiveIntensity = 1;
         glow.update();
         mi.material = glow;
@@ -436,7 +452,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
          * and a face answers. A character no person is playing has no chip, and a night with no huddle
          * running shows none at all, which is the fallback rather than a hole.
          */
-        next.push({ id: `p:${role}`, text: who?.name ?? role, sub: who?.playedBy ?? (who?.operator === 'agent' ? 'an agent' : undefined), ...(who?.playedBy ? { face: who.playedBy } : {}), x: out.x, y: out.y, kind: speakingRef.current === role ? 'name speaking' : 'name' });
+        next.push({ id: `p:${role}`, text: who?.name ?? role, sub: who?.playedBy ?? (who?.operator === 'agent' ? 'an agent' : undefined), ...(who?.playedBy ? { face: who.playedBy } : {}), x: out.x, y: out.y, kind: `${speakingRef.current === role ? 'name speaking' : 'name'}${hover.current === role ? ' lit' : ''}` });
       }
       for (const [id, p] of props.current) {
         camera.camera!.worldToScreen(new pc.Vec3(p.at.x, 1.15, p.at.z), out);
