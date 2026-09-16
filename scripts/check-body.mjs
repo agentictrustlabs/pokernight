@@ -11,9 +11,9 @@ const CLIPS = {
   interact: ['Interact', 'Wave', 'Waving'], pickUp: ['PickUp_Table', 'PickUp', 'Pick_Up'], dance: ['Dance_Loop', 'Dance', 'Dancing'],
 };
 const BONES = {
-  head: ['Head', 'mixamorig:Head', 'DEF-head', 'head'], armR: ['RightArm', 'mixamorig:RightArm', 'upperarm_r', 'DEF-upper_arm.R'],
-  foreR: ['RightForeArm', 'mixamorig:RightForeArm', 'lowerarm_r', 'DEF-forearm.R'], armL: ['LeftArm', 'mixamorig:LeftArm', 'upperarm_l', 'DEF-upper_arm.L'],
-  handR: ['RightHand', 'mixamorig:RightHand', 'hand_r', 'DEF-hand.R'], handL: ['LeftHand', 'mixamorig:LeftHand', 'hand_l', 'DEF-hand.L'],
+  head: ['Head', 'mixamorig:Head', 'DEF-head', 'head'], armR: ['RightArm', 'mixamorig:RightArm', 'upperarm_r', 'DEF-upper_arm.R', 'UpperArm.R'],
+  foreR: ['RightForeArm', 'mixamorig:RightForeArm', 'lowerarm_r', 'DEF-forearm.R', 'LowerArm.R'], armL: ['LeftArm', 'mixamorig:LeftArm', 'upperarm_l', 'DEF-upper_arm.L', 'UpperArm.L'],
+  handR: ['RightHand', 'mixamorig:RightHand', 'hand_r', 'DEF-hand.R', 'Palm.R'], handL: ['LeftHand', 'mixamorig:LeftHand', 'hand_l', 'DEF-hand.L', 'Palm.L'],
 };
 const file = process.argv[2];
 if (!file) { console.error('usage: node check-body.mjs <file.glb>'); process.exit(2); }
@@ -40,19 +40,38 @@ for (const [k, list] of Object.entries(BONES)) {
   console.log(`  ${hit ? '✓' : '✗'} ${k.padEnd(6)} ${hit ?? `missing — wanted ${list[0]}`}`);
   if (!hit) bad++;
 }
-// HEIGHT, from the POSITION accessors' min/max — but SCALED BY THE NODE THAT CARRIES THE MESH. A skinned mesh's
-// accessor bounds are in its own bind space; a body authored tall and scaled down by its scene node reads 0.08
-// units if you trust the accessor alone, which is how this check first failed on a body that was in fact right.
+// HEIGHT, from the POSITION accessors' bounds carried through the FULL node transforms. Scaling by the Y scale
+// alone is not enough: a rig authored Z-up sits under an armature node turned −90° about X, so the mesh's own
+// Y is the body's DEPTH and a 1.78 m person measures 0.37. The eight corners of each bounding box go through
+// the composed matrix, which is what the engine does to draw it.
 const parentOf = new Map();
 j.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => parentOf.set(c, i)));
-const scaleOf = (i) => { let s = 1, at = i; while (at !== undefined) { const n = j.nodes[at]; if (n.scale) s *= n.scale[1]; if (n.matrix) s *= n.matrix[5]; at = parentOf.get(at); } return s; };
+const mul = (a, b) => { const o = new Array(16).fill(0); for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]; return o; };
+const trs = (n) => {
+  if (n.matrix) return n.matrix;
+  const [x, y, z, w] = n.rotation ?? [0, 0, 0, 1];
+  const [sx, sy, sz] = n.scale ?? [1, 1, 1];
+  const [tx, ty, tz] = n.translation ?? [0, 0, 0];
+  return [
+    (1 - 2 * (y * y + z * z)) * sx, (2 * (x * y + z * w)) * sx, (2 * (x * z - y * w)) * sx, 0,
+    (2 * (x * y - z * w)) * sy, (1 - 2 * (x * x + z * z)) * sy, (2 * (y * z + x * w)) * sy, 0,
+    (2 * (x * z + y * w)) * sz, (2 * (y * z - x * w)) * sz, (1 - 2 * (x * x + y * y)) * sz, 0,
+    tx, ty, tz, 1,
+  ];
+};
+const worldOf = (i) => { let m = trs(j.nodes[i]), at = parentOf.get(i); while (at !== undefined) { m = mul(trs(j.nodes[at]), m); at = parentOf.get(at); } return m; };
 let lo = Infinity, hi = -Infinity;
 j.nodes.forEach((n, i) => {
   if (n.mesh === undefined) return;
-  const k = scaleOf(i);
+  const m = worldOf(i);
   for (const p of j.meshes[n.mesh].primitives) {
     const a = j.accessors[p.attributes.POSITION];
-    if (a?.min && a?.max) { lo = Math.min(lo, a.min[1] * k); hi = Math.max(hi, a.max[1] * k); }
+    if (!a?.min || !a?.max) continue;
+    for (let corner = 0; corner < 8; corner++) {
+      const v = [corner & 1 ? a.max[0] : a.min[0], corner & 2 ? a.max[1] : a.min[1], corner & 4 ? a.max[2] : a.min[2]];
+      const y = m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13];
+      lo = Math.min(lo, y); hi = Math.max(hi, y);
+    }
   }
 });
 const h = hi - lo;

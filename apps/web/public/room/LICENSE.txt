@@ -15,3 +15,11 @@ env.hdr, floor-parquet*.jpg, wall-plaster*.jpg, wood-dark*.jpg — Poly Haven, C
   written as flat RGBE — the room's image-based light, never seen as a sky; the floor is "Herringbone Parquet"
   (diffuse, GL normal, roughness), the walls "Painted Plaster Wall" (diffuse, normal) and the tables "Dark Wood"
   (diffuse, normal), each the 1k JPEG resampled to 512 px.
+
+person.glb, person-f.glb, person-tux.glb — Quaternius, CC0 1.0: the man is "Animated Men Pack"
+(https://quaternius.com/packs/animatedmen.html), the woman "Animated Women Pack"
+(https://quaternius.com/packs/animatedwomen.html), and the dealer's suit is the same men's pack. Each body
+carries its OWN materials (Shirt, Skin, Pants, Shoes, Hair, Eyes as separate colours) and its OWN clips —
+nothing is retargeted. The scratch `ubc/build-quat.mjs` renames the pack's clips into the room's vocabulary,
+cuts the one long Sitting clip into the sit-down and the seated pose the room's state graph wants, and scales
+the body to 1.78 m with its feet at y = 0 (`scripts/check-body.mjs` passes all three).

@@ -35,17 +35,17 @@ const CLIPS = {
 /** Bones the room drives itself — the gaze, the dealing reach, the deck in the off hand. */
 const BONES = {
   head: ['Head', 'mixamorig:Head', 'DEF-head', 'head'],
-  armR: ['RightArm', 'mixamorig:RightArm', 'upperarm_r', 'DEF-upper_arm.R'],
-  foreR: ['RightForeArm', 'mixamorig:RightForeArm', 'lowerarm_r', 'DEF-forearm.R'],
-  foreL: ['LeftForeArm', 'mixamorig:LeftForeArm', 'lowerarm_l', 'DEF-forearm.L'],
-  armL: ['LeftArm', 'mixamorig:LeftArm', 'upperarm_l', 'DEF-upper_arm.L'],
-  handR: ['RightHand', 'mixamorig:RightHand', 'hand_r', 'DEF-hand.R'],
-  handL: ['LeftHand', 'mixamorig:LeftHand', 'hand_l', 'DEF-hand.L'],
-  spine: ['Spine', 'mixamorig:Spine', 'spine_01', 'DEF-spine.001'],
-  thighL: ['LeftUpLeg', 'mixamorig:LeftUpLeg', 'thigh_l', 'DEF-thigh.L'],
-  thighR: ['RightUpLeg', 'mixamorig:RightUpLeg', 'thigh_r', 'DEF-thigh.R'],
-  shinL: ['LeftLeg', 'mixamorig:LeftLeg', 'calf_l', 'DEF-shin.L'],
-  shinR: ['RightLeg', 'mixamorig:RightLeg', 'calf_r', 'DEF-shin.R'],
+  armR: ['RightArm', 'mixamorig:RightArm', 'upperarm_r', 'DEF-upper_arm.R', 'UpperArm.R'],
+  foreR: ['RightForeArm', 'mixamorig:RightForeArm', 'lowerarm_r', 'DEF-forearm.R', 'LowerArm.R'],
+  foreL: ['LeftForeArm', 'mixamorig:LeftForeArm', 'lowerarm_l', 'DEF-forearm.L', 'LowerArm.L'],
+  armL: ['LeftArm', 'mixamorig:LeftArm', 'upperarm_l', 'DEF-upper_arm.L', 'UpperArm.L'],
+  handR: ['RightHand', 'mixamorig:RightHand', 'hand_r', 'DEF-hand.R', 'Palm.R'],
+  handL: ['LeftHand', 'mixamorig:LeftHand', 'hand_l', 'DEF-hand.L', 'Palm.L'],
+  spine: ['Spine', 'mixamorig:Spine', 'spine_01', 'DEF-spine.001', 'Torso'],
+  thighL: ['LeftUpLeg', 'mixamorig:LeftUpLeg', 'thigh_l', 'DEF-thigh.L', 'UpperLeg.L'],
+  thighR: ['RightUpLeg', 'mixamorig:RightUpLeg', 'thigh_r', 'DEF-thigh.R', 'UpperLeg.R'],
+  shinL: ['LeftLeg', 'mixamorig:LeftLeg', 'calf_l', 'DEF-shin.L', 'LowerLeg.L'],
+  shinR: ['RightLeg', 'mixamorig:RightLeg', 'calf_r', 'DEF-shin.R', 'LowerLeg.R'],
 } as const;
 
 /**
@@ -172,6 +172,24 @@ export const SKIN_WORDS = ['oak', 'slate', 'brass', 'rose', 'moss', 'ink'];
  */
 export const COSTUMES = ['tux'];
 
+/** Which bodies the room ships. A figure is a LOOK a person is given, never a fact recorded about them. */
+export type Figure = 'm' | 'f' | 'tux';
+const FIGURE_FILE: Record<Figure, string> = { m: 'person.glb', f: 'person-f.glb', tux: 'person-tux.glb' };
+/**
+ * A GARMENT IS A MATERIAL ON THE BODY, not a repainted texture (2026-09-15).
+ *
+ * The bodies the room ships now carry their own materials — Shirt, Pants, Skin, Hair, Shoes, Eyes as separate
+ * flat colours — so an outfit is one cloned material tinted, and everything that makes the person a person is
+ * left exactly as the artist authored it. This is what the 32×32 palette was imitating, done properly: eight
+ * people in eight outfits still cost one download per figure.
+ */
+const GARMENT = /^(shirt|top|dress|jacket|coat|vest|blouse)\d*$/i;
+const OUTFITS: Record<string, [number, number, number]> = {
+  oak: [0.32, 0.20, 0.10], slate: [0.13, 0.17, 0.25], brass: [0.42, 0.30, 0.09],
+  rose: [0.38, 0.13, 0.19], moss: [0.11, 0.24, 0.14], ink: [0.08, 0.08, 0.11],
+  tux: [0.02, 0.02, 0.02],
+};
+
 /**
  * THE BODY every participant is instantiated from — one rigged, clothed, ordinary human (CC0,
  * `public/room/person.glb`) — and an OUTFIT per palette word. The outfit is a 32×32 palette the mesh's UVs point
@@ -186,10 +204,10 @@ export class AvatarLibrary extends ContainerLibrary {
    * whose seated clips are its own. A body is an asset, and this is the one fact about an asset the room cannot
    * measure from the file at load — so it is stated here, beside the file names, and moves with them.
    */
-  static readonly NATIVE_SEAT: Record<'m' | 'f', boolean> = { m: false, f: true };
-  sitsNatively(which: 'm' | 'f'): boolean { return AvatarLibrary.NATIVE_SEAT[which]; }
-  /** The other figure, loaded the first time somebody asks for it (`person-f.glb`, the same rig and clips). */
-  private other: ContainerLibrary | null = null;
+  static readonly NATIVE_SEAT: Record<Figure, boolean> = { m: true, f: true, tux: true };
+  sitsNatively(which: Figure): boolean { return AvatarLibrary.NATIVE_SEAT[which]; }
+  /** Figures other than the default, each loaded the first time somebody asks for it. */
+  private others = new Map<Figure, ContainerLibrary>();
   constructor(app: pc.Application, private readonly dir: string) { super(app, `${dir}/person.glb`, 'person.glb'); }
 
   /**
@@ -200,11 +218,14 @@ export class AvatarLibrary extends ContainerLibrary {
    * (`scripts/check-body.mjs` proves it before either ships), so the animation graph, the seated pose, the
    * gaze layer and every outfit swatch are shared — a second figure costs one download and no code.
    */
-  figure(which: 'm' | 'f'): ContainerLibrary {
-    if (which !== 'f') return this;
-    if (!this.other) { this.other = new ContainerLibrary(this.app, `${this.dir}/person-f.glb`, 'person-f.glb'); this.other.load(); }
-    return this.other;
+  figure(which: Figure): ContainerLibrary {
+    if (which === 'm') return this;
+    let lib = this.others.get(which);
+    if (!lib) { lib = new ContainerLibrary(this.app, `${this.dir}/${FIGURE_FILE[which]}`, FIGURE_FILE[which]); lib.load(); this.others.set(which, lib); }
+    return lib;
   }
+  /** The colour this outfit word dresses a garment in, for a body that wears real materials. */
+  static outfit(word: string): pc.Color { const [r, g, b] = OUTFITS[word] ?? [0.13, 0.17, 0.25]; return new pc.Color(r, g, b); }
   /** The outfit for this palette word, loading it the first time it is asked for. */
   skin(word: string, fn: (t: pc.Texture) => void): void {
     const w = SKIN_WORDS.includes(word) || COSTUMES.includes(word) ? word : 'slate';
@@ -233,14 +254,28 @@ export class RoomKit extends ContainerLibrary {
     if (!this.template) { this.template = (asset.resource as pc.ContainerResource).instantiateRenderEntity(); this.template.enabled = false; }
     return this.template;
   }
-  /** A clone of `piece` at (x, z) on the floor, turned `yawDeg`, under `parent`. Null until the kit is loaded. */
-  place(piece: string, parent: pc.Entity, x: number, z: number, yawDeg = 0, scale = 1): pc.Entity | null {
+  /**
+   * A clone of `piece` at (x, z) on the floor, turned `yawDeg`, under `parent`. Null until the kit is loaded.
+   *
+   * `stain` MULTIPLIES each cloned material's diffuse rather than replacing it (2026-09-15). The kit is pale
+   * beige throughout, which beside dark-walnut card chairs and a parquet floor reads as furniture borrowed from
+   * another room; multiplying keeps the piece's own light and shade — cushion against frame, seat against leg —
+   * and only moves the whole thing into the room's wood. Replacing the material flattens the piece to one colour.
+   */
+  place(piece: string, parent: pc.Entity, x: number, z: number, yawDeg = 0, scale = 1, stain?: pc.Color): pc.Entity | null {
     if (!this.loaded) return null;
     let src: pc.Entity | null = null;
     this.ready((a) => { src = this.ensure(a).findByName(piece) as pc.Entity | null; });
     if (!src) { if (!this.missing.has(piece)) { this.missing.add(piece); console.warn('[room] no such piece in the kit:', piece); } return null; }
     const e = (src as pc.Entity).clone(); e.enabled = true;
-    for (const r of e.findComponents('render') as pc.RenderComponent[]) { r.castShadows = true; r.receiveShadows = true; }
+    for (const r of e.findComponents('render') as pc.RenderComponent[]) {
+      r.castShadows = true; r.receiveShadows = true;
+      if (stain) for (const mi of r.meshInstances) {
+        const m = (mi.material as pc.StandardMaterial).clone(); mi.material = m;
+        m.diffuse = new pc.Color(m.diffuse.r * stain.r, m.diffuse.g * stain.g, m.diffuse.b * stain.b);
+        m.update();
+      }
+    }
     let centre = this.centres.get(piece);
     if (!centre) {
       const box = new pc.BoundingBox(); let first = true;
@@ -291,7 +326,7 @@ export class ParticipantAvatar {
   private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   private nativeSeat = false;
-  constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', private readonly which: 'm' | 'f' = 'm') {
+  constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', readonly which: Figure = 'm') {
     this.entity = new pc.Entity('avatar');
     // The FIGURE decides which GLB is instantiated; the LIBRARY still holds every outfit, because the two
     // bodies share a rig and a UV layout and therefore share swatches.
@@ -314,10 +349,18 @@ export class ParticipantAvatar {
     // one outfit per person: the body's material, cloned, wears this palette word's swatch. NEAREST filtering,
     // because it is a palette — smoothing it bleeds the shirt's colour into the skin along every UV seam.
     for (const render of body.findComponents('render') as pc.RenderComponent[]) {
-      if (palette) {
-        for (const mi of render.meshInstances) {
-          const m = (mi.material as pc.StandardMaterial).clone(); mi.material = m;
+      for (const mi of render.meshInstances) {
+        const src = mi.material as pc.StandardMaterial;
+        if (palette) {
+          // A PALETTE BODY: its UVs point at a 32×32 swatch, so the outfit IS the texture.
+          const m = src.clone(); mi.material = m;
           library.skin(this.palette, (t) => { t.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST; t.magFilter = pc.FILTER_NEAREST; m.diffuseMap = t; m.update(); });
+        } else if (GARMENT.test(src.name ?? '')) {
+          // A BODY WITH ITS OWN MATERIALS: only the garment is this person's, and everything else — skin, hair,
+          // eyes, shoes — stays exactly as the artist authored it. Repainting all of them was the bug that put
+          // the old palette over a textured woman and left her looking undressed.
+          const m = src.clone(); mi.material = m;
+          m.diffuse = AvatarLibrary.outfit(this.palette); m.update();
         }
       }
       render.castShadows = true;

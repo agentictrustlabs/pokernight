@@ -90,6 +90,29 @@ node scripts/check-body.mjs apps/web/public/room/person.glb
 
 Run that first; it answers "will the room like this body?" without opening a browser.
 
+## The route that actually shipped: a pack whose clips are already its own
+
+Unity's retargeting is the answer when a body and its motion come from two places. The bodies in the room now
+come from one: the Quaternius **Animated Men** and **Animated Women** packs (CC0), where the sit-down, the
+seated pose, the stand-up and the walk were authored on the very rig they ship with. Nothing is retargeted,
+so nothing can go wrong in the retarget.
+
+`scripts/build-body-quaternius.mjs` prepares one for the room, and takes about a second:
+
+```
+node scripts/build-body-quaternius.mjs <in.glb> <out.glb> [Female|Man]
+```
+
+It renames the pack's clips into the room's vocabulary, CUTS the one long `Sitting` clip into the two states
+the room's graph wants (the first 0.75 s is the sit-down; the held tail is the seated idle), takes the pack's
+`Standing` as the stand-up, scales the body to 1.78 m with its feet at y = 0, and leaves every material alone.
+Then `node scripts/check-body.mjs <out.glb>` says whether the room will take it.
+
+The two things that had to change in the room to accept them are both alias tables, which is the point of
+having them: the bone lists learned the `UpperArm.R` / `LowerLeg.L` / `Palm.L` / `Torso` convention, and
+`check-body.mjs` learned to measure height through the full node transforms (these rigs are authored Z-up
+under an armature turned −90° about X, so the mesh's own Y is the body's depth).
+
 ## The alternative, if Unity is a nuisance
 
 **Blender** does the same job, free and scriptable: import both rigs, use the **Rokoko** or **Auto-Rig Pro**

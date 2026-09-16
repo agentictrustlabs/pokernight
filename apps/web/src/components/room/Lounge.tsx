@@ -41,11 +41,17 @@ const CHAIR_PICK = 1.5; // how near a click or the pointer must be to a chair to
 const WALKABLE = 9.6;
 const TABLE_SOLID = 1.72; // a walking body cannot come nearer the centre than this (just inside CHAIR_R)
 const CHAIR_BACK = 0.32; // the seated hips sit this far behind the feet (measured on the seated clip), so the chair does too
-const deckSide = new pc.StandardMaterial();
-const chairLit = new pc.StandardMaterial();
-const hatFelt = new pc.StandardMaterial();
-const hatBand = new pc.StandardMaterial();
-const shirtLinen = new pc.StandardMaterial();
+/**
+ * THE ROOM'S OWN MATERIALS ARE MADE PER APPLICATION, never once for the module (2026-09-15). A material keeps
+ * the shader variants it compiled, against the graphics device that compiled them; the room is torn down and
+ * rebuilt every time somebody comes back from the flat board, and a material made once at module level then
+ * drew every chair with a dead device's shaders — nothing on screen, until a hover CLONED it and the clone
+ * compiled fresh. The bindings are `let` and assigned in the app effect, so every visit starts clean.
+ */
+let deckSide = new pc.StandardMaterial();
+let chairLit = new pc.StandardMaterial();
+let hatFelt = new pc.StandardMaterial();
+let hatBand = new pc.StandardMaterial();
 /**
  * WHICH FIGURE A BODY IS, in a room where nobody has chosen one yet.
  *
@@ -66,9 +72,9 @@ function figureOf(name: string, playerId: string): 'm' | 'f' {
 }
 
 const CHAIR_PIECE = 'loungeChair'; // the fireside's armchairs — deep, and right for a hearth
-const chairWood = new pc.StandardMaterial();
-const chairHide = new pc.StandardMaterial();
-const chairStud = new pc.StandardMaterial();
+let chairWood = new pc.StandardMaterial();
+let chairHide = new pc.StandardMaterial();
+let chairStud = new pc.StandardMaterial();
 
 /**
  * THE CHAIR AT A POKER TABLE, BUILT RATHER THAN BOUGHT.
@@ -150,7 +156,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   /** the count of chips each seat has already pushed toward the pot this street, so raising THROWS the new chips */
   const pushed = useRef<Map<number, number>>(new Map());
   /** THE DEALER at each table — a body standing at the ring's gap, whose hands the cards come from. */
-  const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3; deck: pc.Entity; hat: pc.Entity; dress: pc.Entity }>());
+  const dealers = useRef(new Map<string, { avatar: ParticipantAvatar; hand: pc.Vec3; deck: pc.Entity; hat: pc.Entity }>());
   /** cards in the air: from the dealer's hand to their place on the felt, one after another */
   const flights = useRef<Array<{ entity: pc.Entity; from: pc.Vec3; to: pc.Vec3; yawFrom: number; yawTo: number; t: number; delay: number; tilt?: number }>>([]);
   /** which cards were already on the felt last time, so only the NEW ones are dealt (keyed by hand) */
@@ -525,6 +531,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     kit.current = new RoomKit(a, KIT_URL); kit.current.ready(() => setKitReady(true));
     deck.current = new Deck3D(a);
     chips.current = new Chips3D(a);
+    deckSide = new pc.StandardMaterial(); chairLit = new pc.StandardMaterial(); hatFelt = new pc.StandardMaterial(); hatBand = new pc.StandardMaterial();
+    chairWood = new pc.StandardMaterial(); chairHide = new pc.StandardMaterial(); chairStud = new pc.StandardMaterial();
     deckSide.diffuse = new pc.Color(0.92, 0.9, 0.85); deckSide.update();
     chairLit.diffuse = new pc.Color(0.85, 0.66, 0.26); chairLit.emissive = new pc.Color(0.30, 0.22, 0.05); chairLit.update();
     // RED, not felt-black: a dark hat on a dark body is another player from across the room. The dealer is the
@@ -535,7 +543,6 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     chairWood.diffuse = new pc.Color(0.21, 0.13, 0.09); chairWood.gloss = 0.45; chairWood.metalness = 0; chairWood.update();
     chairHide.diffuse = new pc.Color(0.36, 0.13, 0.13); chairHide.gloss = 0.3; chairHide.update();
     chairStud.diffuse = new pc.Color(0.72, 0.58, 0.28); chairStud.gloss = 0.7; chairStud.update();
-    shirtLinen.diffuse = new pc.Color(0.94, 0.94, 0.92); shirtLinen.gloss = 0.25; shirtLinen.update();
     // the walk scripts read the bodies' states through this; nothing in the app does
     (window as unknown as { __lounge?: unknown }).__lounge = { me, bodies, bots, library, kit, scenery, felt, dealers, flights, chipRoot, litChair, chairEntities, barSeats, fireSeats, plates: plateRef, manifest: manifestRef, camera, pc };
     /**
@@ -573,20 +580,13 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
          * arrives it rides at the body's own seated head height instead of nowhere.
          */
         const hd = dl.avatar.bone('head');
-        const seatedHead = 1.42;
-        const on = hd ? hd.getPosition() : new pc.Vec3(dl.avatar.pos.x, dl.avatar.pos.y + seatedHead, dl.avatar.pos.z);
+        // THE BRIM SITS ON THE BROW, and the head bone is at the base of the skull: 0.13 m up puts the brim
+        // just above the ears on a 1.78 m body. Without a head bone the hat rides the body's own seated brow.
+        const seatedBrow = 1.38;
+        const on = hd ? hd.getPosition() : new pc.Vec3(dl.avatar.pos.x, dl.avatar.pos.y + seatedBrow, dl.avatar.pos.z);
         dl.hat.enabled = true;
-        dl.hat.setPosition(on.x, on.y + (hd ? 0.055 : -0.04), on.z);
+        dl.hat.setPosition(on.x, on.y + (hd ? 0.15 : 0), on.z);
         dl.hat.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0);
-        // the shirt front rides on the chest, a little proud of it so it is never inside the body
-        const sp = dl.avatar.bone('spine');
-        if (sp) {
-          const c = sp.getPosition();
-          const f = 0.085;
-          dl.dress.enabled = true;
-          dl.dress.setPosition(c.x + Math.sin(dl.avatar.yaw) * f, c.y + 0.12, c.z + Math.cos(dl.avatar.yaw) * f);
-          dl.dress.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0);
-        }
       }
       const acting = actingRef.current;
       for (const b of all) {
@@ -659,6 +659,11 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       if (maps.rough) texture(maps.rough).ready((t) => { m.glossMap = t.resource as pc.Texture; m.glossMapTiling = tiling; m.glossInvert = true; m.gloss = 1; m.update(); });
       return m;
     };
+    // ONE ROOM, ONE WOOD: the kit is pale beige from end to end, and beside walnut chairs on a parquet floor it
+    // reads as furniture wheeled in from somewhere else. Each piece's own materials are multiplied into the
+    // room's stain, which keeps its light and shade and only changes the timber.
+    const STAIN = new pc.Color(0.46, 0.33, 0.26);
+    const LINEN = new pc.Color(0.62, 0.55, 0.47); // the upholstery, a shade lighter than the frames
     const floor = surfaced(mat(0.50, 0.44, 0.37, { gloss: 0.45 }), '/room/floor-parquet.jpg', { normal: '/room/floor-parquet-n.jpg', rough: '/room/floor-parquet-r.jpg' }, [9, 9], 0.8);
     const plaster = surfaced(mat(0.16, 0.36, 0.25, { gloss: 0.2 }), '/room/wall-plaster.jpg', { normal: '/room/wall-plaster-n.jpg' }, [5, 1], 0.5);
     const ceiling = surfaced(mat(0.30, 0.28, 0.25, { gloss: 0.1 }), '/room/wall-plaster.jpg', { normal: '/room/wall-plaster-n.jpg' }, [6, 6], 0.3);
@@ -702,9 +707,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // THE BAR: the kit's counter in four lengths with its two ends, stools along the room side, a lamp behind
       const bx = a2.bar.x, bz = a2.bar.y; const yaw = a2.bar.yaw * 180 / Math.PI;
       if (furnished) {
-        for (let i = -2; i < 2; i++) k!.place('kitchenBar', root, bx, bz + i * 1.08 + 0.54, yaw + 90);
-        k!.place('kitchenBarEnd', root, bx, bz - 2.16 - 0.125, yaw + 90); k!.place('kitchenBarEnd', root, bx, bz + 2.16 + 0.125, yaw + 90);
-        for (let i = -1; i <= 1; i++) { const e = k!.place('stoolBar', root, bx + 0.9, bz + i * 1.2, yaw + 90); if (e) barStoolEntities.current.set(`bar:${i + 1}`, e); }
+        for (let i = -2; i < 2; i++) k!.place('kitchenBar', root, bx, bz + i * 1.08 + 0.54, yaw + 90, 1, STAIN);
+        k!.place('kitchenBarEnd', root, bx, bz - 2.16 - 0.125, yaw + 90, 1, STAIN); k!.place('kitchenBarEnd', root, bx, bz + 2.16 + 0.125, yaw + 90, 1, STAIN);
+        for (let i = -1; i <= 1; i++) { const e = k!.place('stoolBar', root, bx + 0.9, bz + i * 1.2, yaw + 90, 1, STAIN); if (e) barStoolEntities.current.set(`bar:${i + 1}`, e); }
 
       } else { prim('box', wood, [bx, 0.55, bz], [1, 1.1, 5]); prim('box', brass, [bx, 1.12, bz], [1.2, 0.06, 5.2]); }
       // The stools are SEATS: a body's feet go a step out from the counter, turned to it.
@@ -732,7 +737,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       prim('cone', flame, [fx - 0.18, 0.78, fz], [0.5, 1.15, 0.5]);
       prim('cone', flame, [fx - 0.18, 0.58, fz + 0.4], [0.38, 0.78, 0.38]);
       if (furnished) {
-        k!.place('rugRound', root, fx - 2.6, fz, 0);
+        k!.place('rugRound', root, fx - 2.6, fz, 0, 1, new pc.Color(0.55, 0.32, 0.28));
         k!.place('pottedPlant', root, fx - 0.5, fz + 2.6, 0);
       }
       // SIX COMFORTABLE SEATS ON AN ARC, every one of them looking at the fire.
@@ -743,7 +748,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       fireSeats.current = [];
       for (let i = 0; i < FIRE_SEAT_COUNT; i++) {
         const sp = firesideSeat(a2.fire, i);
-        if (furnished) { const e = k!.place(CHAIR_PIECE, root, fx + Math.sin((sp.chairYawDeg * Math.PI) / 180) * FIRE_R, fz + Math.cos((sp.chairYawDeg * Math.PI) / 180) * FIRE_R, sp.chairYawDeg, CHAIR_SCALE); if (e) fireChairEntities.current.set(sp.key, e); }
+        if (furnished) { const e = k!.place(CHAIR_PIECE, root, fx + Math.sin((sp.chairYawDeg * Math.PI) / 180) * FIRE_R, fz + Math.cos((sp.chairYawDeg * Math.PI) / 180) * FIRE_R, sp.chairYawDeg, CHAIR_SCALE, LINEN); if (e) fireChairEntities.current.set(sp.key, e); }
         fireSeats.current.push({ key: sp.key, at: new pc.Vec3(sp.x, 0, sp.z), yaw: sp.yaw });
       }
       const fire = new pc.Entity('fire'); fire.addComponent('light', { type: 'omni', color: new pc.Color(1, 0.62, 0.26), intensity: 2.6, range: 9 }); fire.setLocalPosition(fx - 0.35, 0.7, fz); root.addChild(fire);
@@ -751,9 +756,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     }
     if (furnished) {
       // the room's dressing: a doorway where you come in, bookcases and plants along the walls, lamps in the corners
-      if (a2.door) k!.place('doorway', root, a2.door.x, -10.85, 0);
-      k!.place('bookcaseOpen', root, -4, -10.6, 0); k!.place('bookcaseOpen', root, 4, -10.6, 0);
-      k!.place('bookcaseOpen', root, -10.6, -6, 90); k!.place('bookcaseOpen', root, 10.6, -7, -90);
+      if (a2.door) k!.place('doorway', root, a2.door.x, -10.85, 0, 1, STAIN);
+      k!.place('bookcaseOpen', root, -4, -10.6, 0, 1, STAIN); k!.place('bookcaseOpen', root, 4, -10.6, 0, 1, STAIN);
+      k!.place('bookcaseOpen', root, -10.6, -6, 90, 1, STAIN); k!.place('bookcaseOpen', root, 10.6, -7, -90, 1, STAIN);
       for (const [x, z] of [[-10.3, 10.3], [10.3, 10.3], [-10.3, -10.3], [10.3, -10.3]] as const) k!.place('pottedPlant', root, x, z, 0);
 
     }
@@ -841,7 +846,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const at = new pc.Vec3(an.x + Math.sin(ang) * r, 0, an.y + Math.cos(ang) * r); const yaw = ang + Math.PI;
       // EVENING BLACKS: the dealer's own outfit (`skin-tux.png`), which is in no random draw — a costume
       // belongs to the job, and a guest who turned up dressed as the dealer would be reading as one.
-      const av = new ParticipantAvatar(lib, 'tux', 'follow'); av.place(at.x, at.z, yaw); a.root.addChild(av.entity);
+      const av = new ParticipantAvatar(lib, 'tux', 'follow', 'tux'); av.place(at.x, at.z, yaw); a.root.addChild(av.entity);
       // seated, like every dealer — on a stool of their own at the gap
       av.sitAt({ at, yaw, centre: new pc.Vec3(an.x, 0, an.y) });
       av.lookHead(new pc.Vec3(an.x, 0.9, an.y));
@@ -864,24 +869,23 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
        * is open at the back. A hemisphere over the skull, sunk slightly into it, swallows whatever the head
        * has on it; the brim and band are what make it read as a hat rather than a helmet.
        */
-      const brim = new pc.Entity('brim'); brim.addComponent('render', { type: 'cylinder', material: hatFelt, castShadows: true }); brim.setLocalScale(0.40, 0.022, 0.40); brim.setLocalPosition(0, 0, 0); hat.addChild(brim);
-      const band = new pc.Entity('band'); band.addComponent('render', { type: 'cylinder', material: hatBand, castShadows: true }); band.setLocalScale(0.315, 0.05, 0.315); band.setLocalPosition(0, 0.03, 0); hat.addChild(band);
-      const crown = new pc.Entity('crown'); crown.addComponent('render', { type: 'sphere', material: hatFelt, castShadows: true }); crown.setLocalScale(0.325, 0.33, 0.325); crown.setLocalPosition(0, 0.03, 0); hat.addChild(crown);
+      // MEASURED AGAINST THE HEAD IT SITS ON: the head bone is 0.21 m below the crown of a 1.78 m body and the
+      // skull is about 0.18 m across, so a 0.40 m brim and a 0.33 m dome — sized for a head twice this one — sat
+      // over the dealer's eyes like a bucket. The brim is a hand's width wider than the skull; the dome clears it.
+      const brim = new pc.Entity('brim'); brim.addComponent('render', { type: 'cylinder', material: hatFelt, castShadows: true }); brim.setLocalScale(0.30, 0.016, 0.30); brim.setLocalPosition(0, 0, 0); hat.addChild(brim);
+      const band = new pc.Entity('band'); band.addComponent('render', { type: 'cylinder', material: hatBand, castShadows: true }); band.setLocalScale(0.215, 0.035, 0.215); band.setLocalPosition(0, 0.022, 0); hat.addChild(band);
+      const crown = new pc.Entity('crown'); crown.addComponent('render', { type: 'sphere', material: hatFelt, castShadows: true }); crown.setLocalScale(0.21, 0.20, 0.21); crown.setLocalPosition(0, 0.045, 0); hat.addChild(crown);
       hat.enabled = false;   // …until the frame loop has a head (or a body) to put it on
       a.root.addChild(hat);
       /**
-       * THE SHIRT AND THE BOW. The body's outfit is five flat bands of colour, and one of them is "the top" —
-       * so evening blacks can be black but cannot have a white front. The shirt is therefore a thing WORN:
-       * a white panel and a red bow at the chest, carried on the spine the way the hat is carried on the head.
+       * NO PANEL, NO BOW. The dealer's evening blacks used to be a white box and a red box carried on the spine,
+       * because the body's outfit was five flat bands of colour and one of them was "the top". The dealer's body
+       * is now a man in a suit with a collar, a tie and a jacket of his own (`person-tux.glb`), so the props are
+       * gone; the hat stays, because a red hat is how you find the dealer across a room.
        */
-      const dress = new pc.Entity('dress');
-      const shirt = new pc.Entity('shirt'); shirt.addComponent('render', { type: 'box', material: shirtLinen, castShadows: false }); shirt.setLocalScale(0.13, 0.26, 0.055); shirt.setLocalPosition(0, 0, 0); dress.addChild(shirt);
-      const bow = new pc.Entity('bow'); bow.addComponent('render', { type: 'box', material: hatFelt, castShadows: false }); bow.setLocalScale(0.09, 0.035, 0.05); bow.setLocalPosition(0, 0.135, 0.01); dress.addChild(bow);
-      dress.enabled = false;
-      a.root.addChild(dress);
-      dealers.current.set(t.tableId, { avatar: av, hand: new pc.Vec3(at.x + Math.sin(yaw) * 0.45, 0.98, at.z + Math.cos(yaw) * 0.45), deck: deck3, hat, dress });
+      dealers.current.set(t.tableId, { avatar: av, hand: new pc.Vec3(at.x + Math.sin(yaw) * 0.45, 0.98, at.z + Math.cos(yaw) * 0.45), deck: deck3, hat });
     }
-    for (const [id, dl] of [...dealers.current]) if (!seenDealers.has(id)) { dl.avatar.destroy(); dl.deck.destroy(); dl.hat.destroy(); dl.dress.destroy(); dealers.current.delete(id); plateRef.current.delete(`dealer:${id}`); }
+    for (const [id, dl] of [...dealers.current]) if (!seenDealers.has(id)) { dl.avatar.destroy(); dl.deck.destroy(); dl.hat.destroy(); dealers.current.delete(id); plateRef.current.delete(`dealer:${id}`); }
   }, [state.people, state.you, state.manifest]);
 
   // ── CHIPS: each seat's street bet pushed toward the pot, and the pot pile — rebuilt when any bet changes ──

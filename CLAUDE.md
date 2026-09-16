@@ -398,12 +398,22 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   hand-rolled version below gets limbs roughly right and spine and shoulders wrong, which is why seated players
   look hunched. A Unity WebGL runtime is NOT worth it: the room shares thirteen modules with the app (the action
   bar, the cards, the huddle's live video, both sockets), each of which becomes a JS↔Unity bridge.
-  **SITTING IS POSED, NOT PLAYED — unless the seated clips are the body's own** (`SEAT_POSE` in `embodiment.ts`):
-  the seated states play the body's own idle and `applySeat` bends it into the chair — seven angles and a hip drop,
-  eased. A retargeted seated clip was the worst thing in the room. A body whose seated set was AUTHORED ON ITS RIG
-  (the Quaternius base characters — `person-f.glb` today) plays it instead: `AvatarLibrary.NATIVE_SEAT` says which
-  file sits natively, because that is the one fact the loader cannot measure (2026-09-15). Posing a body that had its
-  own sit put her arms out and her back tipped. The angles are TUNED AGAINST MEASUREMENTS (`scratch/seatsweep.cjs` sweeps them while
+  **A BODY SITS ON ITS OWN CLIPS; POSING ONE IS THE FALLBACK** (2026-09-15). Every body the room ships — the three
+  Quaternius "Animated Men/Women" bodies, `person.glb`, `person-f.glb` and the dealer's `person-tux.glb` — carries a
+  real sit-down, seated idle and stand-up authored on its own rig, so the room plays them and touches no bone:
+  measured live, the pelvis lands at 0.464 against a cushion top of 0.493 and the feet at 0.019. `AvatarLibrary.
+  NATIVE_SEAT` says which file sits natively, because that is the one fact the loader cannot measure; `SEAT_POSE` +
+  `applySeat` (seven angles and a hip drop, eased) stay for a body that has no seated clip. Posing a body that HAD
+  its own sit put her arms out and her back tipped.
+  **AN OUTFIT IS A MATERIAL, NOT A REPAINTED TEXTURE.** `dress()` clones only the GARMENT materials (shirt, top,
+  dress, jacket…) and tints them with the person's outfit word; skin, hair, eyes and shoes stay as the artist
+  authored them. Repainting every material with the old 32×32 palette is what left a textured woman looking
+  undressed. The palette path remains for a body whose UVs point at a swatch.
+  **THE ROOM'S MATERIALS ARE MADE PER APPLICATION, NEVER ONCE FOR THE MODULE** (2026-09-15). A `StandardMaterial`
+  keeps the shader variants it compiled against the device that compiled them, and the room is destroyed and rebuilt
+  every time somebody comes back from the flat board — so module-level materials drew the chairs with a dead
+  device's shaders and nothing appeared, until a hover CLONED one and the clone compiled fresh ("the chairs show
+  when I hover over them"). Every one is a `let`, reassigned in the app effect. The angles are TUNED AGAINST MEASUREMENTS (`scratch/seatsweep.cjs` sweeps them while
   reading hip, knee and foot heights back), because a thigh's rotation changes what the shin's own axis means:
   MORE shin fold RAISES the foot, which no amount of reasoning from a standing body would have told you.
   A BODY'S OWN CLIPS BEAT ANY RETARGET: the shipping body uses its native `Idle` and `Walk`, renamed into the
@@ -421,6 +431,14 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   body and chair read as a toy. The order that reads as better: light → one authored lounge glTF with baked lightmaps →
   one body family with its own sit and walk → the huddle's faces on heads → outfits. Never gender in anybody's
   records: a figure is a LOOK the person chooses (`cardroom.look`, not yet written); `ESTATE_FIGURES` is the fixture.
+  A FIGURE IS A BODY FILE, AND NEVER A FACT ABOUT A PERSON: `Figure` is `'m' | 'f' | 'tux'` over
+  `FIGURE_FILE`, and a fourth body is one entry there plus one line in `ESTATE_FIGURES`. Bone alias lists carry the
+  `Name.L`/`Name.R` convention beside Mixamo's and UE's, and `check-body.mjs` measures height through the FULL node
+  transforms — these rigs are authored Z-up under an armature turned −90° about X, so scaling by the Y scale alone
+  measured a 1.78 m person at 0.37. KIT FURNITURE IS STAINED, NOT REPLACED (`RoomKit.place(…, stain)`): the stain
+  MULTIPLIES each material so a piece keeps its own light and shade and only the timber changes; replacing the
+  material flattens the piece to one colour, and leaving the kit pale beige beside walnut chairs reads as furniture
+  wheeled in from another room.
   Presence, the `scene.*` skills and the Mystery Night's cues all speak that vocabulary; the block `Figure` is
   gone. Traps: a container's animation ASSETS are named `<file>/animation/<i>` — the clip's name is on the TRACK
   (`asset.resource.name`); a state assigned no track plays a placeholder of duration `MAX_VALUE` and the body

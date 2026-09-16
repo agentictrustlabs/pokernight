@@ -30,39 +30,71 @@ Everything on the page is still under a megabyte before the bodies, and the bodi
 
 ## People
 
-### What to use
+### What was chosen, and why (2026-09-15, revised)
 
-**The Quaternius Universal Base Characters, for both figures, now.** They are CC0, already in hand, already
+**The Quaternius "Animated Men" and "Animated Women" packs — CC0, 2–2.8k triangles, no textures at all.**
+Each body carries its OWN materials as separate flat colours (Shirt, Skin, Pants, Shoes, Socks, Hair, Eyes)
+and its OWN clips, including a real sit-down and a real stand-up. That is the whole drop-in contract met by
+an asset rather than by code: nothing is retargeted, no pose is bent, no palette is painted over anybody.
+
+Three ship: `person.glb` (a man in a shirt), `person-f.glb` (a woman) and `person-tux.glb` (a man in a suit,
+worn by the dealer — which retired the white box and red box that used to stand in for evening blacks). All
+three are half the size of the bodies they replaced, and `scripts/check-body.mjs` passes all three.
+
+The UBC "Superhero" bodies that shipped earlier that day are gone. They were 17–19k triangles of gym-built
+silhouette with 1k textures, and the outfit was painted on — a look nobody had chosen and a body nobody in a
+card room has. **The silhouette is the problem; a modest texture on that mesh does not fix it.** An outfit is
+now one cloned material tinted per person (`GARMENT` + `OUTFITS` in `embodiment.ts`), so eight people in eight
+outfits still cost one download per figure and skin, hair and eyes are left exactly as the artist authored them.
+
+Two supporting changes the packs forced, both worth keeping:
+
+- **Bone aliases** for the `Name.L` / `Name.R` convention (`UpperArm.R`, `LowerLeg.L`, `Palm.L`, `Torso`),
+  beside the Mixamo and UE spellings already there — a body is still an asset, not code.
+- **`check-body.mjs` measures height through the FULL node transforms.** Scaling by the Y scale alone is not
+  enough: these rigs are authored Z-up under an armature turned −90° about X, so the mesh's own Y is the body's
+  DEPTH and a 1.78 m person measured 0.37. The eight corners of each bounding box now go through the composed
+  matrix, which is what the engine does to draw it.
+
+### What was rejected, and why
+
+**The Quaternius Universal Base Characters** (the earlier recommendation below, kept for the record).** They are CC0, already in hand, already
 dressed by the scratch pipeline (`ubc/dress.py` → `build-person.mjs` → `finish.mjs`), 16–19k triangles with
 1k textures, and — the part that matters most in a chair — **their clips were authored on their own rig**: a real
 sit-down, seated idle, seated talking and stand-up, a walk with no root motion, an idle that breathes. The
 woman is that body today. Shipping the man (`person-m.glb`, built, checked) makes everyone in the room one
 family, and retires the seated pose-bending and the 1.5k-triangle mannequin with it.
 
+They are CC0 and already dressed by the scratch pipeline, but at 17–19k triangles with a superhero build they
+were the wrong PEOPLE for a card room, whatever the texture.
+
 The alternatives, and why not first:
 
 | Source | What you get | Why it is not the first move |
 |---|---|---|
 | **Ready Player Me / Avaturn export** | one stock body per person, 10–15k tris, 1–2k textures, a face from a photo | licensed (not CC0), needs an account per export, and the clips come from elsewhere — every one has to be retargeted in Unity/Blender before the room will take the body. Worth it later for *"that is me"* faces; not for the first upgrade |
-| **Mixamo characters + clips** | a dozen clothed stock humans with a huge clip library | Adobe account and a browser session, nothing scriptable; the clips retarget cleanly only through Unity's Humanoid (`docs/AVATARS.md`) — the road is written, but it is a day per body in an editor we do not run here |
+| **Mixamo characters + clips** | a dozen clothed stock humans with a huge clip library | **Adobe account and a browser session — it cannot be fetched or built from here at all**, and the clips retarget cleanly only through Unity's Humanoid (`docs/AVATARS.md`). The road is written for whoever runs that editor; it is a day per body, and until somebody does, a CC0 pack whose clips are already its own beats it |
 | **Commissioned 2–3 humans** | a house look nobody else has | the right move once the lounge is authored and the light is final, so the artist sees the room the body will stand in |
 | **MetaHuman / live RPM SDK in the client** | photoreal | no: 10× the weight, a second runtime beside the app, and at conversation distance the huddle's video on a head beats any mesh |
 
-### The seated question, settled
+### The seated question, settled (and now moot)
 
 A body either sits on its own clips or the room poses it. `AvatarLibrary.NATIVE_SEAT` states which, per file,
-because it is the one thing about a body the loader cannot measure: the low-poly man's `Sitting_Idle_Loop` is a
+because it is the one thing about a body the loader cannot measure. **Every body the room ships now sits on its
+own clips**, so `SEAT_POSE` and `applySeat` are dead weight kept for the next body that needs them. MEASURED on
+the live room: a seated body's pelvis lands at y = 0.464 against a cushion top of 0.493 and its feet at 0.019 —
+it sits IN the chair, without the room touching a single bone. For the record, the old arrangement: the low-poly man's `Sitting_Idle_Loop` is a
 retarget that hunches, so he is posed; the base characters' are their own, so they are played. The two land in
 the same place — the native clip drops the hips 0.37 m and 0.28 m back, the pose 0.42 m and 0.30 m — so one chair
 geometry serves both, and swapping the man for `person-m.glb` is one line in that table.
 
-### Outfits on a textured body
+### Outfits, done
 
-The palette trick (137-byte swatches) does not apply to a body with real textures. The dressed base colours
-exist for all six outfit words in both figures (`ubc/dressed-{m,f}-<word>.png`) but at 800 KB each as PNG;
-resampled to 512 px JPEG they are 70–120 KB, and only the words actually worn need to load. The plan is one body
-per figure with `slate` baked in, and the other five as base-colour swaps fetched on first sight — the same
-"one download and a swatch" idea, with a bigger swatch.
+A garment is a MATERIAL on the body, not a repainted texture. `dress()` clones only the materials whose name is
+a garment (`^(shirt|top|dress|jacket|coat|vest|blouse)\d*$`) and tints them with the person's outfit word;
+skin, hair, eyes and shoes are never touched. Six words, no extra download, and a body with real textures would
+keep every one of them. This is what the 32×32 palette was imitating, done properly — and the palette path is
+still there for a body that wants it.
 
 ### Who is a woman? Nobody's PII
 
@@ -111,13 +143,21 @@ contact shadows under every chair and table, the lamps' pools on the felt — an
 
 ## Order, and what each step touches
 
+0. **The room's materials are made per application, never once for the module** — a material keeps the shader
+   variants it compiled against the device that compiled them, and the room is torn down and rebuilt every time
+   somebody comes back from the flat board. Made once at module level, the chairs drew with a dead device's
+   shaders and were invisible — until a hover CLONED one, which compiled fresh, which is exactly what "they show
+   when I hover over them" means. Every `let` in `Lounge.tsx` is reassigned in the app effect.
 1. **Light + close the void** — done today. `Lounge.tsx` (env atlas, ACES, textured floor/walls/wood, ceiling),
    `public/room/{env.hdr, floor-parquet*, wall-plaster*, wood-dark*}`, `LICENSE.txt`.
 2. **Authored lounge glTF** — Blender file in a new `assets/lounge/` (source, not shipped) → `public/room/lounge.glb`
    for now, R2 later; `RoomKit` learns to place the whole scene and read its anchors. The anchors' names are the
    contract with `SceneDO` and do not move.
-3. **One body family** — copy `ubc/person-m.glb` to `public/room/person.glb`, flip `NATIVE_SEAT.m`, delete
-   `SEAT_POSE` and `applySeat` when nothing is posed any more. Outfits as 512 px base-colour swaps.
+3. **One body family** — DONE: three Quaternius bodies, all sitting on their own clips, outfits as tinted
+   garment materials. The kit furniture is STAINED into the room's wood rather than left pale beige
+   (`RoomKit.place(..., stain)`, which multiplies each material rather than replacing it, so a piece keeps its
+   own light and shade). What is left here is one art direction across the whole room: the flames, the felt and
+   the fireside are still three styles.
 4. **Faces on heads** — the huddle's `MediaStreamTrack` as a video texture on the head bone's plate in the near
    field (`SpatialVoice.tsx` already knows which body owns which participant).
 5. **Second body family / house look** — commissioned, or Mixamo through the Unity route, once the lounge is
