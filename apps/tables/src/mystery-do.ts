@@ -164,7 +164,41 @@ export class MysteryDO extends DurableObject<Env> {
     /** A PART, TAKEN. One per person, given up by taking another, and refused once the night has begun. */
     if (request.method === 'POST' && url.pathname === '/cast') {
       const b = (await request.json()) as { playerId: string; name: string; role: RoleId | null };
-      if (!this.meta?.casting) return json({ error: 'this night is not casting' }, 409);
+      /**
+       * WALKING IN ON A NIGHT THAT HAS BEGUN (2026-09-15).
+       *
+       * A club's night casts itself before the curtain and the house plays whatever nobody took — which is
+       * what lets a night run with two of you or with eight. But somebody who arrives in the second act was
+       * then a spectator for the rest of the evening, at a party whose whole point is that the people in the
+       * room are the suspects. So a member with no part may TAKE OVER one the house is playing: the character
+       * is the same character, with the same history, the same secret and the same standing in the story —
+       * only the mind behind it changes, which is exactly the swap the cast list already describes.
+       *
+       * ONE PART PER PERSON PER NIGHT, and no swapping after the curtain. Not only because a character you
+       * abandon is a hole in the story, but because the killer is drawn from the cast: somebody able to take
+       * a part, read whether they are the killer, drop it and take another would have the answer in eight
+       * tries. A part already played by a PERSON is never taken from them, and a dead one is not a part.
+       */
+      if (!this.meta?.casting) {
+        if (!this.state) return json({ error: 'this night is not casting' }, 409);
+        if (b.role === null) return json({ error: 'the night has begun — a part taken now is yours for it' }, 409);
+        const pair2 = stagingOf(this.meta?.title ?? '');
+        if (!pair2) return json({ error: 'no such mystery' }, 404);
+        if (this.state.cast.some((c) => c.playerId === b.playerId)) return json({ error: 'you are already in this story' }, 409);
+        const seat = this.state.cast.find((c) => c.role === b.role);
+        if (!seat) return json({ error: 'no such part' }, 404);
+        if (seat.operator === 'human') return json({ error: 'somebody is already playing that part' }, 409);
+        if (isDead(this.state, seat.role)) return json({ error: 'that character is dead' }, 409);
+        this.state = {
+          ...this.state,
+          cast: this.state.cast.map((c) => (c.role === b.role
+            ? { ...c, agent: b.playerId, name: b.name || c.name, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const }
+            : c)),
+        };
+        this.save();
+        this.tellEverybody();
+        return json({ ok: true, cast: this.castList() });
+      }
       const pair = stagingOf(this.meta.title);
       if (!pair) return json({ error: 'no such mystery' }, 404);
       if (b.role === null) { delete this.taken[b.playerId]; this.save(); return json({ ok: true, cast: this.castList() }); }

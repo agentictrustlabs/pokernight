@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { chooseAction, TITLES, type MysteryAction, type MysteryEvent, type MysteryView } from '@pokernight/mystery';
 import type { AppSession } from '../lib/types';
-import { mysteryApi } from '../lib/api';
+import { clubMystery, mysteryApi } from '../lib/api';
 import { MysterySocket, type MysteryClientState } from '../lib/mysterySocket';
 import { castVoicesOn, hushCast, narrate, sayAs, setCastVoicesOn, voicesAvailable } from '../lib/castVoices';
 import { HOME_HASH } from '../lib/routes';
@@ -41,6 +41,11 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
   const [whisperTo, setWhisperTo] = useState<string | null>(null);
   /** What the picture is looking closely at, so the page can say what is worth seeing in it. */
   const [looking, setLooking] = useState<{ kind: 'person' | 'thing'; id: string } | null>(null);
+  /** TAKING A PART ON A NIGHT THAT HAS BEGUN: the house is playing it, and a member may take it over. */
+  const takePart = async (role: string): Promise<void> => {
+    if (!session) return;
+    await clubMystery.take(stagingId, role, session.token);
+  };
   const venue = useRef<VenueHandle | null>(null);
   /**
    * EVERY ACT GOES THROUGH THE ROOM FIRST. Pressing "look again at the drinks tray" in the list should walk
@@ -192,7 +197,8 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
             {st?.error ? <div className="form-error">{st.error}</div> : null}
           </main>
           <aside className="mystery-side">
-            <You view={view} act={act} scope={st?.staging?.club ? clubScope({ clubId: st.staging.club }) : null} scopeName={`${view?.titleName ?? 'the night'} · this room`} />
+            <You view={view} act={act} takePart={takePart}
+              scope={st?.staging?.club ? clubScope({ clubId: st.staging.club }) : null} scopeName={`${view?.titleName ?? 'the night'} · this room`} />
             <Clues view={view} act={act} />
             <Cast view={view} act={act} speaking={speaking} lookAt={(role) => venue.current?.lookAt(role) ?? false} />
           </aside>
@@ -419,6 +425,48 @@ function roleTitle(role: string): string {
 }
 
 /**
+ * WALKING IN ON A NIGHT THAT HAS BEGUN (2026-09-15).
+ *
+ * "You are not in the cast — you can still watch" is a thin evening at a party whose whole point is that the
+ * people in the room are the suspects. Whatever nobody took is being played by the house, so a member who
+ * arrives late can take one of those over: the same character, the same history, the same secret — only the
+ * mind behind it changes. It is one part per person per night and no swapping afterwards, which the panel
+ * says out loud, because the killer is drawn from the cast and somebody who could try parts on would have the
+ * answer in eight goes.
+ */
+function Watching({ view, takePart }: { view: MysteryView; takePart: (role: string) => Promise<void> }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [why, setWhy] = useState<string | null>(null);
+  const free = view.cast.filter((c) => c.operator !== 'human' && c.alive);
+  const take = async (role: string) => {
+    setBusy(role); setWhy(null);
+    try { await takePart(role); } catch (e) { setWhy(e instanceof Error ? e.message : String(e)); } finally { setBusy(null); }
+  };
+  return (
+    <section className="panel mystery-you">
+      <span className="eyebrow">Watching</span>
+      <p>You are not in this story — but the house is playing {free.length === 1 ? 'one part' : `${free.length} of the parts`}, and you may take one.</p>
+      <ul className="mystery-takeover">
+        {free.map((c) => (
+          <li key={c.role}>
+            <Face look={c.look} name={c.name} size={32} />
+            <div>
+              <strong>{c.name}</strong>
+              {c.appearance ? <p className="hint">{c.appearance}</p> : null}
+            </div>
+            <button type="button" className="small" disabled={!!busy} onClick={() => void take(c.role)}>
+              {busy === c.role ? 'Taking…' : 'Be them'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {free.length === 0 ? <p className="hint">Every part is being played by somebody. You see the public half of the night.</p> : <p className="hint">One part each, and it is yours for the night — the killer is drawn from the cast, so parts cannot be tried on.</p>}
+      {why ? <p className="form-error">{why}</p> : null}
+    </section>
+  );
+}
+
+/**
  * YOUR OWN CAMERA AND VOICE, WHERE YOUR PART IS (2026-09-15).
  *
  * Turning a camera on lived in a dock at the corner of the screen, which is where a CALL lives — but in a
@@ -490,10 +538,10 @@ function Wardrobe({ you, view, act }: { you: NonNullable<MysteryView['you']>; vi
 }
 
 /** WHO YOU ARE. The secret is yours; so, for exactly one person all night, is the other thing. */
-function You({ view, act, scope, scopeName }: { view: MysteryView; act: (a: unknown) => void; scope: HuddleScope | null; scopeName: string }) {
+function You({ view, act, scope, scopeName, takePart }: { view: MysteryView; act: (a: unknown) => void; scope: HuddleScope | null; scopeName: string; takePart: (role: string) => Promise<void> }) {
   const [idea, setIdea] = useState<{ action: MysteryAction; text: string } | null>(null);
   const you = view.you;
-  if (!you) return <section className="panel"><h3 className="eyebrow-h">Watching</h3><p className="hint">You are not in this story — you see the public half of it.</p></section>;
+  if (!you) return <Watching view={view} takePart={takePart} />;
   return (
     <section className={`panel mystery-you${you.killer ? ' killer' : ''}`}>
       <span className="eyebrow">Your part</span>

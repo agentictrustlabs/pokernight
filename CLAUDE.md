@@ -336,7 +336,13 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   or for another part). `checkTitle` proves a title solvable before anybody plays it — every possible
   killer narrowed to exactly themselves by the traits two deaths give up — and it runs in the package's
   own tests. What P2–P4 still owe (`.cast` agents, role archetypes at the Home, the director, the 3D venue)
-  is §14 of the spec. Its own invariants, learned by playing it: NOBODY LOOKING, NOTHING HAPPENS — the clock
+ is §14 of the spec. **WALKING IN ON A NIGHT THAT HAS BEGUN**: a club member who arrives after
+  the curtain is not a spectator — whatever nobody took is being played by the house, and they may TAKE ONE OVER
+  (`POST /mysteries/:id/cast` after casting). Same character, same history, same secret; only the mind behind it
+  changes, which is the swap the cast list already describes. ONE PART PER PERSON PER NIGHT AND NO SWAPPING —
+  not only because an abandoned character is a hole in the story, but because the killer is drawn from the cast,
+  so somebody able to try parts on would have the answer in eight goes. A part a PERSON plays is never taken from
+  them and a dead one is not a part. Its own invariants, learned by playing it: NOBODY LOOKING, NOTHING HAPPENS — the clock
   and the cast run only while a socket is open, and the night CATCHES UP (`catchUp`, bounded) the moment
   somebody reads or reconnects, so a staging left alone stops where it stood rather than running an empty
   hotel or waking up an act behind; WHAT YOU HEARD, YOU HEARD (every room-scoped event carries who was in the
