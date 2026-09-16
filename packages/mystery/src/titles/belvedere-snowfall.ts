@@ -44,7 +44,15 @@ export const BELVEDERE_SNOWFALL: Title = {
   roles: [
     {
       id: 'concierge', name: 'Émile Rossi', archetype: 'belvedere-concierge', canBeKiller: true,
-      look: { figure: 'm', body: 'ink', skin: '#e0b48d', hair: '#2f2a26', wear: '#1f2a33', accent: '#4a5c68', hairStyle: 'short', facial: 'moustache' },
+      appearance: "A small, contained man in hotel navy, moving as though the building is watching him do it.",
+      look: {
+        figure: 'm', body: 'ink', age: 58, skin: '#e0b48d', hair: '#4a423a', wear: '#1f2a33', accent: '#b8973f', hairStyle: 'short', facial: 'moustache',
+        wardrobe: [
+          { id: 'uniform', name: 'Night uniform', wear: '#1f2a33', accent: '#b8973f' },
+          { id: 'daycoat', name: 'Day coat', wear: '#2c3a43', accent: '#8d9aa2' },
+          { id: 'shirtsleeves', name: 'Shirtsleeves', wear: '#d8d2c4', accent: '#3a4148' },
+        ],
+      },
       blurb: 'You have run the Belvedere for nineteen winters. You know which door sticks and who came down late.',
       secret: 'You have been letting one guest stay all season without paying, and the books do not show it.',
       traits: ['keys:master', 'boots:42', 'gloves:wool'],
@@ -59,7 +67,15 @@ export const BELVEDERE_SNOWFALL: Title = {
     },
     {
       id: 'heiress', name: 'Delphine Aubert', archetype: 'belvedere-heiress', canBeKiller: true,
-      look: { figure: 'f', body: 'rose', skin: '#f0d3b8', hair: '#6b3f22', wear: '#4a2740', accent: '#7c5372', hairStyle: 'bun', accessory: 'pearls' },
+      appearance: "Dressed for an evening that is not happening, and drinking as if it still might.",
+      look: {
+        figure: 'f', body: 'rose', age: 34, skin: '#f0d3b8', hair: '#6b3f22', wear: '#4a2740', accent: '#7c5372', hairStyle: 'bun', accessory: 'pearls',
+        wardrobe: [
+          { id: 'evening', name: 'Evening plum', wear: '#4a2740', accent: '#7c5372' },
+          { id: 'travelling', name: 'Travelling grey', wear: '#4e5158', accent: '#8f939b' },
+          { id: 'furs', name: 'Furs', wear: '#6b5a4a', accent: '#d8c9b4' },
+        ],
+      },
       blurb: 'The resort is yours since your father died on the mountain two winters ago.',
       secret: 'The will is being contested, and you have known for a week who is contesting it.',
       traits: ['scent:iris', 'boots:38', 'gloves:leather'],
@@ -74,7 +90,15 @@ export const BELVEDERE_SNOWFALL: Title = {
     },
     {
       id: 'instructor', name: 'Kai Brunner', archetype: 'belvedere-instructor', canBeKiller: true,
-      look: { figure: 'm', body: 'moss', skin: '#d9a173', hair: '#c8a24a', wear: '#25424f', accent: '#3f7a86', hairStyle: 'short', facial: 'stubble', accessory: 'goggles' },
+      appearance: "Broad, sunburnt to the goggle line, and the only person here still in his boots.",
+      look: {
+        figure: 'm', body: 'moss', age: 29, skin: '#d9a173', hair: '#c8a24a', wear: '#25424f', accent: '#3f7a86', hairStyle: 'short', facial: 'stubble', accessory: 'goggles',
+        wardrobe: [
+          { id: 'shell', name: 'Piste shell', wear: '#25424f', accent: '#e0653a' },
+          { id: 'baselayer', name: 'Base layer', wear: '#2b2f33', accent: '#5a6168' },
+          { id: 'apres', name: 'Après jumper', wear: '#7a4536', accent: '#c9a14a' },
+        ],
+      },
       blurb: 'You teach the guests to ski and you know the mountain better than the map does.',
       secret: 'You were on the slope the night of the accident two winters ago, and you have never said so.',
       traits: ['scent:pine-wax', 'boots:44', 'hands:calloused'],
@@ -89,7 +113,15 @@ export const BELVEDERE_SNOWFALL: Title = {
     },
     {
       id: 'doctor', name: 'Dr Halloran', archetype: 'belvedere-doctor', canBeKiller: true,
-      look: { figure: 'm', body: 'slate', skin: '#e8c6a4', hair: '#8e8e8e', wear: '#33383d', accent: '#5c6670', hairStyle: 'short', facial: 'beard', accessory: 'glasses' },
+      appearance: "Grey, unhurried, with a bag he has not put down since the lights dipped.",
+      look: {
+        figure: 'm', body: 'slate', age: 61, skin: '#e8c6a4', hair: '#9b9791', wear: '#5a5140', accent: '#8a7d63', hairStyle: 'short', facial: 'beard', accessory: 'glasses',
+        wardrobe: [
+          { id: 'tweed', name: 'Tweed', wear: '#5a5140', accent: '#8a7d63' },
+          { id: 'consulting', name: 'Consulting black', wear: '#2b2e33', accent: '#e8e4da' },
+          { id: 'braces', name: 'Shirt and braces', wear: '#dcd6c6', accent: '#4a3a2c' },
+        ],
+      },
       blurb: 'You winter here for your chest, and tonight you are the only one who can certify a death.',
       secret: 'You certified the old man’s death two winters ago in nine minutes, and took a cheque for it.',
       traits: ['hands:ink', 'boots:44', 'gloves:leather'],
@@ -104,7 +136,15 @@ export const BELVEDERE_SNOWFALL: Title = {
     },
     {
       id: 'chef', name: 'Marek Novák', archetype: 'belvedere-chef', canBeKiller: true,
-      look: { figure: 'm', body: 'oak', skin: '#c98d61', hair: '#241d19', wear: '#3d3a33', accent: '#7d6a4f', hairStyle: 'cap', facial: 'stubble' },
+      appearance: "Still in his whites at this hour, with his sleeves pushed up and his hands scrubbed raw.",
+      look: {
+        figure: 'm', body: 'oak', age: 41, skin: '#c98d61', hair: '#241d19', wear: '#e8e4da', accent: '#3a3d42', hairStyle: 'cap', facial: 'stubble',
+        wardrobe: [
+          { id: 'whites', name: 'Kitchen whites', wear: '#e8e4da', accent: '#3a3d42' },
+          { id: 'service', name: 'Service blacks', wear: '#23252a', accent: '#8a7a5c' },
+          { id: 'offduty', name: 'Off duty', wear: '#3d4a3a', accent: '#6f7a5c' },
+        ],
+      },
       blurb: 'You feed eight people and hear all of them, because nobody lowers their voice near a kitchen.',
       secret: 'You have been buying somebody’s silence with dinners since November.',
       traits: ['scent:kitchen-smoke', 'boots:42', 'hands:calloused'],
@@ -119,7 +159,15 @@ export const BELVEDERE_SNOWFALL: Title = {
     },
     {
       id: 'journalist', name: 'Nadia Kowal', archetype: 'belvedere-journalist', canBeKiller: true,
-      look: { figure: 'f', body: 'brass', skin: '#e7bb96', hair: '#1f1b18', wear: '#2c3b33', accent: '#4f7a63', hairStyle: 'long', accessory: 'glasses' },
+      appearance: "Watching the room rather than the fire, and writing something down whenever it goes quiet.",
+      look: {
+        figure: 'f', body: 'brass', age: 37, skin: '#e7bb96', hair: '#1f1b18', wear: '#7d6a4a', accent: '#b5a181', hairStyle: 'long', accessory: 'glasses',
+        wardrobe: [
+          { id: 'mac', name: 'Press mac', wear: '#7d6a4a', accent: '#b5a181' },
+          { id: 'wool', name: 'Wool suit', wear: '#2c3b33', accent: '#4f7a63' },
+          { id: 'field', name: 'Field jacket', wear: '#3f4a3a', accent: '#7c8a6a' },
+        ],
+      },
       blurb: 'You came to write about a beautiful hotel in a beautiful place.',
       secret: 'You came for the accident two winters ago, and you have the file in your case.',
       traits: ['hands:ink', 'boots:38', 'left-handed'],
@@ -134,7 +182,15 @@ export const BELVEDERE_SNOWFALL: Title = {
     },
     {
       id: 'guide', name: 'Sofia Lindqvist', archetype: 'belvedere-guide', canBeKiller: true,
-      look: { figure: 'f', body: 'moss', skin: '#dcae85', hair: '#d8c49a', wear: '#3a2f28', accent: '#8a6f4e', hairStyle: 'curls', accessory: 'scarf' },
+      appearance: "Weathered, practical, standing nearest the door out of habit.",
+      look: {
+        figure: 'f', body: 'moss', age: 31, skin: '#dcae85', hair: '#d8c49a', wear: '#2f4a44', accent: '#c98f3a', hairStyle: 'curls', accessory: 'scarf',
+        wardrobe: [
+          { id: 'fleece', name: 'Mountain fleece', wear: '#2f4a44', accent: '#c98f3a' },
+          { id: 'guideshell', name: "Guide's shell", wear: '#3a2f28', accent: '#8a6f4e' },
+          { id: 'jumper', name: 'Dinner jumper', wear: '#6b4a5c', accent: '#b58ba1' },
+        ],
+      },
       blurb: 'You brought the last party up before the pass closed, and you will bring them down.',
       secret: 'You know exactly who came down the mountain late, two winters ago, because you waited for them.',
       traits: ['scent:pine-wax', 'boots:42', 'limp'],
@@ -149,7 +205,15 @@ export const BELVEDERE_SNOWFALL: Title = {
     },
     {
       id: 'widow', name: 'Mme Perrin', archetype: 'belvedere-widow', canBeKiller: true,
-      look: { figure: 'f', body: 'ink', skin: '#efd6c0', hair: '#4a4a4a', wear: '#20222a', accent: '#3d3f4a', hairStyle: 'bun', accessory: 'veil' },
+      appearance: "In black, seated, and the only one here who has not once asked what happened.",
+      look: {
+        figure: 'f', body: 'ink', age: 72, skin: '#efd6c0', hair: '#c9c4bd', wear: '#20222a', accent: '#3d3f4a', hairStyle: 'bun', accessory: 'veil',
+        wardrobe: [
+          { id: 'mourning', name: 'Mourning black', wear: '#20222a', accent: '#3d3f4a' },
+          { id: 'travelling', name: 'Grey travelling', wear: '#4f5058', accent: '#8b8d95' },
+          { id: 'shawl', name: 'Shawl and wool', wear: '#4a3a44', accent: '#9a8a94' },
+        ],
+      },
       blurb: 'You have the best room, you are in mourning, and you have been here a fortnight.',
       secret: 'The name in the register is not yours, and one person here knows your real one.',
       traits: ['scent:iris', 'boots:38', 'keys:master'],

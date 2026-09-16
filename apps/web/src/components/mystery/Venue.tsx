@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as pc from 'playcanvas';
 import type { MysteryView } from '@pokernight/mystery';
+import { Portrait } from '../huddle/Portrait';
 import { AvatarLibrary, ParticipantAvatar, RoomKit, SKIN_WORDS } from '../room/embodiment';
 import { BELVEDERE_PLAN, strandedAt, type Placed, type RoomPlan } from './plan';
 
@@ -42,6 +43,8 @@ export interface VenueProps {
   speaking: string | null;
   act: (a: unknown) => void;
   onPerson?: (role: string) => void;
+  /** Something has been selected and is being looked at — a person or a thing, or nothing any more. */
+  onInspect?: (what: { kind: 'person' | 'thing'; id: string } | null) => void;
 }
 
 const BODIES = SKIN_WORDS;
@@ -49,7 +52,7 @@ const HEAD = 1.86;
 /** Metres a second, the same amble the card room's lounge walks at. */
 const WALK_SPEED = 3.4;
 
-export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, speaking, act, onPerson }, ref) {
+export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, speaking, act, onPerson, onInspect }, ref) {
   const host = useRef<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const app = useRef<pc.Application | null>(null);
@@ -78,8 +81,9 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
   const viewRef = useRef(view); viewRef.current = view;
   const actRef = useRef(act); actRef.current = act;
   const onPersonRef = useRef(onPerson); onPersonRef.current = onPerson;
+  const onInspectRef = useRef(onInspect); onInspectRef.current = onInspect;
   const speakingRef = useRef(speaking); speakingRef.current = speaking;
-  const [plates, setPlates] = useState<Array<{ id: string; text: string; sub?: string; x: number; y: number; kind: string }>>([]);
+  const [plates, setPlates] = useState<Array<{ id: string; text: string; sub?: string; face?: string; x: number; y: number; kind: string }>>([]);
   /** A walk to a thing, and what to do when we get there. */
   const errand = useRef<{ prop: string; at: number; to: pc.Vec3 } | null>(null);
   /** Set by the scene so the handle can reach the same two walks the picture uses. */
@@ -220,6 +224,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
 
     /** Walk your body to a thing in this room and light it; the errand finishes in the update loop. */
     const toProp = (prop: string): boolean => {
+      onInspectRef.current?.({ kind: 'thing', id: prop });
       const p = props.current.get(prop);
       const me = viewRef.current.you ? bodies.current.get(viewRef.current.you.role) : null;
       if (!p || !me || errand.current) return false;
@@ -251,6 +256,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
      * another room cannot be shown from this one; the page says so rather than the camera swinging at nothing.
      */
     const lookAtPerson = (role: string): boolean => {
+      onInspectRef.current?.({ kind: 'person', id: role });
       const b = bodies.current.get(role);
       if (!b) return false;
       const head = b.bone('head');
@@ -267,6 +273,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       focus.current = null; // looking at something else is letting go of this one
       if (e.button !== pc.MOUSEBUTTON_LEFT) return;
       const hit = pick(e.x, e.y, camera);
+      if (!hit) { onInspectRef.current?.(null); }
       if (!hit) {
         // A CLICK ON THE FLOOR IS A PLACE TO GO, exactly as in the card room's lounge.
         const from = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.nearClip);
@@ -278,7 +285,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
         }
         return;
       }
-      if (hit.kind === 'prop') { if (!toProp(hit.id)) actRef.current({ type: 'examine', prop: hit.id }); }
+      if (hit.kind === 'prop') { onInspectRef.current?.({ kind: 'thing', id: hit.id }); if (!toProp(hit.id)) actRef.current({ type: 'examine', prop: hit.id }); }
       else if (hit.kind === 'door') {
         /**
          * A DOOR IS WALKED THROUGH, NOT TELEPORTED PAST. Clicking one sends your body to it, swings it open,
@@ -287,7 +294,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
          */
         if (!toDoor(hit.id) && !goingTo.current) actRef.current({ type: 'move', room: hit.id });
       }
-      else onPersonRef.current?.(hit.id);
+      else { lookAtPerson(hit.id); onInspectRef.current?.({ kind: 'person', id: hit.id }); onPersonRef.current?.(hit.id); }
     });
 
     // the camera sits behind and above your own body, looking across the room
@@ -414,13 +421,22 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       clock += 1;
       if (clock % 2) return;
       const out = new pc.Vec3();
-      const next: Array<{ id: string; text: string; sub?: string; x: number; y: number; kind: string }> = [];
+      const next: Array<{ id: string; text: string; sub?: string; face?: string; x: number; y: number; kind: string }> = [];
       const v = viewRef.current;
       for (const [role, b] of bodies.current) {
         camera.camera!.worldToScreen(new pc.Vec3(b.pos.x, HEAD, b.pos.z), out);
         if (out.z <= 0) continue;
         const who = v.cast.find((c) => c.role === role);
-        next.push({ id: `p:${role}`, text: who?.name ?? role, sub: who?.playedBy ?? (who?.operator === 'agent' ? 'an agent' : undefined), x: out.x, y: out.y, kind: speakingRef.current === role ? 'name speaking' : 'name' });
+        /**
+         * A PERSON'S OWN FACE HANGS BESIDE THE CHARACTER THEY ARE PLAYING (2026-09-15).
+         *
+         * `playedBy` is the person's name, and the huddle's participants carry the same name — so a live
+         * camera can be matched to a body without this page ever learning anything about the call. It is the
+         * one thing that makes a room of agents and people read as a room of people: you talk to Mme Perrin
+         * and a face answers. A character no person is playing has no chip, and a night with no huddle
+         * running shows none at all, which is the fallback rather than a hole.
+         */
+        next.push({ id: `p:${role}`, text: who?.name ?? role, sub: who?.playedBy ?? (who?.operator === 'agent' ? 'an agent' : undefined), ...(who?.playedBy ? { face: who.playedBy } : {}), x: out.x, y: out.y, kind: speakingRef.current === role ? 'name speaking' : 'name' });
       }
       for (const [id, p] of props.current) {
         camera.camera!.worldToScreen(new pc.Vec3(p.at.x, 1.15, p.at.z), out);
@@ -548,11 +564,16 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
         b.stand();
         b.walkTo(spot[0], spot[1], Math.atan2(-spot[0], -spot[1]));
       }
+      // WHAT THEY ARE WEARING NOW, not what they were wearing when they walked in: somebody who changes coat
+      // changes it in the room, for everybody, without the scene being rebuilt around them.
+      const nowLook = view.cast.find((c) => c.role === role)?.look;
+      if (nowLook) b.wear({ skin: nowLook.skin, hair: nowLook.hair, wear: nowLook.wear, accent: nowLook.accent });
       b.dead(gone);
       // YOUR OWN BODY SURVIVES THE ROOM CHANGE and is walked in by the room's own effect, where the doors are.
     });
     for (const [role, b] of [...bodies.current]) if (!seen.has(role)) { b.destroy(); bodies.current.delete(role); }
-  }, [roomId, view.room?.people.map((p) => p.role).join(','), view.you?.role, view.room?.death?.victim]);
+  }, [roomId, view.room?.people.map((p) => p.role).join(','), view.you?.role, view.room?.death?.victim,
+      view.cast.map((c) => `${c.role}:${c.look.wear}:${c.look.accent}`).join(',')]);
 
   // The page's own controls walk the same walk the picture does.
   useImperativeHandle(ref, () => ({
@@ -567,6 +588,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       <div className="venue-plates" aria-hidden="true">
         {plates.map((p) => (
           <div key={p.id} className={`venue-plate venue-${p.kind.split(' ')[0]}${p.kind.includes('lit') ? ' lit' : ''}${p.kind.includes('speaking') ? ' speaking' : ''}${p.kind.includes('shut') ? ' shut' : ''}`} style={{ left: p.x, top: p.y }}>
+            {p.face ? <Portrait name={p.face} size="plate" /> : null}
             <span>{p.text}</span>
             {p.sub ? <small>{p.sub}</small> : null}
           </div>

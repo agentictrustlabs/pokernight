@@ -369,7 +369,9 @@ export class ParticipantAvatar {
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
   private nativeSeat = false;
   private isDead = false;
-  constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', readonly which: Figure = 'm', private readonly look?: BodyLook) {
+  /** Every material on a body that wears real cloth, with the colour the artist gave it. */
+  private cloth: Array<{ name: string; mat: pc.StandardMaterial; base: pc.Color }> = [];
+  constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', readonly which: Figure = 'm', private look?: BodyLook) {
     this.entity = new pc.Entity('avatar');
     // The FIGURE decides which GLB is instantiated; the LIBRARY still holds every outfit, because the two
     // bodies share a rig and a UV layout and therefore share swatches.
@@ -399,21 +401,16 @@ export class ParticipantAvatar {
           const m = src.clone(); mi.material = m;
           library.skin(this.palette, (t) => { t.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST; t.magFilter = pc.FILTER_NEAREST; m.diffuseMap = t; m.update(); });
         } else {
-          // A BODY WITH ITS OWN MATERIALS: each named part takes the person's colour for that part, and every
-          // material the list does not name — eyes, shoes, socks — stays exactly as the artist authored it.
-          // Repainting all of them was the bug that put the old palette over a textured woman.
-          const name = src.name ?? '';
-          const look = this.look;
-          const tint = GARMENT.test(name) ? (look?.wear ? fromHex(look.wear) : AvatarLibrary.outfit(this.palette))
-            : LEGWEAR.test(name) ? (look?.accent ? fromHex(look.accent) : null)
-            : SKIN_MAT.test(name) ? (look?.skin ? fromHex(look.skin) : null)
-            : HAIR_MAT.test(name) ? (look?.hair ? fromHex(look.hair) : null)
-            : null;
-          if (tint) { const m = src.clone(); mi.material = m; m.diffuse = tint; m.update(); }
+          // A BODY WITH ITS OWN MATERIALS: every one is cloned so this person's clothes are this person's, and
+          // the cloth the artist chose is remembered — a look that names no colour for a part leaves it alone,
+          // and changing out of an outfit puts the original back rather than a guess at it.
+          const m = src.clone(); mi.material = m;
+          this.cloth.push({ name: src.name ?? '', mat: m, base: m.diffuse.clone() });
         }
       }
       render.castShadows = true;
     }
+    this.applyLook();
     body.addComponent('anim', { activate: true });
     const anim = body.anim!;
     anim.loadStateGraph(new pc.AnimStateGraph(GRAPH));
@@ -533,6 +530,31 @@ export class ParticipantAvatar {
    * you walked in on. Nothing transitions out: the dead do not get up.
    */
   dead(is: boolean): void { this.isDead = is; this.anim?.setBoolean('dead', is); }
+  /**
+   * CHANGE YOUR CLOTHES WITHOUT CHANGING YOUR BODY (2026-09-15). A look used to be read once, when the body
+   * loaded, so somebody who changed into their other coat kept wearing the first one until the room was
+   * rebuilt. The tints are re-applied over the remembered original cloth, so this is also how you take an
+   * outfit OFF.
+   */
+  wear(look: BodyLook | undefined): void {
+    const same = JSON.stringify(look ?? null) === JSON.stringify(this.look ?? null);
+    if (same) return;
+    this.look = look;
+    this.applyLook();
+  }
+  /** Paint the person's colours onto the parts they name, and the artist's own onto the parts they do not. */
+  private applyLook(): void {
+    for (const { name, mat, base } of this.cloth) {
+      const look = this.look;
+      const tint = GARMENT.test(name) ? (look?.wear ? fromHex(look.wear) : AvatarLibrary.outfit(this.palette))
+        : LEGWEAR.test(name) ? (look?.accent ? fromHex(look.accent) : null)
+        : SKIN_MAT.test(name) ? (look?.skin ? fromHex(look.skin) : null)
+        : HAIR_MAT.test(name) ? (look?.hair ? fromHex(look.hair) : null)
+        : null;
+      mat.diffuse = tint ?? base;
+      mat.update();
+    }
+  }
   get isGone(): boolean { return this.isDead; }
   get seated(): boolean { return !!this.seat; }
   get seatCentre(): pc.Vec3 | null { return this.seat?.centre ? new pc.Vec3(this.seat.centre.x, 0.95, this.seat.centre.z) : null; }

@@ -14,7 +14,18 @@ export type RoomId = string;
 export type ClueId = string;
 export type PropId = string;
 
-export interface VenueProp { id: PropId; name: string }
+export interface VenueProp {
+  id: PropId; name: string;
+  /**
+   * WHAT YOU ARE LOOKING AT, AND WHAT TO LOOK FOR (2026-09-15).
+   *
+   * Walking up to a thing and being handed a clue skips the part where you LOOK at it. This is what anybody
+   * would see — the state of the thing, not what it proves — said whether or not it has been examined, so a
+   * detailed view has something to say about what is in it. It is never a clue and never a secret: the
+   * clue is what examining it FINDS, and that is the engine's to give out.
+   */
+  detail?: string;
+}
 export interface VenueRoom { id: RoomId; name: string; blurb: string; props: VenueProp[] }
 
 /** A place several mysteries can be staged in. */
@@ -56,6 +67,20 @@ export interface Look {
   body?: string;
   /** Which figure plays them. The title says; nothing is inferred from a name. */
   figure?: 'm' | 'f';
+  /**
+   * HOW OLD THE PART IS. Content, like everything else here: the widow at the Belvedere is seventy-two and
+   * the ski instructor is twenty-nine, and a night where that is legible is a night where the guesses are
+   * better. It is shown in the profile and it is why the doctor's hair is grey — a number the title states
+   * rather than a thing anybody's body is measured for.
+   */
+  age?: number;
+  /**
+   * WHAT ELSE THIS PART OWNS. A character arrives dressed as the title dresses them, and whoever plays them
+   * may change into anything in their own wardrobe — the chef's whites or his service blacks, the widow's
+   * mourning or her travelling grey. It is a costume box for ONE part, so nobody turns up as somebody else:
+   * the concierge cannot put on the heiress's furs, which is what a free colour picker would have allowed.
+   */
+  wardrobe?: Array<{ id: string; name: string; wear: string; accent: string }>;
   hairStyle: 'short' | 'long' | 'bun' | 'cap' | 'bald' | 'curls';
   facial?: 'moustache' | 'beard' | 'stubble';
   accessory?: 'glasses' | 'veil' | 'scarf' | 'goggles' | 'pearls';
@@ -68,6 +93,12 @@ export interface Role {
   /** What this character would rather nobody knew. Theirs alone, and never a clue about the murder. */
   secret: string;
   archetype: string;
+  /**
+   * HOW THEY LOOK TO EVERYBODY ELSE. `blurb` is written to the person playing the part, in the second person,
+   * and is theirs; this is the one line anybody in the room can see for themselves, so selecting somebody can
+   * say something true about them without handing over what only they know.
+   */
+  appearance?: string;
   look: Look;
   traits: string[];
   canBeKiller: boolean;
@@ -172,6 +203,12 @@ export interface Casting {
   operator: Operator;
   /** The card-room player id, when a person is behind it — that is who the socket belongs to. */
   playerId?: string;
+  /**
+   * WHICH OF THE PART'S OWN OUTFITS THEY ARE WEARING, if they have changed out of the one the title opens
+   * them in. It lives on the CASTING rather than in anybody's browser because everybody in the room can see
+   * what you are wearing — a preference kept on the client would dress you for yourself alone.
+   */
+  outfit?: string;
 }
 
 export interface Death { victim: RoleId; room: RoomId; prop: PropId; act: number; evidence: ClueId[]; found: ClueId[]; at: number }
@@ -212,6 +249,8 @@ export type MysteryAction =
   | { type: 'share'; clue: ClueId; to?: RoleId }
   | { type: 'testify'; about: RoleId; text: string }
   | { type: 'alibi'; for: RoleId }
+  /** Change into another of your own part's outfits. Never a clue and never in the transcript. */
+  | { type: 'dress'; outfit: string }
   | { type: 'accuse'; against: RoleId; clues: ClueId[] }
   | { type: 'murder'; victim: RoleId; prop: PropId }
   /** THE KILLER'S OTHER HAND: leave something at a prop that points at somebody it is not. */
@@ -259,6 +298,8 @@ export interface Refusal { ok: false; code: string; reason: string }
 export type Applied = { ok: true; state: MysteryState; events: MysteryEvent[] } | Refusal;
 
 export interface ViewPerson {
+  /** The one line about them anybody in the room can see for themselves. Never their own blurb, never a secret. */
+  appearance?: string;
   role: RoleId; name: string; operator: Operator; agent: string; alive: boolean; look: Look;
   /** What is thinking for them right now — so a room can say "played by their own agent" and mean it. */
   mind?: 'human' | 'agent' | 'rules';
@@ -294,7 +335,7 @@ export interface MysteryView {
   room: {
     id: RoomId; name: string; blurb: string;
     people: ViewPerson[];
-    props: Array<{ id: PropId; name: string; examined: boolean }>;
+    props: Array<{ id: PropId; name: string; examined: boolean; detail?: string }>;
     doors: Array<{ id: RoomId; name: string; open: boolean }>;
     death: { victim: RoleId; searched: boolean } | null;
     /** Something here to find, with nobody dead: a room turned over, or a thing left to be found. */

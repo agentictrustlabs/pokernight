@@ -37,6 +37,8 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
   const redraw = useMemo(() => () => bump((n) => n + 1), []);
   const [line, setLine] = useState('');
   const [whisperTo, setWhisperTo] = useState<string | null>(null);
+  /** What the picture is looking closely at, so the page can say what is worth seeing in it. */
+  const [looking, setLooking] = useState<{ kind: 'person' | 'thing'; id: string } | null>(null);
   const venue = useRef<VenueHandle | null>(null);
   /**
    * EVERY ACT GOES THROUGH THE ROOM FIRST. Pressing "look again at the drinks tray" in the list should walk
@@ -156,7 +158,10 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
                 you want to go back over what somebody said. */}
             {webgl && drawn && view.room ? (
               <Suspense fallback={<div className="venue venue-loading"><p className="hint">Walking in…</p></div>}>
-                <Venue ref={venue} view={view} speaking={speaking} act={(a) => sock.current?.act(a)} onPerson={(role) => setWhisperTo(role)} />
+                <div className="mystery-venue-wrap">
+                  <Venue ref={venue} view={view} speaking={speaking} act={(a) => sock.current?.act(a)} onPerson={(role) => setWhisperTo(role)} onInspect={setLooking} />
+                  <Inspector view={view} looking={looking} onClose={() => setLooking(null)} />
+                </div>
               </Suspense>
             ) : null}
             {/* A CLUB'S NIGHT HAS A CALL, and it stays in the room it is spoken in. A night of your own has
@@ -338,6 +343,98 @@ function saying(a: MysteryAction, view: MysteryView): string {
   }
 }
 
+/**
+ * WHAT YOU ARE LOOKING AT (2026-09-15).
+ *
+ * Selecting a person or a thing pulls the camera in on it, and this is the other half: a flyout beside the
+ * picture that says what anybody would see, and says it OUT LOUD. The words are never secrets — a person's
+ * public appearance and a thing's state, both authored with the title — and what EXAMINING a thing finds
+ * stays the engine's to hand out, in the clue book, where it can be shared or kept. Closing it is a click on
+ * the floor, the X, or looking at something else.
+ */
+function Inspector({ view, looking, onClose }: { view: MysteryView; looking: { kind: 'person' | 'thing'; id: string } | null; onClose: () => void }) {
+  const said = useRef<string>('');
+  const subject = (() => {
+    if (!looking) return null;
+    if (looking.kind === 'person') {
+      const p = view.cast.find((c) => c.role === looking.id);
+      if (!p) return null;
+      const mine = p.role === view.you?.role;
+      const lines = [
+        p.appearance ?? null,
+        mine ? view.you?.blurb ?? null : null,
+        !p.alive ? 'They are dead. However they came to be lying here is the question.' : null,
+        p.playedBy ? `Played by ${p.playedBy}.` : p.operator === 'agent' ? 'Played by an agent of their own.' : null,
+      ].filter(Boolean) as string[];
+      return { name: p.name, look: p.look, lines, dead: !p.alive };
+    }
+    const t = view.room?.props.find((x) => x.id === looking.id);
+    if (!t) return null;
+    const found = view.clues.filter((c) => c.text.toLowerCase().includes(t.name.replace(/^the /, '').toLowerCase()));
+    return {
+      name: t.name,
+      look: null,
+      lines: [t.detail ?? 'Nothing about it says anything yet.', ...(t.examined ? found.map((c) => c.text) : [])],
+      dead: false,
+    };
+  })();
+  // SAID ONCE PER THING. The voice is the same one that reads the room, so it queues behind the night rather
+  // than talking over it, and looking at the same thing twice does not say it twice.
+  useEffect(() => {
+    if (!subject) { said.current = ''; return; }
+    const text = `${subject.name}. ${subject.lines.join(' ')}`;
+    if (said.current === text) return;
+    said.current = text;
+    if (castVoicesOn()) sayAs('narrator', text);
+  }, [subject?.name, subject?.lines.join('|')]);
+  if (!subject) return null;
+  return (
+    <aside className="mystery-inspector" aria-live="polite">
+      <button type="button" className="mystery-inspector-close" onClick={onClose} aria-label="Stop looking at this">×</button>
+      <div className="mystery-inspector-head">
+        {subject.look ? <Face look={subject.look} name={subject.name} size={40} dead={subject.dead} /> : null}
+        <h3>{subject.name}</h3>
+      </div>
+      {subject.lines.map((l, i) => <p key={i} className={i === 0 ? '' : 'hint'}>{l}</p>)}
+    </aside>
+  );
+}
+
+/** A part's job, from its id — "ski-instructor" is a thing a person is, and the id already says it. */
+function roleTitle(role: string): string {
+  const w = role.replace(/[-_]/g, ' ');
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
+/**
+ * WHAT YOU ARE WEARING, AND WHAT ELSE YOU OWN (2026-09-15).
+ *
+ * A character arrives dressed as the title dresses them, and whoever plays them may change into anything in
+ * that PART's own wardrobe — the chef's whites or his service blacks, the widow's mourning or her travelling
+ * grey. It is the part's box and not a colour picker, so nobody turns up as somebody else, and the change is
+ * on the staging rather than in this browser because what you are wearing is the one thing about you that
+ * everybody in the room can see.
+ */
+function Wardrobe({ you, view, act }: { you: NonNullable<MysteryView['you']>; view: MysteryView; act: (a: unknown) => void }) {
+  const kit = TITLES[view.title]?.roles.find((r) => r.id === you.role)?.look.wardrobe ?? [];
+  if (kit.length < 2 || !you.alive) return null;
+  const worn = kit.find((w) => w.wear.toLowerCase() === you.look.wear.toLowerCase()) ?? kit[0];
+  return (
+    <div className="mystery-wardrobe">
+      <span className="eyebrow-h">What you are wearing</span>
+      <div className="row wrap">
+        {kit.map((w) => (
+          <button key={w.id} type="button" className={`mystery-outfit${w.id === worn?.id ? ' worn' : ''}`}
+            aria-pressed={w.id === worn?.id} onClick={() => act({ type: 'dress', outfit: w.id })}>
+            <span className="mystery-swatch" style={{ background: w.wear, borderColor: w.accent }} />
+            {w.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** WHO YOU ARE. The secret is yours; so, for exactly one person all night, is the other thing. */
 function You({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
   const [idea, setIdea] = useState<{ action: MysteryAction; text: string } | null>(null);
@@ -348,9 +445,18 @@ function You({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
       <span className="eyebrow">Your part</span>
       <div className="mystery-you-head">
         <Face look={you.look} name={you.name} size={64} dead={!you.alive} />
-        <h2>{you.name}</h2>
+        <div>
+          <h2>{you.name}</h2>
+          {/* THE PART IS A PERSON, WITH AN AGE AND A JOB. A profile that is only a paragraph makes eight parts
+              read as eight paragraphs; a line of facts is what people actually hold on to about a stranger. */}
+          <p className="hint mystery-you-facts">
+            {[you.look.age ? `${you.look.age}` : null, TITLES[view.title]?.roles.find((r) => r.id === you.role)?.name === you.name ? roleTitle(you.role) : null]
+              .filter(Boolean).join(' · ')}
+          </p>
+        </div>
       </div>
       <p>{you.blurb}</p>
+      <Wardrobe you={you} view={view} act={act} />
       <p className="mystery-secret"><strong>Nobody knows:</strong> {you.secret}</p>
       {you.killer ? (
         <p className="mystery-killer-note"><strong>It was you.</strong> Nobody else is told this, tonight or ever — the seed said so before the night began, and the reveal will prove it. Take your chance when the room is right, and lie well.</p>

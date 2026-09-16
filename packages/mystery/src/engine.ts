@@ -14,7 +14,7 @@
  */
 import { hexToBytes, seededShuffle } from '@pokernight/deal';
 import type {
-  Applied, Casting, ClueDef, Death, KillerRule, MysteryAction, MysteryEvent, MysteryState, MysteryView,
+  Applied, Casting, ClueDef, Death, KillerRule, Look, MysteryAction, MysteryEvent, MysteryState, MysteryView,
   Refusal, Role, RoleId, RoomId, Title, Venue, ViewPerson,
 } from './types.js';
 
@@ -294,6 +294,23 @@ export function apply(state: MysteryState, title: Title, venue: Venue, role: Rol
   const events: MysteryEvent[] = [];
 
   switch (action.type) {
+    /**
+     * CHANGING YOUR CLOTHES IS NOT AN EVENT (2026-09-15).
+     *
+     * It changes nothing anybody can deduce from, so it writes no event and costs no time — but it is on the
+     * STATE rather than in a browser, because what you are wearing is the one thing about you that everybody
+     * in the room can see. You may only wear your OWN part's wardrobe: a free colour picker would let the
+     * concierge turn up in the heiress's furs, and half of a mystery is telling people apart.
+     */
+    case 'dress': {
+      const mine = roleOf(title, role);
+      const owns = (mine?.look.wardrobe ?? []).some((w) => w.id === action.outfit);
+      if (!owns) return no('not-yours', 'That is not one of yours to wear.');
+      const c = s.cast.find((x) => x.role === role);
+      if (!c) return no('not-cast', 'You are not in this story.');
+      c.outfit = action.outfit;
+      return { ok: true, state: s, events };
+    }
     case 'move': {
       if (s.phase !== 'act') return no('not-now', 'Nobody is walking anywhere just now.');
       if (!act.opens.includes(action.room)) return no('closed', 'That part of the hotel is not open.');
@@ -435,6 +452,7 @@ export function parseAction(raw: unknown): { ok: true; action: MysteryAction } |
     case 'share': return str((r as { clue?: string }).clue, 64) ? { ok: true, action: { type: 'share', clue: (r as { clue: string }).clue, ...(str((r as { to?: string }).to, 64) ? { to: (r as { to: string }).to } : {}) } } : no('bad-action', 'share needs a clue');
     case 'testify': return str((r as { about?: string }).about, 64) && str((r as { text?: string }).text) ? { ok: true, action: { type: 'testify', about: (r as { about: string }).about, text: (r as { text: string }).text } } : no('bad-action', 'testify needs somebody and words');
     case 'alibi': return str((r as { for?: string }).for, 64) ? { ok: true, action: { type: 'alibi', for: (r as { for: string }).for } } : no('bad-action', 'alibi needs somebody');
+    case 'dress': return str((r as { outfit?: string }).outfit, 64) ? { ok: true, action: { type: 'dress', outfit: (r as { outfit: string }).outfit } } : no('bad-action', 'dressing needs an outfit');
     case 'accuse': return str((r as { against?: string }).against, 64) ? { ok: true, action: { type: 'accuse', against: (r as { against: string }).against, clues: Array.isArray((r as { clues?: unknown }).clues) ? ((r as { clues: unknown[] }).clues.filter((c) => typeof c === 'string') as string[]) : [] } } : no('bad-action', 'accuse needs somebody');
     case 'murder': return str((r as { victim?: string }).victim, 64) && str((r as { prop?: string }).prop, 64) ? { ok: true, action: { type: 'murder', victim: (r as { victim: string }).victim, prop: (r as { prop: string }).prop } } : no('bad-action', 'murder needs somebody and something');
     case 'plant': return str((r as { prop?: string }).prop, 64) && str((r as { trait?: string }).trait, 64) ? { ok: true, action: { type: 'plant', prop: (r as { prop: string }).prop, trait: (r as { trait: string }).trait } } : no('bad-action', 'planting needs something and somewhere');
@@ -469,6 +487,13 @@ export function redactEvent(state: MysteryState, ev: MysteryEvent, role: RoleId 
   }
 }
 
+/** The part's look with the outfit they have changed into, when it is one of their own. */
+function dressed(look: Look, outfit?: string): Look {
+  if (!outfit) return look;
+  const w = (look.wardrobe ?? []).find((x) => x.id === outfit);
+  return w ? { ...look, wear: w.wear, accent: w.accent } : look;
+}
+
 function personView(state: MysteryState, title: Title, role: RoleId): ViewPerson {
   const c = state.cast.find((x) => x.role === role);
   const r = roleOf(title, role);
@@ -476,7 +501,10 @@ function personView(state: MysteryState, title: Title, role: RoleId): ViewPerson
     role, name: r?.name ?? role,
     operator: c?.operator ?? 'agent', agent: c?.agent ?? '',
     alive: !isDead(state, role),
-    look: r?.look ?? { skin: '#d8b08a', hair: '#3b2f2a', wear: '#2b333a', accent: '#5b6b74', hairStyle: 'short' },
+    ...(r?.appearance ? { appearance: r.appearance } : {}),
+    // WHAT THEY ARE WEARING TONIGHT: the title's own dress, with whichever of the part's outfits they have
+    // changed into laid over it. Nobody sees a look that is not one of that part's own.
+    look: dressed(r?.look ?? { skin: '#d8b08a', hair: '#3b2f2a', wear: '#2b333a', accent: '#5b6b74', hairStyle: 'short' }, c?.outfit),
     ...(c?.mind ? { mind: c.mind } : {}),
     // A character a PERSON plays says whose voice it is — that is how a huddle's audio finds its body, and
     // it is no secret: their name is on the cast list before the curtain goes up.
@@ -512,7 +540,10 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
     act: state.act, actName: act.name, objective: act.objective, pace: state.pace,
     phase: state.phase, deadline: state.deadline, seedCommit: state.seedCommit,
     you: me && role ? {
-      role, name: me.name, blurb: me.blurb, secret: me.secret, alive: !isDead(state, role), look: me.look,
+      // DRESSED THE SAME WAY EVERYBODY ELSE SEES YOU: your own half of the view took the title's look straight,
+      // so changing your clothes changed you for the room and not in your own mirror.
+      role, name: me.name, blurb: me.blurb, secret: me.secret, alive: !isDead(state, role),
+      look: dressed(me.look, state.cast.find((c) => c.role === role)?.outfit),
       killer: role === state.killer,
       ...(opp && oppProp ? { opportunity: { room: opp.room, prop: opp.prop, propName: oppProp.name, ready: Date.now() >= chanceOpensAt(state, title), readyAt: chanceOpensAt(state, title) } } : {}),
       ...(plantProp && plantOptions.length
@@ -522,7 +553,7 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
     room: room && here ? {
       id: here, name: room.name, blurb: room.blurb,
       people: peopleIn(state, here).filter((r) => r !== role).map((r) => personView(state, title, r)),
-      props: room.props.map((p) => ({ id: p.id, name: p.name, examined: (role ? state.examined[role] ?? [] : []).includes(p.id) })),
+      props: room.props.map((p) => ({ id: p.id, name: p.name, examined: (role ? state.examined[role] ?? [] : []).includes(p.id), ...(p.detail ? { detail: p.detail } : {}) })),
       doors: venue.rooms.filter((r) => adjacent(venue, here, r.id)).map((r) => ({ id: r.id, name: r.name, open: act.opens.includes(r.id) })),
       death: death ? { victim: death.victim, searched: death.evidence.every((id) => known.includes(id)) } : null,
       trace: trace ? { searched: trace.evidence.every((id) => known.includes(id)) } : null,
