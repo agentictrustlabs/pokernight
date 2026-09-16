@@ -398,9 +398,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   hand-rolled version below gets limbs roughly right and spine and shoulders wrong, which is why seated players
   look hunched. A Unity WebGL runtime is NOT worth it: the room shares thirteen modules with the app (the action
   bar, the cards, the huddle's live video, both sockets), each of which becomes a JS↔Unity bridge.
-  **SITTING IS POSED, NOT PLAYED** (`SEAT_POSE` in `embodiment.ts`): the seated states play the body's own idle
-  and `applySeat` bends it into the chair — seven angles and a hip drop, eased. A retargeted seated clip was the
-  worst thing in the room. The angles are TUNED AGAINST MEASUREMENTS (`scratch/seatsweep.cjs` sweeps them while
+  **SITTING IS POSED, NOT PLAYED — unless the seated clips are the body's own** (`SEAT_POSE` in `embodiment.ts`):
+  the seated states play the body's own idle and `applySeat` bends it into the chair — seven angles and a hip drop,
+  eased. A retargeted seated clip was the worst thing in the room. A body whose seated set was AUTHORED ON ITS RIG
+  (the Quaternius base characters — `person-f.glb` today) plays it instead: `AvatarLibrary.NATIVE_SEAT` says which
+  file sits natively, because that is the one fact the loader cannot measure (2026-09-15). Posing a body that had its
+  own sit put her arms out and her back tipped. The angles are TUNED AGAINST MEASUREMENTS (`scratch/seatsweep.cjs` sweeps them while
   reading hip, knee and foot heights back), because a thigh's rotation changes what the shin's own axis means:
   MORE shin fold RAISES the foot, which no amount of reasoning from a standing body would have told you.
   A BODY'S OWN CLIPS BEAT ANY RETARGET: the shipping body uses its native `Idle` and `Walk`, renamed into the
@@ -412,6 +415,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   node). The hips' travel scales by the two BODIES' measured heights — bone rest positions lie when a rig is
   authored tiny under a scaled armature node (a hip-to-foot of 0.0001 threw the body skyward). And `prune()`
   before a texture is attached throws away the mesh's UVs.
+  **FIDELITY IS ASSETS AND LIGHT, NOT A NEW ENGINE** (`docs/FIDELITY.md`, 2026-09-15): the room's ambient comes
+  from an IMAGE (a 131 KB HDRI prefiltered into the env atlas at load), the camera tone-maps, the floor and walls are
+  photographed scans with normals, and the room has a ceiling — the flat ambient over a green void is what made every
+  body and chair read as a toy. The order that reads as better: light → one authored lounge glTF with baked lightmaps →
+  one body family with its own sit and walk → the huddle's faces on heads → outfits. Never gender in anybody's
+  records: a figure is a LOOK the person chooses (`cardroom.look`, not yet written); `ESTATE_FIGURES` is the fixture.
   Presence, the `scene.*` skills and the Mystery Night's cues all speak that vocabulary; the block `Figure` is
   gone. Traps: a container's animation ASSETS are named `<file>/animation/<i>` — the clip's name is on the TRACK
   (`asset.resource.name`); a state assigned no track plays a placeholder of duration `MAX_VALUE` and the body

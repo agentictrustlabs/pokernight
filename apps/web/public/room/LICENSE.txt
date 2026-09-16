@@ -9,3 +9,9 @@ person.glb, skin-*.png — Quaternius, CC0 1.0 (https://creativecommons.org/publ
 lounge-kit.glb — Kenney, Furniture Kit, https://kenney.nl/assets/furniture-kit (via opengameart.org/content/furniture-kit)
 CC0 1.0 Universal (public domain). Seventeen pieces converted OBJ → glTF (obj2gltf), merged into one file with a
 named node per piece (chairCushion, kitchenBar, stoolBar, loungeSofa, lampRoundFloor, rugRound, …), scaled to metres.
+
+env.hdr, floor-parquet*.jpg, wall-plaster*.jpg, wood-dark*.jpg — Poly Haven, CC0 1.0 (https://polyhaven.com/license):
+  env.hdr is "Billiard Hall" (https://polyhaven.com/a/billiard_hall), the 1k HDRI box-filtered to 256×128 and
+  written as flat RGBE — the room's image-based light, never seen as a sky; the floor is "Herringbone Parquet"
+  (diffuse, GL normal, roughness), the walls "Painted Plaster Wall" (diffuse, normal) and the tables "Dark Wood"
+  (diffuse, normal), each the 1k JPEG resampled to 512 px.

@@ -138,7 +138,12 @@ const GRAPH = {
   },
 };
 // Seated states run the body's OWN idle (and its talking variant) — `applySeat` bends it into the chair.
+// A BODY WHOSE SEATED CLIPS WERE AUTHORED ON ITS OWN RIG plays them instead (`NATIVE_SEAT_CLIP`, 2026-09-15):
+// the Quaternius base characters come with a real sit-down, a real seated idle and a real stand-up, and posing
+// idle over those made a woman sit with her arms out and her back tipped. The two land in the same place — the
+// native clip drops the hips 0.37 m and 0.28 m back, the pose 0.42 m and 0.30 m — so a chair fits either.
 const STATE_CLIP: Record<string, keyof typeof CLIPS> = { Idle: 'idle', Talk: 'talk', Walk: 'walk', SitDown: 'idle', Seated: 'idle', SeatedTalk: 'talk', StandUp: 'idle', Interact: 'interact', PickUp: 'pickUp', Dance: 'dance' };
+const NATIVE_SEAT_CLIP: Record<string, keyof typeof CLIPS> = { SitDown: 'sitDown', Seated: 'seated', SeatedTalk: 'seatedTalk', StandUp: 'standUp' };
 
 /** A glTF container loaded once per application and handed to whoever asked, in order. */
 export class ContainerLibrary {
@@ -175,6 +180,14 @@ export const COSTUMES = ['tux'];
  */
 export class AvatarLibrary extends ContainerLibrary {
   private skins = new Map<string, pc.Asset>();
+  /**
+   * WHICH BODIES SIT ON THEIR OWN CLIPS. `person.glb` (the low-poly man) carries the seated set RETARGETED from a
+   * foreign rig, which hunches, so the room poses its idle instead; `person-f.glb` is a Quaternius base character
+   * whose seated clips are its own. A body is an asset, and this is the one fact about an asset the room cannot
+   * measure from the file at load — so it is stated here, beside the file names, and moves with them.
+   */
+  static readonly NATIVE_SEAT: Record<'m' | 'f', boolean> = { m: false, f: true };
+  sitsNatively(which: 'm' | 'f'): boolean { return AvatarLibrary.NATIVE_SEAT[which]; }
   /** The other figure, loaded the first time somebody asks for it (`person-f.glb`, the same rig and clips). */
   private other: ContainerLibrary | null = null;
   constructor(app: pc.Application, private readonly dir: string) { super(app, `${dir}/person.glb`, 'person.glb'); }
@@ -277,6 +290,7 @@ export class ParticipantAvatar {
   private posed = new Map<keyof typeof BONES, pc.GraphNode>();
   private dealPulse = 0; // 1 the instant a card is dealt, decaying — the arm flicks toward the felt
   /** how the body moves: `direct` is placed by its owner each frame (your own), `follow` eases to its target (everybody else) */
+  private nativeSeat = false;
   constructor(library: AvatarLibrary, private readonly palette: string, private readonly mode: 'direct' | 'follow', private readonly which: 'm' | 'f' = 'm') {
     this.entity = new pc.Entity('avatar');
     // The FIGURE decides which GLB is instantiated; the LIBRARY still holds every outfit, because the two
@@ -284,15 +298,27 @@ export class ParticipantAvatar {
     library.figure(which).ready((asset) => this.dress(asset, library));
   }
 
+  /**
+   * A BODY THAT CAME DRESSED IS NOT REPAINTED.
+   *
+   * The two figures are built differently and both are right: the first is ONE mesh with one material and a
+   * 32-byte palette its UVs point at, so an outfit is a swatch; the second is the base character with its own
+   * clothes, hair and eyes baked as textures. Painting the palette over the second put a man's shirt colours
+   * across a woman's face — the swatch only belongs to the body whose UVs were laid out for it.
+   */
   private dress(asset: pc.Asset, library: AvatarLibrary): void {
     const res = asset.resource as pc.ContainerResource & { animations: pc.Asset[] };
     const body = res.instantiateRenderEntity();
+    const palette = (body.findComponents('render') as pc.RenderComponent[])
+      .every((r) => r.meshInstances.every((mi) => /texture/i.test((mi.material as pc.StandardMaterial).name ?? '')));
     // one outfit per person: the body's material, cloned, wears this palette word's swatch. NEAREST filtering,
     // because it is a palette — smoothing it bleeds the shirt's colour into the skin along every UV seam.
     for (const render of body.findComponents('render') as pc.RenderComponent[]) {
-      for (const mi of render.meshInstances) {
-        const m = (mi.material as pc.StandardMaterial).clone(); mi.material = m;
-        library.skin(this.palette, (t) => { t.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST; t.magFilter = pc.FILTER_NEAREST; m.diffuseMap = t; m.update(); });
+      if (palette) {
+        for (const mi of render.meshInstances) {
+          const m = (mi.material as pc.StandardMaterial).clone(); mi.material = m;
+          library.skin(this.palette, (t) => { t.minFilter = pc.FILTER_NEAREST_MIPMAP_NEAREST; t.magFilter = pc.FILTER_NEAREST; m.diffuseMap = t; m.update(); });
+        }
       }
       render.castShadows = true;
     }
@@ -303,7 +329,9 @@ export class ParticipantAvatar {
     // the container names its animation ASSETS `<file>/animation/<i>`; the clip's own name is on the track
     for (const a of res.animations) { const t = a.resource as pc.AnimTrack; tracks.set(t.name, t); }
     const missing: string[] = [];
-    for (const [state, key] of Object.entries(STATE_CLIP)) {
+    this.nativeSeat = library.sitsNatively(this.which);
+    const stateClip: Record<string, keyof typeof CLIPS> = this.nativeSeat ? { ...STATE_CLIP, ...NATIVE_SEAT_CLIP } : STATE_CLIP;
+    for (const [state, key] of Object.entries(stateClip)) {
       const t = CLIPS[key].map((n) => tracks.get(n)).find(Boolean);
       // A STATE WITH NO TRACK plays a placeholder of duration MAX_VALUE and the body stands in a T-pose there,
       // with nothing said; naming what is missing is the difference between a bad body and a mystery.
@@ -368,6 +396,7 @@ export class ParticipantAvatar {
    * than a snap. Applied in the bone's own frame, from angles measured on a standing body.
    */
   applySeat(dt: number): void {
+    if (this.nativeSeat) return; // the clip sits the body; there is nothing to bend
     const want = this.seat ? 1 : 0;
     this.seatBlend += (want - this.seatBlend) * Math.min(1, dt * 5);
     if (this.seatBlend < 0.002) return;

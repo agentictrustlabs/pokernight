@@ -58,7 +58,8 @@ const shirtLinen = new pc.StandardMaterial();
 const wordHash = (s: string): number => { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; };
 const ESTATE_FIGURES: Record<string, 'm' | 'f'> = { alice: 'f', carol: 'f', elena: 'f', bob: 'm', dave: 'm', david: 'm', nathan: 'm' };
 function figureOf(name: string, playerId: string): 'm' | 'f' {
-  const first = (name ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+  // "bob", "Bob Demo" and "bob.me" are one person as far as the fixture is concerned: the first run of letters.
+  const first = (name ?? '').trim().toLowerCase().match(/^[a-z]+/)?.[0] ?? '';
   const known = ESTATE_FIGURES[first];
   if (known) return known;
   return wordHash(`${playerId}:figure`) % 2 === 0 ? 'f' : 'm';
@@ -141,6 +142,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   const scenery = useRef<pc.Entity | null>(null);
   const library = useRef<AvatarLibrary | null>(null);
   const kit = useRef<RoomKit | null>(null);
+  /** The scenery's textures — one asset per URL for the life of the app, however often the scenery is rebuilt. */
+  const textures = useRef(new Map<string, pc.Asset>());
   const deck = useRef<Deck3D | null>(null);
   const chips = useRef<Chips3D | null>(null);
   const felt = useRef<pc.Entity | null>(null);
@@ -185,6 +188,8 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
   /** The fireside's chairs — where the night's guest is met. */
   const fireChairEntities = useRef(new Map<string, pc.Entity>());
   const fireSeats = useRef<Array<{ key: string; at: pc.Vec3; yaw: number }>>([]);
+  /** who each body is looking at, and since when — a gaze that is re-picked every frame is a twitch */
+  const gazeAt = useRef(new WeakMap<ParticipantAvatar, { at: ParticipantAvatar | null; since: number }>());
   /** the chair currently lit, and the materials it had before */
   const litChair = useRef<{ key: string; restore: Array<[pc.MeshInstance, pc.Material]> } | null>(null);
   /** House bots in chairs — bodies for occupants no person in the room owns. */
@@ -219,11 +224,30 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     const size = () => { const r = host.current?.getBoundingClientRect(); if (r) a.resizeCanvas(Math.floor(r.width), Math.floor(r.height)); };
     size();
     const ro = new ResizeObserver(size); if (host.current) ro.observe(host.current);
-    a.scene.ambientLight = new pc.Color(0.25, 0.3, 0.27);
-    a.scene.fog.type = pc.FOG_LINEAR; a.scene.fog.color = new pc.Color(0.055, 0.18, 0.125); a.scene.fog.start = 20; a.scene.fog.end = 40;
+    /**
+     * LIGHT LIKE A ROOM, NOT A VOID (2026-09-15).
+     *
+     * A flat ambient colour lights every surface the same from every side, which is what made the kit's chairs
+     * and the bodies read as toys however many polygons they had: nothing in the picture said where the light
+     * came from. The ambient now comes from an IMAGE — a real billiard hall (Poly Haven, CC0), 256×128 of
+     * RGBE at 131 KB, prefiltered on the GPU into the engine's environment atlas at load — so a body's shoulder
+     * is warmer from the lamp side and the felt reflects a dim ceiling, and the camera tone-maps (ACES) so the
+     * lamps can be bright without the felt clipping to white. The image is never SEEN as a sky: the room has a
+     * ceiling, and the clear colour is only ever behind the walls. A flat ambient stays as a floor under it.
+     */
+    a.scene.ambientLight = new pc.Color(0.06, 0.065, 0.06);
+    a.scene.fog.type = pc.FOG_LINEAR; a.scene.fog.color = new pc.Color(0.045, 0.04, 0.035); a.scene.fog.start = 22; a.scene.fog.end = 44;
+    a.assets.loadFromUrl('/room/env.hdr', 'texture', (err, asset) => {
+      if (err || !asset || !app.current) { if (err) console.warn('[room] no environment light:', err); return; }
+      const source = asset.resource as pc.Texture;
+      const lighting = pc.EnvLighting.generateLightingSource(source);
+      a.scene.envAtlas = pc.EnvLighting.generateAtlas(lighting);
+      lighting.destroy();
+      a.scene.skyboxIntensity = 0.85;
+    });
 
     const camera = new pc.Entity('camera');
-    camera.addComponent('camera', { clearColor: new pc.Color(0.055, 0.18, 0.125), fov: 50, nearClip: 0.1, farClip: 80 });
+    camera.addComponent('camera', { clearColor: new pc.Color(0.045, 0.04, 0.035), fov: 50, nearClip: 0.1, farClip: 80, toneMapping: pc.TONEMAP_ACES });
     camera.setPosition(0, 6, -14);
     a.root.addChild(camera);
 
@@ -231,7 +255,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     // SHADOWS THAT DO NOT SPECKLE THE FELT: the table and the cards are flat receivers, and a 1024 map over 30 m
     // (~3 cm a texel, hard-filtered) put a grain of shadow acne over every flat thing while the curved bodies looked
     // fine. A 2048 map over 22 m with 5-tap PCF and a little more bias is smooth on both; the cards receive none.
-    sun.addComponent('light', { type: 'directional', color: new pc.Color(1, 0.96, 0.88), intensity: 1.1, castShadows: true, shadowType: pc.SHADOW_PCF5_32F, shadowBias: 0.3, normalOffsetBias: 0.08, shadowResolution: 2048, shadowDistance: 22 });
+    sun.addComponent('light', { type: 'directional', color: new pc.Color(1, 0.96, 0.88), intensity: 0.95, castShadows: true, shadowType: pc.SHADOW_PCF5_32F, shadowBias: 0.3, normalOffsetBias: 0.08, shadowResolution: 2048, shadowDistance: 22 });
     sun.setEulerAngles(55, 30, 0);
     a.root.addChild(sun);
     /**
@@ -552,7 +576,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         const seatedHead = 1.42;
         const on = hd ? hd.getPosition() : new pc.Vec3(dl.avatar.pos.x, dl.avatar.pos.y + seatedHead, dl.avatar.pos.z);
         dl.hat.enabled = true;
-        dl.hat.setPosition(on.x, on.y + (hd ? 0.13 : 0.02), on.z);
+        dl.hat.setPosition(on.x, on.y + (hd ? 0.055 : -0.04), on.z);
         dl.hat.setEulerAngles(0, dl.avatar.yaw * 180 / Math.PI, 0);
         // the shirt front rides on the chest, a little proud of it so it is never inside the body
         const sp = dl.avatar.bone('spine');
@@ -569,9 +593,23 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         const av = b.avatar;
         if (av.seated) { av.lookHead(acting && acting.distance(av.pos) > 0.5 ? acting : (av.seatCentre ?? null)); }
         else {
+          /**
+           * A HEAD THAT KEEPS MOVING IS A HEAD WITH NO OPINION.
+           *
+           * Picking the nearest body every frame means two people at similar distances swap the gaze back and
+           * forth, and anybody walking past takes it — the head never settles and it reads as a twitch. So a
+           * body HOLDS whoever it is looking at: for a couple of seconds at least, until they walk out of
+           * range, or until somebody actually starts talking, which is the one thing worth turning for.
+           */
           let best: ParticipantAvatar | null = null; let bd = 3.5; let bestTalks = false;
           for (const o of all) { if (o === b) continue; const d = o.avatar.pos.distance(av.pos); const talks = o.name ? isSpeaking(o.name) : false; if (d < bd && (talks || !bestTalks)) { bd = d; best = o.avatar; bestTalks = talks; } }
-          av.lookHead(best ? new pc.Vec3(best.pos.x, best.seated ? 1.1 : 1.55, best.pos.z) : null);
+          const held = gazeAt.current.get(av);
+          const now = Date.now();
+          const stale = !held || now - held.since > 2600;
+          const gone = !held?.at || held.at.pos.distance(av.pos) > 4.5;
+          let target = held?.at ?? null;
+          if (!target || gone || stale || (bestTalks && best !== target)) { target = best; gazeAt.current.set(av, { at: best, since: now }); }
+          av.lookHead(target ? new pc.Vec3(target.pos.x, target.seated ? 1.1 : 1.55, target.pos.z) : null);
         }
         // EVERY body gets the whole layer, not just its gaze: the seat pose, the dealing/pushing reach and the
         // winner's cheer. These were the dealers' alone for a while — which is why a seated player's own reach
@@ -602,12 +640,38 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     for (const [id, pl] of [...plateRef.current]) if (pl.kind === 'table' || pl.kind === 'anchor') plateRef.current.delete(id);
     const root = new pc.Entity('scenery'); a.root.addChild(root); scenery.current = root;
     const mat = (r: number, g: number, b: number, extra: Partial<pc.StandardMaterial> = {}) => { const m = new pc.StandardMaterial(); m.diffuse = new pc.Color(r, g, b); Object.assign(m, extra); m.update(); return m; };
-    const felt = mat(0.12, 0.42, 0.29), feltHi = mat(0.16, 0.49, 0.35), wall = mat(0.08, 0.25, 0.17), wood = mat(0.23, 0.16, 0.10), brass = mat(0.85, 0.70, 0.42, { metalness: 0.6, gloss: 0.7, useMetalness: true }), chairFree = mat(0.36, 0.29, 0.53), chairTaken = mat(0.54, 0.25, 0.20), shade = mat(0.11, 0.14, 0.13), rail = mat(0.24, 0.13, 0.09, { gloss: 0.5 });
+    /**
+     * SURFACES ARE PHOTOGRAPHED, NOT COLOURED (2026-09-15). The floor is a herringbone parquet, the walls a
+     * painted plaster tinted the club's green, the tables a dark wood — Poly Haven's CC0 scans at 512 px, about
+     * 170 KB the lot — each with its normal map so the light above actually rakes across grain and trowel marks.
+     * A texture is loaded ONCE per app and shared by every rebuild of the scenery; a material is made now and
+     * gets its maps the moment they land, so nothing waits on a download to draw.
+     */
+    const texture = (url: string, anisotropy = 8): pc.Asset => {
+      let asset = textures.current.get(url);
+      if (!asset) { asset = new pc.Asset(url, 'texture', { url }); a.assets.add(asset); a.assets.load(asset); asset.ready((t) => { const tex = t.resource as pc.Texture; tex.anisotropy = anisotropy; }); textures.current.set(url, asset); }
+      return asset;
+    };
+    const surfaced = (m: pc.StandardMaterial, base: string, maps: { normal?: string; rough?: string }, tile: [number, number], bumpiness = 0.7): pc.StandardMaterial => {
+      const tiling = new pc.Vec2(tile[0], tile[1]);
+      texture(base).ready((t) => { m.diffuseMap = t.resource as pc.Texture; m.diffuseMapTiling = tiling; m.update(); });
+      if (maps.normal) texture(maps.normal).ready((t) => { m.normalMap = t.resource as pc.Texture; m.normalMapTiling = tiling; m.bumpiness = bumpiness; m.update(); });
+      if (maps.rough) texture(maps.rough).ready((t) => { m.glossMap = t.resource as pc.Texture; m.glossMapTiling = tiling; m.glossInvert = true; m.gloss = 1; m.update(); });
+      return m;
+    };
+    const floor = surfaced(mat(0.50, 0.44, 0.37, { gloss: 0.45 }), '/room/floor-parquet.jpg', { normal: '/room/floor-parquet-n.jpg', rough: '/room/floor-parquet-r.jpg' }, [9, 9], 0.8);
+    const plaster = surfaced(mat(0.16, 0.36, 0.25, { gloss: 0.2 }), '/room/wall-plaster.jpg', { normal: '/room/wall-plaster-n.jpg' }, [5, 1], 0.5);
+    const ceiling = surfaced(mat(0.30, 0.28, 0.25, { gloss: 0.1 }), '/room/wall-plaster.jpg', { normal: '/room/wall-plaster-n.jpg' }, [6, 6], 0.3);
+    const wood = surfaced(mat(0.62, 0.52, 0.42, { gloss: 0.55 }), '/room/wood-dark.jpg', { normal: '/room/wood-dark-n.jpg' }, [1, 1], 0.4);
+    const felt = mat(0.09, 0.32, 0.22), feltHi = mat(0.11, 0.37, 0.26), brass = mat(0.85, 0.70, 0.42, { metalness: 0.6, gloss: 0.7, useMetalness: true }), chairFree = mat(0.36, 0.29, 0.53), chairTaken = mat(0.54, 0.25, 0.20), shade = mat(0.11, 0.14, 0.13), rail = mat(0.24, 0.13, 0.09, { gloss: 0.5 });
     const prim = (type: string, material: pc.StandardMaterial, pos: [number, number, number], scale: [number, number, number], rotY = 0) => {
       const e = new pc.Entity(type); e.addComponent('render', { type, material, castShadows: type !== 'plane', receiveShadows: true }); e.setLocalPosition(...pos); e.setLocalScale(...scale); e.setLocalEulerAngles(0, rotY, 0); root.addChild(e); return e;
     };
-    prim('plane', felt, [0, 0, 0], [22, 1, 22]);
-    prim('box', wall, [0, 2, 11], [22, 4, 0.3]); prim('box', wall, [0, 2, -11], [22, 4, 0.3]); prim('box', wall, [11, 2, 0], [0.3, 4, 22]); prim('box', wall, [-11, 2, 0], [0.3, 4, 22]);
+    prim('plane', floor, [0, 0, 0], [22, 1, 22]);
+    prim('box', plaster, [0, 2, 11], [22, 4, 0.3]); prim('box', plaster, [0, 2, -11], [22, 4, 0.3]); prim('box', plaster, [11, 2, 0], [0.3, 4, 22]); prim('box', plaster, [-11, 2, 0], [0.3, 4, 22]);
+    // A CEILING closes the room: without one the walls stood in a void the colour of the fog. It casts no
+    // shadow — the sun is the key light and comes through it — and is a plane turned to face down.
+    { const e = new pc.Entity('ceiling'); e.addComponent('render', { type: 'plane', material: ceiling, castShadows: false, receiveShadows: false }); e.setLocalPosition(0, 4, 0); e.setLocalScale(22, 1, 22); e.setLocalEulerAngles(180, 0, 0); root.addChild(e); }
     const a2 = manifest.anchors;
     for (const t of manifest.tables) {
       const p = a2[t.anchor]!;
@@ -755,7 +819,9 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       const key = `${t.tableId}:${o.seat}`; seenBots.add(key);
       const chair = chairOf(t.tableId, o.seat); if (!chair) continue;
       let bt = bots.current.get(key);
-      if (!bt) { bt = new ParticipantAvatar(lib, o.kind === 'agent' ? 'slate' : 'ink', 'follow'); bt.place(chair.at.x, chair.at.z, chair.yaw); bt.sitAt(chair); a.root.addChild(bt.entity); bots.current.set(key, bt); }
+      // A SEAT KEEPS THE PERSON'S FIGURE: the body drawn in a chair for somebody whose tab is the flat board is
+      // the same choice the room makes when they stand in it, or Alice turned into a man the moment she sat down.
+      if (!bt) { bt = new ParticipantAvatar(lib, o.kind === 'agent' ? 'slate' : 'ink', 'follow', o.kind === 'agent' ? 'm' : figureOf(o.name ?? '', o.playerId)); bt.place(chair.at.x, chair.at.z, chair.yaw); bt.sitAt(chair); a.root.addChild(bt.entity); bots.current.set(key, bt); }
       botPlate.current.set(o.playerId, `bot:${key}`);
       // A PERSON PLAYING AT THE TABLE IS AT THE TABLE, even though their tab is the flat board: if they are in
       // the club's huddle, their camera hangs at their seat here, the same chip the boards and the dock show.
@@ -792,9 +858,15 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       // WIDE ENOUGH TO SIT OVER A HEAD OF HAIR, not in it: the crown was narrower than the skull and the hair
       // came through it from behind. (The dealer's hair is the hat's own red as well, so what does come
       // through reads as hat — `skin-tux.png`.)
-      const brim = new pc.Entity('brim'); brim.addComponent('render', { type: 'cylinder', material: hatFelt, castShadows: true }); brim.setLocalScale(0.38, 0.02, 0.38); brim.setLocalPosition(0, 0, 0); hat.addChild(brim);
-      const band = new pc.Entity('band'); band.addComponent('render', { type: 'cylinder', material: hatBand, castShadows: true }); band.setLocalScale(0.30, 0.04, 0.30); band.setLocalPosition(0, 0.028, 0); hat.addChild(band);
-      const crown = new pc.Entity('crown'); crown.addComponent('render', { type: 'cylinder', material: hatFelt, castShadows: true }); crown.setLocalScale(0.29, 0.155, 0.29); crown.setLocalPosition(0, 0.12, 0); hat.addChild(crown);
+      /**
+       * A DOME, NOT A TUBE. A cylindrical crown covers the top of a head and nothing else, so hair came
+       * through it from behind at every angle but straight on — and no amount of widening fixes a shape that
+       * is open at the back. A hemisphere over the skull, sunk slightly into it, swallows whatever the head
+       * has on it; the brim and band are what make it read as a hat rather than a helmet.
+       */
+      const brim = new pc.Entity('brim'); brim.addComponent('render', { type: 'cylinder', material: hatFelt, castShadows: true }); brim.setLocalScale(0.40, 0.022, 0.40); brim.setLocalPosition(0, 0, 0); hat.addChild(brim);
+      const band = new pc.Entity('band'); band.addComponent('render', { type: 'cylinder', material: hatBand, castShadows: true }); band.setLocalScale(0.315, 0.05, 0.315); band.setLocalPosition(0, 0.03, 0); hat.addChild(band);
+      const crown = new pc.Entity('crown'); crown.addComponent('render', { type: 'sphere', material: hatFelt, castShadows: true }); crown.setLocalScale(0.325, 0.33, 0.325); crown.setLocalPosition(0, 0.03, 0); hat.addChild(crown);
       hat.enabled = false;   // …until the frame loop has a head (or a body) to put it on
       a.root.addChild(hat);
       /**
