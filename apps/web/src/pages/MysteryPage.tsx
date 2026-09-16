@@ -9,7 +9,8 @@ import { Face } from '../components/mystery/Face';
 import type { VenueHandle } from '../components/mystery/Venue';
 import { HuddleAffordance } from '../components/huddle/ClubHuddleDock';
 import { useClubHuddleMaybe } from '../components/huddle/ClubHuddleProvider';
-import { clubScope } from '../lib/huddle';
+import { Portrait } from '../components/huddle/Portrait';
+import { clubScope, type HuddleScope } from '../lib/huddle';
 /** THE ROOM, DRAWN — a separate chunk, like the lounge: the engine never loads for somebody reading the page. */
 const Venue = lazy(() => import('../components/mystery/Venue').then((m) => ({ default: m.Venue })));
 /** The room's own audio — the club's huddle, silenced across doors (`RoomVoice`). */
@@ -191,7 +192,7 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
             {st?.error ? <div className="form-error">{st.error}</div> : null}
           </main>
           <aside className="mystery-side">
-            <You view={view} act={act} />
+            <You view={view} act={act} scope={st?.staging?.club ? clubScope({ clubId: st.staging.club }) : null} scopeName={`${view?.titleName ?? 'the night'} · this room`} />
             <Clues view={view} act={act} />
             <Cast view={view} act={act} speaking={speaking} lookAt={(role) => venue.current?.lookAt(role) ?? false} />
           </aside>
@@ -425,9 +426,20 @@ function roleTitle(role: string): string {
  * the rest of getting into character: this is your name, this is what you are wearing, this is your face and
  * your voice. The controls are the club huddle's own, so a table's dock and this are the same call.
  */
-function PartMedia() {
+function PartMedia({ scope, scopeName }: { scope: HuddleScope | null; scopeName: string }) {
   const h = useClubHuddleMaybe();
-  if (!h || !h.current || !h.meeting) return null;
+  if (!h) return null;
+  // NOT IN YET: the way in belongs here too. It used to be a chip in the page's header, so the panel that is
+  // about being seen and heard said nothing at all until you had already found the call somewhere else.
+  if (!h.current || !h.meeting) {
+    return (
+      <div className="mystery-part-media">
+        <span className="eyebrow-h">You, in the room</span>
+        {scope ? <HuddleAffordance scope={scope} scopeName={scopeName} compact /> : <p className="hint">A night of your own — there is nobody to talk to.</p>}
+        {scope ? <p className="hint">Join and the others can see and hear you; your face hangs beside your character.</p> : null}
+      </div>
+    );
+  }
   return (
     <div className="mystery-part-media">
       <span className="eyebrow-h">You, in the room</span>
@@ -478,7 +490,7 @@ function Wardrobe({ you, view, act }: { you: NonNullable<MysteryView['you']>; vi
 }
 
 /** WHO YOU ARE. The secret is yours; so, for exactly one person all night, is the other thing. */
-function You({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
+function You({ view, act, scope, scopeName }: { view: MysteryView; act: (a: unknown) => void; scope: HuddleScope | null; scopeName: string }) {
   const [idea, setIdea] = useState<{ action: MysteryAction; text: string } | null>(null);
   const you = view.you;
   if (!you) return <section className="panel"><h3 className="eyebrow-h">Watching</h3><p className="hint">You are not in this story — you see the public half of it.</p></section>;
@@ -499,7 +511,7 @@ function You({ view, act }: { view: MysteryView; act: (a: unknown) => void }) {
       </div>
       <p>{you.blurb}</p>
       <Wardrobe you={you} view={view} act={act} />
-      <PartMedia />
+      <PartMedia scope={scope} scopeName={scopeName} />
       <p className="mystery-secret"><strong>Nobody knows:</strong> {you.secret}</p>
       {you.killer ? (
         <p className="mystery-killer-note"><strong>It was you.</strong> Nobody else is told this, tonight or ever — the seed said so before the night began, and the reveal will prove it. Take your chance when the room is right, and lie well.</p>
@@ -588,7 +600,12 @@ function Cast({ view, act, speaking, lookAt }: { view: MysteryView; act: (a: unk
           <li key={p.role} className={p.alive ? '' : 'dead'}>
             <button type="button" className="mystery-cast-row" onClick={() => setMissed(lookAt(p.role) ? null : p.role)}
               title={p.alive ? `Look at ${p.name}` : `Look at ${p.name} where they were found`}>
-              <Face look={p.look} name={p.name} size={28} speaking={speaking === p.role} dead={!p.alive} />
+              {/* A CHARACTER A PERSON IS PLAYING SHOWS THAT PERSON'S OWN FACE when their camera is on, and
+                  falls back to the drawn one when it is not — so the list says at a glance which of the eight
+                  are people you can actually talk to tonight. */}
+              {p.playedBy
+                ? <Portrait name={p.playedBy} size="plate" fallback={<Face look={p.look} name={p.name} size={28} speaking={speaking === p.role} dead={!p.alive} />} />
+                : <Face look={p.look} name={p.name} size={28} speaking={speaking === p.role} dead={!p.alive} />}
               <strong>{p.name}</strong>
               <span className="hint">{p.role === view.you?.role ? 'you' : p.operator === 'human' ? 'a person' : 'an agent'}{p.alive ? '' : ' · dead'}</span>
             </button>

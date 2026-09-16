@@ -414,8 +414,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   is a PLACE rather than a window. Sending somebody to a table to be able to say hello in the lounge was the tail
   wagging the dog. Same club scope either way. A spectator at a table still gets no call, and a SOLO mystery has
   no club, no roster and therefore no call — the page says so rather than leaving an empty corner.
-  **AND IN A MYSTERY THE CONTROLS LIVE IN "YOUR PART"**, beside the wardrobe: turning a camera on there is not
-  joining a call, it is whether the room can see and hear YOU — the same question as what you are wearing.
+  **AND IN A MYSTERY THE CONTROLS LIVE IN "YOUR PART"**, beside the wardrobe — the WAY IN as well as the
+  toggles. Turning a camera on there is not joining a call, it is whether the room can see and hear YOU, which is
+  the same question as what you are wearing; leaving the join as a chip in the page header meant the panel that is
+  about being seen said nothing until you had already found the call somewhere else. A character a person plays
+  wears THEIR camera in the cast list too, falling back to the drawn face, so the list says at a glance which of
+  the eight are people you can actually talk to tonight.
 - **A HOST MAY CLEAR A TABLE** (`mayManageTable` in `apps/tables/src/index.ts`): whoever opened a table or a host
   of its club may stand somebody up at it, not only an operator. Telling a host to "stand them up first" while
   giving them no way to do it pinned a table open for good once anybody walked away from a seat. A stranger's
