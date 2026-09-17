@@ -575,6 +575,12 @@ export interface StagingSummary {
   deadline: number | null; seedCommit: string; paused: boolean; startedAt: number; endedAt: number | null;
   /** A club's night carries its club, which is whose huddle the room's voices come from. */
   club?: string; night?: string; host?: string; director?: string; pace?: string;
+  /**
+   * WHAT THE HOST IS DECIDING WITH. `taken` is how many people claimed a part, `present` how many of those
+   * actually have the page open, and `waitingFor` names the rest. Taking a part is a promise to come;
+   * arriving is opening the page, and only the second one is knowable from here.
+   */
+  ready?: { taken: number; present: number; waitingFor: string[]; everybodyHere: boolean };
 }
 
 export const mysteryApi = {

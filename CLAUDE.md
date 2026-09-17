@@ -353,6 +353,21 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   typed TWICE — upper class and domain class, ADDED and never substituted, because nothing here runs a
   reasoner and `place-to-plan.mjs` must keep finding five `pl:Room`s. Re-running both generators after the
   retyping produced byte-identical output, which is the check that it was additive.
+- **AN EVENING HAS A HOST, AND THE HOST IS NOT AN ADMIN** (2026-09-16, `ontology/story-hosting.ttl`). The
+  club's host already set a night up and raised its curtain; what was missing was everything else about the
+  OCCASION. **A HOLD IS THE HOST'S**: every socket could send `pause`, so any one of eight people could stop
+  the whole evening — the clock, the characters, their agents — for the other seven, and nobody could tell who
+  had. `isHost` gates it in the object and the button is drawn for nobody else; a solo night's host is its
+  owner, so one person alone is unaffected. **TAKING A PART IS A PROMISE; ARRIVING IS AN OBSERVATION.** The
+  cast list says who claimed a part, which is why the curtain used to go up on people still making tea. The
+  staging summary carries `ready` — taken, present, and the names in the gap — and the club page shows a
+  DOORWAY. Presence is an open socket OR a look at the night within `PRESENCE_MS` (20 s, and the club page
+  polls every 5), because during casting nobody has a socket at all and presence from sockets alone reported
+  an empty room right up to the curtain. It never blocks: the button reads "Start anyway", because refusing to
+  begin an evening is not this app's decision — a host who knows somebody is stuck on a call is right, and
+  whatever nobody plays is played by the house. The host's ceiling is the MIRROR of the director's and
+  separable from it: everything about the occasion, nothing about the story (`st:HostPolicy`, a SHACL shape
+  fixing `decidesStory` false; `st:StartCondition` is advisory by shape for the same reason).
 - **A STORY IS EXECUTABLE DRAMA, AND A CHOICE IS A CONSEQUENCE THE NIGHT CARRIES** (2026-09-16,
   `docs/PLACE-AND-STORY.md` "The second layer"). Six modules under `story.ttl` — intent, social, epistemic,
   dramaturgy, performance, place-compat — and `story.data.ttl`, which makes each archetype an

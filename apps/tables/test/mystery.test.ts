@@ -85,6 +85,33 @@ describe('a night of your own', () => {
     s.ws.close();
   });
 
+  /**
+   * A HOLD IS THE HOST'S (2026-09-16). Every socket could send `pause`, so any one of eight people could stop
+   * the whole evening for the other seven and nobody could tell who had. A solo night's host is its owner, so
+   * the person playing alone is unaffected; a passer-by watching the same night is refused by name.
+   */
+  it('refuses a hold from anybody who is not the host', async () => {
+    const me = await devSession('the-host');
+    const r = await SELF.fetch('http://tables.test/mysteries/solo', { method: 'POST', headers: { authorization: `Bearer ${me.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ role: 'guide', restart: true }) });
+    const { staging } = (await r.json()) as { staging: { stagingId: string } };
+    const other = await devSession('a-watcher');
+    const theirs = await socket(staging.stagingId, other.token);
+    theirs.send({ type: 'join' });
+    await theirs.waitFor((m) => m.type === 'staging');
+    theirs.send({ type: 'pause', on: true });
+    const refused = await theirs.waitFor((m) => m.type === 'error');
+    expect(refused.message).toMatch(/host/i);
+    theirs.ws.close();
+    // and the host's own hold still lands
+    const mine = await socket(staging.stagingId, me.token);
+    mine.send({ type: 'join' });
+    await mine.waitFor((m) => m.type === 'staging' && !!m.view);
+    mine.send({ type: 'pause', on: true });
+    const held = await mine.waitFor((m) => m.type === 'staging' && m.staging?.paused === true);
+    expect(held.staging?.paused).toBe(true);
+    mine.ws.close();
+  });
+
   it('tells exactly one person that it was them, when they asked to be the one', async () => {
     const me = await devSession('suspect');
     const r = await SELF.fetch('http://tables.test/mysteries/solo', { method: 'POST', headers: { authorization: `Bearer ${me.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ role: 'chef', killer: 'me', restart: true }) });

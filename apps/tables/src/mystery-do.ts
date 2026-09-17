@@ -64,12 +64,17 @@ const REST_MS = 120_000;
  * night up to where the clock had got to. It is the card room's `ATTENTION_MS` rule, for tokens instead of cards.
  */
 const ATTENTION_MS = 20 * 60_000;
+/** How recently somebody must have looked at a night to count as IN THE ROOM. The club page polls every 5 s. */
+const PRESENCE_MS = 20_000;
 /** How many Homes may be thinking at once for one night. More than this and the estate is the bottleneck. */
 const THINKING_AT_ONCE = 2;
 
 export class MysteryDO extends DurableObject<Env> {
   private state: MysteryState | null = null;
   private meta: Meta | null = null;
+  /** When each person last looked at this night — the other half of presence; see `presentIds`. Not persisted:
+   *  who is in the room right now is not a fact that should survive the object being evicted. */
+  private seenAt: Record<string, number> = {};
   private paused = false;
   private pausedAt = 0;
   /** When a PERSON last did something here. Pings are not people; see ATTENTION_MS. */
@@ -256,6 +261,10 @@ export class MysteryDO extends DurableObject<Env> {
     }
     if (request.method === 'GET' && url.pathname === '/view') {
       const playerId = url.searchParams.get('playerId') ?? '';
+      // LOOKING AT THE NIGHT IS BEING AT IT. While a night is being cast nobody has a socket open — the club's
+      // page polls this read — so presence measured from sockets alone said the room was empty right up to
+      // the moment the curtain went up. Every look is stamped; `presentIds` treats a recent one as here.
+      if (playerId) this.seenAt[playerId] = Date.now();
       // A READ IS A LOOK. The clock only runs while somebody is here, so a night left alone stops where it
       // stood — and then the first person back must see where it stands NOW, not the act it was halfway
       // through last night. Catching up is the engine's own `tick`, run until it has nothing left to do.
@@ -293,6 +302,41 @@ export class MysteryDO extends DurableObject<Env> {
     return viewFor(this.state, pair.title, pair.venue, this.roleOfPlayer(playerId));
   }
 
+  /** Whose evening it is. A club night's host set it up; a solo night's is its owner — the same field either way. */
+  private isHost(playerId: string): boolean { return !!this.meta && this.meta.owner === playerId; }
+
+  /**
+   * WHO IS ACTUALLY HERE. Taking a part is a promise to come; opening the page is arriving, and a host
+   * deciding whether to begin needs the second, not the first. Presence is the set of player ids holding an
+   * open socket right now — a tab, honestly labelled as a tab, which is the most anybody can know from here.
+   */
+  private presentIds(): string[] {
+    const out = new Set<string>();
+    for (const ws of this.ctx.getWebSockets()) {
+      const who = ws.deserializeAttachment() as Attachment | null;
+      if (who?.playerId) out.add(who.playerId);
+    }
+    // A LOOK IS WORTH A WINDOW, not a moment: the club's page polls every five seconds, so a person who has
+    // read the night inside PRESENCE_MS is in the room whether or not their poll landed this second. It is
+    // deliberately short — "here" must mean here, or a host waits for somebody who left an hour ago.
+    const now = Date.now();
+    for (const [id, at] of Object.entries(this.seenAt)) if (now - at < PRESENCE_MS) out.add(id);
+    return [...out];
+  }
+
+  /**
+   * WHETHER THE NIGHT MAY BEGIN, and if not, who is missing by name. The host decides; this only tells them
+   * what they are deciding with. Nobody is forced to wait — a night runs with two people and six of the
+   * house's own, which is the whole point of the cast being filled — but "raise the curtain on four people
+   * when five said they were coming" should be a choice somebody makes rather than one they make by accident.
+   */
+  private readiness(): { taken: number; present: number; waitingFor: string[]; everybodyHere: boolean } {
+    const here = new Set(this.presentIds());
+    const expected = Object.entries(this.taken);
+    const waitingFor = expected.filter(([id]) => !here.has(id)).map(([, t]) => t.name || 'somebody');
+    return { taken: expected.length, present: expected.filter(([id]) => here.has(id)).length, waitingFor, everybodyHere: waitingFor.length === 0 };
+  }
+
   private summary() {
     const m = this.meta;
     if (!m) return null;
@@ -304,6 +348,8 @@ export class MysteryDO extends DurableObject<Env> {
       startedAt: s?.startedAt ?? 0, endedAt: s?.endedAt ?? null,
       ...(m.club ? { club: m.club } : {}), ...(m.night ? { night: m.night } : {}),
       host: m.owner, pace: m.pace ?? 'full', ...(m.director ? { director: m.director } : {}),
+      // what the host is deciding with — see `readiness()`
+      ready: this.readiness(),
     };
   }
 
@@ -337,6 +383,13 @@ export class MysteryDO extends DurableObject<Env> {
     // WALKING IN IS BEING HERE, and so is everything below: saying a line, taking an act, holding the night.
     if (m.type === 'join') { this.heardFrom(); this.save(); this.catchUp(); this.send(ws, { type: 'staging', staging: this.summary(), view: this.viewOf(who.playerId) }); await this.arm(); return; }
     if (m.type === 'pause') {
+      /**
+       * A HOLD IS THE HOST'S (2026-09-16). It used to be anybody's: every socket could send `pause`, so any
+       * one of eight people could stop the whole evening for the other seven — including the characters,
+       * including the clock — and nobody could tell who had done it. An evening has somebody whose evening it
+       * is, and holding it is theirs. A solo night's host is its owner, so nothing changes for one person.
+       */
+      if (!this.isHost(who.playerId)) { this.send(ws, { type: 'error', code: 'not-host', message: 'Your host holds the night.' }); return; }
       // THE HOLD IS THE TABLE'S, REUSED: everything stops, including the characters, and the clock gives back
       // the time it took — a night held overnight must not wake up with its act already over.
       const on = m.on !== false;

@@ -144,7 +144,10 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
               {voices ? 'voices on' : 'voices off'}
             </button>
           ) : null}
-          {view && view.phase !== 'revealed' ? (
+          {/* HOLDING THE NIGHT IS THE HOST'S. It stops the clock, the characters and everybody else's evening,
+              so it is offered to the one person whose evening it is and to nobody else — the object refuses it
+              from anybody else in any case, and a button that is going to be refused should not be drawn. */}
+          {view && view.phase !== 'revealed' && st?.staging?.host === session.playerId ? (
             <button type="button" className="tag seat-tag" onClick={() => sock.current?.pause(!(st?.staging?.paused === true))}>
               {st?.staging?.paused ? 'Carry on' : 'Hold the night'}
             </button>
@@ -160,7 +163,13 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
       ) : (
         <div className="page mystery-page">
           <main className="mystery-main">
-            {st?.staging?.paused ? <div className="held-banner">Held. Nothing moves — not even them — until you carry on.</div> : null}
+            {st?.staging?.paused ? (
+              <div className="held-banner">
+                {st.staging.host === session.playerId
+                  ? 'Held. Nothing moves — not even them — until you carry on.'
+                  : 'Your host has held the night. Nothing moves until they carry on.'}
+              </div>
+            ) : null}
             {view.reveal ? <Reveal view={view} onAgain={async () => {
               setBusy(true);
               try { await mysteryApi.solo({ title: view.title, role: view.you?.role, restart: true }, session.token); location.reload(); } finally { setBusy(false); }

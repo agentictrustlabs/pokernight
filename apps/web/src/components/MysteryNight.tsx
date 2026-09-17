@@ -14,6 +14,38 @@ import type { Look } from '@pokernight/mystery';
  * friends can stage an eight-hander, and the killer is drawn over the PEOPLE in it, because a party is better
  * when somebody at the table has to lie.
  */
+/** Is anybody who took a part not yet in the room? */
+function waiting(ready: StagingSummary['ready']): boolean { return !!ready && ready.waitingFor.length > 0; }
+
+/**
+ * THE DOORWAY (2026-09-16) — who has said they are coming, and who has actually walked in.
+ *
+ * A host asked to decide when to begin was previously deciding blind: the cast list says who TOOK a part,
+ * which is a promise, and nothing at all said who was in the room. So the curtain went up on people who were
+ * still making tea, and their first act happened without them.
+ *
+ * This never blocks. A night runs with two people and six of the house's own, and a host who knows somebody
+ * is stuck on a call should be able to start without them — the button says "Start anyway" rather than going
+ * grey, because refusing to begin is a decision this app has no standing to make. It only makes the choice
+ * an informed one.
+ */
+function Doorway({ ready, host }: { ready: StagingSummary['ready']; host: boolean }) {
+  if (!ready || ready.taken === 0) return null;
+  const { taken, present, waitingFor } = ready;
+  return (
+    <div className={`mystery-doorway${waitingFor.length ? ' waiting' : ' all-here'}`}>
+      <span className="eyebrow-h">In the room</span>
+      <p className="hint">
+        <strong>{present} of {taken}</strong> {taken === 1 ? 'person who took a part is' : 'people who took parts are'} here.
+        {waitingFor.length ? <> Still to arrive: <strong>{waitingFor.join(', ')}</strong>.</> : ' Everybody is in.'}
+      </p>
+      {host && waitingFor.length ? (
+        <p className="hint">You can wait, or start anyway — whatever nobody is playing is played by the house.</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function MysteryNight({ clubId, session, host }: { clubId: string; session: AppSession; host: boolean }) {
   const [staging, setStaging] = useState<(StagingSummary & { host?: string }) | null>(null);
   const [cast, setCast] = useState<StagedPart[]>([]);
@@ -93,13 +125,14 @@ export function MysteryNight({ clubId, session, host }: { clubId: string; sessio
               );
             })}
           </ul>
+          <Doorway ready={staging.ready} host={host} />
           <div className="row wrap">
             {mine ? <button type="button" className="small" disabled={busy} onClick={() => void act(() => clubMystery.take(staging.stagingId, null, session.token))}>Give up my part</button> : null}
             {host ? (
               <button type="button" className="primary" disabled={busy} onClick={() => void act(async () => { await clubMystery.curtain(staging.stagingId, session.token); goTo(mysteryHash(staging.stagingId)); })}>
-                {busy ? 'Raising the curtain…' : 'Raise the curtain'}
+                {busy ? 'Raising the curtain…' : waiting(staging.ready) ? 'Start anyway' : 'Raise the curtain'}
               </button>
-            ) : <span className="hint">Your host raises the curtain when everyone has a part.</span>}
+            ) : <span className="hint">Your host raises the curtain when everyone is here.</span>}
           </div>
         </>
       ) : (

@@ -149,3 +149,27 @@ This story leans on absence five times and on written record five, which is now 
 Every individual is typed **twice** — its upper class and its domain class, added and never substituted.
 Nothing here runs a reasoner, so a generator that asks for `pl:Room` must keep finding five of them. Both
 generators were re-run and produced byte-identical output.
+
+## Whose evening it is (2026-09-16)
+
+`story.ttl` had three jobs around a played story — the wright who may decide anything, the director who may
+decide nothing, the conspirator who is offered chances. All three are about the STORY. None was about the
+EVENING: who said it was happening, who is waiting for whom, who may stop it, and what happens to seven
+people when the eighth does not turn up. Every vocabulary that leaves that out ends up with the controls in
+an admin screen.
+
+`story-hosting.ttl` adds fifteen classes in two modules. The two that carry the design:
+
+- **A host decides the occasion and never the story.** `st:HostPolicy` has a SHACL shape fixing
+  `decidesStory` to false — the exact mirror of the director's ceiling, and separable from it, because the
+  same person may hold both and neither implies the other.
+- **`st:PartClaim` is a commitment; `st:Arrival` is an observation.** Taking a part is a promise to come.
+  Being in the room is something only the thing that can see it may assert, and it expires. A host is shown
+  both numbers and the names in the gap, and that gap is the only thing they are actually deciding with.
+
+`st:StartCondition` is advisory by shape. An app that refuses to begin an evening has taken a decision it has
+no standing to take, so the Belvedere's two conditions inform the host and the button says "Start anyway".
+
+The craft is `skills/story/host-the-night`, and `story-host` is the archetype that carries it — when to wait
+and when not to, what a hold is for, what to do when somebody leaves mid-evening, and what is owed to the
+room when a night is called early.
