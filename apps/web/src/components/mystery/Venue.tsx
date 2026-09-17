@@ -35,6 +35,12 @@ export interface VenueHandle {
   goThrough: (room: string) => boolean;
   /** Turn the camera on this character, wherever they are standing — or lying — in this room. */
   lookAt: (role: string) => boolean;
+  /**
+   * Walk your OWN body to this character, through however many doors it takes, and stand facing them. A
+   * victim is where they fell, so this is also how you go and look at a body. False when nothing says where
+   * they are, or when there is no route.
+   */
+  goTo: (role: string) => boolean;
 }
 
 export interface VenueProps {
@@ -89,6 +95,13 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
   const [plates, setPlates] = useState<Array<{ id: string; text: string; sub?: string; face?: string; x: number; y: number; kind: string }>>([]);
   /** A walk to a thing, and what to do when we get there. */
   const errand = useRef<{ prop: string; at: number; to: pc.Vec3 } | null>(null);
+  /**
+   * GOING TO SOMEBODY, ACROSS THE HOUSE (2026-09-16). Pressing a name used to swing the camera at them, and
+   * only if they happened to be in the room you were already in. Now it is an ERRAND WITH A DESTINATION: your
+   * own body walks, through however many doors it takes, and finishes standing in front of them. Held in a ref
+   * and re-read every frame, because each door is a round trip through the engine and the room changes under it.
+   */
+  const journey = useRef<{ role: string; at: number } | null>(null);
   /** Set by the scene so the handle can reach the same two walks the picture uses. */
   const walkers = useRef<{ toProp: (prop: string) => boolean; toDoor: (room: string) => boolean } | null>(null);
   const hover = useRef<string | null>(null);
@@ -109,6 +122,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
    */
   const focus = useRef<{ at: pc.Vec3; until: number; tight?: boolean } | null>(null);
   const lookAtRef = useRef<((role: string) => boolean) | null>(null);
+  const goToRef = useRef<((role: string) => boolean) | null>(null);
 
   // ── the application, once ──
   useEffect(() => {
@@ -302,7 +316,54 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       focus.current = { at, until: Date.now() + 9000, tight: true };
       return true;
     };
+    /** The next door to go through to get from `from` to `to` — breadth-first over the plan's own doors. */
+    const nextHop = (from: string, to: string): string | null => {
+      if (from === to) return null;
+      const seen = new Map<string, string>([[from, from]]);
+      const q = [from];
+      while (q.length) {
+        const here = q.shift()!;
+        for (const nxt of Object.keys(BELVEDERE_PLAN[here]?.doors ?? {})) {
+          if (seen.has(nxt)) continue;
+          seen.set(nxt, here);
+          if (nxt === to) { let step = nxt; while (seen.get(step) !== from) step = seen.get(step)!; return step; }
+          q.push(nxt);
+        }
+      }
+      return null;
+    };
+    /** Walk up to somebody standing in THIS room, and stand facing them rather than inside them. */
+    const walkUpTo = (role: string): boolean => {
+      const b = bodies.current.get(role);
+      const me = viewRef.current.you ? bodies.current.get(viewRef.current.you.role) : null;
+      if (!b || !me || b === me) return false;
+      const dx = me.pos.x - b.pos.x, dz = me.pos.z - b.pos.z;
+      const d = Math.hypot(dx, dz) || 1;
+      goal.current = new pc.Vec3(b.pos.x + (dx / d) * 1.15, 0, b.pos.z + (dz / d) * 1.15);
+      errand.current = null;
+      lookAtPerson(role);
+      return true;
+    };
+    /**
+     * GO TO SOMEBODY. In this room, walk to them. In another, set off — the frame loop takes the next door
+     * each time the room changes, until you are standing in front of them. A victim is where they FELL, so
+     * this is also how you go and look at a body: the cast list says which room, and this walks you into it.
+     */
+    const goToPerson = (role: string): boolean => {
+      onInspectRef.current?.({ kind: 'person', id: role });
+      const here = viewRef.current.room?.id;
+      const theirs = viewRef.current.cast.find((c) => c.role === role)?.room;
+      if (theirs && here && theirs !== here) {
+        const hop = nextHop(here, theirs);
+        if (!hop) return false;
+        journey.current = { role, at: Date.now() };
+        return toDoor(hop);
+      }
+      journey.current = null;
+      return walkUpTo(role);
+    };
     lookAtRef.current = lookAtPerson;
+    goToRef.current = goToPerson;
     walkers.current = { toProp, toDoor };
     // the walk scripts read the venue through this, the way they read the lounge; nothing in the app does
     (window as unknown as { __venue?: unknown }).__venue = { bodies, doors, props, camera, goal, goingTo, pc };
@@ -441,6 +502,26 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
         d.swing += (want - d.swing) * Math.min(1, dt * 4.5);
         if (Math.abs(want - d.swing) < 0.01) d.swing = want;
         d.leaf.setLocalEulerAngles(0, -80 * d.swing, 0);
+      }
+      /**
+       * CARRY ON WITH THE JOURNEY. Checked every frame rather than on a view effect, because arriving in a
+       * room is an engine round trip and the bodies for that room are built a frame or two later. Nothing is
+       * done while a door is still being walked to, and a journey gives up after a minute rather than
+       * wandering the hotel for ever.
+       */
+      const trip = journey.current;
+      if (trip && !goingTo.current && !goal.current) {
+        if (Date.now() - trip.at > 60_000) journey.current = null;
+        else {
+          const here = viewRef.current.room?.id;
+          const theirs = viewRef.current.cast.find((c) => c.role === trip.role)?.room;
+          if (!theirs || !here) journey.current = null;
+          else if (theirs === here) { journey.current = null; walkUpTo(trip.role); }
+          else {
+            const hop = nextHop(here, theirs);
+            if (!hop) journey.current = null; else toDoor(hop);
+          }
+        }
       }
       if (going) {
         const d = doors.current.get(going.room);
@@ -618,6 +699,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
     approach: (prop: string) => walkers.current?.toProp(prop) ?? false,
     goThrough: (room: string) => walkers.current?.toDoor(room) ?? false,
     lookAt: (role: string) => lookAtRef.current?.(role) ?? false,
+    goTo: (role: string) => goToRef.current?.(role) ?? false,
   }), []);
 
   return (

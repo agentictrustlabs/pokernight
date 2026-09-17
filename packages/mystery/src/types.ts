@@ -327,6 +327,15 @@ export interface ViewPerson {
   mind?: 'human' | 'agent' | 'rules';
   /** The PERSON behind a character somebody is playing, by their own name. How a voice is matched to a body. */
   playedBy?: string;
+  /**
+   * WHERE THEY ARE, BY ROOM (2026-09-16). A living person's room is where they are standing; a dead one's is
+   * where they were FOUND, which is a different and more useful fact. It is public: the cast list says it and
+   * anybody can walk there. That is a deliberate choice about this game — the deduction rests on traits and
+   * evidence, never on somebody's whereabouts being secret, and a party where you cannot find the person you
+   * want to talk to is a party nobody enjoys.
+   */
+  room?: RoomId;
+  roomName?: string;
 }
 export interface ViewClue { id: ClueId; kind: 'fact' | 'evidence'; text: string; public: boolean }
 

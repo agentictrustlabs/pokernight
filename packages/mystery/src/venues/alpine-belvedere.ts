@@ -28,8 +28,8 @@ export const ALPINE_BELVEDERE: Venue = {
       name: 'The lounge',
       blurb: 'Deep chairs round a hearth, a piano nobody has touched, and a drinks tray going warm.',
       props: [
-        { id: 'drinks-tray', name: 'the drinks tray', detail: 'Glasses on a silver tray, two of them used, the ice long gone. Look at which glass was set down where, and what is left in it.' },
-        { id: 'piano', name: 'the piano', detail: 'The lid is up and the stool is pushed back at an angle. Look at the music left open and the dust the keys have not got.' },
+        { id: 'drinks-tray', name: 'the drinks tray', detail: 'A silver tray on the low table: four glasses, two of them used and set down apart from the others, a decanter stoppered, and an ice bucket with nothing in it but water. Look at WHICH glass was put down where — one is on the wood beside the tray, not on it — and at the wiped one that has no marks on it at all.' },
+        { id: 'piano', name: 'the piano', detail: 'An upright against the west wall, the stool pushed back at an angle as though somebody got up quickly. Music is open on the desk. There is dust along the lid and none at all on the keys. And there is a photograph in a frame standing on the top — a party on the snow, more people in it than came down.' },
         { id: 'hearth', name: 'the hearth', detail: 'A fire laid twice and caught neither time. Look at what went in with the kindling and did not burn.' },
       ],
     },

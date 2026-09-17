@@ -97,7 +97,9 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
         if (speakingTimer.current) clearTimeout(speakingTimer.current);
         speakingTimer.current = setTimeout(() => setSpeaking(null), Math.min(6000, 1200 + e.text.length * 55));
       } else if (e.type === 'cue') sayAs('house', e.text);
-      else if (e.type === 'died') sayAs('house', `${view.cast.find((c) => c.role === e.victim)?.name ?? 'somebody'} is dead.`);
+      // WHERE, NOT JUST WHO. "Marek is dead" sends eight people to ask each other where; the room is the
+      // first thing anybody wants and the engine has always known it.
+      else if (e.type === 'died') sayAs('house', `${view.cast.find((c) => c.role === e.victim)?.name ?? 'somebody'} is dead, in ${view.rooms.find((r) => r.id === e.room)?.name ?? 'the house'}.`);
       else if (e.type === 'spared') sayAs('house', 'Nobody died. But somebody was through that room in the dark.');
     }
     spoken.current = t.length;
@@ -209,7 +211,7 @@ export function MysteryPage({ stagingId, session, onSignOut }: { stagingId: stri
             <You view={view} act={act} takePart={takePart}
               scope={st?.staging?.club ? clubScope({ clubId: st.staging.club }) : null} scopeName={`${view?.titleName ?? 'the night'} · this room`} />
             <Clues view={view} act={act} />
-            <Cast view={view} act={act} speaking={speaking} lookAt={(role) => venue.current?.lookAt(role) ?? false} />
+            <Cast view={view} act={act} speaking={speaking} goTo={(role) => venue.current?.goTo(role) ?? false} />
           </aside>
         </div>
       )}
@@ -666,13 +668,19 @@ function Clues({ view, act }: { view: MysteryView; act: (a: unknown) => void }) 
 }
 
 /** THE CAST, and — when it is time — the one thing the night is for. */
-function Cast({ view, act, speaking, lookAt }: { view: MysteryView; act: (a: unknown) => void; speaking: string | null; lookAt: (role: string) => boolean }) {
+function Cast({ view, act, speaking, goTo }: { view: MysteryView; act: (a: unknown) => void; speaking: string | null; goTo: (role: string) => boolean }) {
   const [pick, setPick] = useState<string>('');
   /**
-   * A NAME IN THIS LIST IS A PERSON IN A ROOM (2026-09-15). Pressing one turns the camera on them where they
-   * are standing — and on a victim where they are LYING, which in a murder mystery is the view worth having.
-   * Somebody in another room cannot be shown from this one, so the row says where the camera could not go
-   * rather than the picture swinging at nothing.
+   * A NAME IN THIS LIST IS A PERSON IN A ROOM, AND PRESSING IT TAKES YOU THERE (2026-09-16).
+   *
+   * It used to turn the CAMERA on them, and only if they happened to be in the room you were already in —
+   * anybody else got "not in this room", which is a refusal rather than an answer. Now your own body walks:
+   * through however many doors it takes, into their room, and up to where they are standing. On a victim that
+   * means walking to where the body was FOUND and stopping in front of it, which in a murder mystery is the
+   * one journey worth making.
+   *
+   * Every row says which room, so the list is also the answer to "where is everybody" — see `ViewPerson.room`
+   * for why that is public in this game.
    */
   const [missed, setMissed] = useState<string | null>(null);
   const open = view.phase === 'accusations' || (view.phase === 'act' && view.act >= 3);
@@ -682,8 +690,10 @@ function Cast({ view, act, speaking, lookAt }: { view: MysteryView; act: (a: unk
       <ul>
         {view.cast.map((p) => (
           <li key={p.role} className={p.alive ? '' : 'dead'}>
-            <button type="button" className="mystery-cast-row" onClick={() => setMissed(lookAt(p.role) ? null : p.role)}
-              title={p.alive ? `Look at ${p.name}` : `Look at ${p.name} where they were found`}>
+            <button type="button" className="mystery-cast-row" onClick={() => setMissed(goTo(p.role) ? null : p.role)}
+              title={p.role === view.you?.role ? 'This is you'
+                : p.alive ? `Walk to ${p.name}${p.roomName ? ` in ${p.roomName}` : ''}`
+                : `Walk to where ${p.name} was found${p.roomName ? `, in ${p.roomName}` : ''}`}>
               {/* A CHARACTER A PERSON IS PLAYING SHOWS THAT PERSON'S OWN FACE when their camera is on, and
                   falls back to the drawn one when it is not — so the list says at a glance which of the eight
                   are people you can actually talk to tonight. */}
@@ -691,9 +701,14 @@ function Cast({ view, act, speaking, lookAt }: { view: MysteryView; act: (a: unk
                 ? <Portrait name={p.playedBy} size="plate" fallback={<Face look={p.look} name={p.name} size={28} speaking={speaking === p.role} dead={!p.alive} />} />
                 : <Face look={p.look} name={p.name} size={28} speaking={speaking === p.role} dead={!p.alive} />}
               <strong>{p.name}</strong>
-              <span className="hint">{p.role === view.you?.role ? 'you' : p.operator === 'human' ? 'a person' : 'an agent'}{p.alive ? '' : ' · dead'}</span>
+              <span className="hint">
+                {p.role === view.you?.role ? 'you' : p.operator === 'human' ? 'a person' : 'an agent'}
+                {/* WHERE THEY ARE — and for a victim, where they were FOUND, which is the more useful fact. */}
+                {p.roomName ? <> · {p.alive ? 'in' : 'found in'} <span className="mystery-where">{p.roomName}</span></> : null}
+                {p.alive ? '' : ' · dead'}
+              </span>
             </button>
-            {missed === p.role ? <em className="hint mystery-elsewhere">not in this room</em> : null}
+            {missed === p.role ? <em className="hint mystery-elsewhere">no way through to them from here</em> : null}
           </li>
         ))}
       </ul>

@@ -353,6 +353,23 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   typed TWICE — upper class and domain class, ADDED and never substituted, because nothing here runs a
   reasoner and `place-to-plan.mjs` must keep finding five `pl:Room`s. Re-running both generators after the
   retyping produced byte-identical output, which is the check that it was additive.
+- **A NAME IN THE CAST LIST IS A PLACE TO WALK TO** (2026-09-16). Pressing one used to swing the CAMERA at
+  somebody, and only if they were already in your room; anybody else got "not in this room", which is a refusal
+  rather than an answer. `venue.goTo(role)` walks your own body instead — breadth-first over the plan's own
+  doors, a hop at a time, re-read every frame because each door is an engine round trip and the room changes
+  under it. A victim is where they FELL, so the same press is how you go and look at a body. Every row says
+  which room, and a death is now SAID with its room ("Marek is dead, in the kitchen") rather than leaving eight
+  people to ask each other where. `ViewPerson.room` is public on purpose: this game's deduction rests on traits
+  and evidence, never on whereabouts, and a party where you cannot find the person you want to talk to is a
+  party nobody enjoys.
+- **A THING YOU CAN EXAMINE IS A THING YOU CAN SEE — the drinks and the piano got the register's treatment**
+  (2026-09-16). "The drinks" was the coffee table with a label over it and "the piano" was a bookcase turned
+  ninety degrees, so the one clue found there — a photograph on the lid — was found on a shelf. Both are built
+  from primitives in `belvedere.ttl` now: a silver tray with four glasses, a decanter and a dead ice bucket;
+  an upright with lid, black and white keys, the music desk, the stool pushed back and the photograph in its
+  frame. The feature hangs on the TRAY and on the piano BODY, so a close-up frames the thing rather than the
+  furniture it stands on. Prop detail lives in two places that must agree — the A-box's `pl:detail` and the
+  venue's `VenueProp.detail` — because the first is what the hotel is and the second is what the engine ships.
 - **AN EVENING HAS A HOST, AND THE HOST IS NOT AN ADMIN** (2026-09-16, `ontology/story-hosting.ttl`). The
   club's host already set a night up and raised its curtain; what was missing was everything else about the
   OCCASION. **A HOLD IS THE HOST'S**: every socket could send `pause`, so any one of eight people could stop

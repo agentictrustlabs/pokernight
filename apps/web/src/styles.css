@@ -6880,6 +6880,7 @@ button.tag.guest {
 .mystery-card-line { margin: 0; font-size: .86rem; line-height: 1.45; color: var(--muted, #6b7280); }
 .mystery-card-take { align-self: flex-start; margin-top: auto; }
 
+.mystery-where { color: var(--gold, #c9a45c); }
 .mystery-doorway { margin: .7rem 0 .2rem; padding: .55rem .75rem; border-radius: 4px;
   border-left: 3px solid var(--gold, #c9a45c); background: rgba(255,255,255,.03); }
 .mystery-doorway.all-here { border-left-color: #4f9d69; }

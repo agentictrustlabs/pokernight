@@ -515,10 +515,16 @@ function dressed(look: Look, outfit?: string): Look {
   return w ? { ...look, wear: w.wear, accent: w.accent } : look;
 }
 
-function personView(state: MysteryState, title: Title, role: RoleId): ViewPerson {
+function personView(state: MysteryState, title: Title, role: RoleId, venue?: Venue): ViewPerson {
   const c = state.cast.find((x) => x.role === role);
   const r = roleOf(title, role);
+  // A DEAD PERSON IS WHERE THEY WERE FOUND, not where they were standing when the night began.
+  const death = state.deaths.find((d) => d.victim === role);
+  const at = death ? death.room : state.where[role];
+  const atName = venue && at ? roomOf(venue, at)?.name : undefined;
   return {
+    ...(at ? { room: at } : {}),
+    ...(atName ? { roomName: atName } : {}),
     role, name: r?.name ?? role,
     operator: c?.operator ?? 'agent', agent: c?.agent ?? '',
     alive: !isDead(state, role),
@@ -579,7 +585,7 @@ export function viewFor(state: MysteryState, title: Title, venue: Venue, role: R
       death: death ? { victim: death.victim, searched: death.evidence.every((id) => known.includes(id)) } : null,
       trace: trace ? { searched: trace.evidence.every((id) => known.includes(id)) } : null,
     } : null,
-    cast: state.cast.map((c) => personView(state, title, c.role)),
+    cast: state.cast.map((c) => personView(state, title, c.role, venue)),
     rooms: venue.rooms.map((r) => ({ id: r.id, name: r.name })),
     clues: known.map((id) => clueOf(title, id)).filter((c): c is ClueDef => !!c).map((c) => ({ id: c.id, kind: c.kind, text: c.text, public: state.publicClues.includes(c.id) })),
     deaths: state.deaths.map((d) => ({ victim: d.victim, victimName: roleOf(title, d.victim)?.name ?? d.victim, room: d.room, roomName: roomOf(venue, d.room)?.name ?? d.room, act: d.act })),
