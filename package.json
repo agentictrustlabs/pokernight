@@ -53,6 +53,7 @@
     "@gltf-transform/functions": "^4.5.0",
     "@pokernight/engine": "workspace:*",
     "@pokernight/missions": "workspace:*",
+    "@pokernight/protocol": "workspace:*",
     "@pokernight/treasury": "workspace:*",
     "@types/n3": "^1.26.4",
     "@types/node": "^24.0.0",

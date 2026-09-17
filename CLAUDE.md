@@ -477,6 +477,27 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   is canonical — the TypeScript bends to it). Everything an instance names is INVENTED, by shape
   (`cm:isFictional true`): no real people-group name may appear anywhere in it. The Toolkit's phases are
   © 2026 Phases of Engagement Collaborative, CC BY-NC-SA 4.0, referenced by IRI and not re-declared.
+- **A CHARACTER'S WHISPER IS A DIRECT MESSAGE FROM ITS OWN AGENT** (2026-09-17, `apps/tables/src/cast-messaging.ts`,
+  both game objects' `carryWhispers` on every save). A whisper is private and 1:1 — the shape of a direct message —
+  so when an agent-played part whispers, its words land in the hearer's inbox at their Home UNDER THE SPEAKER'S NAME
+  (a cast persona's, or the person's own agent when a person plays the hearer), with the sender's own copy beside it.
+  THE HOUSE CANNOT SEND IT: `messaging.direct.send` runs only as the agent whose run it is, and the recipient's
+  delivery door (`messaging.deliver`, at the agent's own subdomain) is behind the estate's gateway assertion, which
+  this Worker must not hold — so the `MYSTERY_CAST_WIRES` idea (a wire pinned to `messaging.deliver`) was a door the
+  card room cannot reach. What works is spec 400 W2a, the card room as EACH CHARACTER'S OWN RUNTIME on the standard
+  surface: an ASK WIRE (character → the house session key, `harness.ask`) makes it the character's principal-by-wire;
+  the run parks AUTH_REQUIRED naming what it needs; the Worker DERIVES that mandate from a STANDING GRANT the custodian
+  signed once (character → session key, `messaging.direct.send`, bounded to the cast and the seven demo people, no
+  intent binding), signs the child with its own key and continues the same task presenting [child, standing]. Four
+  ceremonies per character, all at the estate (`equip-cast-messaging.mts`): the archetype offers the tool (a plan
+  naming a tool the playbook lacks is refused as `unknown_tool`), the rail (`enableMessaging` — without it an
+  authorized send cannot leave, `wire_absent`), the standing grant recorded on the character's own object, the ask wire.
+  The note is thirty kilobytes of signed delegations, so it lives in KV `CLUB_WIRES` under `cast-messaging` (a Worker
+  secret holds five; `CAST_MESSAGING` in the env is the dev/test path). A part played by a PERSON has no entry and its
+  whispers stay in the room: a message in their name would be the forgery this refuses. The two helpers are
+  `@agenticprimitives/runtime-member`'s `deriveForNeed` and `askAs`/`continueAs`, carried locally because that
+  package's index drags in a Node keystore the Worker cannot load (subpath exports are committed upstream, unpublished).
+  Proven live before any of this was written: Ilse's agent → Teodor's inbox, one conversation on both sides.
 - **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
   hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
   actually has. `lib/brand.ts` still owns the product name.

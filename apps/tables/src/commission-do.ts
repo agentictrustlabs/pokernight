@@ -17,6 +17,7 @@ import {
 import { COMMISSION_ACT_SKILL, COMMISSION_DIRECT_SKILL } from '@pokernight/protocol';
 import { askDirector, askPart } from './commission-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
+import { castMessaging, whisperAs, whispersToCarry } from './cast-messaging.js';
 import { commissionCast, commissionCastAgents, commissionDirector, type Env } from './env.js';
 
 interface Attachment { playerId: string; name: string }
@@ -66,6 +67,27 @@ export class CommissionDO extends DurableObject<Env> {
       `INSERT OR REPLACE INTO kv (k, v) VALUES ('state', ?), ('meta', ?), ('paused', ?), ('taken', ?), ('heard', ?)`,
       JSON.stringify(this.state), JSON.stringify(this.meta), this.paused ? '1' : '0', JSON.stringify(this.taken), String(this.heard),
     );
+    void this.carryWhispers().catch((e: unknown) => console.warn('[commission] carrying whispers threw:', String(e)));
+  }
+
+  /** Whispers this object has already sent over A2A, by event key — remembered, never re-sent; bounded. */
+  private carried = new Set<string>();
+
+  /**
+   * A WHISPER BETWEEN TWO PARTS IS A DIRECT MESSAGE FROM THE ONE AGENT TO THE OTHER (`cast-messaging.ts`). Called
+   * on every save, because every change to the night passes through one; each whisper is carried once, after the
+   * room already has it, and a miss is logged and never retried — the room's copy is the record of what was said.
+   */
+  private async carryWhispers(): Promise<void> {
+    const cm = await castMessaging(this.env);
+    if (!cm || !this.state) return;
+    for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried)) {
+      this.carried.add(w.key);
+      if (this.carried.size > 600) for (const k of [...this.carried].slice(0, 200)) this.carried.delete(k);
+      void whisperAs(this.env, cm, w.from, w.toSa, w.toName, w.text)
+        .then((r) => { if (!r.ok) console.warn(`[commission] ${w.from.character}'s whisper to ${w.toName} stayed in the room: ${r.error}`); })
+        .catch((e: unknown) => console.warn(`[commission] the whisper threw:`, String(e)));
+    }
   }
 
   /** The cast for a night: the person in their part, and everybody else from the deployment's list or the house. */

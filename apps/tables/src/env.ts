@@ -83,6 +83,13 @@ export interface Env {
   COMMISSION_CAST?: string;
   COMMISSION_DIRECTOR?: string;
   MYSTERY_DIRECTOR?: string;
+  /**
+   * EACH CAST AGENT AS ITS OWN RUNTIME HERE (`cast-messaging.ts`): per character, an ask wire (character → the
+   * house session key, `harness.ask`) and a standing grant (`messaging.direct.send`, no intent binding), both
+   * signed by the character's custodian at the estate (`equip-cast-messaging.mts`). With it a whisper between two
+   * parts is a direct message from the one agent to the other; without it every whisper stays in the room.
+   */
+  CAST_MESSAGING?: string;
   /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
   A2A_TIMEOUT_MS?: string;
   /** How long ADVICE may take. Longer than a turn call: a person's own agent at their Home reasons

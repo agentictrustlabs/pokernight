@@ -20,7 +20,6 @@
     "@agenticprimitives/delegation": "1.0.0-alpha.24",
     "@agenticprimitives/payments": "0.0.0-alpha.20",
     "@agenticprimitives/registry-kit": "0.0.0-alpha.12",
-    "@agenticprimitives/runtime-member": "0.0.0-alpha.2",
     "@agenticprimitives/types": "1.0.0-alpha.24",
     "@pokernight/agent-kit": "workspace:*",
     "@pokernight/canasta": "workspace:*",

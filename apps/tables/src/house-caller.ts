@@ -56,7 +56,16 @@ export async function houseAuthorization(env: Env, url: string, method: string, 
   } catch {
     return null;
   }
-  const session = privateKeyToAccount((env.HOUSE_A2A_SESSION_KEY as string).trim() as `0x${string}`);
+  return wireAuthorization(wire, (env.HOUSE_A2A_SESSION_KEY as string).trim() as `0x${string}`, url, method, raw);
+}
+
+/**
+ * THE SAME ASSERTION UNDER ANY WIRE THE SESSION KEY IS THE DELEGATE OF. The house wire names the card room as
+ * the house; a cast agent's ask wire (`cast-messaging.ts`) names it as that character — one key, many wires, and
+ * the Home admits whichever delegator the presented wire carries.
+ */
+export async function wireAuthorization(wire: DelegationWireV1, sessionKey: `0x${string}`, url: string, method: string, raw: string): Promise<string> {
+  const session = privateKeyToAccount(sessionKey);
   const unsigned: Omit<CallerAssertionV1, 'signature'> = {
     agent: wire.delegator.toLowerCase(),
     method,
