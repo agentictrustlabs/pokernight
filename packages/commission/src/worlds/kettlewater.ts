@@ -166,7 +166,7 @@ export const FIRST_LIGHT: Scenario = {
     {
       id: 'researcher', kind: 'researcher', name: 'Dr Wren Ashcombe', archetype: 'commission-researcher',
       appearance: 'Ink on her fingers and a habit of repeating your last sentence back to you before she writes anything down.',
-      blurb: 'You are the source of record. You walk the questions in order with whoever holds testimony — is anyone working here; are they sharing in a way the people find fitting; has anyone responded; are there churches; have they sent; to how many generations — and you stop at the first no. You publish a reading per people, with the count of witnesses behind it and never their names. Your reading is what the score is taken against.',
+      blurb: 'You are the source of record. You walk the questions in order with whoever carries testimony — is anyone working here; are they sharing in a way the people find fitting; has anyone responded; are there churches; have they sent; to how many generations — and you stop at the first no. You publish a reading per people, with the count of witnesses behind it and never their names. Your reading is what the score is taken against.',
       secret: 'Your last published assessment of the Harrow was wrong, and you know which report you trusted too much.',
       look: LOOK.researcher,
       vault: [],
