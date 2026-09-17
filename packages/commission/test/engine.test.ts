@@ -337,3 +337,30 @@ describe('the wire', () => {
     expect(INTERLUDE_MS).toBe(25_000);
   });
 });
+
+describe('the post-it wall', () => {
+  it('anybody in the commons may put up a topic, and nobody — not the log, not any view — learns who did', () => {
+    let s = open();
+    const r = go(s, 'adversary', { type: 'post', text: 'Where is help most needed in the upper marches?' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    s = r.state;
+    const ev = r.events.find((e) => e.type === 'posted');
+    expect(ev && 'by' in ev).toBe(false);
+    // Everybody standing in the commons sees the wall; a watcher outside the story stands in no room at all.
+    for (const role of ['researcher', 'returnee', 'adversary']) {
+      const v = viewFor(s, S, R, role);
+      expect(v.room?.board?.map((p) => p.text)).toEqual(['Where is help most needed in the upper marches?']);
+      expect(JSON.stringify(v.room?.board)).not.toContain('adversary');
+    }
+    expect(JSON.stringify(viewFor(s, S, R, null).transcript.find((e) => e.type === 'posted'))).not.toContain('adversary');
+    // The author is in state for the score, and only there.
+    expect(s.postits[0]?.by).toBe('adversary');
+  });
+  it('a room with no wall refuses a post-it by name', () => {
+    let s = open();
+    s = move(s, 'returnee', 'household');
+    const r = go(s, 'returnee', { type: 'post', text: 'a topic' });
+    expect(r.ok).toBe(false); if (!r.ok) expect(r.code).toBe('no-board');
+  });
+});

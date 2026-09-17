@@ -23,6 +23,13 @@ const PL = 'https://skills.demo/place#';
 const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
 const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 const src = process.argv[2] ?? `${process.env.HOME}/skills/ontology/belvedere.ttl`;
+/**
+ * A SECOND PLACE IS A SECOND FILE, and the constant it compiles to is named for it: `--name KETTLEWATER_HOUSE`
+ * writes `KETTLEWATER_HOUSE_PLAN_FROM_ONTOLOGY`. The Belvedere keeps its name so nothing that imports it moves.
+ */
+const nameArg = process.argv.indexOf('--name');
+const NAME = nameArg > 0 ? process.argv[nameArg + 1] : 'BELVEDERE';
+const srcLabel = src.split('/').pop();
 
 const store = new Store(new Parser().parse(readFileSync(src, 'utf8')));
 const one = (s, p) => store.getObjects(s, namedNode(p), null)[0] ?? null;
@@ -46,7 +53,7 @@ const out = [];
 out.push(`/**`);
 out.push(` * GENERATED FROM THE PLACE ONTOLOGY — do not edit by hand.`);
 out.push(` *`);
-out.push(` * Source: \`~/skills/ontology/belvedere.ttl\` (the Hôtel Belvedere as an A-box over \`place.ttl\`).`);
+out.push(` * Source: \`~/skills/ontology/${srcLabel}\` (an A-box over \`place.ttl\`).`);
 out.push(` * Rebuild: \`node scripts/place-to-plan.mjs > apps/web/src/components/mystery/plan.generated.ts\``);
 out.push(` *`);
 out.push(` * Every number below is stated in the ontology, in metres, against the bearing the building declares:`);
@@ -55,7 +62,7 @@ out.push(` * and a yaw of zero facing +Z. Changing the building is editing that 
 out.push(` */`);
 out.push(`import type { RoomPlan } from './plan';`);
 out.push('');
-out.push(`export const BELVEDERE_PLAN_FROM_ONTOLOGY: Record<string, RoomPlan> = {`);
+out.push(`export const ${NAME}_PLAN_FROM_ONTOLOGY: Record<string, RoomPlan> = {`);
 
 for (const room of rooms) {
   const key = roomKey({ value: room });

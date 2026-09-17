@@ -78,7 +78,7 @@ for (const p of all(region, `${CM}hasPeople`).sort(byOrder)) {
 L.push(`  ],`);
 L.push(`  rooms: [`);
 for (const r of all(region, `${CM}hasWorkspace`).sort(byOrder)) {
-  L.push(`    { id: ${j(key(r, `${CM}roomKey`))}, name: ${j(lit(r, `${RDFS}label`))}, blurb: ${j(lit(r, `${RDFS}comment`))}, members: [${all(r, `${CM}memberPart`).sort(byOrder).map((m) => j(key(m, `${ST}partKey`))).join(', ')}], grain: ${j(grainOf(one(r, `${CM}allowsGrain`)))} },`);
+  L.push(`    { id: ${j(key(r, `${CM}roomKey`))}, name: ${j(lit(r, `${RDFS}label`))}, blurb: ${j(lit(r, `${RDFS}comment`))}, members: [${all(r, `${CM}memberPart`).sort(byOrder).map((m) => j(key(m, `${ST}partKey`))).join(', ')}], grain: ${j(grainOf(one(r, `${CM}allowsGrain`)))}${lit(r, `${CM}hasBoard`) === 'true' ? ', board: true' : ''} },`);
 }
 L.push(`  ],`);
 L.push(`};`);

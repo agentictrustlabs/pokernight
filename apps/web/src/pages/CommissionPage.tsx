@@ -168,6 +168,7 @@ function Room({ view, act }: { view: CommissionView; act: (a: unknown) => void }
           <button type="button" onClick={submit}>{whisperTo ? 'Whisper' : 'Say'}</button>
         </div>
       )}
+      {room.board ? <Wall board={room.board} act={act} silent={view.you.silent} /> : null}
       <div className="mystery-doors">
         {room.doors.map((d) => (
           <button key={d.id} type="button" disabled={!d.open} title={d.open ? '' : 'not a member — the convener admits'} onClick={() => act({ type: 'move', room: d.id })}>
@@ -176,6 +177,32 @@ function Room({ view, act }: { view: CommissionView; act: (a: unknown) => void }
         ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * THE POST-IT WALL — anonymous by construction. Anybody in the room may put up a topic; the words and the round
+ * travel, and no author ever does. It is the safest contribution the whole exercise allows, and a board of
+ * them is how a group finds what it wants to talk about without anybody having to be the one who asked.
+ */
+function Wall({ board, act, silent }: { board: Array<{ id: string; text: string; round: number }>; act: (a: unknown) => void; silent: boolean }) {
+  const [text, setText] = useState('');
+  const put = () => { const t = text.trim(); if (!t) return; act({ type: 'post', text: t }); setText(''); };
+  return (
+    <div className="gc-wall">
+      <h3>The wall <span className="hint">— topics, unsigned</span></h3>
+      {board.length ? (
+        <ul className="gc-postits">
+          {board.map((p, i) => <li key={p.id} className={`gc-postit c${i % 3}`} style={{ transform: `rotate(${((i * 7) % 5) - 2}deg)` }}>{p.text}<span className="small muted">round {p.round}</span></li>)}
+        </ul>
+      ) : <p className="hint">Nothing on the wall yet.</p>}
+      {!silent ? (
+        <div className="mystery-say">
+          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') put(); }} placeholder="Put up a topic — nobody will know it was you" maxLength={140} />
+          <button type="button" onClick={put}>Post</button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

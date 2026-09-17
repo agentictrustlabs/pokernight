@@ -52,7 +52,7 @@ export const KETTLEWATER_MARCHES_FROM_ONTOLOGY: Region = {
     },
   ],
   rooms: [
-    { id: "commons", name: "The Commons", blurb: "The convener’s cross-organization room. Everybody may stand here; only province-grain may be said here.", members: ["returnee", "household", "agency", "funder", "researcher", "convener", "adversary"], grain: "province" },
+    { id: "commons", name: "The Commons", blurb: "The convener’s cross-organization room. Everybody may stand here; only province-grain may be said here.", members: ["returnee", "household", "agency", "funder", "researcher", "convener", "adversary"], grain: "province", board: true },
     { id: "agency-office", name: "The Agency Office", blurb: "Deployments and rosters. Organization-grain testimony, structurally blind to the household.", members: ["agency", "researcher", "convener"], grain: "province" },
     { id: "household", name: "The Household Room", blurb: "The network’s own. Who meets, where, how many generations — the grain that must never leave this room.", members: ["returnee", "household"], grain: "household" },
     { id: "research-desk", name: "The Research Desk", blurb: "Where the walk is walked and the reading is written. Village-grain may be heard here; only province-grain is published.", members: ["researcher", "convener"], grain: "village" },

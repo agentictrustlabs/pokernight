@@ -107,6 +107,13 @@ export interface RoomDef {
   members: RoleId[];
   /** The disclosure rule: a slip spoken here at a finer grain than this is a LEAK. */
   grain: Grain;
+  /**
+   * A WALL FOR POST-ITS. A room with one lets anybody in it put up a topic — ANONYMOUSLY, which is the point:
+   * an unattributed people-grain sentence is the safest contribution the whole exercise allows, and a board
+   * of them is how a group finds what it wants to talk about without anybody having to be the one who asked.
+   * The author is kept in state for the score and reaches no view, ever.
+   */
+  board?: boolean;
 }
 
 export interface Region {
@@ -327,6 +334,8 @@ export interface CommissionState {
    */
   witnessed: Record<string, RoleId[]>;
   outcomes: Array<{ key: string; by: RoleId; choice: string; option: string }>;
+  /** The post-its, with who wrote each — the one field on this record a view never carries. */
+  postits: Array<{ id: string; room: RoomId; text: string; by: RoleId; round: number; at: number }>;
   log: CommissionEvent[];
   startedAt: number;
   endedAt: number | null;
@@ -348,6 +357,7 @@ export type CommissionAction =
   | { type: 'fulfil'; commitment: string }
   | { type: 'revoke'; evidence: EvidenceId }
   | { type: 'infer'; people: PeopleId; village?: string; households?: number }
+  | { type: 'post'; text: string }
   | { type: 'choose'; choice: string; option: string };
 
 // ── EVENTS ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -369,6 +379,8 @@ export type CommissionEvent =
   | { type: 'replayed'; at: number; by: RoleId; disclosure: string; room: RoomId }
   | { type: 'fabricated'; at: number; by: RoleId; people: PeopleId; count: number; room: RoomId }
   | { type: 'inferred'; at: number; by: RoleId; people: PeopleId }
+  /** A post-it went up. No author on the event — anonymity is its whole design, so the log itself carries none. */
+  | { type: 'posted'; at: number; room: RoomId; postit: string; text: string }
   | { type: 'chose'; at: number; by: RoleId; choice: string; option: string; outcome: string; text: string; room: RoomId; saw?: RoleId[] }
   | { type: 'silent'; at: number; role: RoleId; round: number }
   | { type: 'cue'; at: number; text: string; by: 'house' | 'director' }
@@ -414,7 +426,7 @@ export interface CommissionView {
     received: ViewReceived[];
     silent: boolean;
   } | null;
-  room: { id: RoomId; name: string; blurb: string; grain: Grain; people: ViewPerson[]; doors: Array<{ id: RoomId; name: string; open: boolean }> } | null;
+  room: { id: RoomId; name: string; blurb: string; grain: Grain; people: ViewPerson[]; doors: Array<{ id: RoomId; name: string; open: boolean }>; board: Array<{ id: string; text: string; round: number }> | null } | null;
   cast: ViewPerson[];
   rooms: Array<{ id: RoomId; name: string; grain: Grain }>;
   /** The public picture: every people, its published reading if any, and the needs the readings emitted. */

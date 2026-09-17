@@ -18,7 +18,7 @@
     "check:capabilities": "node scripts/check-capabilities.mjs",
     "check:place": "node scripts/place-compat.mjs",
     "gen:story": "node scripts/place-to-plan.mjs > apps/web/src/components/mystery/plan.generated.ts && node scripts/story-to-title.mjs > packages/mystery/src/titles/belvedere-snowfall.generated.ts && node scripts/story-to-archetypes.mjs",
-    "gen:commission": "node scripts/world-to-commission.mjs > packages/commission/src/worlds/kettlewater.generated.ts",
+    "gen:commission": "node scripts/world-to-commission.mjs > packages/commission/src/worlds/kettlewater.generated.ts && node scripts/place-to-plan.mjs ~/skills/ontology/kettlewater-house.ttl --name KETTLEWATER_HOUSE > apps/web/src/components/commission/plan.generated.ts",
     "provision:house": "tsx scripts/provision-house.mts",
     "deploy:sheqel": "tsx scripts/deploy-sheqel.mts",
     "test:contracts": "forge test --root contracts",

@@ -108,7 +108,7 @@ export function openStaging(args: {
     scenario: scenario.id, region: region.id, seedCommit, seedHex, cast, pace, night: scenario.night,
     round: 1, roundStartedAt: now, phase: 'round', deadline: now + roundMs(r0.minutes, pace),
     where, admitted: {}, truth, vaults, received,
-    disclosures: [], assessments: [], commitments: [], inferences: [], fabrications: [], replays: [], witnessed: {}, outcomes: [],
+    disclosures: [], assessments: [], commitments: [], inferences: [], fabrications: [], replays: [], witnessed: {}, outcomes: [], postits: [],
     log: [
       { type: 'cue', at: now, text: r0.opening, by: 'house' },
       { type: 'round', at: now, round: 1, phase: 'round', deadline: now + roundMs(r0.minutes, pace) },
@@ -128,7 +128,7 @@ const clone = (s: CommissionState): CommissionState => ({
   assessments: (s.assessments ?? []).slice(), commitments: (s.commitments ?? []).slice(), inferences: (s.inferences ?? []).slice(),
   fabrications: (s.fabrications ?? []).slice(), replays: (s.replays ?? []).slice(),
   witnessed: Object.fromEntries(Object.entries(s.witnessed ?? {}).map(([k, v]) => [k, v.slice()])),
-  outcomes: (s.outcomes ?? []).slice(), log: (s.log ?? []).slice(),
+  outcomes: (s.outcomes ?? []).slice(), postits: (s.postits ?? []).slice(), log: (s.log ?? []).slice(),
 });
 
 const LOG_CAP = 800;
@@ -349,6 +349,16 @@ export function apply(state: CommissionState, scenario: Scenario, region: Region
       events.push(...push(s, { type: 'inferred', at: now, by: role, people: action.people }));
       break;
     }
+    case 'post': {
+      if (!room.board) return no('no-board', 'There is no wall for that here. The commons has one.');
+      const text = action.text.trim().slice(0, 140);
+      if (!text) return no('empty', 'Write something.');
+      // ANONYMOUS BY CONSTRUCTION: the author goes into state (the score may need it) and onto no event.
+      const id = `p${(s.postits ?? []).length + 1}`;
+      (s.postits ??= []).push({ id, room: here, text, by: role, round: s.round, at: now });
+      events.push(...push(s, { type: 'posted', at: now, room: here, postit: id, text }));
+      break;
+    }
     case 'choose': {
       const def = (me.choices ?? []).find((c) => c.id === action.choice);
       if (!def) return no('no-choice', 'That choice is not written for you.');
@@ -406,6 +416,7 @@ export function parseAction(raw: unknown): { ok: true; action: CommissionAction 
       const households = typeof r.households === 'number' && Number.isFinite(r.households) ? Math.round(r.households) : undefined;
       return { ok: true, action: { type: 'infer', people: r.people as string, ...(str(r.village, 64) ? { village: r.village as string } : {}), ...(households !== undefined ? { households } : {}) } };
     }
+    case 'post': return str(r.text, 140) ? { ok: true, action: { type: 'post', text: r.text as string } } : no('bad-action', 'a post-it needs a few words (140 at most)');
     case 'choose': return str(r.choice, 64) && str(r.option, 64) ? { ok: true, action: { type: 'choose', choice: r.choice as string, option: r.option as string } } : no('bad-action', 'choose needs a choice and an option');
     default: return no('bad-action', `no such action: ${String(r.type)}`);
   }
@@ -421,6 +432,8 @@ export function redactEvent(state: CommissionState, ev: CommissionEvent, role: R
   };
   switch (ev.type) {
     case 'cue': case 'round': case 'revealed': case 'silent': case 'revoked': return ev;
+    // A post-it is public to whoever can see the wall — and it names nobody, so there is nothing to redact.
+    case 'posted': return ev;
     case 'whispered': return role && (ev.by === role || ev.to === role) ? ev : null;
     // THE THINGS THE SCORE REVEALS AND THE ROOM DOES NOT: an inference, a fabrication, a replay. Their actor
     // sees their own; everybody else learns of them at the reveal, from the score.
@@ -514,6 +527,8 @@ export function viewFor(state: CommissionState, scenario: Scenario, region: Regi
       id: here, name: room.name, blurb: room.blurb, grain: room.grain,
       people: peopleIn(state, here).filter((r) => r !== role).map((r) => personView(state, scenario, region, r)),
       doors: region.rooms.filter((r) => r.id !== here).map((r) => ({ id: r.id, name: r.name, open: role ? mayEnter(region, state, role, r.id) : false })),
+      // THE WALL, WITHOUT ITS AUTHORS. `by` stays in state; the view gets the words and the round.
+      board: room.board ? (state.postits ?? []).filter((p) => p.room === here).map((p) => ({ id: p.id, text: p.text, round: p.round })) : null,
     } : null,
     cast: state.cast.map((c) => personView(state, scenario, region, c.role)),
     rooms: region.rooms.map((r) => ({ id: r.id, name: r.name, grain: r.grain })),
