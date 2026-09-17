@@ -344,5 +344,24 @@ HOUSE_DELEGATE = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # personas (agents.faithnet.io/<name>), and these two live at the estate instead — a service Alice custodies,
 # with the mystery archetypes in their playbooks. Three labels and no `@` is a hostname, and the only honest
 # thing to do with a hostname is to ask it; the message then goes wherever the card says (the estate's edge).
-MYSTERY_CAST_AGENTS = "belvedere-cast-svc.faithnet.ai"
+# THE CAST ARE PEOPLE, NOT SERVICES (2026-09-17). `belvedere-cast-svc` was one service agent answering for
+# all eight parts, which is the wrong shape twice over: a character is person-SHAPED — it speaks, it
+# remembers, it is somebody — and eight characters sharing one agent share one memory. Each part is now a
+# PERSON AGENT of a real demo person, chartered in that person's own Home, never their default, with a vault
+# of its own. The custodian is named because every screen that shows a character names who is answerable.
+#
+#   the concierge · Émile Rossi      emile-elena.me      Elena Voss
+#   the heiress   · Delphine Aubert  delphine-alice.me   Alice Okoro
+#   the instructor· Kai Brunner      kai-bob.me          Bob Tanaka
+#   the doctor    · Dr Halloran      halloran-carol.me   Carol Mbeki
+#   the chef      · Marek Novák      marek-dave.me       Dave Silva
+#   the journalist· Nadia Kowal      nadia-nathan.me     Nathan
+#   the guide     · Sofia Lindqvist  sofia-david.me      David
+#   the widow     · Mme Perrin       perrin-alice.me     Alice Okoro
+#
+# Alice holds three people — her own, the heiress and the widow — which is the arrangement working rather
+# than an accident: a custodian may be several names, and only one of them is the one her Home opens as.
+MYSTERY_CAST = "concierge=emile-elena.me@elena,heiress=delphine-alice.me@alice,instructor=kai-bob.me@bob,doctor=halloran-carol.me@carol,chef=marek-dave.me@dave,journalist=nadia-nathan.me@nathan,guide=sofia-david.me@david,widow=perrin-alice.me@alice"
+# The positional list stays for a deployment whose stand-ins really are interchangeable. This one's are not.
+MYSTERY_CAST_AGENTS = ""
 MYSTERY_DIRECTOR = "belvedere-house-svc.faithnet.ai"

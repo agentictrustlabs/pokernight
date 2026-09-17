@@ -73,6 +73,8 @@ export interface Env {
    * `mystery.direct` at every beat and free to be quiet.
    */
   MYSTERY_CAST_AGENTS?: string;
+  /** `role=agent@custodian`, comma-separated — see `mysteryCast`. Preferred over the positional list. */
+  MYSTERY_CAST?: string;
   MYSTERY_DIRECTOR?: string;
   /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
   A2A_TIMEOUT_MS?: string;
@@ -296,6 +298,38 @@ export function seatIdleMs(env: Env): number {
 /** The agents that play the parts nobody is playing, in the order the title's roles are filled. */
 export function mysteryCastAgents(env: Env): string[] {
   return (env.MYSTERY_CAST_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** One part's standing player: the character's own person agent, and the human answerable for it. */
+export interface CastMember { role: string; agent: string; custodian: string }
+
+/**
+ * THE DEFAULT CAST, BY NAME AND BY PART (2026-09-17).
+ *
+ * `MYSTERY_CAST_AGENTS` hands a flat list out in the title's own order, which is fine for interchangeable
+ * service agents and wrong for these: a character is a PERSON — `emile-elena.me`, custodied by Elena — and
+ * which part it plays is a fact about that person, not about its position in a list. Reorder the title's
+ * roles with a positional list and Émile Rossi silently becomes the doctor.
+ *
+ * `MYSTERY_CAST` states it: `role=agent@custodian`, comma-separated. The custodian is carried because every
+ * screen that shows a character names the human answerable for it, and deriving that from the agent's label
+ * would be reading meaning into a string that is only a name.
+ *
+ *   concierge=emile-elena.me@elena, heiress=delphine-alice.me@alice, …
+ */
+export function mysteryCast(env: Env): CastMember[] {
+  return (env.MYSTERY_CAST ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [role, rest] = entry.split('=', 2);
+      const [agent, custodian] = (rest ?? '').split('@', 2);
+      return { role: (role ?? '').trim(), agent: (agent ?? '').trim(), custodian: (custodian ?? '').trim() };
+    })
+    // A half-written entry is dropped rather than half-applied: a character with no agent cannot be asked,
+    // and one with no custodian has nobody to name on the screen that shows it.
+    .filter((c) => c.role && c.agent && c.custodian);
 }
 /** Who narrates, if anybody. Absent means the title's own written lines, which is a complete night. */
 export function mysteryDirector(env: Env): string | null {

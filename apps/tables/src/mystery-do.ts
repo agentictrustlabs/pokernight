@@ -23,7 +23,7 @@ import {
 import { MYSTERY_DIRECT_SKILL } from '@pokernight/protocol';
 import { askCharacter, askDirector } from './mystery-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
-import { mysteryCastAgents, mysteryDirector, type Env } from './env.js';
+import { mysteryCast, mysteryCastAgents, mysteryDirector, type Env } from './env.js';
 import { MYSTERY_ACT_SKILL } from '@pokernight/protocol';
 
 interface Attachment { playerId: string; name: string }
@@ -132,12 +132,22 @@ export class MysteryDO extends DurableObject<Env> {
       if (this.state && !b.restart && !wantsOther && this.state.phase !== 'revealed') return json({ ok: true, staging: this.summary() });
       const role = title.roles.find((r) => r.id === b.role)?.id ?? title.roles[0]!.id;
       const minds = mysteryCastAgents(this.env);
+      const standing = mysteryCast(this.env);
       let handed = 0;
       const cast: Casting[] = title.roles.map((r) => {
         if (r.id === role) return { role: r.id, agent: b.owner, name: b.ownerName || r.name, custodian: b.owner, operator: 'human' as const, playerId: b.owner, mind: 'human' as const };
         // A PART NOBODY IS PLAYING GETS AN AGENT, from the deployment's list — and a short list is a REPERTORY
         // COMPANY rather than a shortage: one agent plays several parts, because the part is in the ask (the
         // brief, the view, the room) and not in the agent. The house's rules play the rest when the list is empty.
+        /**
+         * THE CHARACTER'S OWN PERSON, when the estate has chartered one (`MYSTERY_CAST`). Émile Rossi is
+         * `emile-elena.me`, a person agent Elena custodies — not a service agent standing in for eight
+         * people at once — so the part is played by somebody with a name, a vault and a memory of the last
+         * night, and the room can say whose it is. The positional list remains for a deployment that has
+         * only interchangeable agents, and the house's own written lines remain for one with none.
+         */
+        const own = standing.find((c) => c.role === r.id);
+        if (own) return { role: r.id, agent: own.agent, name: r.name, custodian: own.custodian, operator: 'agent' as const, mind: 'agent' as const };
         const named = minds.length ? minds[handed++ % minds.length] : undefined;
         return named
           ? { role: r.id, agent: named, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'agent' as const }
@@ -238,10 +248,20 @@ export class MysteryDO extends DurableObject<Env> {
       const pair = stagingOf(this.meta.title);
       if (!pair) return json({ error: 'no such mystery' }, 404);
       const minds = mysteryCastAgents(this.env);
+      const standing = mysteryCast(this.env);
       let handed = 0;
       const cast: Casting[] = pair.title.roles.map((r) => {
         const person = Object.entries(this.taken).find(([, t]) => t.role === r.id);
         if (person) return { role: r.id, agent: person[0], name: person[1].name || r.name, custodian: person[0], operator: 'human' as const, playerId: person[0], mind: 'human' as const };
+        /**
+         * THE CHARACTER'S OWN PERSON, when the estate has chartered one (`MYSTERY_CAST`). Émile Rossi is
+         * `emile-elena.me`, a person agent Elena custodies — not a service agent standing in for eight
+         * people at once — so the part is played by somebody with a name, a vault and a memory of the last
+         * night, and the room can say whose it is. The positional list remains for a deployment that has
+         * only interchangeable agents, and the house's own written lines remain for one with none.
+         */
+        const own = standing.find((c) => c.role === r.id);
+        if (own) return { role: r.id, agent: own.agent, name: r.name, custodian: own.custodian, operator: 'agent' as const, mind: 'agent' as const };
         const named = minds.length ? minds[handed++ % minds.length] : undefined;
         return named
           ? { role: r.id, agent: named, name: r.name, custodian: 'house', operator: 'agent' as const, mind: 'agent' as const }

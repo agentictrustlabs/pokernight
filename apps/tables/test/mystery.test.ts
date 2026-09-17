@@ -190,3 +190,29 @@ describe('a night nobody is at', () => {
     s.ws.close();
   });
 });
+
+/**
+ * A CHARACTER IS A PERSON, AND THE ROOM KNOWS WHOSE (2026-09-17). `MYSTERY_CAST` states which person agent
+ * plays which part and who is answerable for it, by NAME rather than by position — reorder a title's roles
+ * with a positional list and Émile Rossi silently becomes the doctor.
+ */
+describe('the standing cast', () => {
+  it('reads role=agent@custodian, and drops a half-written entry rather than half-applying it', async () => {
+    const { mysteryCast } = await import('../src/env');
+    const parsed = mysteryCast({ MYSTERY_CAST: 'concierge=emile-elena.me@elena, heiress=delphine-alice.me@alice' } as never);
+    expect(parsed).toEqual([
+      { role: 'concierge', agent: 'emile-elena.me', custodian: 'elena' },
+      { role: 'heiress', agent: 'delphine-alice.me', custodian: 'alice' },
+    ]);
+    // no agent, or no custodian, is not a cast member: one cannot be asked, the other cannot be named.
+    expect(mysteryCast({ MYSTERY_CAST: 'chef=,guide=sofia.me,widow=@alice' } as never)).toEqual([]);
+    expect(mysteryCast({} as never)).toEqual([]);
+  });
+
+  it('one custodian may hold several parts — that is the arrangement working, not a clash', async () => {
+    const { mysteryCast } = await import('../src/env');
+    const parsed = mysteryCast({ MYSTERY_CAST: 'heiress=delphine-alice.me@alice,widow=perrin-alice.me@alice' } as never);
+    expect(parsed.map((c) => c.custodian)).toEqual(['alice', 'alice']);
+    expect(new Set(parsed.map((c) => c.agent)).size).toBe(2);
+  });
+});
