@@ -93,8 +93,11 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
   if (!session) return <div className="page"><section className="panel"><p className="hint">Sign in to come to the marches.</p></section></div>;
   if (!view) return <div className="page"><section className="panel"><p className="hint">{state.error ?? (state.connection === 'reconnecting' ? 'Reconnecting…' : 'Walking in…')}</p></section></div>;
 
+  // THE TOPBAR IS OUTSIDE THE GRID, as the mystery's is. `.mystery-page` is a two-column grid whose DIRECT children
+  // are the main and the side; with the header and a wrapper as its children instead, the whole night was laid
+  // in the 340px column and the left column stood empty and green (seen live, 2026-09-17).
   return (
-    <div className="page mystery-page gc-page">
+    <div className="mystery gc">
       <header className="topbar">
         <Brand />
         <span className="tag">{view.scenarioName} · night {view.night}</span>
@@ -108,7 +111,7 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
         <Identity session={session} onSignOut={onSignOut} />
       </header>
       {state.error ? <div className="form-error">{state.error}</div> : null}
-      <div className="mystery-layout">
+      <div className="page mystery-page gc-page">
         <main className="mystery-main">
           {view.room && venueView ? (
             <Suspense fallback={<section className="panel"><p className="hint">Opening the meeting house…</p></section>}>

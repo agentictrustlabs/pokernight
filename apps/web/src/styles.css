@@ -6966,7 +6966,13 @@ button.tag.guest {
 
 /* ═══════════════════════════ GREAT COMMISSION (docs/GREAT-COMMISSION.md) ═══════════════════════════
    The mystery page's shell, with the BOARD where the venue was: five peoples and the reading for each. */
-.gc-page .mystery-main > .gc-board { flex: 0 0 auto; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain; }
+/* THE TRANSCRIPT HAS TO FIT UNDER THE THREE FIXED PANELS (2026-09-17): at 42vh + 34vh + 26vh the column was
+   already full before the transcript, which sat clipped below it. The house is shallower here than the hotel
+   (six rooms, one floor), the picture is five cards, and the room strip is a few buttons. */
+.gc-page .mystery-main > .mystery-venue-wrap .venue { height: min(30vh, 340px); }
+.gc-page .mystery-main > .gc-board { flex: 0 0 auto; max-height: 20vh; overflow-y: auto; overscroll-behavior: contain; }
+.gc-page .mystery-main > .mystery-room { max-height: 18vh; }
+.gc-page .mystery-main > .mystery-transcript { min-height: 11rem; }
 .gc-board header { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
 .gc-board h3 { margin: 0.5rem 0 0.2rem; }
 .gc-people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem; }
