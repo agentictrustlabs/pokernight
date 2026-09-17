@@ -496,7 +496,9 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   secret holds five; `CAST_MESSAGING` in the env is the dev/test path). A part played by a PERSON has no entry and its
   whispers stay in the room: a message in their name would be the forgery this refuses. The two helpers are
   `@agenticprimitives/runtime-member`'s `deriveForNeed` and `askAs`/`continueAs`, carried locally because that
-  package's index drags in a Node keystore the Worker cannot load (subpath exports are committed upstream, unpublished).
+  package's index drags in a Node keystore the Worker cannot load (subpath exports are committed upstream, unpublished);
+  the JSON-RPC client is our own too, because the pinned a2a (alpha.22) `createStandardA2aClient` has no `signRequest` and
+  silently sent the first version unsigned ("admits only an authenticated principal").
   Proven live before any of this was written: Ilse's agent → Teodor's inbox, one conversation on both sides.
 - **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
   hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
