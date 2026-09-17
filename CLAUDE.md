@@ -465,9 +465,14 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   joins. **YOU MAY COARSEN, NEVER REFINE**: a slip finer than its room's rule is a LEAK, a number the vault does
   not hold is a FABRICATION, a corroboration standing only on a withdrawn slip is a REPLAY — recorded, never
   adjudicated in the room, and shown in the score. **THE WORLD IS AUTHORED UNDER THE FAITH ONTOLOGY**:
-  `~/skills/ontology/commission.tbox.ttl` sits under `faith.ttl` (a people is a `gc:PeopleGroup`, a reading a
-  `gc:EngagementAssessmentResult` whose `cm:phase ⊑ gc:assignedLevel` is a `poe:PhaseN` concept, strength a
-  `poe:StrengthX`) and `story.ttl`; `kettlewater.ttl` is the A-box; `scripts/world-to-commission.mjs` compiles it
+  `~/skills/ontology/commission.tbox.ttl` sits under `faith.ttl` and `story.ttl`. WHO A PEOPLE IS AND WHERE THEY ARE ARE
+  TWO NODES (2026-09-17; the first draft subclassed `gc:PeopleGroup`, which is not a class): `cm:People ⊑
+  gc:PeopleGroupIdentity` (a name in an invented register — no phase, no place) and `cm:PeopleCommunity ⊑
+  gc:PeopleCommunity`, THE KEY CLASS — the body in a place that the schedule, the reading and the carrier belong to and
+  the only thing a phase is claimed of. The grain axis is five faith classes: `at:Person` < `gc:FormationCommunity` (the
+  household circle, the hidden fine end) < `gc:NeighborhoodCommunity` (village) < `gc:PeopleCommunity` (province) <
+  `gc:PeopleGroupIdentity` (people). A reading is a `gc:CommunityPhaseResult` saying `gc:assignedLevel` /
+  `gc:engagementStrength` (`poe:PhaseN`, `poe:StrengthX`); a hidden state says `cm:phase`, NOT a sub-property of it; `kettlewater.ttl` is the A-box; `scripts/world-to-commission.mjs` compiles it
   and `test/roundtrip.test.ts` proves the compiled world equals the hand-written one (the ontology's `st:order`
   is canonical — the TypeScript bends to it). Everything an instance names is INVENTED, by shape
   (`cm:isFictional true`): no real people-group name may appear anywhere in it. The Toolkit's phases are

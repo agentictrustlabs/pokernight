@@ -20,6 +20,7 @@ const { namedNode } = DataFactory;
 const CM = 'https://skills.demo/commission#';
 const ST = 'https://skills.demo/story#';
 const GC = 'https://ontology.global.church/core#';
+const FCI = 'https://ontology.faithchain.org/incubator#';
 const POE = 'https://ontology.global.church/poe#';
 const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
 const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
@@ -36,7 +37,14 @@ const byOrder = (a, b) => (num(a, `${ST}order`) ?? 0) - (num(b, `${ST}order`) ??
 const byRound = (a, b) => (num(a, `${CM}afterRound`) ?? 0) - (num(b, `${CM}afterRound`) ?? 0);
 
 // THE TOOLKIT'S PHASES, BY IRI → the engine's value. `poe:Phase0R` is the restart indicator.
-const phaseOf = (node) => { const tail = node.value.slice(POE.length); return tail === 'Phase0R' ? '0-R' : Number(tail.replace('Phase', '')); };
+/** A PHASE IS THE FRAMEWORK'S OWN LEVEL (fci:lvl-poe-N); 0-R IS A QUALIFIER ON PHASE 0, never a ninth level — the
+ *  faith rule, so the engine's '0-R' is read from `restart-needed` on the SUBJECT, not from a level IRI. */
+const RESTART = `${FCI}restart-needed`;
+const levelOf = (node) => Number(node.value.slice(node.value.lastIndexOf('-') + 1));
+const phaseAt = (subject, levelProp, qualifierProp) => {
+  const level = levelOf(one(subject, levelProp));
+  return level === 0 && all(subject, qualifierProp).some((q) => q.value === RESTART) ? '0-R' : level;
+};
 // THE TOOLKIT'S STRENGTHS, as the faith ontology encodes them (`poe:StrengthActive`) → the engine's lowercase word.
 const strengthOf = (node) => node.value.slice(POE.length).replace('Strength', '').toLowerCase();
 const grainOf = (node) => lit(node, `${CM}grainKey`);
@@ -62,16 +70,23 @@ L.push(`  name: ${j(lit(region, `${RDFS}label`))},`);
 L.push(`  blurb: ${j(lit(region, `${RDFS}comment`))},`);
 L.push(`  spawn: ${j(key(one(region, `${CM}spawnsIn`), `${CM}roomKey`))},`);
 L.push(`  peoples: [`);
+/** WHO A PEOPLE IS is a separate node from WHERE THEY ARE (faith: gc:PeopleGroupIdentity ↔ gc:PeopleCommunity). The
+ *  engine's `id` and `name` are the identity's; everything that moves belongs to the community. */
+const identityOf = (community) => one(community, `${GC}communityHasIdentity`);
+const peopleKeyOf = (community) => key(identityOf(community), `${CM}peopleKey`);
 for (const p of all(region, `${CM}hasPeople`).sort(byOrder)) {
   const pub = one(p, `${CM}hasPublicReading`);
   const schedule = all(one(p, `${CM}hasSchedule`), `${CM}hasState`).sort(byRound);
   const carrier = one(p, `${CM}carriedBy`);
   L.push(`    {`);
-  L.push(`      id: ${j(key(p, `${CM}peopleKey`))}, name: ${j(lit(p, `${RDFS}label`))}, province: ${j(lit(p, `${CM}inProvince`))},`);
+  L.push(`      id: ${j(peopleKeyOf(p))}, name: ${j(lit(identityOf(p), `${RDFS}label`))}, province: ${j(lit(p, `${CM}inProvince`))},`);
   L.push(`      villages: [${all(p, `${CM}hasVillage`).sort(byOrder).map((v) => j(key(v, `${CM}villageKey`))).join(', ')}],`);
-  if (pub) L.push(`      publicReading: { phase: ${j(phaseOf(one(pub, `${CM}phase`)))}, strength: ${j(strengthOf(one(pub, `${CM}strength`)))}, vintage: ${num(pub, `${CM}afterRound`) ?? 0} },`);
-  L.push(`      schedule: [${schedule.map((s) => `{ phase: ${j(phaseOf(one(s, `${CM}phase`)))}, strength: ${j(strengthOf(one(s, `${CM}strength`)))} }`).join(', ')}],`);
-  L.push(`      truth: { village: ${j(key(one(p, `${CM}hiddenVillage`), `${CM}villageKey`))}, households: ${num(p, `${CM}hiddenHouseholds`)} },`);
+  // A READING says the faith ontology's own properties (it is a gc:CommunityPhaseResult); a HIDDEN STATE says cm:phase.
+  if (pub) L.push(`      publicReading: { phase: ${j(phaseAt(pub, `${GC}assignedLevel`, `${FCI}phaseQualifier`))}, strength: ${j(strengthOf(one(pub, `${GC}engagementStrength`)))}, vintage: ${num(pub, `${CM}afterRound`) ?? 0} },`);
+  L.push(`      schedule: [${schedule.map((s) => `{ phase: ${j(phaseAt(s, `${CM}phase`, `${CM}phaseQualifier`))}, strength: ${j(strengthOf(one(s, `${CM}strength`)))} }`).join(', ')}],`);
+  // THE HIDDEN STATE'S FINE END IS A CIRCLE: the kin households (a gc:FormationCommunity) that meet within one village.
+  const circle = one(p, `${CM}hiddenCircle`);
+  L.push(`      truth: { village: ${j(key(one(circle, `${FCI}circleWithinCommunity`), `${CM}villageKey`))}, households: ${num(circle, `${CM}householdCount`)} },`);
   if (carrier) L.push(`      carrier: ${j(key(carrier, `${ST}partKey`))},`);
   L.push(`    },`);
 }
@@ -106,8 +121,8 @@ const partLines = (p) => {
     coarse.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
     const count = num(v, `${CM}holdsCount`);
     const fields = [
-      `id: ${j(key(v, `${CM}evidenceKey`))}`, `people: ${j(key(one(v, `${CM}aboutPeople`), `${CM}peopleKey`))}`, `grain: ${j(grainOf(one(v, `${CM}knownAtGrain`)))}`,
-      `supports: ${phaseOf(one(v, `${CM}supportsPhase`))}`, `round: ${num(v, `${CM}arrivesInRound`)}`, `text: ${j(lit(v, `${RDFS}label`))}`,
+      `id: ${j(key(v, `${CM}evidenceKey`))}`, `people: ${j(peopleKeyOf(one(v, `${CM}aboutPeople`)))}`, `grain: ${j(grainOf(one(v, `${CM}knownAtGrain`)))}`,
+      `supports: ${levelOf(one(v, `${CM}supportsPhase`))}`, `round: ${num(v, `${CM}arrivesInRound`)}`, `text: ${j(lit(v, `${RDFS}label`))}`,
     ];
     if (coarse.length) fields.push(`coarse: { ${coarse.map(([g, t]) => `${g}: ${j(t)}`).join(', ')} }`);
     else fields.push(`coarse: {}`);
@@ -115,7 +130,9 @@ const partLines = (p) => {
     out.push(`        { ${fields.join(', ')} },`);
   }
   out.push(`      ],`);
-  out.push(`      lines: { ${['greet', 'probe', 'deflect', 'press', 'report'].map((k) => `${k}: ${j(lit(voice, `${ST}line-${k}`))}`).join(', ')} },`);
+  // greet and probe are the story upper's lines; deflect, press and report are this game's own (cm:).
+  const lineOf = (k) => lit(voice, `${['greet', 'probe'].includes(k) ? ST : CM}line-${k}`);
+  out.push(`      lines: { ${['greet', 'probe', 'deflect', 'press', 'report'].map((k) => `${k}: ${j(lineOf(k))}`).join(', ')} },`);
   const choices = all(p, `${ST}faces`);
   if (choices.length) {
     out.push(`      choices: [`);
