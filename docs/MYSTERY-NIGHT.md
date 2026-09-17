@@ -35,6 +35,18 @@ acts, two deaths.
    agent is `.cast` — a VERTICAL agent type (`packages/agent-naming` `registerVerticalAgentTypes`, spec 346
    §2.4) whose generic derived type is `person`: person-shaped, so it can speak and remember, and never
    mistakable for a human, because the suffix says what it is and every screen names its custodian.
+   **NOT BUILT YET, and this paragraph read as though it were** (checked against the Home, 2026-09-17).
+   `registerVerticalAgentTypes` ships in `@agenticprimitives/agent-naming` and is called NOWHERE in the Home;
+   `AGENT_TLDS` is `me · org · team · svc · workspace · treasury · registry · church · circle · household`
+   and has no `cast`; the Home's own `AgentKind` list has no `person` member at all, so a human cannot
+   charter a second person-shaped agent under themselves through any ceremony that exists today. Multiple
+   person agents per human ARE reachable — `bumpRotation`, "Use Google for a new home" — but that leaves the
+   previous one unreachable by sign-in, which is the opposite of what a persona needs. What the card room
+   actually runs on is `MYSTERY_CAST_AGENTS`: service agents handed out in the title's own order, with every
+   character's custodian recorded as `house`. Making a character a persona of a real person needs three
+   things at the Home — `cast` registered as a vertical over `person`, a way to charter one, and a DEFAULT
+   marker so a system reading two person agents knows which one is the human. The vocabulary for all three is
+   in `~/skills/ontology/persona.ttl`.
 5. **A ROLE IS AN ARCHETYPE; A CHARACTER IS THAT ARCHETYPE, CAST.** The skills estate gains a `mystery`
    context beside `texas-holdem` and `canasta` — one ontology, a dozen skill artifacts, and MANY archetypes:
    one per role of every title, plus the craft archetypes (`mystery-character`, `mystery-director`,
