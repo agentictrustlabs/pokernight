@@ -205,7 +205,14 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
     c.addEventListener('pointermove', move);
     c.addEventListener('pointerup', up);
     window.addEventListener('pointerup', up);
-    c.addEventListener('wheel', (e) => { e.preventDefault(); camCtl.current.zoom = Math.max(0.55, Math.min(2.2, camCtl.current.zoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); }, { passive: false });
+    /**
+     * THE WHEEL HAS TO BE ABLE TO GET YOU DOWN THERE (2026-09-16). See the camera below: the HEIGHT was a
+     * function of the room's size and the pitch and nothing else, so winding the wheel slid the camera
+     * towards the middle of the room at thirteen metres up and never descended. Eight people were on screen
+     * the whole time as specks under a pile of overlapping labels — "I don't see the other characters", which
+     * was true in every way that matters. The range reaches down to a third now, and the height comes with it.
+     */
+    c.addEventListener('wheel', (e) => { e.preventDefault(); camCtl.current.zoom = Math.max(0.3, Math.min(2.2, camCtl.current.zoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); }, { passive: false });
 
     /**
      * A THING YOU CAN CLICK LOOKS LIKE ONE: its own material, cloned and made to glow, put back when the
@@ -458,7 +465,10 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
         // height of the people in it. The distance shortens as it climbs, or a high camera drifts out of the
         // room entirely and looks at the roof of it from the next valley.
         const climb = cc.pitch / 0.75;
-        const high = 1.9 + size * (0.35 + climb * 1.25);
+        // ZOOM TAKES THE CAMERA DOWN AS WELL AS IN. Wound out it is the doll's house the night opens on;
+        // wound in it is somebody standing in the room, close enough to tell eight people apart. Floored at
+        // head height so it cannot end up under the floorboards.
+        const high = Math.max(1.6, (1.9 + size * (0.35 + climb * 1.25)) * cc.zoom);
         const back = dist * (1 - climb * 0.42);
         const x = Math.sin(cc.yaw) * back;
         const z = -Math.cos(cc.yaw) * back;
@@ -556,6 +566,21 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
          * running shows none at all, which is the fallback rather than a hole.
          */
         next.push({ id: `p:${role}`, text: who?.name ?? role, sub: who?.playedBy ?? (who?.operator === 'agent' ? 'an agent' : undefined), ...(who?.playedBy ? { face: who.playedBy } : {}), x: out.x, y: out.y, kind: `${speakingRef.current === role ? 'name speaking' : 'name'}${hover.current === role ? ' lit' : ''}` });
+      }
+      /**
+       * NAMES THAT DO NOT SIT ON TOP OF EACH OTHER (2026-09-16). Eight people standing in a group project to
+       * eight points a few pixels apart, so the labels stacked into "Marek NovákKai Brunner" and the room read
+       * as having two or three people in it. Each name that collides with one already placed is lifted a row;
+       * the nearest body keeps its natural height and the ones behind rise above it, which is the order a
+       * person expects anyway. Cheap and stable: the list is at most the cast.
+       */
+      const ROW = 26, SIDE = 96;
+      next.sort((m, n) => n.y - m.y);
+      for (let i = 0; i < next.length; i++) {
+        for (let k = 0; k < i; k++) {
+          const other = next[k]!, mine2 = next[i]!;
+          if (Math.abs(other.x - mine2.x) < SIDE && Math.abs(other.y - mine2.y) < ROW) { mine2.y = other.y - ROW; k = -1; }
+        }
       }
       for (const [id, p] of props.current) {
         camera.camera!.worldToScreen(new pc.Vec3(p.at.x, 1.15, p.at.z), out);

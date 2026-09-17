@@ -353,6 +353,15 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   typed TWICE — upper class and domain class, ADDED and never substituted, because nothing here runs a
   reasoner and `place-to-plan.mjs` must keep finding five `pl:Room`s. Re-running both generators after the
   retyping produced byte-identical output, which is the check that it was additive.
+- **THE VENUE'S ZOOM HAS TO REACH THE PEOPLE** (2026-09-16). The Belvedere's camera derived its HEIGHT from
+  the room's size and the pitch and nothing else, so the wheel slid it toward the middle of the room at
+  thirteen metres up and never descended. All eight characters were drawn and enabled the whole time — as
+  specks, under name plates stacked into "Marek NovákKai Brunner", which is why the room looked as though only
+  the played characters were in it. Height now scales with zoom (floored at 1.6 m) and the range reaches 0.3,
+  so wound in you are standing among them: measured 12.97 m → 3.89 m. AND PLATES DE-OVERLAP: a name colliding
+  with one already placed is lifted a row, nearest body keeping its natural height, so eight people read as
+  eight people. Diagnose it with playwright as the alice demo persona — `window.__venue` carries `bodies` and
+  `camera`, and "who is drawn" and "where is the camera" are two evaluates.
 - **A NAME IN THE CAST LIST IS A PLACE TO WALK TO** (2026-09-16). Pressing one used to swing the CAMERA at
   somebody, and only if they were already in your room; anybody else got "not in this room", which is a refusal
   rather than an answer. `venue.goTo(role)` walks your own body instead — breadth-first over the plan's own
