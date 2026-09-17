@@ -1,6 +1,7 @@
 import type { LobbyDO } from './lobby-do.js';
 import type { MissionRegistryDO } from './missions.js';
 import type { MysteryDO } from './mystery-do.js';
+import type { CommissionDO } from './commission-do.js';
 import type { SceneDO } from './scene-do.js';
 import type { SessionDO } from './session-do.js';
 import type { PokerTableDO } from './table-do.js';
@@ -15,6 +16,8 @@ export interface Env {
   ROOMS: DurableObjectNamespace<SceneDO>;
   /** MYSTERY NIGHT: one object per staging (`mystery-do.ts`, docs/MYSTERY-NIGHT.md). */
   STAGINGS: DurableObjectNamespace<MysteryDO>;
+  /** GREAT COMMISSION (docs/GREAT-COMMISSION.md): one object per staging — a substrate test played as a game. */
+  COMMISSIONS: DurableObjectNamespace<CommissionDO>;
   /** One instance per playerId; holds the server-side half of a Home session (see session-do.ts). */
   SESSIONS: DurableObjectNamespace<SessionDO>;
   /** One instance per club; holds its roster and answers standing (see club-do.ts). */
@@ -75,6 +78,10 @@ export interface Env {
   MYSTERY_CAST_AGENTS?: string;
   /** `role=agent@custodian`, comma-separated — see `mysteryCast`. Preferred over the positional list. */
   MYSTERY_CAST?: string;
+  /** The same three, for a Great Commission night: the parts nobody is playing, and who narrates. */
+  COMMISSION_CAST_AGENTS?: string;
+  COMMISSION_CAST?: string;
+  COMMISSION_DIRECTOR?: string;
   MYSTERY_DIRECTOR?: string;
   /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
   A2A_TIMEOUT_MS?: string;
@@ -332,6 +339,27 @@ export function mysteryCast(env: Env): CastMember[] {
     .filter((c) => c.role && c.agent && c.custodian);
 }
 /** Who narrates, if anybody. Absent means the title's own written lines, which is a complete night. */
+/** The cast parser, shared: `role=agent@custodian`, comma-separated; a half-written entry is dropped, not half-applied. */
+function parseCast(csv: string | undefined): CastMember[] {
+  return (csv ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [role, rest] = entry.split('=', 2);
+      const [agent, custodian] = (rest ?? '').split('@', 2);
+      return { role: (role ?? '').trim(), agent: (agent ?? '').trim(), custodian: (custodian ?? '').trim() };
+    })
+    .filter((c) => c.role && c.agent && c.custodian);
+}
+export function commissionCastAgents(env: Env): string[] {
+  return (env.COMMISSION_CAST_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+export function commissionCast(env: Env): CastMember[] { return parseCast(env.COMMISSION_CAST); }
+export function commissionDirector(env: Env): string | null {
+  const name = (env.COMMISSION_DIRECTOR ?? '').trim();
+  return name || null;
+}
 export function mysteryDirector(env: Env): string | null {
   const name = (env.MYSTERY_DIRECTOR ?? '').trim();
   return name || null;

@@ -196,6 +196,9 @@ importers:
       '@pokernight/canasta-agent':
         specifier: workspace:*
         version: link:../../packages/canasta-agent
+      '@pokernight/commission':
+        specifier: workspace:*
+        version: link:../../packages/commission
       '@pokernight/deal':
         specifier: workspace:*
         version: link:../../packages/deal
@@ -257,6 +260,9 @@ importers:
       '@cloudflare/realtimekit-virtual-background':
         specifier: 0.0.2
         version: 0.0.2
+      '@pokernight/commission':
+        specifier: workspace:*
+        version: link:../../packages/commission
       '@pokernight/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -347,6 +353,19 @@ importers:
       '@pokernight/canasta':
         specifier: workspace:*
         version: link:../canasta
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)
+
+  packages/commission:
+    dependencies:
+      '@pokernight/deal':
+        specifier: workspace:*
+        version: link:../deal
     devDependencies:
       typescript:
         specifier: ^5.6.3

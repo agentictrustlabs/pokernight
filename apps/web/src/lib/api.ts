@@ -597,6 +597,46 @@ export function mysterySocketUrl(stagingId: string, token: string): string {
   return `${socketBase()}/mysteries/${encodeURIComponent(stagingId)}/ws?token=${encodeURIComponent(token)}`;
 }
 
+// ═══════════════════════════ GREAT COMMISSION (docs/GREAT-COMMISSION.md) ═══════════════════════════
+/** What can be staged: the scenarios and their regions, so the front of the house can offer a choice of night and of part. */
+export interface CommissionScenarioSummary {
+  id: string; name: string; blurb: string; tone: string; night: 1 | 2; region: string; regionName: string; rounds: number; cast: number;
+  roles: Array<{ id: string; name: string; kind: string; blurb: string }>;
+}
+/** A commission's summary — the same shape as a mystery's staging summary with rounds for acts and a night number. */
+export interface CommissionSummary {
+  stagingId: string; scenario: string; region: string; role: string; night: 1 | 2; round: number; phase: string;
+  deadline: number | null; seedCommit: string; paused: boolean; startedAt: number; endedAt: number | null;
+  club?: string; clubNight?: string; host: string; pace: 'short' | 'full'; director?: string;
+  ready: { taken: number; present: number; waitingFor: string[]; everybodyHere: boolean };
+}
+export interface CommissionPart { role: string; name: string; kind: string; blurb: string; look: unknown; takenBy: string | null; takenById: string | null; operator: 'human' | 'agent' }
+export const commissionApi = {
+  scenarios: () => request<{ scenarios: CommissionScenarioSummary[] }>('/commissions'),
+  /** YOUR OWN NIGHT: the same one each time you ask, until you ask for another (`restart`). */
+  solo: (body: { scenario?: string; role?: string; restart?: boolean; pace?: 'short' | 'full' }, token: string) =>
+    request<{ ok: boolean; staging: CommissionSummary }>('/commissions/solo', { method: 'POST', body: JSON.stringify(body) }, token),
+  read: (stagingId: string, token: string) =>
+    request<{ staging: CommissionSummary; view: unknown; cast: CommissionPart[] }>(`/commissions/${encodeURIComponent(stagingId)}`, {}, token),
+  /** TAKE A PART at a club's night — or, after the curtain, take over one the house is playing. */
+  take: (stagingId: string, role: string | null, token: string) =>
+    request<{ ok: boolean; cast: CommissionPart[] }>(`/commissions/${encodeURIComponent(stagingId)}/cast`, { method: 'POST', body: JSON.stringify({ role }) }, token),
+  curtain: (stagingId: string, token: string) =>
+    request<{ ok: boolean; staging: CommissionSummary }>(`/commissions/${encodeURIComponent(stagingId)}/curtain`, { method: 'POST', body: '{}' }, token),
+};
+export function commissionSocketUrl(stagingId: string, token: string): string {
+  return `${socketBase()}/commissions/${encodeURIComponent(stagingId)}/ws?token=${encodeURIComponent(token)}`;
+}
+/** A CLUB'S COMMISSION NIGHT: what is on, and setting one up. */
+export const clubCommission = {
+  read: (clubId: string, token: string, scenario?: string) =>
+    request<{ staging: CommissionSummary | null; view: unknown; cast: CommissionPart[]; host: boolean }>(
+      `/clubs/${encodeURIComponent(clubId)}/commission${scenario ? `?scenario=${encodeURIComponent(scenario)}` : ''}`, {}, token,
+    ),
+  plan: (clubId: string, body: { scenario?: string; night?: string; pace?: 'short' | 'full'; restart?: boolean }, token: string) =>
+    request<{ ok: boolean; staging: CommissionSummary; cast: CommissionPart[] }>(`/clubs/${encodeURIComponent(clubId)}/commission`, { method: 'POST', body: JSON.stringify(body) }, token),
+};
+
 /** A CLUB'S MYSTERY NIGHT — the parts, who has taken them, and the two acts of the host's own. */
 export interface StagedPart { role: string; name: string; blurb: string; look: unknown; takenBy: string | null; takenById: string | null; operator: 'human' | 'agent' }
 export const clubMystery = {

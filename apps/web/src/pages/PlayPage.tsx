@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { AppSession, TableSummary } from '../lib/types';
-import { ApiError, api, mysteryApi, type MysteryTitleSummary } from '../lib/api';
+import { ApiError, api, commissionApi, mysteryApi, type CommissionScenarioSummary, type MysteryTitleSummary } from '../lib/api';
 import { gameLabel } from '../lib/games';
-import { goTo, mysteryHash, TABLES_HASH } from '../lib/routes';
+import { commissionHash, goTo, mysteryHash, TABLES_HASH } from '../lib/routes';
 import { seatsFree, withRoom } from '../lib/lobby';
 
 /**
@@ -25,6 +25,7 @@ export function PlayPage({ session }: { session: AppSession }) {
   return (
     <div className="play">
       <MysteryCard session={session} />
+      <CommissionCard session={session} />
       <PracticeCard session={session} game="canasta" />
       <PracticeCard session={session} game="poker" />
       <Running session={session} />
@@ -109,6 +110,86 @@ function MysteryCard({ session }: { session: AppSession }) {
           }}
         >
           {busy ? 'Setting the scene…' : 'Begin the night'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A NIGHT IN THE MARCHES (docs/GREAT-COMMISSION.md).
+ *
+ * The third game and the first that is a substrate test: five fictional peoples whose hidden state moves on
+ * its own, seven parts who hold testimony in vaults, and one adversary reading the same coarsened signals. One
+ * press and you are in the commons with six characters played by the estate's own agents. Your part is yours to
+ * pick; the world's schedule is drawn from a seed committed to before the first word.
+ */
+function CommissionCard({ session }: { session: AppSession }) {
+  const [scenarios, setScenarios] = useState<CommissionScenarioSummary[] | null>(null);
+  const [scenario, setScenario] = useState('');
+  const [role, setRole] = useState('');
+  const [pace, setPace] = useState<'short' | 'full'>('short');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    commissionApi.scenarios().then((r) => alive && setScenarios(r.scenarios)).catch(() => alive && setScenarios([]));
+    return () => { alive = false; };
+  }, []);
+  const chosen = scenarios?.find((s) => s.id === scenario) ?? scenarios?.[0] ?? null;
+  return (
+    <section className="panel play-card play-commission">
+      <div className="play-band">
+        <span className="play-suit" aria-hidden="true">✦</span>
+        <div>
+          <span className="play-kicker">{chosen ? `${chosen.regionName} · ${chosen.cast} parts · ${chosen.rounds} rounds` : 'Great Commission'}</span>
+          <h2>{chosen ? chosen.name : 'Great Commission'}</h2>
+        </div>
+      </div>
+      <div className="play-body">
+        <p className="hint">{chosen ? chosen.blurb : 'A substrate test played as a game: find the motion before the adversary finds the person.'}</p>
+        {scenarios && scenarios.length > 1 ? (
+          <label className="mystery-part">
+            Which night
+            <select value={chosen?.id ?? ''} onChange={(e) => { setScenario(e.target.value); setRole(''); }}>
+              {scenarios.map((s) => <option key={s.id} value={s.id}>Night {s.night} — {s.name}</option>)}
+            </select>
+          </label>
+        ) : null}
+        {chosen ? (
+          <label className="mystery-part">
+            How long you have
+            <select value={pace} onChange={(e) => setPace(e.target.value as 'short' | 'full')}>
+              <option value="short">A short night — three rounds in about fifteen minutes</option>
+              <option value="full">The whole evening — an hour in the marches</option>
+            </select>
+          </label>
+        ) : null}
+        {chosen ? (
+          <label className="mystery-part">
+            Your part
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="">Whoever the house gives you</option>
+              {chosen.roles.map((r) => <option key={r.id} value={r.id}>{r.name} — {r.kind}</option>)}
+            </select>
+            <span className="hint">{chosen.roles.find((r) => r.id === role)?.blurb ?? chosen.tone}</span>
+          </label>
+        ) : null}
+        {err ? <div className="form-error">{err}</div> : null}
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !chosen}
+          onClick={async () => {
+            if (!chosen) return;
+            setBusy(true); setErr(null);
+            try {
+              const r = await commissionApi.solo({ scenario: chosen.id, pace, ...(role ? { role } : {}) }, session.token);
+              goTo(commissionHash(r.staging.stagingId));
+            } catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false); }
+          }}
+        >
+          {busy ? 'Opening the road…' : 'Come to the marches'}
         </button>
       </div>
     </section>

@@ -26,6 +26,10 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - `packages/agent-kit` helpers and a rules-based baseline poker strategy for agents.
 - `packages/canasta-agent` the same for canasta: `chooseCanastaAction(view, legal, seat)`, pure, and
   verified against the engine's own helpers before it returns. Property-tested over 200 seeded rounds.
+- `packages/commission` pure Great Commission engine — a substrate test played as a game (`docs/GREAT-COMMISSION.md`):
+  five fictional peoples whose hidden state moves on its own, seven parts who testify at a grain, assess,
+  corroborate, commit, revoke and infer, and a score. Regions and scenarios are CONTENT, generated from the
+  ontology (`pnpm gen:commission`). Seeded, replayable, no I/O.
 - `packages/treasury` house money layer: read/move the 6-decimal settlement asset from Smart Agents the
   house custodies. Names no currency: the address and ticker are injected by `apps/*`.
   Config injected (rpc, chain id, deployments, signer); no hostnames, no addresses, no keys.
@@ -444,6 +448,30 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   context; the engine owns facts and the director service owns only words; the killer is drawn by the seed,
   committed before the night and revealed after; a clue is a card (`viewFor`/`redact`); one player and seven of
   the estate's own agents is the DEFAULT shape, drawn as the room's own bodies. Read it before building any of it.
+- **GREAT COMMISSION IS A SECOND GAME, NOT A TITLE** (2026-09-17, `docs/GREAT-COMMISSION.md`). Paul Martel's
+  tabletop note re-skinned Mystery Night as a substrate test: five fictional peoples whose hidden state moves on
+  its own, seven parts (returnee, household network, sending agency, funder, researcher, convener, adversary)
+  who hold testimony in vaults, a picture assembled from PERMISSION SLIPS, and one adversary reading the same
+  coarsened signals. THE RAILS PASS IF THE PICTURE FINDS THE MOTION BEFORE THE ADVERSARY FINDS THE PERSON. Its
+  hidden truth, verbs and score are not a murder's, so it is what the layout rule says a new game is — its own
+  package (`packages/commission`), `CommissionDO`, `/commissions/*`, `pages/CommissionPage.tsx` at `#/gc/<id>`,
+  `commission.act|direct|consult`, cast personas and archetypes — sharing every PATTERN a mystery proved (seeded
+  draw and commitment, `saw` on every room-scoped event, `viewFor`/`redactEvent`, the cast table, takeover, the
+  host's hold, presence and attention) and no code. **GROWTH IS EXOGENOUS**: `state.truth` is written in `tick`
+  and nowhere else, and no action carries a field that names it — the CAS brief's boundary (carriers are agents;
+  the response of those who hear is never modelled) as a type. **THE HIDDEN STATE IS NEVER CALLED THE TRUE
+  PHASE**: a phase is an assessment made from testimony; the engine's value is the fictional ground truth the
+  assessment is scored against, and `cm:HiddenEventState` and `cm:PhaseReading` are two classes no property
+  joins. **YOU MAY COARSEN, NEVER REFINE**: a slip finer than its room's rule is a LEAK, a number the vault does
+  not hold is a FABRICATION, a corroboration standing only on a withdrawn slip is a REPLAY — recorded, never
+  adjudicated in the room, and shown in the score. **THE WORLD IS AUTHORED UNDER THE FAITH ONTOLOGY**:
+  `~/skills/ontology/commission.tbox.ttl` sits under `faith.ttl` (a people is a `gc:PeopleGroup`, a reading a
+  `gc:EngagementAssessmentResult` whose `cm:phase ⊑ gc:assignedLevel` is a `poe:PhaseN` concept, strength a
+  `poe:StrengthX`) and `story.ttl`; `kettlewater.ttl` is the A-box; `scripts/world-to-commission.mjs` compiles it
+  and `test/roundtrip.test.ts` proves the compiled world equals the hand-written one (the ontology's `st:order`
+  is canonical — the TypeScript bends to it). Everything an instance names is INVENTED, by shape
+  (`cm:isFictional true`): no real people-group name may appear anywhere in it. The Toolkit's phases are
+  © 2026 Phases of Engagement Collaborative, CC BY-NC-SA 4.0, referenced by IRI and not re-declared.
 - **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
   hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
   actually has. `lib/brand.ts` still owns the product name.
@@ -719,6 +747,7 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 
 ## Commands
 - `pnpm install` · `pnpm test` · `pnpm typecheck`
+- `pnpm gen:commission` (compiles `~/skills/ontology/kettlewater.ttl` into the commission's world; `pnpm gen:story` is the mystery's)
 - `pnpm dev:tables` (wrangler dev on :8787) · `pnpm dev:web` (vite on :5173) · `pnpm dev:agents` (wrangler dev on :8788)
 - `pnpm --filter pokernight-agent bot -- --table <id> --seat 3` (rules-based bot)
 - `pnpm walk:nav` (presses every road through the card room on the live deployment as one of the Home's

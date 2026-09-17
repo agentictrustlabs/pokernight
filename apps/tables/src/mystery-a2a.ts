@@ -36,7 +36,7 @@ const errText = (e: unknown): string => (e instanceof Error ? e.message : String
  * refuses its own host with a 401 — which is exactly what this road did until it read the endpoint off the
  * card instead of building one from the zone. `url` is therefore passed in, taken from the card.
  */
-async function send(url: string, id: string, parts: unknown[], timeoutMs: number, env?: Env): Promise<{ ok: true; parts: unknown } | { ok: false; error: string }> {
+export async function sendSigned(url: string, id: string, parts: unknown[], timeoutMs: number, env?: Env): Promise<{ ok: true; parts: unknown } | { ok: false; error: string }> {
   const raw = JSON.stringify({
     jsonrpc: '2.0', id, method: A2A_SEND_MESSAGE,
     params: { message: { messageId: crypto.randomUUID(), role: 'user', parts } },
@@ -77,7 +77,7 @@ export type SceneResult = { ok: true; output: SceneOutput; agent: string } | { o
 export async function askCharacter(env: Env, agentName: string, input: SceneInput, timeoutMs: number): Promise<SceneResult> {
   const road = await playsCharacters(env, agentName, Math.min(timeoutMs, 6_000));
   if (!road.ok) return road;
-  const sent = await send(road.url, `${input.stagingId}:${input.act}:${input.role}`, encodeSceneParts(input), timeoutMs, env);
+  const sent = await sendSigned(road.url, `${input.stagingId}:${input.act}:${input.role}`, encodeSceneParts(input), timeoutMs, env);
   if (!sent.ok) return sent;
   const decoded = decodeSceneReply(sent.parts);
   // WHAT IT ACTUALLY SAID, when it did not say it in the shape — the only thing that tells you whether to fix
@@ -100,7 +100,7 @@ export async function askDirector(env: Env, agentName: string, input: DirectInpu
   // The director's endpoint comes off its card too; a Home agent refuses its own host.
   const card = await fetchAgentCard(base, Math.min(timeoutMs, 6_000));
   const url = card.ok ? messageUrlFromCard(card.card, base) : a2aUrl(base, A2A_JSONRPC_PATH);
-  const sent = await send(url, `${input.stagingId}:${input.act}:${input.phase}`, encodeDirectParts(input), timeoutMs, env);
+  const sent = await sendSigned(url, `${input.stagingId}:${input.act}:${input.phase}`, encodeDirectParts(input), timeoutMs, env);
   if (!sent.ok) return sent;
   const decoded = decodeDirectReply(sent.parts);
   if ('error' in decoded) return { ok: false, error: `${decoded.error}: ${JSON.stringify(sent.parts).slice(0, 400)}` };

@@ -110,6 +110,7 @@ import { visitOf, oneOffFrom, CLUB_ID_RE, CLUB_WIRE_SKILLS, belongs, clubDelegat
 import { resolveAgentName } from './naming.js';
 import { gameFor } from './games.js';
 import { DEFAULT_TITLE, TITLES, VENUES } from '@pokernight/mystery';
+import { SCENARIOS as COMMISSION_SCENARIOS, REGIONS as COMMISSION_REGIONS, DEFAULT_SCENARIO } from '@pokernight/commission';
 import { ensurePracticeTable, practiceTableId } from './practice.js';
 import { feedPlayer, feedToken } from './feed-token.js';
 
@@ -117,6 +118,7 @@ export { PokerTableDO } from './table-do.js';
 export { LobbyDO } from './lobby-do.js';
 export { MissionRegistryDO } from './missions.js';
 export { MysteryDO } from './mystery-do.js';
+export { CommissionDO } from './commission-do.js';
 export { SceneDO } from './scene-do.js';
 export { SessionDO } from './session-do.js';
 
@@ -787,6 +789,127 @@ app.get('/mysteries/:stagingId/ws', async (c) => {
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
   const headers = new Headers({ Upgrade: 'websocket', 'x-player-id': session.playerId, 'x-player-name': encodeURIComponent(session.name) });
   return staging(c.env, c.req.param('stagingId') ?? '').fetch('https://staging/ws', { headers });
+});
+
+// ═══════════════════════════ GREAT COMMISSION (docs/GREAT-COMMISSION.md) ═══════════════════════════
+// A substrate test played as a game: the same doors as a mystery night — a night of your own, a club's night
+// with parts taken and a curtain the host raises, a view, a socket — over a different engine in `CommissionDO`.
+const COMMISSION_NS = 'pokernight:commission:v1';
+async function commissionSoloId(playerId: string, scenario: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`${COMMISSION_NS}:${scenario}:${playerId}`);
+  const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return [h.slice(0, 8), h.slice(8, 12), `4${h.slice(13, 16)}`, `${((parseInt(h[16] as string, 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}`, h.slice(20, 32)].join('-');
+}
+async function commissionClubId(club: string, night: string | undefined, scenario: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`${COMMISSION_NS}:club:${club.toLowerCase()}:${night ?? 'open'}:${scenario}`);
+  const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return [h.slice(0, 8), h.slice(8, 12), `4${h.slice(13, 16)}`, `${((parseInt(h[16] as string, 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}`, h.slice(20, 32)].join('-');
+}
+function commission(env: Env, stagingId: string) {
+  return env.COMMISSIONS.get(env.COMMISSIONS.idFromName(stagingId));
+}
+
+/** What can be staged — scenarios and their regions, so a client can offer a choice. */
+app.get('/commissions', (c) => c.json({
+  scenarios: Object.values(COMMISSION_SCENARIOS).map((sc) => ({
+    id: sc.id, name: sc.name, blurb: sc.blurb, tone: sc.tone, night: sc.night, region: sc.region,
+    regionName: COMMISSION_REGIONS[sc.region]?.name ?? sc.region, rounds: sc.rounds.length, cast: sc.roles.length,
+    roles: sc.roles.map((r) => ({ id: r.id, name: r.name, kind: r.kind, blurb: r.blurb })),
+  })),
+}));
+
+/** YOUR OWN NIGHT: one per person per scenario, made on the first ask and remade when you ask for another. */
+app.post('/commissions/solo', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const body = (await c.req.json().catch(() => ({}))) as { scenario?: string; role?: string; restart?: boolean; pace?: 'short' | 'full' };
+  const scenario = body.scenario ?? DEFAULT_SCENARIO;
+  if (!COMMISSION_SCENARIOS[scenario]) return c.json({ error: `no such scenario: ${scenario}` }, 404);
+  const stagingId = await commissionSoloId(session.playerId, scenario);
+  const res = await commission(c.env, stagingId).fetch('https://staging/open', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stagingId, owner: session.playerId, ownerName: session.name, scenario, role: body.role, restart: body.restart === true, pace: body.pace === 'short' ? 'short' : 'full' }),
+  });
+  if (!res.ok) return c.json({ error: ((await res.json()) as { error?: string }).error ?? 'could not open the night' }, 400);
+  return c.json((await res.json()) as unknown);
+});
+
+/** SET ONE UP (host): the night exists, in casting, and its parts are open. */
+app.post('/clubs/:clubId/commission', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  const club = (c.req.param('clubId') ?? '').toLowerCase();
+  const standing = await clubStanding(c, club, session);
+  if (!standing.ok) return standing.response;
+  if (!standing.host) return c.json({ error: 'the host sets the night up' }, 403);
+  const body = (await c.req.json().catch(() => ({}))) as { scenario?: string; night?: string; pace?: 'short' | 'full'; restart?: boolean };
+  const scenario = body.scenario ?? DEFAULT_SCENARIO;
+  if (!COMMISSION_SCENARIOS[scenario]) return c.json({ error: `no such scenario: ${scenario}` }, 404);
+  const stagingId = await commissionClubId(club, body.night, scenario);
+  const res = await commission(c.env, stagingId).fetch('https://staging/plan', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stagingId, club, night: body.night, scenario, host: session!.playerId, hostName: session!.name, pace: body.pace, restart: body.restart === true, director: agentOf(session as never) ?? undefined }),
+  });
+  return c.json((await res.json()) as unknown, res.ok ? 200 : 400);
+});
+
+/** WHAT IS ON at this club — the commission it has planned, with every part and who has it. */
+app.get('/clubs/:clubId/commission', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  const club = (c.req.param('clubId') ?? '').toLowerCase();
+  const standing = await clubStanding(c, club, session);
+  if (!standing.ok) return standing.response;
+  const scenario = c.req.query('scenario') ?? DEFAULT_SCENARIO;
+  const night = c.req.query('night') ?? undefined;
+  const stagingId = await commissionClubId(club, night, scenario);
+  const res = await commission(c.env, stagingId).fetch(`https://staging/view?playerId=${encodeURIComponent(session!.playerId)}`);
+  if (!res.ok) return c.json({ staging: null, cast: [], host: standing.host }, 200);
+  const body = (await res.json()) as Record<string, unknown>;
+  return c.json({ ...body, host: standing.host });
+});
+
+/** TAKE A PART (a member), or give it up with `role: null`; after the curtain, take over one the house plays. */
+app.post('/commissions/:stagingId/cast', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const st = commission(c.env, c.req.param('stagingId') ?? '');
+  const read = await st.fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}`);
+  const club = read.ok ? ((await read.json()) as { staging?: { club?: string } }).staging?.club : undefined;
+  if (!club) return c.json({ error: 'no such night' }, 404);
+  const standing = await clubStanding(c, club, session);
+  if (!standing.ok) return standing.response;
+  const body = (await c.req.json().catch(() => ({}))) as { role?: string | null };
+  const res = await st.fetch('https://staging/cast', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerId: session.playerId, name: session.name, role: body.role ?? null }),
+  });
+  return c.json((await res.json()) as unknown, res.ok ? 200 : 409);
+});
+
+/** RAISE THE CURTAIN (the host). */
+app.post('/commissions/:stagingId/curtain', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const res = await commission(c.env, c.req.param('stagingId') ?? '').fetch('https://staging/curtain', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ by: session.playerId }),
+  });
+  return c.json((await res.json()) as unknown, res.ok ? 200 : 403);
+});
+
+/** The staging as this person sees it — their part's view, or a watcher's. */
+app.get('/commissions/:stagingId', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const res = await commission(c.env, c.req.param('stagingId') ?? '').fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}`);
+  return c.json((await res.json()) as unknown, res.ok ? 200 : 404);
+});
+
+/** The night's socket. `?token=` like a table's. */
+app.get('/commissions/:stagingId/ws', async (c) => {
+  if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') return c.json({ error: 'expected websocket upgrade' }, 426);
+  const session = await resolveSession(c.env, c.req.query('token'));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const headers = new Headers({ Upgrade: 'websocket', 'x-player-id': session.playerId, 'x-player-name': encodeURIComponent(session.name) });
+  return commission(c.env, c.req.param('stagingId') ?? '').fetch('https://staging/ws', { headers });
 });
 
 /** The room's manifest and who is in it — a read, so a page can draw the lounge before the socket opens. */

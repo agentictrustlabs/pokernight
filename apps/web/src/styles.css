@@ -6963,3 +6963,32 @@ button.tag.guest {
 .venue-door { color: #8fd0a2; font-size: 11px; }
 .venue-door.shut { color: #7f8b93; }
 .venue-help { position: absolute; left: 0.7rem; bottom: 0.5rem; margin: 0; font-size: 11px; color: #a9b3ba; }
+
+/* ═══════════════════════════ GREAT COMMISSION (docs/GREAT-COMMISSION.md) ═══════════════════════════
+   The mystery page's shell, with the BOARD where the venue was: five peoples and the reading for each. */
+.gc-page .mystery-main > .gc-board { flex: 0 0 auto; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain; }
+.gc-board header { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
+.gc-board h3 { margin: 0.5rem 0 0.2rem; }
+.gc-people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem; }
+.gc-people li { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.5rem 0.6rem; border: 1px solid rgba(240, 236, 224, 0.1); border-radius: 6px; }
+.gc-reading { display: flex; flex-direction: column; gap: 0.1rem; }
+.gc-phase { color: #c9a14a; font-weight: 600; }
+.gc-need { color: #8fd0a2; }
+.gc-grain { margin-left: 0.4rem; font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.gc-commits { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.92rem; }
+.gc-commits li.stale { color: #e5b3b3; }
+.gc-commits li.done { color: #8fd0a2; }
+.gc-vault, .gc-received { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+.gc-vault li, .gc-received li { display: flex; flex-direction: column; gap: 0.25rem; border-bottom: 1px solid rgba(240, 236, 224, 0.08); padding-bottom: 0.5rem; font-size: 0.92rem; }
+.gc-vault li.revoked, .gc-received li.revoked { opacity: 0.55; }
+.gc-slip { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.2rem; }
+.gc-slip label { display: inline-flex; gap: 0.35rem; align-items: center; font-size: 0.85rem; margin-right: 0.6rem; }
+.gc-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.gc-form select, .gc-form input { max-width: 100%; }
+.gc-leak { color: #e5b3b3; }
+.gc-reveal.rails-held { border-color: #8fd0a2; }
+.gc-reveal.rails-failed { border-color: #8d3a3a; }
+.gc-score { list-style: none; margin: 0.2rem 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+.gc-score li.hit { color: #8fd0a2; }
+.gc-score li.miss { color: #e5b3b3; }
+.play-commission .play-suit { color: #8fd0a2; }

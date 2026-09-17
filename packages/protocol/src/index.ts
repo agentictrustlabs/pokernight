@@ -1297,6 +1297,47 @@ export function sceneAnswerShape(): { action: string; say: string } {
   };
 }
 
+/* ═══════════════════════════ GREAT COMMISSION — a substrate test (docs/GREAT-COMMISSION.md) ═══════════════════════════
+ *
+ * A PART IS ASKED THE WAY A CHARACTER IS ASKED. `commission.act` rides the same envelope as `mystery.act` —
+ * the staging sends the part's own view (its room and the room's grain, its vault with each item's projections,
+ * what it has been shown) and the verbs it may use, and the agent answers with ONE action and ONE line. What
+ * differs is the SHAPE of the answer, because the verbs are a different game's: testify at a grain, assess,
+ * corroborate, commit, revoke, infer. `commission.direct` and `commission.consult` are the director's and the
+ * player's asks, as for a mystery.
+ */
+export const COMMISSION_ACT_SKILL = 'commission.act';
+export const COMMISSION_DIRECT_SKILL = 'commission.direct';
+export const COMMISSION_CONSULT_SKILL = 'commission.consult';
+export const COMMISSION_SKILLS = { act: COMMISSION_ACT_SKILL, direct: COMMISSION_DIRECT_SKILL, consult: COMMISSION_CONSULT_SKILL } as const;
+
+/** HOW A PART SHOULD SHAPE ITS ANSWER — the commission engine's own verbs, named exactly. */
+export function commissionAnswerShape(): { action: string; say: string } {
+  return {
+    action:
+      'what you do, EXACTLY one of {"type":"testify","people":<people id>,"evidence":<an item id from your vault>,"grain":<a grain allowed here — see each item\'s projections>,"to":<optional role id in your room>} | {"type":"assess","people":<people id>,"phase":<0-7 or "0-R">,"strength":<"unknown"|"initial"|"growing"|"active"|"flourishing">} (researcher only) | {"type":"corroborate","people":<people id>,"phase":<phase>} | {"type":"commit","people":<people id>,"need":<the need a reading emitted, verbatim>,"resource":<what you offer>} (funder or agency) | {"type":"revoke","evidence":<item id>} | {"type":"infer","people":<people id>,"village":<name>,"households":<n>} (adversary only) | {"type":"move","room":<room id from your doors>} | {"type":"admit","who":<role id>,"room":<room id>} (convener only) | {"type":"whisper","to":<role id>,"text":<words>} | {"type":"say","text":<words>} | {"type":"choose","choice":<id>,"option":<id>} — or omit "action" to only speak',
+    say: 'one line, IN CHARACTER, first person, at most two sentences — what the room hears you say',
+  };
+}
+
+/** The two parts a part\'s turn is sent as, for the commission: the same envelope as a scene, the commission\'s shape. */
+export function encodeCommissionParts(input: SceneInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const shape = commissionAnswerShape();
+  const text = [
+    `${input.skill}: you are ${input.roleName} in a Great Commission night, round ${input.act}.`,
+    input.brief,
+    ...(input.craft ?? []).map((c) => `- ${c}`),
+    input.question ? `Your player asks: "${input.question}".` : 'It is your moment. Stay in character, and do one thing.',
+    `Answer with ONE JSON object and nothing else: {"say": ${shape.say}, "action": ${shape.action}}.`,
+    `What you may do here: ${input.legal.join(', ')}`,
+    `The night as you see it — your room and its grain, your vault and what each item may be said as here, what you have been shown, the board: ${JSON.stringify(input.view)}`,
+  ].join('\n');
+  return [
+    { kind: 'data', data: { skill: input.skill, input: input as unknown as Record<string, unknown>, answer: shape } },
+    { kind: 'text', text },
+  ];
+}
+
 /** The two parts a character's turn is sent as: the data an answering step reads, the text a planner reads. */
 export function encodeSceneParts(input: SceneInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
   const shape = sceneAnswerShape();

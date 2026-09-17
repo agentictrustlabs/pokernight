@@ -40,6 +40,7 @@ bindings = [
   { name = "MISSIONS", class_name = "MissionRegistryDO" },
   { name = "ROOMS", class_name = "SceneDO" },
   { name = "STAGINGS", class_name = "MysteryDO" },
+  { name = "COMMISSIONS", class_name = "CommissionDO" },
 ]
 
 # Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
@@ -78,6 +79,11 @@ new_sqlite_classes = ["SceneDO"]
 tag = "v7"
 new_sqlite_classes = ["MysteryDO"]
 
+# GREAT COMMISSION (docs/GREAT-COMMISSION.md): one object per staging — a substrate test played as a game.
+[[migrations]]
+tag = "v8"
+new_sqlite_classes = ["CommissionDO"]
+
 [[kv_namespaces]]
 binding = "CLUB_WIRES"
 id = "e8fd7d1531324551a74655bb622dab58"
@@ -99,6 +105,10 @@ simple = { limit = 20, period = 60 }
 [vars]
 # Mystery Night: who plays the parts nobody is playing, and who narrates (see the faithnet block).
 MYSTERY_CAST_AGENTS = ""
+# GREAT COMMISSION: the same three for a commission night — `role=agent@custodian` for the parts, and who narrates.
+COMMISSION_CAST = ""
+COMMISSION_CAST_AGENTS = ""
+COMMISSION_DIRECTOR = ""
 MYSTERY_DIRECTOR = ""
 CHAIN_ID = "31337"
 RPC_URL = "http://127.0.0.1:8545"
@@ -164,6 +174,7 @@ bindings = [
   { name = "MISSIONS", class_name = "MissionRegistryDO" },
   { name = "ROOMS", class_name = "SceneDO" },
   { name = "STAGINGS", class_name = "MysteryDO" },
+  { name = "COMMISSIONS", class_name = "CommissionDO" },
 ]
 
 [[env.faithnet.migrations]]
@@ -194,6 +205,10 @@ new_sqlite_classes = ["SceneDO"]
 [[env.faithnet.migrations]]
 tag = "v7"
 new_sqlite_classes = ["MysteryDO"]
+
+[[env.faithnet.migrations]]
+tag = "v8"
+new_sqlite_classes = ["CommissionDO"]
 
 [[env.faithnet.kv_namespaces]]
 binding = "CLUB_WIRES"
@@ -364,4 +379,8 @@ HOUSE_DELEGATE = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 MYSTERY_CAST = "concierge=emile-elena.me@elena,heiress=delphine-alice.me@alice,instructor=kai-bob.me@bob,doctor=halloran-carol.me@carol,chef=marek-dave.me@dave,journalist=nadia-nathan.me@nathan,guide=sofia-david.me@david,widow=perrin-alice.me@alice"
 # The positional list stays for a deployment whose stand-ins really are interchangeable. This one's are not.
 MYSTERY_CAST_AGENTS = ""
+# GREAT COMMISSION: the same three for a commission night — `role=agent@custodian` for the parts, and who narrates.
+COMMISSION_CAST = ""
+COMMISSION_CAST_AGENTS = ""
+COMMISSION_DIRECTOR = ""
 MYSTERY_DIRECTOR = "belvedere-house-svc.faithnet.ai"

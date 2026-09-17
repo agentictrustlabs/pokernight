@@ -31,6 +31,7 @@ import { PRODUCT_MARK } from './lib/brand';
 import { MissionRegisterPage } from './pages/MissionRegisterPage';
 import { NewClubPage } from './pages/NewClubPage';
 import { MysteryPage } from './pages/MysteryPage';
+import { CommissionPage } from './pages/CommissionPage';
 import { SignUpPage } from './pages/SignUpPage';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
@@ -584,6 +585,15 @@ export function App() {
       <div className="app">
         <CardDefs />
         <MysteryPage stagingId={r.stagingId} session={session} onSignOut={signOut} />
+      </div>
+    );
+  }
+  // A COMMISSION NIGHT IS A PLACE TOO, and takes the whole window like a mystery (docs/GREAT-COMMISSION.md §10).
+  if (r.page === 'commission') {
+    return huddled(
+      <div className="app">
+        <CardDefs />
+        <CommissionPage stagingId={r.stagingId} session={session} onSignOut={signOut} />
       </div>
     );
   }
