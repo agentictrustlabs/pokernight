@@ -341,7 +341,14 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
     window.addEventListener('pointerup', onUp);
     // ZOOM AND TILT ARE BOUNDED. Wound all the way in and down, the camera ended up inside the body at floor
     // level: you could not see the room, could not tell where you were pointing, and could not walk anywhere.
-    c.addEventListener('wheel', (e) => { e.preventDefault(); const k = camCtl.current; k.zoom = Math.max(0.7, Math.min(2.2, k.zoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); }, { passive: false });
+    /**
+     * THE RANGE HAS TO REACH SOMETHING (2026-09-16). It was 0.7–2.2 over a 4.2 m boom with the height floored
+     * at 2.4 m, so however hard you wound the wheel the camera stayed about three metres back and well over
+     * head height — "I am not able to zoom into the 3D", which was true: nothing you did brought you close to
+     * a face, a card or the fire. Down to 0.32 puts the camera at about a metre and a half, close enough to
+     * read a card on the felt; the height floor drops with it, or you would only ever look down from a gantry.
+     */
+    c.addEventListener('wheel', (e) => { e.preventDefault(); const k = camCtl.current; k.zoom = Math.max(0.32, Math.min(2.4, k.zoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12))); }, { passive: false });
     a.mouse!.on(pc.EVENT_MOUSEMOVE, (e: pc.MouseEvent) => {
       if (camCtl.current.dragging) return;
       // THE CHAIR UNDER THE POINTER LIGHTS UP, so picking one is aiming at a thing rather than guessing at a spot.
@@ -352,23 +359,48 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
       lightChair(seat ? seat.key : null);
       // AND WHO IS UNDER THE POINTER. Names hang over heads at a distance and vanish in a crowd; looking at
       // somebody should tell you who they are, and they should look back.
-      const out2 = new pc.Vec3();
-      let near: { id: string; b: BodyHandle; d: number } | null = null;
-      for (const [id, b] of bodies.current) {
-        camera.camera!.worldToScreen(new pc.Vec3(b.avatar.pos.x, 1.2, b.avatar.pos.z), out2);
-        if (out2.z <= 0) continue;
-        const d = Math.hypot(out2.x - e.x, out2.y - e.y);
-        if (d < 70 && (!near || d < near.d)) near = { id, b, d };
-      }
+      /**
+       * EVERYBODY IN THE ROOM IS SOMEBODY YOU CAN LOOK AT (2026-09-16).
+       *
+       * This walked `bodies` only — the people whose own tab is open here — so an agent in a chair and the
+       * dealer in his red hat were scenery: no card, no name, no nod, whatever you did with the pointer.
+       * A room where half the figures do not answer the pointer reads as broken rather than as quiet.
+       *
+       * AND THE REACH IS THE FIGURE'S OWN SIZE ON SCREEN, never a number of pixels — the lounge's own rule for
+       * seats, which the person hit-test never got. A flat 70 px is about right standing beside somebody and
+       * about three metres of floor from a wound-out camera, so at a distance the whole room selected whoever
+       * was nearest the middle. Project head and feet, take a third of that height as the reach, and score
+       * candidates in their OWN widths so the nearest wins rather than the biggest.
+       */
+      const out2 = new pc.Vec3(); const foot = new pc.Vec3();
+      type Cand = { key: string; person?: string; name: string; avatar: ParticipantAvatar; score: number };
+      let near: Cand | null = null;
+      const consider = (key: string, name: string, avatar: ParticipantAvatar, person?: string) => {
+        camera.camera!.worldToScreen(new pc.Vec3(avatar.pos.x, 1.2, avatar.pos.z), out2);
+        if (out2.z <= 0) return;
+        camera.camera!.worldToScreen(new pc.Vec3(avatar.pos.x, 0, avatar.pos.z), foot);
+        const tall = Math.max(14, Math.abs(foot.y - out2.y) * 1.6); // 1.2 m projected → a whole body
+        const reach = Math.max(12, tall * 0.34);
+        const score = Math.hypot(out2.x - e.x, out2.y - e.y) / reach;
+        if (score <= 1 && (!near || score < near.score)) near = { key, name, avatar, score, ...(person ? { person } : {}) };
+      };
+      for (const [id, b] of bodies.current) consider(`p:${id}`, b.name, b.avatar, id);
+      for (const [key, bt] of bots.current) consider(`b:${key}`, plateRef.current.get(`bot:${key}`)?.text ?? 'seated', bt);
+      for (const [id, dl] of dealers.current) consider(`d:${id}`, 'The dealer', dl.avatar);
       if (!near) { setOver(null); nodded.current = null; return; }
-      const p2 = peopleRef.current.get(near.id);
+      const who2: Cand = near as Cand;
+      const p2 = who2.person ? peopleRef.current.get(who2.person) : undefined;
       const manifest2 = manifestRef.current;
       const table2 = p2?.seatedAt ? manifest2?.tables.find((t2) => t2.tableId === p2.seatedAt!.tableId) : null;
-      const doing = table2 ? `sitting at ${table2.name}` : p2 && isAtPlace(manifest2?.anchors.fire, p2.x, p2.y) ? 'by the fire' : p2 && isAtPlace(manifest2?.anchors.bar, p2.x, p2.y) ? 'at the bar' : 'in the room';
-      camera.camera!.worldToScreen(new pc.Vec3(near.b.avatar.pos.x, 1.25, near.b.avatar.pos.z), out2);
-      setOver({ name: near.b.name, ...(p2?.agent && p2.agent.includes('.') ? { agent: p2.agent } : {}), doing, ...(p2?.said && Date.now() - p2.said.at < 20000 ? { said: p2.said.text } : {}), x: out2.x, y: out2.y });
+      const doing = who2.key.startsWith('d:') ? 'dealing'
+        : who2.key.startsWith('b:') ? 'sitting at the table'
+        : table2 ? `sitting at ${table2.name}`
+        : p2 && isAtPlace(manifest2?.anchors.fire, p2.x, p2.y) ? 'by the fire'
+        : p2 && isAtPlace(manifest2?.anchors.bar, p2.x, p2.y) ? 'at the bar' : 'in the room';
+      camera.camera!.worldToScreen(new pc.Vec3(who2.avatar.pos.x, 1.25, who2.avatar.pos.z), out2);
+      setOver({ name: who2.name, ...(p2?.agent && p2.agent.includes('.') ? { agent: p2.agent } : {}), doing, ...(p2?.said && Date.now() - p2.said.at < 20000 ? { said: p2.said.text } : {}), x: out2.x, y: out2.y });
       // they nod back, once per approach
-      if (nodded.current !== near.id) { nodded.current = near.id; near.b.avatar.nod(); }
+      if (nodded.current !== who2.key) { nodded.current = who2.key; who2.avatar.nod(); }
     });
     /** Where on the floor a screen point lands, or null when it points at the sky. */
     const floorAt = (cam: pc.Entity, sx: number, sy: number): pc.Vec3 | null => {
@@ -465,7 +497,7 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // back, down at the felt — the table is what a seated person looks at
         m.avatar.update(dt);
         const p = m.avatar.pos; const cc = camCtl.current; const yaw = m.avatar.yaw + cc.yaw;
-        const dist = 2.6 * cc.zoom, up = (3.9 + cc.pitch * 3) * cc.zoom;
+        const dist = Math.max(0.9, 2.6 * cc.zoom), up = Math.max(1.1, (3.9 + cc.pitch * 3) * cc.zoom);
         const behind = new pc.Vec3(p.x - Math.sin(yaw) * dist + Math.cos(yaw) * 0.3, Math.max(1.2, up), p.z - Math.cos(yaw) * dist - Math.sin(yaw) * 0.3);
         // arriving already in the chair, the camera is simply there — no swoop down from the door over the felt
         if (!camSettled.current) { camera.setPosition(behind); camSettled.current = true; }
@@ -513,8 +545,24 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
         // LOOKING AT THE ROOM, slightly down: high enough to see the floor, the tables and who is at them, low
         // enough that it is still a person's view and not a map. Bounded below so a wound-in zoom cannot put the
         // camera at table level, where you lose the room and cannot tell where you are pointing.
-        const cc = camCtl.current; const cy = av.yaw + cc.yaw; const dist = 4.2 * cc.zoom, up = Math.max(2.4, (3.3 + cc.pitch * 3.5) * cc.zoom);
-        const behind = new pc.Vec3(Math.max(-10.5, Math.min(10.5, pos.x - Math.sin(cy) * dist)), up, Math.max(-10.5, Math.min(10.5, pos.z - Math.cos(cy) * dist)));
+        /**
+         * ZOOM SHORTENS THE BOOM; IT DOES NOT SLIDE THE CAMERA ALONG A WALL (2026-09-16).
+         *
+         * The camera's x and z were each clamped to ±10.5 to keep it inside the room. Stand anywhere near the
+         * back of the lounge and both were pinned at the clamp, so winding the wheel changed the distance,
+         * the clamp threw the change away, and the only thing that moved was the HEIGHT — "I am not able to
+         * zoom into the 3D", exactly. Clamp the LENGTH OF THE BOOM instead: work out how long it may be before
+         * it leaves the room along this heading, and take the shorter of that and what the zoom asked for.
+         * Near a wall the camera comes in close, which is what a camera should do, and the wheel always moves it.
+         */
+        const cc = camCtl.current; const cy = av.yaw + cc.yaw; const want = 4.2 * cc.zoom, up = Math.max(1.25, (3.3 + cc.pitch * 3.5) * cc.zoom);
+        const sx = Math.sin(cy), sz = Math.cos(cy);
+        const LIM = 10.5;
+        let far = want;
+        if (sx > 1e-4) far = Math.min(far, (pos.x + LIM) / sx); else if (sx < -1e-4) far = Math.min(far, (pos.x - LIM) / sx);
+        if (sz > 1e-4) far = Math.min(far, (pos.z + LIM) / sz); else if (sz < -1e-4) far = Math.min(far, (pos.z - LIM) / sz);
+        const dist = Math.max(0.9, Math.min(want, far));
+        const behind = new pc.Vec3(pos.x - sx * dist, up, pos.z - sz * dist);
         if (!camSettled.current) { camera.setPosition(behind); camSettled.current = true; }
         camera.setPosition(camera.getPosition().lerp(camera.getPosition(), behind, Math.min(1, dt * 2.5)));
         camera.lookAt(pos.x + Math.sin(cy) * 3.8, 1.05, pos.z + Math.cos(cy) * 3.8);
