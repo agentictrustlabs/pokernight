@@ -10,7 +10,7 @@
  *
  * NO HOOK AFTER AN EARLY RETURN — every hook in this file is above the first `return`.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommissionEvent, CommissionView, Grain, Phase, Strength } from '@pokernight/commission';
 import { PHASE_NAMES, phaseName } from '@pokernight/commission';
 import type { AppSession } from '../lib/types';
@@ -18,6 +18,38 @@ import { commissionApi } from '../lib/api';
 import { CommissionSocket, type CommissionClientState } from '../lib/commissionSocket';
 import { HOME_HASH } from '../lib/routes';
 import { Face } from '../components/mystery/Face';
+import type { VenueHandle } from '../components/mystery/Venue';
+import type { MysteryView } from '@pokernight/mystery';
+import { KETTLEWATER_HOUSE_PLAN } from '../components/commission/plan';
+
+/** THE ENGINE NEVER AT MODULE TIME: PlayCanvas is loaded when somebody walks into a room, like the lounge's. */
+const Venue = lazy(() => import('../components/mystery/Venue').then((m) => ({ default: m.Venue })));
+
+/**
+ * THE MEETING HOUSE, DRAWN BY THE MYSTERY'S VENUE. The venue reads a mystery's view — a room with props and a
+ * death, a cast with `alive` — so a commission's view is handed to it in that shape: the room's things are the
+ * plan's own features (the map, the wall, the hearth), nobody is dead, and a part gone silent is drawn where
+ * they stood. Nothing here is a fact of the game; it is how the game is drawn.
+ */
+function asVenueView(v: CommissionView): MysteryView {
+  const plan = v.room ? KETTLEWATER_HOUSE_PLAN[v.room.id] : undefined;
+  const props = (plan?.things ?? []).filter((t) => t.prop).map((t) => ({ id: t.prop!, name: t.label ?? t.prop!, examined: false }));
+  const person = (p: CommissionView['cast'][number]) => ({
+    role: p.role, name: p.name, operator: p.operator, agent: p.agent, alive: !p.silent, look: p.look,
+    ...(p.room ? { room: p.room } : {}), ...(p.roomName ? { roomName: p.roomName } : {}),
+    ...(p.appearance ? { appearance: p.appearance } : {}), ...(p.mind ? { mind: p.mind } : {}), ...(p.playedBy ? { playedBy: p.playedBy } : {}),
+  });
+  return {
+    title: v.scenario, titleName: v.scenarioName, venue: v.region,
+    act: v.round, actName: v.roundName, objective: v.objective, pace: v.pace,
+    phase: v.phase === 'round' ? 'act' : v.phase === 'closing' ? 'accusations' : v.phase, deadline: v.deadline, seedCommit: v.seedCommit,
+    you: v.you ? { role: v.you.role, name: v.you.name, blurb: v.you.blurb, secret: v.you.secret, alive: !v.you.silent, look: v.you.look, killer: false } : null,
+    room: v.room ? { id: v.room.id, name: v.room.name, blurb: v.room.blurb, people: v.room.people.map(person), props, doors: v.room.doors, death: null, trace: null } : null,
+    cast: v.cast.map(person),
+    rooms: v.rooms.map((r) => ({ id: r.id, name: r.name })),
+    clues: [], deaths: [], transcript: [], outcomes: [], choices: [], accusation: null, reveal: null,
+  } as unknown as MysteryView;
+}
 import { Identity } from '../components/Identity';
 import { Brand } from '../components/Brand';
 
@@ -48,6 +80,14 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
     setBusy(true);
     try { await commissionApi.solo({ scenario: view.scenario, role: view.you?.role, restart: true }, session.token); } finally { setBusy(false); }
   };
+  const venue = useRef<VenueHandle | null>(null);
+  const venueView = useMemo(() => (view ? asVenueView(view) : null), [view]);
+  /** A DOOR IS WALKED THROUGH, not teleported: the room takes the move and sends it down the socket on arrival. */
+  const actThroughRoom = (a: unknown) => {
+    const m = a as { type?: string; room?: string };
+    if (m?.type === 'move' && m.room && venue.current?.goThrough(m.room)) return;
+    sock?.act(a);
+  };
   const roundLabel = useMemo(() => (view ? (view.phase === 'closing' ? 'The closing' : view.phase === 'revealed' ? 'The reveal' : `Round ${view.round} · ${view.roundName}`) : ''), [view]);
 
   if (!session) return <div className="page"><section className="panel"><p className="hint">Sign in to come to the marches.</p></section></div>;
@@ -70,8 +110,15 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
       {state.error ? <div className="form-error">{state.error}</div> : null}
       <div className="mystery-layout">
         <main className="mystery-main">
+          {view.room && venueView ? (
+            <Suspense fallback={<section className="panel"><p className="hint">Opening the meeting house…</p></section>}>
+              <div className="mystery-venue-wrap">
+                <Venue ref={venue} plan={KETTLEWATER_HOUSE_PLAN} view={venueView} speaking={null} act={(a) => sock?.act(a)} />
+              </div>
+            </Suspense>
+          ) : null}
           <Board view={view} />
-          <Room view={view} act={act} />
+          <Room view={view} act={actThroughRoom} />
           <Transcript view={view} />
         </main>
         <aside className="mystery-side">

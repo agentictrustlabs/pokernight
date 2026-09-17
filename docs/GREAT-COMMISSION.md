@@ -89,6 +89,14 @@ The comparison that matters is the same scenario, same seed, before and after a 
 8. Memory across nights — night two and 0-R.
 9. Pressure for precision — the funder's demand and the fabrication record.
 
+## 9a · The place, and the wall
+
+**Break-off spaces are the grains.** The club room's fireside, table and bar are places you *sit* to do a kind of talking. Here the kinds of talking are the game's own: every workspace carries a disclosure rule, so breaking off into a room is choosing the grain you may speak at — and the meeting house at Kettlewater (`~/skills/ontology/kettlewater-house.ttl`, under `place.ttl`) furnishes each room for its rule. The commons is the long hall, with the map of the marches on the end wall and the post-it wall beside the door — province grain, everybody. The household room is a hearth with three chairs — the fireside, where household grain may be said, and the door is the only thing between that sentence and the commons. The agency office is a desk, a roster and a ledger; the research desk a slate with the seven questions; the funders' table is round so nobody sits at its head; the road is outside, where the returnee is alone. The room ids are the workspace ids, joined on one string apiece, so the room a player walks into and the room whose rule binds what they may say are the same room by construction. There is no anchor of role "repose": nobody dies here.
+
+**The wall is anonymous by construction.** `post` puts a topic on a room that has a wall; the event carries no author, no view ever does, and the author sits in state for the score alone. An unattributed people-grain sentence is the safest contribution the whole exercise allows, and a board of them is how a group finds what it wants to talk about without anybody having to be the one who asked.
+
+**Messaging.** A whisper is already private and 1:1 — the shape of a direct message between two parts' agents at their Homes (`messaging.direct.send`); room talk and post-its are the shape of a post in the club's board (`messaging.topic.post`). Both rails exist and both need a standing grant per cast agent; that is the same work the mystery's cast is waiting on and it lands for both games at once.
+
 ## 10 · What is reused, exactly
 
 The Durable Object shape (presence, attention, `heard`, the host's hold, the readiness doorway, the agent cast on the alarm, the director asked for words); the club's night and the solo night; the cast list and the takeover; the transcript, the inspector, the host controls and the huddle on the page; the protocol's scene envelope; the estate scripts that charter a persona, link it, vault it, card it and assign its archetype. The 3D venue is **not** reused: the rooms here are workspaces, not a hotel, and the page draws the region as a map of five peoples and the rooms as a rail.
