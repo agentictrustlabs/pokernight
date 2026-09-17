@@ -6,6 +6,12 @@
  * read from the local files, so a refusal here is a refusal the Worker would get too.
  *
  *   npx tsx scripts/ask-as-house.mts alice-me.faithnet.ai "What can you help me with?"
+ *   npx tsx scripts/ask-as-house.mts emile-elena-me.faithnet.ai --scene
+ *
+ * `--scene` is the MYSTERY NIGHT probe: one `mystery.act` moment, encoded by the protocol's own
+ * `encodeSceneParts` so the bytes are the ones `MysteryDO` would send, answered by whatever playbook the
+ * character's agent carries. It is the one question worth asking of a cast agent before a night runs — a
+ * card that advertises the skill still proves nothing about whether an archetype is behind it.
  *
  * This runs a harness ask at the person's Home, under THEIR playbook — a language-model run they pay
  * for. One question, on purpose, when checking the path; not a thing to loop.
@@ -14,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { privateKeyToAccount } from 'viem/accounts';
 import { wrapSessionSignature } from '@agenticprimitives/a2a';
 import { callerAssertionDigest, requestBodyHash, sessionAuthorizationHeader } from '@agenticprimitives/a2a/standard';
+import { encodeSceneParts, MYSTERY_ACT_SKILL } from '@pokernight/protocol';
 
 const host = process.argv[2];
 const text = process.argv[3] ?? 'What can you help me with?';
@@ -22,7 +29,7 @@ if (!host) throw new Error('usage: ask-as-house.mts <host> [question] [--advise 
 // a data part naming the skill with a seat's view, and a text part. `--advise` is one hand's question to the
 // person's agent (which consults the coach it names); `--record` is a hand end (a vault put, no model);
 // `--review` is the person's own question about her past hands (forwarded to the coach).
-const mode = process.argv.includes('--advise') ? 'advise' : process.argv.includes('--record') ? 'record' : process.argv.includes('--review') ? 'review' : null;
+const mode = process.argv.includes('--advise') ? 'advise' : process.argv.includes('--record') ? 'record' : process.argv.includes('--review') ? 'review' : process.argv.includes('--scene') ? 'scene' : null;
 // WHERE THE CARD SAYS, not where the host is. A Home agent's card names the estate's EDGE as its
 // message URL; the worker host behind it refuses direct calls (`gateway_assertion_required`).
 const card = (await (await fetch(`https://${host}/.well-known/agent-card.json`)).json()) as { supportedInterfaces?: Array<{ url?: string }> };
@@ -38,7 +45,24 @@ console.log('asking :', url);
 const seat = { skill: `poker.${mode}`, tableId: 'probe', handNo: 12, seat: 0, deadlineMs: 20_000,
   view: { hand: { street: 'turn', board: ['As', 'Kd', '7c', '2h'], pot: 24, toCall: 18 }, me: { cards: ['Qh', 'Jh'], stack: 180 }, seats: [{ seat: 0, playerId: 'me', name: 'Alice' }, { seat: 1, playerId: 'agent:sharkbot.svc', name: 'Sharkbot', stack: 210 }] },
   legal: { fold: true, call: 18, raise: { min: 36, max: 180 } } };
-const parts = mode === 'advise'
+// One character's moment at the Belvedere, in the shape the staging sends. The view is a small honest
+// slice — a room, the people in it, one thing on a table — because what is being proven is the ROAD, and a
+// bigger view would only cost the custodian more tokens to prove the same thing.
+const scene = {
+  skill: MYSTERY_ACT_SKILL, stagingId: 'probe', act: 1, role: 'concierge', roleName: 'Émile Rossi',
+  brief: 'You keep the Hôtel Belvedere. You know which guests arrived late, which doors were unlocked, and you say less than you know.',
+  craft: ['Speak in the first person, as Émile.', 'Do ONE thing. The engine decides what it means.'],
+  legal: ['say', 'move', 'examine', 'search'],
+  deadlineMs: 20_000,
+  view: {
+    you: { role: 'concierge', name: 'Émile Rossi', room: 'lobby' },
+    room: { key: 'lobby', name: 'The lobby', people: [{ name: 'Delphine Aubert', role: 'heiress' }], things: [{ key: 'register', name: 'the guest register' }] },
+    heard: ['The snow closed the pass at six.'],
+  },
+} as unknown as Parameters<typeof encodeSceneParts>[0];
+const parts = mode === 'scene'
+  ? encodeSceneParts(scene)
+  : mode === 'advise'
   ? [{ kind: 'data', data: { skill: 'poker.advise', input: { ...seat, question: text, read: { street: 'turn', priceToCall: '43%', outs: 9, chanceOneCard: '18%', position: 'out of position', facing: 'a bet of 18 into 24 by Sharkbot' }, baseline: { say: 'Fold — 43% to call with 18% to come.', action: { type: 'fold' } } }, answer: { say: 'one sentence', because: 'the reason', action: 'the move, EXACTLY one of {"type":"fold"} | {"type":"check"} | {"type":"call"} | {"type":"bet","amount":<total>} | {"type":"raise","amount":<total>} | {"type":"all-in"}' } } }, { kind: 'text', text: `poker.advise: advise seat 0 at poker, round 12. The person asked: "${text}".` }]
   : mode === 'record'
     ? [{ kind: 'data', data: { skill: 'poker.record', input: { ...seat, observation: { subjects: { 'agent:sharkbot.svc': { label: 'Sharkbot', counters: { hands: 1, vpip: 1, pfr: 1, cbetOpps: 1, cbet: 1, doubleBarrelOpps: 1, doubleBarrel: 1 } }, me: { you: true, counters: { hands: 1, vpip: 1, foldToBetOpps: 1, foldToBet: 1, netChips: -6 } } } } } } }, { kind: 'text', text: 'poker.record: round 12 at poker is over, as seat 0 saw it. Nothing is asked; record the hand.' }]
