@@ -6325,6 +6325,36 @@ button.tag.guest {
   color: var(--hero-ink-soft);
   pointer-events: none;
 }
+/* THE POSTER THAT HOLDS THE ROOM'S PLACE while it stands itself up. It never blocks a pointer, it fades
+   rather than cuts, and once it is gone it costs a composited layer and nothing else. */
+.lounge-poster {
+  position: absolute;
+  inset: 0;
+  /* Explicit, because the sibling it covers is a WebGL canvas on its own composited layer and leaving the
+     order to `auto` is a bet on paint rules rather than a statement of intent. */
+  z-index: 3;
+  pointer-events: none;
+  background: #1A1410 url('/art/lounge-night.svg') center / cover no-repeat;
+  display: grid;
+  place-items: end center;
+  padding-bottom: 8%;
+  opacity: 1;
+  transition: opacity 620ms ease-out;
+  border-radius: inherit;
+}
+.lounge-poster.gone { opacity: 0; }
+.lounge-poster-word {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: #F3E4CC;
+  background: rgba(12, 8, 5, 0.55);
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  backdrop-filter: blur(3px);
+}
+@media (prefers-reduced-motion: reduce) { .lounge-poster { transition: none; } }
 .lounge-plate-bubble {
   background: #fffefb;
   color: #1c2420;
@@ -6821,6 +6851,35 @@ button.tag.guest {
   color: #9aa3ab; font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.2rem; }
 .mystery-inspector-close:hover { color: #e8eef2; }
 @media (max-width: 899px) { .mystery-inspector { width: auto; left: 0.6rem; } }
+/* ── THE NIGHT'S POSTER ─────────────────────────────────────────────────────────────────────── */
+.mystery-hero { position: relative; border-radius: var(--radius); overflow: hidden; margin: 0 0 1rem;
+  min-height: 280px; display: flex; align-items: flex-end; }
+.mystery-hero-art { position: absolute; inset: 0;
+  background: #0E1628 url('/art/belvedere-night.svg') center 30% / cover no-repeat; }
+.mystery-hero-words { position: relative; width: 100%; padding: 4.5rem 1.15rem 1.05rem;
+  background: linear-gradient(to top, rgba(6,10,20,.92) 8%, rgba(6,10,20,.72) 42%, rgba(6,10,20,0) 100%); }
+.mystery-hero-eyebrow { display: block; font-size: .68rem; letter-spacing: .16em; text-transform: uppercase;
+  color: #9FB6D6; margin-bottom: .3rem; }
+.mystery-hero-words h2 { margin: 0 0 .35rem; color: #F4F8FF; font-size: clamp(1.4rem, 3.4vw, 2rem);
+  line-height: 1.1; letter-spacing: -.015em; }
+.mystery-hero-words p { margin: 0; color: #C8D6E9; font-size: .93rem; max-width: 62ch; line-height: 1.5; }
+
+/* ── THE CAST SHEET ─────────────────────────────────────────────────────────────────────────── */
+.mystery-cast { list-style: none; margin: .7rem 0 .9rem; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: .6rem; }
+.mystery-card { display: flex; flex-direction: column; gap: .5rem; padding: .75rem .8rem .8rem;
+  border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
+.mystery-card.taken { border-color: color-mix(in srgb, var(--gold, #c9a45c) 55%, var(--rule));
+  background: color-mix(in srgb, var(--gold, #c9a45c) 7%, var(--surface)); }
+.mystery-card.mine { border-color: #4f9d69; background: color-mix(in srgb, #4f9d69 10%, var(--surface)); }
+.mystery-card-head { display: flex; gap: .6rem; align-items: center; }
+.mystery-card-who { display: flex; flex-direction: column; min-width: 0; }
+.mystery-card-who strong { font-size: 1rem; line-height: 1.2; }
+.mystery-card-by { font-size: .74rem; letter-spacing: .04em; color: var(--muted, #6b7280); margin-top: .12rem; }
+.mystery-card-by.free { opacity: .72; font-style: italic; }
+.mystery-card-line { margin: 0; font-size: .86rem; line-height: 1.45; color: var(--muted, #6b7280); }
+.mystery-card-take { align-self: flex-start; margin-top: auto; }
+
 .mystery-doorway { margin: .7rem 0 .2rem; padding: .55rem .75rem; border-radius: 4px;
   border-left: 3px solid var(--gold, #c9a45c); background: rgba(255,255,255,.03); }
 .mystery-doorway.all-here { border-left-color: #4f9d69; }
@@ -6874,7 +6933,22 @@ button.tag.guest {
 /* THE VENUE — the room, drawn. The plates are HTML over the canvas, as the lounge's are. */
 .venue { position: relative; height: min(42vh, 460px); border-radius: var(--radius); overflow: hidden; border: 1px solid rgba(240, 236, 224, 0.16); background: #0b0e11; }
 .venue canvas { display: block; width: 100%; height: 100%; }
-.venue-loading { display: grid; place-items: center; }
+/* THE NIGHT'S OWN POSTER while the venue stands up — the hotel, on the night the pass shut. */
+.venue-loading {
+  display: grid;
+  place-items: end center;
+  padding-bottom: 7%;
+  background: #0E1628 url('/art/belvedere-night.svg') center 34% / cover no-repeat;
+}
+.venue-loading .hint {
+  margin: 0;
+  color: #E7EEF9;
+  background: rgba(6, 10, 20, 0.6);
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  letter-spacing: 0.08em;
+  backdrop-filter: blur(3px);
+}
 .venue-plates { position: absolute; inset: 0; pointer-events: none; }
 .venue-plate { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; white-space: nowrap; font-size: 12px; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); }
 .venue-plate small { font-size: 10px; color: #a9b3ba; }

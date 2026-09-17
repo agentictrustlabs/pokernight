@@ -14,6 +14,27 @@ import type { Look } from '@pokernight/mystery';
  * friends can stage an eight-hander, and the killer is drawn over the PEOPLE in it, because a party is better
  * when somebody at the table has to lie.
  */
+/**
+ * THE POSTER FOR THE NIGHT (2026-09-16). A mystery is an EVENING somebody has to want to come to, and the tab
+ * used to open on a heading and a paragraph. This is the hotel on the night the pass shut — authored artwork,
+ * so it is sharp on any screen and costs a few kilobytes — with the title over it and the one line that says
+ * what kind of evening it is. Swapping in a photograph is one file and nothing here changes.
+ */
+function Curtain({ status }: { status: string }) {
+  return (
+    <div className="mystery-hero">
+      <div className="mystery-hero-art" role="img"
+        aria-label="The Hôtel Belvedere above the treeline on the night the pass shut: lit windows, falling snow, and the peaks behind it." />
+      <div className="mystery-hero-words">
+        <span className="mystery-hero-eyebrow">Mystery Night{status ? ` · ${status}` : ''}</span>
+        <h2>Snowfall at the Belvedere</h2>
+        <p>The pass is shut and the wind is up. Eight people are in a ski hotel above the treeline, one of
+          them did it, and nobody — including us — knows which until the seed is spent.</p>
+      </div>
+    </div>
+  );
+}
+
 /** Is anybody who took a part not yet in the room? */
 function waiting(ready: StagingSummary['ready']): boolean { return !!ready && ready.waitingFor.length > 0; }
 
@@ -74,12 +95,7 @@ export function MysteryNight({ clubId, session, host }: { clubId: string; sessio
   if (!staging) {
     return (
       <section className="panel mystery-plan">
-        <span className="eyebrow">Mystery Night</span>
-        <h2>Snowfall at the Belvedere</h2>
-        <p className="hint">
-          Eight parts in a ski hotel with the pass shut. Your people take the parts they want; the house plays the
-          rest; one of the people here did it, and nobody — including us — knows which until the seed is spent.
-        </p>
+        <Curtain status="" />
         {err ? <div className="form-error">{err}</div> : null}
         {host ? (
           <div className="row wrap">
@@ -98,26 +114,38 @@ export function MysteryNight({ clubId, session, host }: { clubId: string; sessio
 
   return (
     <section className="panel mystery-plan">
-      <span className="eyebrow">Mystery Night{casting ? ' · casting' : running ? ' · playing' : ' · over'}</span>
-      <h2>Snowfall at the Belvedere</h2>
+      <Curtain status={casting ? 'casting' : running ? 'playing' : 'over'} />
       {err ? <div className="form-error">{err}</div> : null}
       {casting ? (
         <>
           <p className="hint">Take a part. Whatever nobody takes is played by one of the house’s own, so a night runs with two of you or with eight.</p>
-          <ul className="mystery-parts">
+          {/*
+            * A CAST SHEET, NOT A LIST (2026-09-16). Eight rows of face-plus-paragraph-plus-button was the
+            * shape of a settings screen, and a person choosing who to BE for three hours was reading it like
+            * one. A card each: the face big enough to see, the name, the one line that says who they are, and
+            * the action on its own row underneath where it cannot squeeze the words. A part somebody has taken
+            * stops being an offer and becomes a statement — no button, a ribbon with their name on it.
+            */}
+          <ul className="mystery-cast">
             {cast.map((p) => {
               const takenByMe = p.takenById === session.playerId;
               return (
-                <li key={p.role} className={p.takenBy ? 'taken' : ''}>
-                  <Face look={p.look as Look} name={p.name} size={44} />
-                  <div>
-                    <strong>{p.name}</strong>
-                    <span className="hint">{p.blurb}</span>
+                <li key={p.role} className={`mystery-card${p.takenBy ? ' taken' : ''}${takenByMe ? ' mine' : ''}`}>
+                  <div className="mystery-card-head">
+                    <Face look={p.look as Look} name={p.name} size={56} />
+                    <div className="mystery-card-who">
+                      <strong>{p.name}</strong>
+                      {p.takenBy ? (
+                        <span className="mystery-card-by">{takenByMe ? 'you are playing this part' : `${p.takenBy} is playing this part`}</span>
+                      ) : (
+                        <span className="mystery-card-by free">nobody has taken this part</span>
+                      )}
+                    </div>
                   </div>
-                  {p.takenBy ? (
-                    <span className="tag">{takenByMe ? 'yours' : p.takenBy}</span>
-                  ) : (
-                    <button type="button" className="small" disabled={busy} onClick={() => void act(() => clubMystery.take(staging.stagingId, p.role, session.token))}>
+                  <p className="mystery-card-line">{p.blurb}</p>
+                  {p.takenBy ? null : (
+                    <button type="button" className="small mystery-card-take" disabled={busy}
+                      onClick={() => void act(() => clubMystery.take(staging.stagingId, p.role, session.token))}>
                       {mine ? 'Take this one instead' : 'Take this part'}
                     </button>
                   )}

@@ -1197,7 +1197,18 @@ export const Lounge = forwardRef<LoungeHandle, LoungeProps>(function Lounge({ so
           </div>
         ))}
       </div>
-      {!state.manifest ? <div className="lounge-loading-inline"><p className="hint">Walking in…</p></div> : null}
+      {/*
+        * ARRIVING SHOULD LOOK LIKE SOMEWHERE (2026-09-16). The room takes a second or two to stand itself up —
+        * the engine loads, the bodies arrive, the light is prefiltered — and what a person saw in that gap was
+        * a flat colour with two words on it, then a half-drawn scene. A poster of the room holds the space
+        * instead, and CROSSFADES rather than cutting: it stays in the DOM and loses its opacity the moment the
+        * manifest lands, so the drawn room becomes the real one rather than replacing it.
+        * It is authored artwork (`/art/lounge-night.svg`) and not a screenshot, so it is sharp at any size and
+        * costs a few kilobytes. Swapping in a photograph is one file, and nothing here would change.
+        */}
+      <div className={`lounge-poster${state.manifest ? ' gone' : ''}`} aria-hidden={state.manifest ? 'true' : undefined}>
+        {!state.manifest ? <p className="lounge-poster-word">Walking in…</p> : null}
+      </div>
       {over ? (
         <div className="lounge-who" style={{ left: over.x, top: over.y }} aria-hidden="true">
           <strong>{over.name}</strong>
