@@ -535,7 +535,7 @@ function personView(state: MysteryState, title: Title, role: RoleId, venue?: Ven
     ...(c?.mind ? { mind: c.mind } : {}),
     // A character a PERSON plays says whose voice it is — that is how a huddle's audio finds its body, and
     // it is no secret: their name is on the cast list before the curtain goes up.
-    ...(c?.operator === 'human' && c.name ? { playedBy: c.name } : {}),
+    ...(c?.operator === 'human' && c.playedBy ? { playedBy: c.playedBy } : {}),
   };
 }
 

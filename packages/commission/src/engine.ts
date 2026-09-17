@@ -457,7 +457,7 @@ function personView(state: CommissionState, scenario: Scenario, region: Region, 
     ...(r?.appearance ? { appearance: r.appearance } : {}),
     look: r?.look ?? { skin: '#d8b08a', hair: '#3b2f2a', wear: '#2b333a', accent: '#5b6b74', hairStyle: 'short' },
     ...(c?.mind ? { mind: c.mind } : {}),
-    ...(c?.operator === 'human' && c.name ? { playedBy: c.name } : {}),
+    ...(c?.operator === 'human' && c.playedBy ? { playedBy: c.playedBy } : {}),
     ...(isSilent(state, scenario, role) ? { silent: true } : {}),
   };
 }

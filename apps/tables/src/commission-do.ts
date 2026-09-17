@@ -81,7 +81,10 @@ export class CommissionDO extends DurableObject<Env> {
   private async carryWhispers(): Promise<void> {
     const cm = await castMessaging(this.env);
     if (!cm || !this.state) return;
-    for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried)) {
+    // THE CHARACTER IS THE IDENTITY: both ends are the part's standing persona, whoever plays it tonight.
+    const standing = commissionCast(this.env);
+    const personaOf = (role: string) => standing.find((m) => m.role === role)?.agent ?? null;
+    for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried, personaOf)) {
       this.carried.add(w.key);
       if (this.carried.size > 600) for (const k of [...this.carried].slice(0, 200)) this.carried.delete(k);
       void whisperAs(this.env, cm, w.from, w.toSa, w.toName, w.text)
@@ -97,7 +100,13 @@ export class CommissionDO extends DurableObject<Env> {
     let handed = 0;
     return roles.map((r) => {
       const person = human(r.id);
-      if (person) return { role: r.id, agent: person.playerId, name: person.name || r.name, custodian: person.playerId, operator: 'human' as const, playerId: person.playerId, mind: 'human' as const };
+      // A PERSON CHANGES THE MIND, NOT THE CHARACTER: the part keeps its own agent and its own name, so a
+      // whisper to Dr Wren still goes to Dr Wren's agent and the cast list still says who the character is.
+      // Only when no persona was ever chartered for the part is the person's own agent its address.
+      if (person) {
+        const own = standing.find((c) => c.role === r.id);
+        return { role: r.id, agent: own?.agent ?? person.playerId, name: r.name, custodian: person.playerId, operator: 'human' as const, playerId: person.playerId, mind: 'human' as const, ...(person.name ? { playedBy: person.name } : {}) };
+      }
       // THE PART'S OWN PERSON, when the estate has chartered one (`COMMISSION_CAST`) — a persona agent somebody
       // custodies, with a vault and a memory of the last night. Then a positional list; then the house's rules.
       const own = standing.find((c) => c.role === r.id);
@@ -159,7 +168,8 @@ export class CommissionDO extends DurableObject<Env> {
         if (!seat) return json({ error: 'no such part' }, 404);
         if (seat.operator === 'human') return json({ error: 'somebody is already playing that part' }, 409);
         if (isSilent(this.state, pair2.scenario, seat.role)) return json({ error: 'that part has gone quiet for the night' }, 409);
-        this.state = { ...this.state, cast: this.state.cast.map((c) => (c.role === b.role ? { ...c, agent: b.playerId, name: b.name || c.name, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const } : c)) };
+        // The same character, with the same agent and the same name — only the mind behind it changes.
+        this.state = { ...this.state, cast: this.state.cast.map((c) => (c.role === b.role ? { ...c, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const, ...(b.name ? { playedBy: b.name } : {}) } : c)) };
         this.save();
         this.tellEverybody();
         return json({ ok: true, cast: this.castList() });
@@ -263,7 +273,7 @@ export class CommissionDO extends DurableObject<Env> {
       const playing = this.state?.cast.find((c) => c.role === r.id);
       return {
         role: r.id, name: r.name, kind: r.kind, blurb: r.blurb, look: r.look,
-        takenBy: person ? person[1].name : playing?.operator === 'human' ? playing.name : null,
+        takenBy: person ? person[1].name : playing?.operator === 'human' ? playing.playedBy ?? null : null,
         takenById: person ? person[0] : playing?.playerId ?? null,
         operator: person || playing?.operator === 'human' ? 'human' : 'agent',
       };

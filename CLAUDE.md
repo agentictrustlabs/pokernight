@@ -493,8 +493,17 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   naming a tool the playbook lacks is refused as `unknown_tool`), the rail (`enableMessaging` — without it an
   authorized send cannot leave, `wire_absent`), the standing grant recorded on the character's own object, the ask wire.
   The note is thirty kilobytes of signed delegations, so it lives in KV `CLUB_WIRES` under `cast-messaging` (a Worker
-  secret holds five; `CAST_MESSAGING` in the env is the dev/test path). A part played by a PERSON has no entry and its
-  whispers stay in the room: a message in their name would be the forgery this refuses. The two helpers are
+  secret holds five; `CAST_MESSAGING` in the env is the dev/test path). **THE CHARACTER IS THE IDENTITY** (corrected
+  the same day, and it is a rule about the whole game, not about messaging): a `Casting`'s `agent` and `name` are the
+  CHARACTER's and stay the character's through a takeover — Dr Wren is `wren-alice.me` and is called Dr Wren whoever is
+  behind her — and the person driving her is `playerId` / `custodian` / `playedBy`. Taking a part used to overwrite both
+  with the player's own agent and the player's own name, which put a character's mail in a player's inbox and a player's
+  name where a character's belonged. Only a part the estate never chartered a persona for is addressed at the player's
+  own agent. So both ends of a whisper are the part's STANDING PERSONA from the deployment's cast list, whoever plays it
+  tonight — a whisper to Dr Wren lands in `wren-alice.me`'s inbox and the person reads it at their Home AS that persona
+  (`/as/<address>`), and a whisper a person types as Dr Wren goes out FROM `wren-alice.me`. The first version routed a
+  person-played part to the person's own agent, which put a character's mail in alice.me's inbox; the game addresses
+  characters, never players. Only a role with no persona at all falls back to the cast entry's own agent. The two helpers are
   `@agenticprimitives/runtime-member`'s `deriveForNeed` and `askAs`/`continueAs`, carried locally because that
   package's index drags in a Node keystore the Worker cannot load (subpath exports are committed upstream, unpublished);
   the JSON-RPC client is our own too, because the pinned a2a (alpha.22) `createStandardA2aClient` has no `signRequest` and

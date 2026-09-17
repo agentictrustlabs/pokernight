@@ -88,24 +88,31 @@ describe('cast messaging — a whisper is a direct message from the character’
     if (!out.ok) expect(out.error).toMatch(/standing grant does not cover/);
   });
 
-  it('picks the whispers to carry: spoken by an agent-played part this deployment can speak for, to an addressable part, once', async () => {
+  it('addresses CHARACTERS, never players: both ends resolve through the role’s standing persona, whoever plays it', async () => {
     const { cm } = await note();
+    const teodor = { ...cm.parts['ilse-elena.me']!, name: 'teodor-dave.me', sa: TEODOR, character: 'Teodor Maske' };
+    const both = { ...cm, parts: { ...cm.parts, 'teodor-dave.me': teodor } };
+    // tonight a PERSON plays Teodor (the cast entry says home:<alice>); his persona is still teodor-dave.me
     const cast = [
       { role: 'returnee', agent: 'ilse-elena.me', name: 'Ilse Varrow' },
-      { role: 'household', agent: 'teodor-dave.me', name: 'Teodor Maske' },   // not in the note: a recipient by name it cannot resolve
-      { role: 'convener', agent: `home:${ALICE}`, name: 'Alice' },              // a person's own agent
-      { role: 'funder', agent: 'funder.cast', name: 'Anselm Dray' },            // the house's rules: no address
+      { role: 'household', agent: `home:${ALICE}`, name: 'Teodor Maske' },
+      { role: 'funder', agent: 'funder.cast', name: 'Anselm Dray' },            // the house's rules, no persona chartered
     ];
+    const personaOf = (role: string) => ({ returnee: 'ilse-elena.me', household: 'teodor-dave.me' } as Record<string, string>)[role] ?? null;
     const log = [
-      { type: 'whispered', at: 1, by: 'returnee', to: 'convener', text: 'a word' },
-      { type: 'whispered', at: 2, by: 'convener', to: 'returnee', text: 'a person typed this' },  // no wire for a person: stays
+      { type: 'whispered', at: 1, by: 'returnee', to: 'household', text: 'to the character, not the player' },
+      { type: 'whispered', at: 2, by: 'household', to: 'returnee', text: 'typed by a person, sent by the character' },
       { type: 'whispered', at: 3, by: 'returnee', to: 'funder', text: 'to nobody addressable' },
       { type: 'said', at: 4, by: 'returnee', text: 'room talk' },
     ];
-    const first = whispersToCarry(log, cast, cm, new Set());
-    expect(first.map((w) => [w.toSa, w.text])).toEqual([[ALICE, 'a word']]);
-    const carried = new Set(first.map((w) => w.key));
-    expect(whispersToCarry(log, cast, cm, carried)).toEqual([]);
+    const first = whispersToCarry(log, cast, both, new Set(), personaOf);
+    expect(first.map((w) => [w.from.name, w.toSa, w.toName])).toEqual([
+      ['ilse-elena.me', TEODOR, 'Teodor Maske'],      // NOT alice's own agent
+      ['teodor-dave.me', ILSE, 'Ilse Varrow'],        // the person's words, from the character's agent
+    ]);
+    expect(whispersToCarry(log, cast, both, new Set(first.map((w) => w.key)), personaOf)).toEqual([]);
+    // without a persona for a role, the cast entry's own agent is the address — a person's own agent, or nothing
+    expect(whispersToCarry(log.slice(0, 1), cast, cm, new Set())[0]?.toSa).toBe(ALICE);
     expect(recipientAddress(cm, 'ilse-elena.me')).toBe(ILSE);
     expect(recipientAddress(cm, `home:${ALICE}`)).toBe(ALICE);
     expect(recipientAddress(cm, 'funder.cast')).toBeNull();

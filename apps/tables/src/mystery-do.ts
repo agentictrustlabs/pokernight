@@ -129,7 +129,10 @@ export class MysteryDO extends DurableObject<Env> {
   private async carryWhispers(): Promise<void> {
     const cm = await castMessaging(this.env);
     if (!cm || !this.state) return;
-    for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried)) {
+    // THE CHARACTER IS THE IDENTITY: both ends are the part's standing persona, whoever plays it tonight.
+    const standing = mysteryCast(this.env);
+    const personaOf = (role: string) => standing.find((m) => m.role === role)?.agent ?? null;
+    for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried, personaOf)) {
       this.carried.add(w.key);
       if (this.carried.size > 600) for (const k of [...this.carried].slice(0, 200)) this.carried.delete(k);
       void whisperAs(this.env, cm, w.from, w.toSa, w.toName, w.text)
@@ -157,7 +160,12 @@ export class MysteryDO extends DurableObject<Env> {
       const standing = mysteryCast(this.env);
       let handed = 0;
       const cast: Casting[] = title.roles.map((r) => {
-        if (r.id === role) return { role: r.id, agent: b.owner, name: b.ownerName || r.name, custodian: b.owner, operator: 'human' as const, playerId: b.owner, mind: 'human' as const };
+        // A PERSON CHANGES THE MIND, NOT THE CHARACTER (see `Casting.playedBy`): the part keeps its own agent
+        // and its own name. Only a part with no chartered persona is addressed at the person's own agent.
+        if (r.id === role) {
+          const mine = standing.find((c) => c.role === r.id);
+          return { role: r.id, agent: mine?.agent ?? b.owner, name: r.name, custodian: b.owner, operator: 'human' as const, playerId: b.owner, mind: 'human' as const, ...(b.ownerName ? { playedBy: b.ownerName } : {}) };
+        }
         // A PART NOBODY IS PLAYING GETS AN AGENT, from the deployment's list — and a short list is a REPERTORY
         // COMPANY rather than a shortage: one agent plays several parts, because the part is in the ask (the
         // brief, the view, the room) and not in the agent. The house's rules play the rest when the list is empty.
@@ -245,7 +253,7 @@ export class MysteryDO extends DurableObject<Env> {
         this.state = {
           ...this.state,
           cast: this.state.cast.map((c) => (c.role === b.role
-            ? { ...c, agent: b.playerId, name: b.name || c.name, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const }
+            ? { ...c, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const, ...(b.name ? { playedBy: b.name } : {}) }
             : c)),
         };
         this.save();
@@ -274,7 +282,10 @@ export class MysteryDO extends DurableObject<Env> {
       let handed = 0;
       const cast: Casting[] = pair.title.roles.map((r) => {
         const person = Object.entries(this.taken).find(([, t]) => t.role === r.id);
-        if (person) return { role: r.id, agent: person[0], name: person[1].name || r.name, custodian: person[0], operator: 'human' as const, playerId: person[0], mind: 'human' as const };
+        if (person) {
+          const mine = standing.find((c) => c.role === r.id);
+          return { role: r.id, agent: mine?.agent ?? person[0], name: r.name, custodian: person[0], operator: 'human' as const, playerId: person[0], mind: 'human' as const, ...(person[1].name ? { playedBy: person[1].name } : {}) };
+        }
         /**
          * THE CHARACTER'S OWN PERSON, when the estate has chartered one (`MYSTERY_CAST`). Émile Rossi is
          * `emile-elena.me`, a person agent Elena custodies — not a service agent standing in for eight
@@ -405,7 +416,7 @@ export class MysteryDO extends DurableObject<Env> {
       const playing = this.state?.cast.find((c) => c.role === r.id);
       return {
         role: r.id, name: r.name, blurb: r.blurb, look: r.look,
-        takenBy: person ? person[1].name : playing?.operator === 'human' ? playing.name : null,
+        takenBy: person ? person[1].name : playing?.operator === 'human' ? playing.playedBy ?? null : null,
         takenById: person ? person[0] : playing?.playerId ?? null,
         operator: person || playing?.operator === 'human' ? 'human' : 'agent',
       };

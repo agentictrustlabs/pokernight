@@ -219,29 +219,37 @@ export function recipientAddress(cm: CastMessaging, agent: string): Address | nu
 export interface WhisperToCarry { key: string; from: CastMessagingPart; toSa: Address; toName: string; text: string }
 
 /**
- * WHICH WHISPERS GO OVER A2A — the ones in the log not yet carried, spoken by a part whose agent this Worker can
- * speak for, to a part whose agent has an address. Pure: the object decides nothing here, it only remembers.
+ * WHICH WHISPERS GO OVER A2A, AND BETWEEN WHOM. THE CHARACTER IS THE IDENTITY (2026-09-17): a whisper to Dr Wren
+ * belongs in Dr Wren's inbox — the part's own persona agent — whoever is playing her tonight; the person reads it at
+ * their Home AS that persona. The first version routed a person-played part to the person's own agent, which put a
+ * character's mail in alice.me's inbox, and that was wrong: the game addresses characters, never players.
+ *
+ * So both ends resolve through `personaOf(role)` — the part's STANDING agent from the deployment's cast list,
+ * unchanged by a takeover — and the cast entry's `agent` only when a role has no persona at all (a person's own agent
+ * playing a part nobody was chartered for). A speaker with no persona in the note stays in the room. Pure.
  */
 export function whispersToCarry(
   log: ReadonlyArray<{ type: string }>,
   cast: ReadonlyArray<{ role: string; agent: string; name?: string }>,
   cm: CastMessaging,
   carried: ReadonlySet<string>,
+  personaOf: (role: string) => string | null = () => null,
 ): WhisperToCarry[] {
   const out: WhisperToCarry[] = [];
+  const agentOf = (role: string): string | null => personaOf(role) ?? cast.find((c) => c.role === role)?.agent ?? null;
   for (const raw of log) {
     // Both games' `whispered` events carry the same four fields; the union types differ elsewhere, so narrow here.
     const e = raw as { type: string; at?: number; by?: string; to?: string; text?: string };
     if (e.type !== 'whispered' || !e.by || !e.to || !e.text || typeof e.at !== 'number') continue;
     const key = `${e.at}:${e.by}:${e.to}:${e.text.length}`;
     if (carried.has(key)) continue;
-    const speaker = cast.find((c) => c.role === e.by);
-    const hearer = cast.find((c) => c.role === e.to);
+    const speaker = agentOf(e.by);
+    const hearer = agentOf(e.to);
     if (!speaker || !hearer) continue;
-    const from = cm.parts[speaker.agent];
-    const toSa = recipientAddress(cm, hearer.agent);
+    const from = cm.parts[speaker];
+    const toSa = recipientAddress(cm, hearer);
     if (!from || !toSa || toSa === from.sa) continue;
-    out.push({ key, from, toSa, toName: hearer.name ?? hearer.role, text: e.text });
+    out.push({ key, from, toSa, toName: cast.find((c) => c.role === e.to)?.name ?? e.to, text: e.text });
   }
   return out;
 }

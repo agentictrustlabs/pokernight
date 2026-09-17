@@ -234,6 +234,17 @@ export interface Casting {
   custodian: string;
   operator: Operator;
   playerId?: string;
+  /**
+   * WHO IS DRIVING IT TONIGHT — a person's display name, when a person plays this part.
+   *
+   * THE CHARACTER IS THE IDENTITY (2026-09-17). `agent` and `name` above are the CHARACTER's and stay the
+   * character's through a takeover: Dr Wren is `wren-alice.me` and is called Dr Wren whoever is behind her,
+   * and everything the game addresses — a whisper, a record, the cast list — is addressed to the part. Taking
+   * a part used to overwrite both with the person's own agent and the person's own name, which put a
+   * character's mail in a player's inbox and a player's name where a character's belonged. Only the MIND
+   * changes; this field and `playerId` are where the person is.
+   */
+  playedBy?: string;
 }
 
 /** A PERMISSION SLIP, as recorded: one vault item, projected at one grain, to one audience, in one room. */
