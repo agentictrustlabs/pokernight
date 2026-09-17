@@ -30,7 +30,7 @@
  * The ask, the derivation and the continuation are `@agenticprimitives/runtime-member`'s own steps — the same road a
  * hosted runtime member walks, because that is what the card room is here (see the note on the helpers below).
  */
-import { createStandardA2aClient, type StandardA2aClient, type TaskV1 } from '@agenticprimitives/a2a/standard';
+import type { TaskV1 } from '@agenticprimitives/a2a/standard';
 import type { DelegationWireV1 } from '@agenticprimitives/a2a';
 import { CAPABILITY_RAR_TYPE, DEFAULT_SUBSET_HANDLERS, deriveMandate, hashDelegation, ROOT_AUTHORITY, type Delegation, type MandateRequirementV1 } from '@agenticprimitives/delegation';
 import { sign } from 'viem/accounts';
@@ -111,14 +111,47 @@ const outcomeOf = (text: string, task: TaskV1 | undefined, fallback: string): As
 };
 const TERMINAL = new Set(['TASK_STATE_COMPLETED', 'TASK_STATE_FAILED', 'TASK_STATE_REJECTED', 'TASK_STATE_CANCELED']);
 
-/** A client addressed at ONE agent by name on the standard surface, signing as the wire's delegator with this Worker's key. */
-function clientAs(edge: string, name: string, wire: DelegationWireV1, key: Hex, fetchImpl?: typeof fetch): StandardA2aClient {
+/**
+ * A client addressed at ONE agent by name on the standard surface, signing EVERY request as the wire's delegator
+ * with this Worker's key. Written here rather than `createStandardA2aClient` because the pinned a2a (alpha.22) has
+ * no `signRequest` — an option it silently drops, which sent the first version of this unsigned and got
+ * "admits only an authenticated principal" (2026-09-17). The assertion is over the exact bytes sent.
+ */
+interface Client { sendMessage(parts: Array<{ text: string }>, opts?: { taskId?: string; metadata?: Record<string, unknown> }): Promise<{ task?: TaskV1; message?: { parts?: Array<{ text?: string }> } }>; getTask(id: string): Promise<TaskV1>; awaitTask(id: string, timeoutMs: number): Promise<TaskV1> }
+function clientAs(edge: string, name: string, wire: DelegationWireV1, key: Hex, fetchImpl: typeof fetch = fetch): Client {
   const endpoint = `${edge}/api/a2a/${name}`;
-  return createStandardA2aClient({
-    endpoint, ...(fetchImpl ? { fetch: fetchImpl } : {}),
-    signRequest: async (raw: string, method: string) => ({ authorization: await wireAuthorization(wire, key, endpoint, method, raw) }),
-  } as never);
+  let seq = 0;
+  const rpc = async <T,>(method: string, params: unknown): Promise<T> => {
+    const raw = JSON.stringify({ jsonrpc: '2.0', id: ++seq, method, params });
+    const authorization = await wireAuthorization(wire, key, endpoint, method, raw);
+    const res = await fetchImpl(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', 'a2a-version': '1.0', authorization }, body: raw });
+    const body = (await res.json().catch(() => null)) as { result?: T; error?: { code: number; message: string } } | null;
+    if (!body) throw new Error(`${endpoint} answered ${res.status} with no JSON-RPC body`);
+    if (body.error) throw new Error(`${endpoint} ${method}: ${body.error.code} ${body.error.message}`);
+    return body.result as T;
+  };
+  const hex32 = () => `0x${[...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  const client: Client = {
+    sendMessage: (parts, opts) => rpc('SendMessage', { message: { messageId: hex32(), role: 'ROLE_USER', parts, ...(opts?.taskId ? { taskId: opts.taskId } : {}), ...(opts?.metadata ? { metadata: opts.metadata } : {}) } }),
+    getTask: (id) => rpc<TaskV1>('GetTask', { id }),
+    async awaitTask(id, timeoutMs) {
+      const deadline = Date.now() + timeoutMs;
+      let last = await client.getTask(id);
+      while (!TERMINAL.has(last.status.state) && last.status.state !== 'TASK_STATE_INPUT_REQUIRED' && last.status.state !== 'TASK_STATE_AUTH_REQUIRED' && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 500));
+        last = await client.getTask(id);
+      }
+      return last;
+    },
+  };
+  return client;
 }
+const textOf = (t?: TaskV1, m?: { parts?: Array<{ text?: string }> }): string => {
+  const out: string[] = [];
+  const take = (ps?: Array<{ text?: string }>) => { for (const p of ps ?? []) if (typeof p.text === 'string' && p.text.trim()) out.push(p.text.trim()); };
+  take(m?.parts); take(t?.status?.message?.parts); for (const a of t?.artifacts ?? []) take(a.parts);
+  return out.join('\n');
+};
 
 export interface CastMessagingPart {
   /** The agent's typed name — the endpoint on the standard surface is `<edge>/api/a2a/<name>`. */
@@ -233,8 +266,9 @@ export async function whisperAs(
   const timeoutMs = opts.timeoutMs ?? 60_000;
   try {
     // 1. the ask, with the plan supplied (spec 400 W1: a deterministic step costs no planner turn)
-    const sent = await client.ask(`Whisper to ${toName}: ${text}`, { metadata: { plan }, timeoutMs });
-    const first = outcomeOf(sent.text, sent.task, sent.message ? 'MESSAGE' : 'UNKNOWN');
+    const sent = await client.sendMessage([{ text: `Whisper to ${toName}: ${text}` }], { metadata: { plan } });
+    const task0 = sent.task && !TERMINAL.has(sent.task.status.state) ? await client.awaitTask(sent.task.id, timeoutMs) : sent.task;
+    const first = outcomeOf(textOf(task0, sent.message), task0, sent.message ? 'MESSAGE' : 'UNKNOWN');
     if (first.state === 'TASK_STATE_COMPLETED') return { ok: true, state: first.state };
     if (!first.parked || !first.taskId) return { ok: false, error: `${first.state}: ${first.text.slice(0, 200)}` };
     // 2. the need it parked on, and the mandate for exactly that, derived from the standing grant
@@ -244,8 +278,8 @@ export async function whisperAs(
     if (!derived.ok) return { ok: false, error: `the standing grant does not cover this: ${derived.reason}` };
     // 3. the same task continued, presenting [child, standing]; the harness verifies the chain where it is used
     const cont = await client.sendMessage([{ text: 'continuing under the standing grant' }], { taskId: first.taskId, metadata: { presented: derived.presented } });
-    const task = cont.task && !TERMINAL.has(cont.task.status.state) ? await client.awaitTask(cont.task.id, { timeoutMs }) : cont.task;
-    const second = outcomeOf((task?.status?.message?.parts ?? []).map((p) => p.text ?? '').join('').trim(), task, 'UNKNOWN');
+    const task = cont.task && !TERMINAL.has(cont.task.status.state) ? await client.awaitTask(cont.task.id, timeoutMs) : cont.task;
+    const second = outcomeOf(textOf(task), task, 'UNKNOWN');
     if (second.state === 'TASK_STATE_COMPLETED') return { ok: true, state: second.state };
     return { ok: false, error: `${second.state}: ${second.text.slice(0, 200)}` };
   } catch (e) {
