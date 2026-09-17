@@ -6858,10 +6858,14 @@ button.tag.guest {
 .mystery-idea p { margin: 0; color: #d8d2c4; }
 
 /* A club's mystery night, being cast. */
-.mystery-parts { list-style: none; margin: 0.6rem 0 0.8rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.5rem; }
-.mystery-parts li { display: flex; gap: 0.6rem; align-items: center; border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.5rem 0.6rem; }
+/* A CARD IS A FACE, A NAME AND A LINE ABOUT THEM — and the action moves to its own row when it must.
+   The action button could not shrink below its label, and the text beside it could (min-width: 0), so on a
+   280px card the blurb was squeezed into a two-word-wide column reading straight down the page. */
+.mystery-parts { list-style: none; margin: 0.6rem 0 0.8rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 0.5rem; }
+.mystery-parts li { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-start; border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.55rem 0.65rem; }
+.mystery-parts li > button, .mystery-parts li > .tag { flex: none; margin-left: auto; align-self: center; }
 .mystery-parts li.taken { background: var(--surface); }
-.mystery-parts li > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.mystery-parts li > div { display: flex; flex-direction: column; min-width: 0; flex: 1 1 9rem; }
 .mystery-parts li .hint { font-size: 0.8rem; }
 .mystery-plan .row.wrap { gap: 0.5rem; align-items: center; }
 .mystery-plant { border-color: #6b5a2b; background: #1d1a12; }
