@@ -21,7 +21,8 @@ export const WELD_COUNTY = WELD_COUNTY_FROM_ONTOLOGY;
 export const THURSDAY_IN_GREELEY = THURSDAY_IN_GREELEY_FROM_ONTOLOGY;
 
 export const REGIONS: Record<string, Region> = { [KETTLEWATER_MARCHES.id]: KETTLEWATER_MARCHES, [WELD_COUNTY.id]: WELD_COUNTY };
-export const SCENARIOS: Record<string, Scenario> = { [FIRST_LIGHT.id]: FIRST_LIGHT, [SECOND_WINTER.id]: SECOND_WINTER, [THURSDAY_IN_GREELEY.id]: THURSDAY_IN_GREELEY };
+/** ORDER MATTERS: the front door's card opens on the first of these, so the default night leads. */
+export const SCENARIOS: Record<string, Scenario> = { [THURSDAY_IN_GREELEY.id]: THURSDAY_IN_GREELEY, [FIRST_LIGHT.id]: FIRST_LIGHT, [SECOND_WINTER.id]: SECOND_WINTER };
 /** THE NIGHT A NEW STAGING OPENS ON: a real county, a picture that says one word about five peoples, and seven
  *  people who each hold a piece of it. The marches remain, as the invented twin. */
 export const DEFAULT_SCENARIO = THURSDAY_IN_GREELEY.id;

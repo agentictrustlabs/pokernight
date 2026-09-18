@@ -161,7 +161,7 @@ function CommissionCard({ session }: { session: AppSession }) {
             How long you have
             <select value={pace} onChange={(e) => setPace(e.target.value as 'short' | 'full')}>
               <option value="short">A short night — three rounds in about fifteen minutes</option>
-              <option value="full">The whole evening — an hour in the marches</option>
+              <option value="full">The whole evening — about an hour</option>
             </select>
           </label>
         ) : null}
@@ -189,7 +189,7 @@ function CommissionCard({ session }: { session: AppSession }) {
             } catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false); }
           }}
         >
-          {busy ? 'Opening the road…' : 'Come to the marches'}
+          {busy ? 'Opening the road…' : `Come to ${chosen?.regionName ?? 'the night'}`}
         </button>
       </div>
     </section>

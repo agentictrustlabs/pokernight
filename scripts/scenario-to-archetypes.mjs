@@ -22,8 +22,10 @@ const ST = 'https://skills.demo/story#';
 const POE = 'https://ontology.global.church/poe#';
 const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
 const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
-const src = `${process.env.HOME}/skills/ontology/kettlewater.ttl`;
-const outDir = process.argv[2] ?? `${process.env.HOME}/skills/archetypes`;
+// ANY SCENARIO'S A-BOX, because there is more than one night now and an archetype is a night's own document.
+const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const src = args[0] ?? `${process.env.HOME}/skills/ontology/kettlewater.ttl`;
+const outDir = args[1] ?? `${process.env.HOME}/skills/archetypes`;
 
 const store = new Store(new Parser().parse(readFileSync(src, 'utf8')));
 const one = (s, p) => store.getObjects(s, namedNode(p), null)[0] ?? null;
@@ -38,7 +40,8 @@ const stories = store.getSubjects(namedNode(`${RDF}type`), namedNode(`${ST}Story
 const first = stories[0];
 const storyName = lit(first, `${RDFS}label`);
 const parts = all(first, `${ST}hasPart`).sort(byOrder);
-const KIND_WORD = { returnee: 'the returnee', household: 'who leads the household network', agency: 'who runs the sending agency', funder: 'the funder', researcher: 'the researcher and source of record', convener: 'the convener', adversary: 'the adversary' };
+const regionName = lit(one(first, `${CM}setIn`), `${RDFS}label`) ?? 'the region';
+const KIND_WORD = { returnee: 'the returnee', household: 'who leads the household network', agency: 'who runs the sending agency', funder: 'the funder', researcher: 'the researcher and source of record', convener: 'the convener', welcomer: 'the welcomer' };
 
 for (const p of parts) {
   const id = lit(p, `${ST}playedFromArchetype`);
@@ -58,7 +61,9 @@ for (const p of parts) {
   L.push('knowledge: { requires: [Part, Brief, Secret, VaultTestimony, DisclosureGrain, PermissionSlip, PhaseReading, Workspace] }');
   L.push('---');
   L.push('');
-  L.push(`You are **${name}**, ${num(p, `${ST}age`)} — ${KIND_WORD[kind] ?? kind}, in the Kettlewater Marches. Everything here is invented; nothing describes anybody who exists.`);
+  L.push(`You are **${name}**, ${num(p, `${ST}age`)} — ${KIND_WORD[kind] ?? kind}, in ${regionName}.`);
+L.push('');
+L.push(`> ${lit(one(first, `${ST}inTone`), `${RDFS}label`)}`);
   L.push('');
   L.push(brief);
   L.push('');
