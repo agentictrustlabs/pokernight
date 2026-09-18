@@ -1208,6 +1208,26 @@ app.put('/clubs/:clubId/welcome', async (c) => {
 });
 
 /**
+ * A CLUB IS ONE GAME (2026-09-18). "The club should be focused on one game" — a club whose page offered poker
+ * tables AND a mystery AND a commission was three clubs wearing one name. `games[0]` on the profile is the game it
+ * plays, chosen at founding and changeable by its host here; the page shows that game and nothing else. No
+ * stamp means poker, as everywhere.
+ */
+/** The games a club may be about: the two table games and the two nights. Ids the deployment already uses. */
+const CLUB_GAME_IDS = ['poker', 'canasta', 'mystery', 'commission'];
+app.put('/clubs/:clubId/game', async (c) => {
+  const gate = await clubHost(c);
+  if ('refused' in gate) return gate.refused;
+  const body = (await c.req.json().catch(() => null)) as { game?: unknown } | null;
+  const game = typeof body?.game === 'string' ? body.game.trim().toLowerCase() : '';
+  if (!CLUB_GAME_IDS.includes(game)) return c.json({ error: `a club plays one of ${CLUB_GAME_IDS.join(', ')}` }, 400);
+  const read = await readClub(c.env, gate.clubId, gate.agent);
+  if (!read?.profile) return c.json({ error: 'no such club' }, 404);
+  const w = await writeClubRecord(c.env, gate.clubId, 'profile', { ...read.profile, games: [game] });
+  if (!w.ok) return c.json({ error: w.error }, w.status as 502);
+  return c.json({ game });
+});
+/**
  * THE CLUB'S NIGHTS, AS A CALENDAR SUBSCRIPTION. A calendar client fetches this every half hour from a
  * phone with no session, so the URL carries the authority (`feed-token.ts`); membership is still asked of
  * the club's agent on every fetch, so a feed stops answering when somebody leaves.

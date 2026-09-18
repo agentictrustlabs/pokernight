@@ -82,3 +82,23 @@ export function gameBlurb(game: string | null | undefined): string | null {
 export function adviseSkillFor(game: string | null | undefined): string {
   return game === 'canasta' ? 'canasta.advise' : 'poker.advise';
 }
+
+/**
+ * A CLUB IS ONE GAME (2026-09-18). The two table games and the two nights; `games[0]` on a club's profile says
+ * which, and the club's page shows that game and nothing else. No stamp means poker, as everywhere.
+ */
+export type ClubGameKind = 'table' | 'night';
+export const CLUB_GAMES: ReadonlyArray<{ id: string; name: string; kind: ClubGameKind; line: string }> = [
+  { id: 'poker', name: "Texas Hold'em", kind: 'table', line: 'Tables of hold’em, for play money or Sheqels.' },
+  { id: 'canasta', name: 'Canasta', kind: 'table', line: 'Four-handed partnership canasta, played for score.' },
+  { id: 'mystery', name: 'Mystery Night', kind: 'night', line: 'An evening at the Hôtel Belvedere: eight parts, three acts, one of you did it.' },
+  { id: 'commission', name: 'Thursday in Greeley', kind: 'night', line: 'Seven parts, five peoples, one county — a picture assembled from permission slips.' },
+];
+export function clubGameOf(games: ReadonlyArray<string> | null | undefined): string {
+  const g = games?.[0];
+  return g && CLUB_GAMES.some((x) => x.id === g) ? g : DRAWN_GAME;
+}
+export function clubGame(games: ReadonlyArray<string> | null | undefined): (typeof CLUB_GAMES)[number] {
+  const id = clubGameOf(games);
+  return CLUB_GAMES.find((x) => x.id === id) ?? CLUB_GAMES[0]!;
+}

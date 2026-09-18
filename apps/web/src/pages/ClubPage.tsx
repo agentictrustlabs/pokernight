@@ -4,6 +4,7 @@ import { ApiError, api } from '../lib/api';
 import { About, People } from '../components/ClubDetail';
 import { Nights } from '../components/Nights';
 import { MysteryNight } from '../components/MysteryNight';
+import { clubGame } from '../lib/games';
 import { TableList } from './TablesPage';
 import { canOpenTable, noTablesLine } from '../lib/clubs';
 import { newTableHash, roomHash, HOME_HASH, TABLES_HASH } from '../lib/routes';
@@ -143,6 +144,10 @@ export function ClubPage({
   const host = canOpenTable(view.you.standing);
   const scope = clubScope(view);
   const openTables = (tables ?? []).length;
+  // A CLUB IS ONE GAME (2026-09-18): a table game has tables; a night has its staging; never both on one page.
+  const game = clubGame(view.games);
+  const tabs = (game.kind === 'table' ? ['nights', 'tables', 'people', 'about'] : ['nights', 'mystery', 'people', 'about']) as ReadonlyArray<typeof tab>;
+  const shown = tabs.includes(tab) ? tab : 'nights';
   // THE PAGE IS A HEAD AND FOUR AREAS (2026-09-14). It used to be five panels one under another — the huddle,
   // the tables, the nights, the roster, the form — "a single flow of content down the page". Each area is its
   // own tab now, the head carries the club's name and its three actions, and a night's detail is a flyout.
@@ -150,7 +155,7 @@ export function ClubPage({
     <div className="stack club-page">
       <header className="club-head">
         <div>
-          <span className="eyebrow">Your club · {standingWord(view.you.standing)}</span>
+          <span className="eyebrow">{game.name} club · {standingWord(view.you.standing)}</span>
           <h1>{view.name}</h1>
         </div>
         <div className="club-actions">
@@ -160,20 +165,20 @@ export function ClubPage({
               quiet one beside it. A member does not need anybody's permission to come and play: they walk in,
               see who is about, and sit down at a table that is already there. */}
           <a className="button primary" href={roomHash(clubId)} title="Walk into the club house — the tables in a room, the people in it">Enter the club house →</a>
-          {host ? <a className="button quiet" href={newTableHash(clubId)}>+ Open a table</a> : null}
+          {host && game.kind === 'table' ? <a className="button quiet" href={newTableHash(clubId)}>+ Open a table</a> : null}
         </div>
       </header>
       <nav className="side-tabs club-tabs" role="tablist" aria-label="The club">
-        {(['nights', 'tables', 'mystery', 'people', 'about'] as const).map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} className={`side-tab${tab === t ? ' on' : ''}`} onClick={() => setTab(t)}>
-            {t === 'nights' ? `Nights${view.nights.length ? ` · ${view.nights.length}` : ''}` : t === 'tables' ? `Tables${openTables ? ` · ${openTables}` : ''}` : t === 'mystery' ? 'Mystery' : t === 'people' ? `People · ${view.roster.length}` : 'About'}
+        {tabs.map((t) => (
+          <button key={t} type="button" role="tab" aria-selected={shown === t} className={`side-tab${shown === t ? ' on' : ''}`} onClick={() => setTab(t)}>
+            {t === 'nights' ? `Nights${view.nights.length ? ` · ${view.nights.length}` : ''}` : t === 'tables' ? `Tables${openTables ? ` · ${openTables}` : ''}` : t === 'mystery' ? game.name : t === 'people' ? `People · ${view.roster.length}` : 'About'}
           </button>
         ))}
       </nav>
-      {tab === 'nights' ? (
+      {shown === 'nights' ? (
         // WHEN, before WHO. A member arriving at a club wants to know if there is a game and when it is.
         <Nights clubId={clubId} session={session} host={host} schedule={view.schedule} nights={view.nights} tables={tables} onChanged={() => void loadView()} />
-      ) : tab === 'tables' ? (
+      ) : shown === 'tables' ? (
         <TableList
           tables={tables}
           err={err}
@@ -193,11 +198,11 @@ export function ClubPage({
             )
           }
         />
-      ) : tab === 'mystery' ? (
-        // A MYSTERY IS NOT A TABLE, so it is not in the tables tab: it is a night the club stages, cast
-        // before it begins, and played in a place rather than at a felt (docs/MYSTERY-NIGHT.md).
-        <MysteryNight clubId={clubId} session={session} host={host} />
-      ) : tab === 'people' ? (
+      ) : shown === 'mystery' ? (
+        // A NIGHT IS NOT A TABLE: it is staged, cast before it begins, and played in a place rather than at a
+        // felt (docs/MYSTERY-NIGHT.md, docs/GREAT-COMMISSION.md). Which night is the club's game.
+        <MysteryNight clubId={clubId} session={session} host={host} game={game.id === 'commission' ? 'commission' : 'mystery'} />
+      ) : shown === 'people' ? (
         <People view={view} session={session} config={config} onChanged={() => { void loadView(); onChanged(); }} />
       ) : (
         <About

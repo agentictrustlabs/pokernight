@@ -6856,6 +6856,8 @@ button.tag.guest {
   min-height: 280px; display: flex; align-items: flex-end; }
 .mystery-hero-art { position: absolute; inset: 0;
   background: #0E1628 url('/art/belvedere-night.svg') center 30% / cover no-repeat; }
+/* the Greeley poster: no artwork yet — a fellowship-hall gradient with the county's map colours */
+.gc-hero-art { background: radial-gradient(ellipse at 30% 20%, #3b2f1f 0%, #1a1712 45%, #0d0f12 100%); }
 .mystery-hero-words { position: relative; width: 100%; padding: 4.5rem 1.15rem 1.05rem;
   background: linear-gradient(to top, rgba(6,10,20,.92) 8%, rgba(6,10,20,.72) 42%, rgba(6,10,20,0) 100%); }
 .mystery-hero-eyebrow { display: block; font-size: .68rem; letter-spacing: .16em; text-transform: uppercase;
@@ -7066,3 +7068,10 @@ button.tag.guest {
 
 /* The county's map, said once above the readings. */
 .gc-towns { margin: 0 0 0.5rem; letter-spacing: 0.01em; }
+
+/* A CLUB IS ONE GAME (2026-09-18): the pick at founding, and the line in About */
+.club-game-pick { border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.5rem 0.8rem; margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.club-game-pick legend { font-size: 0.8rem; color: var(--muted); padding: 0 0.3rem; }
+.club-game-option { display: flex; gap: 0.5rem; align-items: baseline; cursor: pointer; padding: 0.2rem 0.3rem; border-radius: 6px; }
+.club-game-option.on { background: rgba(201, 161, 74, 0.1); }
+.club-game { margin: 0.4rem 0 0.6rem; }

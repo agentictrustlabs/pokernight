@@ -643,6 +643,10 @@ export const clubCommission = {
 
 /** A CLUB'S MYSTERY NIGHT — the parts, who has taken them, and the two acts of the host's own. */
 export interface StagedPart { role: string; name: string; blurb: string; look: unknown; takenBy: string | null; takenById: string | null; operator: 'human' | 'agent' }
+export const clubGameApi = {
+  /** A CLUB IS ONE GAME: the host sets which. */
+  set: (clubId: string, game: string, token: string) => request<{ game: string }>(`/clubs/${encodeURIComponent(clubId)}/game`, { method: 'PUT', body: JSON.stringify({ game }) }, token),
+};
 export const clubMystery = {
   read: (clubId: string, token: string, title?: string) =>
     request<{ staging: (StagingSummary & { club?: string; host?: string }) | null; cast: StagedPart[]; host: boolean; view?: unknown }>(
