@@ -464,7 +464,25 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   assessment is scored against, and `cm:HiddenEventState` and `cm:PhaseReading` are two classes no property
   joins. **YOU MAY COARSEN, NEVER REFINE**: a slip finer than its room's rule is a LEAK, a number the vault does
   not hold is a FABRICATION, a corroboration standing only on a withdrawn slip is a REPLAY — recorded, never
-  adjudicated in the room, and shown in the score. **THE WORLD IS AUTHORED UNDER THE FAITH ONTOLOGY**:
+  adjudicated in the room, and shown in the score. **THURSDAY IN GREELEY IS THE DEFAULT NIGHT, AND IT IS A REAL COUNTY** (2026-09-17, `~/skills/ontology/weld.ttl`).
+  Weld County, Colorado (FIPS 08123) and five peoples the IMB/PeopleGroups registry says one word about —
+  Burmese, Somalis, Somali Bantus, Guatemalans, Mexicans — each cited by ROP, PEID and PG id. THE FENCE IS WHERE
+  THE DANGER IS, not around everything: identity, community and town are PUBLIC and admissible only two ways,
+  CITED to their registry and census or explicitly FICTIONAL (the uncited unmarked middle is what the shape
+  forbids, because that is what a real people looks like when somebody has quietly invented facts about it); the
+  HOUSEHOLD CIRCLE, its town, its count and anything person-grain are INVENTED, always, by shape; and every
+  reading and hidden state between them is STAMPED `cm:isSimulated true` and may not say `gc:assignedLevel`, so
+  nothing in the graph can be read as an assessment of a real community. THE COARSE END IS NOT THE SAFE END:
+  "Somalis in Greeley are responding" names nobody in the county and reaches Somalia, which is why every identity
+  carries `cm:homeCountry` and why people-grain is the coarsest rank and sometimes the most dangerous sentence in
+  the room. Two things the real data gives that no invented world could — the Somali Bantus are a distinct people
+  (ROP 103458, Maay) that a coarse picture files under Somali and the census files under Swahili, and the three
+  communities the registry marks confidence C are the three where the night puts the motion. AN ARCHETYPE BELONGS
+  TO A NIGHT, NOT A ROLE (it carries the character): the marches keep `commission-*`, Greeley has `greeley-*`, and
+  `scenario-to-archetypes.mjs` takes any scenario's A-box. The place is the host church on 10th Street, derived
+  from the meeting house — the living room in Evans is deliberately NOT in the building, because household grain
+  does not belong in a church hall. `pnpm gen:commission` builds both worlds and both plans.
+- **THE WORLD IS AUTHORED UNDER THE FAITH ONTOLOGY**:
   `~/skills/ontology/commission.tbox.ttl` sits under `faith.ttl` and `story.ttl`. WHO A PEOPLE IS AND WHERE THEY ARE ARE
   TWO NODES (2026-09-17; the first draft subclassed `gc:PeopleGroup`, which is not a class): `cm:People ⊑
   gc:PeopleGroupIdentity` (a name in an invented register — no phase, no place) and `cm:PeopleCommunity ⊑

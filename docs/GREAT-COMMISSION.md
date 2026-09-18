@@ -1,5 +1,10 @@
 # Great Commission — a substrate test played as a game
 
+> **The default night is *Thursday in Greeley*** (2026-09-17): Weld County, Colorado, five real people groups
+> cited by ROP id, invented households, and the part that carries it out of the room drawn by the seed. The
+> Kettlewater marches remain as the invented twin. §4 and §5 below describe the shape; the county's own figures
+> and the fence around them are in `~/skills/ontology/weld.ttl`.
+
 **Source:** Paul Martel's concept note, *A Great Commission tabletop on the Mystery Night engine — a substrate test* (2026-09-17), read with the CAS brief, the four-conditions sequencing brief and the movements history. This document records how that note becomes the third game in this room, what is reused from Mystery Night, what is genuinely new, and the lines the game must never cross.
 
 ## 1 · The idea in one paragraph
