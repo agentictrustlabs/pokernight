@@ -796,9 +796,11 @@ label > select {
 }
 
 /* PLAY: the two ways to be dealt in, side by side, then a quiet line about other people. */
+/* FOUR CARDS IN ONE ROW ON A LAPTOP (2026-09-18): the choices are behind a press now, so a card is a band, a
+   paragraph and a button, and four of them fit across at 1100px wide; nothing to play is below the fold. */
 .play {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
   gap: 1rem;
   /* Stretch, so two cards with blurbs of different lengths still put their buttons on one line. The
      `flex: 1` on the blurb inside each card is what turns the extra height into space above the
@@ -843,7 +845,7 @@ label > select {
 }
 .play-band h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   letter-spacing: -0.02em;
   color: var(--hero-ink);
 }
@@ -857,6 +859,7 @@ label > select {
 .play-card .hint {
   margin: 0;
   flex: 1; /* so two cards of unequal blurb still line their buttons up */
+  font-size: 0.9rem;
 }
 .play-card .primary {
   align-self: flex-start;
@@ -869,6 +872,9 @@ label > select {
 .play-card .primary:hover:not(:disabled) {
   background: var(--cta-bg-hover);
 }
+/* the night's choices, opened beside the page: the same stack the card used to carry */
+.drawer-body .mystery-part { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.8rem; }
+.drawer-body > .primary { margin-top: 0.4rem; }
 /* The "other people" line is not a third way to play, so it spans the row and reads quieter. */
 .play-running {
   grid-column: 1 / -1;

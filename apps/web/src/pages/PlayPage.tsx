@@ -4,6 +4,7 @@ import { ApiError, api, commissionApi, mysteryApi, type CommissionScenarioSummar
 import { gameLabel } from '../lib/games';
 import { commissionHash, goTo, mysteryHash, TABLES_HASH } from '../lib/routes';
 import { seatsFree, withRoom } from '../lib/lobby';
+import { Drawer } from '../components/Drawer';
 
 /**
  * PLAY — the first row in the rail, and what a signed-in person sees at the front door.
@@ -49,6 +50,7 @@ function MysteryCard({ session }: { session: AppSession }) {
   const [pace, setPace] = useState<'short' | 'full'>('short');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     let alive = true;
     mysteryApi.titles().then((r) => alive && setTitles(r.titles)).catch(() => alive && setTitles([]));
@@ -66,6 +68,12 @@ function MysteryCard({ session }: { session: AppSession }) {
       </div>
       <div className="play-body">
         <p className="hint">{title ? title.blurb : 'A story at a place, with a cast who talk back.'}</p>
+        {/* THE CHOICES ARE BEHIND ONE PRESS (2026-09-18): four cards with their options open pushed hold'em
+            below the fold — "first click on the game and then select your stuff". The card is the pitch and one
+            button; the night's own choices open beside the page. */}
+        <button type="button" className="primary" disabled={!title} onClick={() => setOpen(true)}>Set up the night…</button>
+      </div>
+      <Drawer open={open} title={title ? title.name : 'A mystery night'} onClose={() => setOpen(false)}>
         {title ? (
           <label className="mystery-part">
             How long you have
@@ -111,7 +119,7 @@ function MysteryCard({ session }: { session: AppSession }) {
         >
           {busy ? 'Setting the scene…' : 'Begin the night'}
         </button>
-      </div>
+      </Drawer>
     </section>
   );
 }
@@ -131,6 +139,7 @@ function CommissionCard({ session }: { session: AppSession }) {
   const [pace, setPace] = useState<'short' | 'full'>('short');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     let alive = true;
     commissionApi.scenarios().then((r) => alive && setScenarios(r.scenarios)).catch(() => alive && setScenarios([]));
@@ -156,6 +165,9 @@ function CommissionCard({ session }: { session: AppSession }) {
             : scenarios === null ? 'A substrate test played as a game: assemble a true picture of where the gospel is moving, before somebody assembles a dangerous one.'
               : 'No night is being offered here at the moment. Try again in a minute.'}
         </p>
+        <button type="button" className="primary" disabled={!chosen} onClick={() => setOpen(true)}>Set up the night…</button>
+      </div>
+      <Drawer open={open} title={chosen ? chosen.name : 'Great Commission'} onClose={() => setOpen(false)}>
         {scenarios && scenarios.length > 1 ? (
           <label className="mystery-part">
             Which night
@@ -199,7 +211,7 @@ function CommissionCard({ session }: { session: AppSession }) {
         >
           {busy ? 'Opening the road…' : `Come to ${chosen?.regionName ?? 'the night'}`}
         </button>
-      </div>
+      </Drawer>
     </section>
   );
 }
