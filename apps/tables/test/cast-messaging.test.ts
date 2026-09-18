@@ -6,7 +6,7 @@ import { CAPABILITY_RAR_TYPE, capabilityHandler, hashDelegation, ROOT_AUTHORITY,
 import { toHex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount, sign } from 'viem/accounts';
 import type { Address, Hex } from 'viem';
-import { castMessaging, parseCastMessaging, recipientAddress, whisperAs, whispersToCarry, type CastMessaging, type StandingGrantV1 } from '../src/cast-messaging.js';
+import { castMessaging, parseCastMessaging, postAs, recipientAddress, roomTalkToCarry, whisperAs, whispersToCarry, type CastMessaging, type StandingGrantV1 } from '../src/cast-messaging.js';
 
 const ENF = { timestamp: '0x73A7B878168b7DE48677617179A8bE894f0Dfe96', allowedMethods: '0xdBb2E47793393C499efB0f3fcbf6Ca8669791a41', value: '0x8759c1a6cEBF1D5069e9434EF46327Bf2ef69975', allowedTargets: '0x2156311097A936de1916a878bF53Bfd43c7b5715', digestBinding: '0xA3bb9BCC9b2F6F2419E1aBe5ED6Fd5399b9E68e1' } as const;
 const DM = '0x710cb1bF08C234Df397e0910331e0A29710EF4F7' as Address;
@@ -14,11 +14,12 @@ const ILSE = '0x4f13d4b8e3b21908a4ee1121fb904a2495109bca' as Address;
 const TEODOR = '0xa32f1338b987d8a2623bbacb210520654482acad' as Address;
 const ALICE = '0xb0d11ce19b756a682e78b4904cd8d832303b3d11' as Address;
 const HARNESS = '0xd34c3fbc89706dd57d426546dcebd3ba926ede35' as Address;
+const CLUB = '0x00000000000000000000000000000000000c1ab5' as Address;
 
 /** The standing grant as the estate mints it (`buildStandingGrant`): member → runtime key, the capability, no intent binding. */
 async function standingGrant(member: Address, runtimeKey: Address, locations: Address[], signDigest: (d: Hex) => Promise<Hex>): Promise<StandingGrantV1> {
   const now = Math.floor(Date.now() / 1000);
-  const requirement: Omit<MandateRequirementV1, 'intentDigest'> = { type: CAPABILITY_RAR_TYPE, actions: ['messaging.direct.send'], locations, validAfter: now - 60, validUntil: now + 3600 };
+  const requirement: Omit<MandateRequirementV1, 'intentDigest'> = { type: CAPABILITY_RAR_TYPE, actions: ['messaging.direct.send', 'messaging.topic.post'], locations, validAfter: now - 60, validUntil: now + 3600 };
   const caveats = capabilityHandler.toCaveats(requirement as MandateRequirementV1, ENF as never);
   const salt = BigInt(toHex(crypto.getRandomValues(new Uint8Array(16))));
   const d: Delegation = { delegator: member, delegate: runtimeKey, authority: ROOT_AUTHORITY, caveats, salt, signature: '0x' };
@@ -31,7 +32,7 @@ async function note(): Promise<{ cm: CastMessaging; key: Hex }> {
   const key = generatePrivateKey();
   const session = privateKeyToAccount(key).address;
   const custodian = generatePrivateKey(); // stands in for persona-sign; the fake surface verifies nothing on chain
-  const standing = await standingGrant(ILSE, session, [TEODOR, ALICE], (d) => sign({ hash: d, privateKey: custodian, to: 'hex' }));
+  const standing = await standingGrant(ILSE, session, [TEODOR, ALICE, CLUB], (d) => sign({ hash: d, privateKey: custodian, to: 'hex' }));
   const wire = { delegator: ILSE, delegate: session, authority: '0x' + 'ff'.repeat(32), caveats: [], salt: '1', signature: '0x00' };
   const cm = parseCastMessaging(JSON.stringify({ sessionKey: session, chainId: 34348, edge: 'https://edge.test', parts: { 'ilse-elena.me': { sa: ILSE, role: 'returnee', character: 'Ilse Varrow', wire, standing } } }))!;
   return { cm, key };
@@ -48,9 +49,13 @@ function fakeSurface(standingRef: string, seen: { asks: string[]; presented: unk
     const reply = (result: unknown) => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }), { headers: { 'content-type': 'application/json' } });
     if (body.method === 'SendMessage' && !body.params.message?.taskId) {
       seen.asks.push(body.params.message?.parts?.[0]?.text ?? '');
-      expect(body.params.message?.metadata?.plan).toBeTruthy();
+      const plan = body.params.message?.metadata?.plan as { steps: Array<{ toolId: string; args: Record<string, string> }> } | undefined;
+      expect(plan?.steps).toHaveLength(1);
+      // the run parks naming exactly what the step needs: the tool as the capability, its resource as the location
+      const step = plan!.steps[0]!;
+      const location = (step.toolId === 'messaging.topic.post' ? step.args.org : step.args.recipient) as Address;
       const now = Math.floor(Date.now() / 1000);
-      return reply({ task: task('TASK_STATE_AUTH_REQUIRED', [{ text: 'This needs your authority to send direct messages.' }, { data: { runRef: 'r1', openToStewards: true, requirement: { type: CAPABILITY_RAR_TYPE, actions: ['messaging.direct.send'], locations: [TEODOR], validAfter: now - 60, validUntil: now + 600, intentDigest: '0x' + '11'.repeat(32) }, delegator: ILSE, delegate: HARNESS } }]) });
+      return reply({ task: task('TASK_STATE_AUTH_REQUIRED', [{ text: `This needs your authority: ${step.toolId}.` }, { data: { runRef: 'r1', openToStewards: true, requirement: { type: CAPABILITY_RAR_TYPE, actions: [step.toolId], locations: [location], validAfter: now - 60, validUntil: now + 600, intentDigest: '0x' + '11'.repeat(32) }, delegator: ILSE, delegate: HARNESS } }]) });
     }
     if (body.method === 'GetTask') return reply(last);
     if (body.method === 'SendMessage' && body.params.message?.taskId === 'task-1') {
@@ -116,6 +121,35 @@ describe('cast messaging — a whisper is a direct message from the character’
     expect(recipientAddress(cm, 'ilse-elena.me')).toBe(ILSE);
     expect(recipientAddress(cm, `home:${ALICE}`)).toBe(ALICE);
     expect(recipientAddress(cm, 'funder.cast')).toBeNull();
+  });
+
+  it('posts room talk in the night’s topic on the club’s board the same way — and never the wall', async () => {
+    const { cm, key } = await note();
+    const seen = { asks: [] as string[], presented: [] as unknown[] };
+    const from = cm.parts['ilse-elena.me']!;
+    const out = await postAs({ HOUSE_A2A_SESSION_KEY: key }, cm, from, CLUB, 'conv_night', 'The pass is open again.', { fetch: fakeSurface(from.standing.ref, seen) as never, timeoutMs: 2000 });
+    expect(out).toEqual({ ok: true, state: 'TASK_STATE_COMPLETED' });
+    expect(seen.asks[0]).toBe("Say in the night's topic: The pass is open again.");
+    // a club the custodian did not name is outside the standing grant, and the line stays in the room
+    const elsewhere = '0x00000000000000000000000000000000000000bb' as Address;
+    const refused = await postAs({ HOUSE_A2A_SESSION_KEY: key }, cm, from, elsewhere, 'conv_night', 'hello', { fetch: fakeSurface(from.standing.ref, { asks: [], presented: [] }) as never, timeoutMs: 2000 });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/standing grant does not cover/);
+
+    const cast = [
+      { role: 'returnee', agent: `home:${ALICE}`, name: 'Ilse Varrow' },     // a person plays Ilse tonight
+      { role: 'funder', agent: 'funder.cast', name: 'Anselm Dray' },
+    ];
+    const personaOf = (role: string) => (role === 'returnee' ? 'ilse-elena.me' : null);
+    const log = [
+      { type: 'said', at: 1, by: 'returnee', room: 'commons', text: 'said by the character, whoever plays her' },
+      { type: 'said', at: 2, by: 'funder', room: 'commons', text: 'no persona, stays in the room' },
+      { type: 'posted', at: 3, room: 'commons', postit: 'p1', text: 'anonymous by construction' },
+      { type: 'whispered', at: 4, by: 'returnee', to: 'funder', text: 'not room talk' },
+    ];
+    const lines = roomTalkToCarry(log, cast, cm, new Set(), personaOf);
+    expect(lines.map((l) => [l.from.name, l.text])).toEqual([['ilse-elena.me', 'said by the character, whoever plays her']]);
+    expect(roomTalkToCarry(log, cast, cm, new Set(lines.map((l) => l.key)), personaOf)).toEqual([]);
   });
 
   it('is off without a session key or a note, and reads the note from the environment before KV', async () => {
