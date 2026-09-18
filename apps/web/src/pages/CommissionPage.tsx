@@ -20,7 +20,7 @@ import { HOME_HASH } from '../lib/routes';
 import { Face } from '../components/mystery/Face';
 import type { VenueHandle } from '../components/mystery/Venue';
 import type { MysteryView } from '@pokernight/mystery';
-import { KETTLEWATER_HOUSE_PLAN } from '../components/commission/plan';
+import { planFor } from '../components/commission/plan';
 
 /** THE ENGINE NEVER AT MODULE TIME: PlayCanvas is loaded when somebody walks into a room, like the lounge's. */
 const Venue = lazy(() => import('../components/mystery/Venue').then((m) => ({ default: m.Venue })));
@@ -32,7 +32,7 @@ const Venue = lazy(() => import('../components/mystery/Venue').then((m) => ({ de
  * they stood. Nothing here is a fact of the game; it is how the game is drawn.
  */
 function asVenueView(v: CommissionView): MysteryView {
-  const plan = v.room ? KETTLEWATER_HOUSE_PLAN[v.room.id] : undefined;
+  const plan = v.room ? planFor(v.region)[v.room.id] : undefined;
   const props = (plan?.things ?? []).filter((t) => t.prop).map((t) => ({ id: t.prop!, name: t.label ?? t.prop!, examined: false }));
   const person = (p: CommissionView['cast'][number]) => ({
     role: p.role, name: p.name, operator: p.operator, agent: p.agent, alive: !p.silent, look: p.look,
@@ -116,7 +116,7 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
           {view.room && venueView ? (
             <Suspense fallback={<section className="panel"><p className="hint">Opening the meeting house…</p></section>}>
               <div className="mystery-venue-wrap">
-                <Venue ref={venue} plan={KETTLEWATER_HOUSE_PLAN} view={venueView} speaking={null} act={(a) => sock?.act(a)} />
+                <Venue ref={venue} plan={planFor(view.region)} view={venueView} speaking={null} act={(a) => sock?.act(a)} />
               </div>
             </Suspense>
           ) : null}
@@ -144,15 +144,22 @@ function Clock({ deadline, paused }: { deadline: number | null; paused: boolean 
 
 /** THE BOARD — the public picture, which is the object of the night. */
 function Board({ view }: { view: CommissionView }) {
+  // The towns every people here shares — the county's own map, said once.
+  const towns = view.peoples.length && view.peoples.every((p) => (p.places ?? []).join('·') === (view.peoples[0]!.places ?? []).join('·'))
+    ? (view.peoples[0]!.places ?? [])
+    : [];
   return (
     <section className="panel gc-board">
       <header><h3>The picture · {view.regionName}</h3><span className="hint">{view.objective}</span></header>
+      {/* THE MAP IS THE REGION'S, NOT EACH PEOPLE'S. Every people in a county shares its towns, so printing the
+          same list on five cards is five copies of one fact and it pushed the readings off the card. */}
+      {towns.length ? <p className="small muted gc-towns">{towns.join(' · ')}</p> : null}
       <ul className="gc-people">
         {view.peoples.map((p) => (
           <li key={p.id}>
             <div>
-              <strong>{p.name}</strong> <span className="muted small">{p.county}</span>
-              {p.places?.length ? <div className="small muted">{p.places.join(' · ')}</div> : null}
+              <strong>{p.name}</strong>
+              {p.places?.length && p.places.join('·') !== towns.join('·') ? <div className="small muted">{p.places.join(' · ')}</div> : null}
             </div>
             <div className="gc-reading">
               {p.reading ? (

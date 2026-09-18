@@ -10,4 +10,11 @@
 export type { Placed, RoomPlan } from '../mystery/plan';
 import type { RoomPlan } from '../mystery/plan';
 import { KETTLEWATER_HOUSE_PLAN_FROM_ONTOLOGY } from './plan.generated';
+import { GREELEY_CHURCH_PLAN_FROM_ONTOLOGY } from './plan.greeley.generated';
 export const KETTLEWATER_HOUSE_PLAN: Record<string, RoomPlan> = KETTLEWATER_HOUSE_PLAN_FROM_ONTOLOGY;
+export const GREELEY_CHURCH_PLAN: Record<string, RoomPlan> = GREELEY_CHURCH_PLAN_FROM_ONTOLOGY;
+
+/** THE PLAN A NIGHT IS DRAWN IN, chosen by the room it opens in — one string joins the place to the game. */
+export function planFor(regionId: string): Record<string, RoomPlan> {
+  return regionId === 'weld-county' ? GREELEY_CHURCH_PLAN : KETTLEWATER_HOUSE_PLAN;
+}

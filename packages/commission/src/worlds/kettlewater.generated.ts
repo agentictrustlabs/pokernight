@@ -2,7 +2,7 @@
  * GENERATED FROM THE ONTOLOGY — do not edit by hand.
  *
  * Source: `~/skills/ontology/kettlewater.ttl` (an A-box over `commission.tbox.ttl`, under faith and story).
- * Rebuild: `node scripts/world-to-commission.mjs > packages/commission/src/worlds/kettlewater.generated.ts`
+ * Rebuild: `pnpm gen:commission`
  */
 import type { Region, Scenario } from '../types.js';
 

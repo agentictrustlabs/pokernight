@@ -73,7 +73,10 @@ export function chooseAction(view: CommissionView, lines: CastLines, tick: numbe
       const mine = (you.vault ?? []).filter((v) => !v.revoked);
       const item = pick(mine, tick);
       if (item && here) {
-        const g = (item.projections ?? []).filter((x) => x.allowedHere).slice(-1)[0];
+        // THE FINEST GRAIN THIS ROOM ALLOWS. "You may coarsen, never refine" is a ceiling, not an instruction to
+        // say as little as possible: the useful, safe sentence is the finest one the room's rule permits, and a
+        // part that answers every question at people grain has told the room nothing.
+        const g = (item.projections ?? []).filter((x) => x.allowedHere)[0];
         if (g) return { action: { type: 'testify', people: item.people, evidence: item.id, grain: g.grain }, line: g.text };
       }
       return { action: { type: 'say', text: lines.greet }, line: lines.greet };

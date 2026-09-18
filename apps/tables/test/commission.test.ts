@@ -34,7 +34,7 @@ async function socket(stagingId: string, token: string) {
 const post = (path: string, token: string, body: unknown) =>
   SELF.fetch(`http://tables.test${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
-describe('a night of your own in the marches', () => {
+describe('a night of your own in Weld County', () => {
   it('is the same night when you ask twice, and a new one when you ask for another', async () => {
     const me = await devSession('a-researcher');
     const first = (await (await post('/commissions/solo', me.token, { role: 'researcher' })).json()) as { staging: { stagingId: string; seedCommit: string } };
@@ -56,7 +56,8 @@ describe('a night of your own in the marches', () => {
     const r = await SELF.fetch('http://tables.test/commissions');
     expect(r.status).toBe(200);
     const b = (await r.json()) as { scenarios: Array<{ id: string; night: number; roles: unknown[]; regionName: string }> };
-    expect(b.scenarios.map((s) => s.id)).toEqual(['first-light', 'second-winter']);
+    // The default night is the real county; the invented marches remain beside it.
+    expect(b.scenarios.map((s) => s.id)).toEqual(['first-light', 'second-winter', 'thursday-in-greeley']);
     expect(b.scenarios[0]?.roles).toHaveLength(7);
     expect(b.scenarios[1]?.night).toBe(2);
   });
@@ -74,8 +75,8 @@ describe('a night of your own in the marches', () => {
     expect(m.view?.cast?.filter((c) => c.operator === 'agent')).toHaveLength(6);
     expect(m.view?.reveal ?? null).toBeNull();
     expect(JSON.stringify(m.view)).not.toContain('"truth"');
-    // The places are the map — public to everybody, including the adversary.
-    expect(m.view?.peoples?.find((p) => p.id === 'ouren')?.places).toContain('Stennick');
+    // The towns are the map — public to everybody, including whoever is carrying this out of the room.
+    expect(m.view?.peoples?.find((p) => p.id === 'burmese')?.places).toContain('Evans');
     s.ws.close();
   });
 
@@ -84,12 +85,12 @@ describe('a night of your own in the marches', () => {
     const { staging } = (await (await post('/commissions/solo', me.token, { role: 'returnee', restart: true })).json()) as { staging: { stagingId: string } };
     const s = await socket(staging.stagingId, me.token);
     await s.waitFor((x) => x.type === 'staging' && !!x.view);
-    s.send({ type: 'act', action: { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'person' } });
+    s.send({ type: 'act', action: { type: 'testify', people: 'burmese', evidence: 'r1', grain: 'person' } });
     const refused = await s.waitFor((x) => x.type === 'error');
     expect(refused.code).toBe('finer-than-held');
-    s.send({ type: 'act', action: { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'county' } });
+    s.send({ type: 'act', action: { type: 'testify', people: 'burmese', evidence: 'r1', grain: 'county' } });
     const after = await s.waitFor((x) => x.type === 'staging' && JSON.stringify(x.view ?? {}).includes('"testified"'));
-    expect(JSON.stringify(after.view)).toContain('upper marches');
+    expect(JSON.stringify(after.view)).toContain('Weld County');
     s.ws.close();
   });
 

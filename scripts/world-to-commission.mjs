@@ -50,21 +50,22 @@ const strengthOf = (node) => node.value.slice(POE.length).replace('Strength', ''
 const grainOf = (node) => lit(node, `${CM}grainKey`);
 const key = (node, p) => lit(node, p);
 
-const region = typed(`${CM}FictionalRegion`)[0];
+const region = typed(`${CM}Region`)[0];
 const stories = typed(`${ST}Story`).sort((a, b) => (num(a, `${CM}nightNumber`) ?? 0) - (num(b, `${CM}nightNumber`) ?? 0));
 
 const L = [];
 L.push(`/**`);
 L.push(` * GENERATED FROM THE ONTOLOGY — do not edit by hand.`);
 L.push(` *`);
-L.push(` * Source: \`~/skills/ontology/kettlewater.ttl\` (an A-box over \`commission.tbox.ttl\`, under faith and story).`);
-L.push(` * Rebuild: \`node scripts/world-to-commission.mjs > packages/commission/src/worlds/kettlewater.generated.ts\``);
+L.push(` * Source: \`${src.replace(process.env.HOME ?? '~', '~')}\` (an A-box over \`commission.tbox.ttl\`, under faith and story).`);
+L.push(` * Rebuild: \`pnpm gen:commission\``);
 L.push(` */`);
 L.push(`import type { Region, Scenario } from '../types.js';`);
 L.push('');
 
 // ── the region ──
-L.push(`export const KETTLEWATER_MARCHES_FROM_ONTOLOGY: Region = {`);
+const REGION_CONST = `${key(region, `${CM}regionKey`).toUpperCase().replace(/-/g, '_')}_FROM_ONTOLOGY`;
+L.push(`export const ${REGION_CONST}: Region = {`);
 L.push(`  id: ${j(key(region, `${CM}regionKey`))},`);
 L.push(`  name: ${j(lit(region, `${RDFS}label`))},`);
 L.push(`  blurb: ${j(lit(region, `${RDFS}comment`))},`);
@@ -86,7 +87,7 @@ for (const p of all(region, `${CM}hasPeople`).sort(byOrder)) {
   L.push(`      schedule: [${schedule.map((s) => `{ phase: ${j(phaseAt(s, `${CM}phase`, `${CM}phaseQualifier`))}, strength: ${j(strengthOf(one(s, `${CM}strength`)))} }`).join(', ')}],`);
   // THE HIDDEN STATE'S FINE END IS A CIRCLE: the kin households (a gc:FormationCommunity) that meet within one place.
   const circle = one(p, `${CM}hiddenCircle`);
-  L.push(`      truth: { place: ${j(key(one(circle, `${FCI}circleWithinCommunity`), `${CM}placeKey`))}, households: ${num(circle, `${CM}householdCount`)} },`);
+  L.push(`      truth: { place: ${j(key(one(circle, `${CM}meetsAt`), `${CM}placeKey`))}, households: ${num(circle, `${CM}householdCount`)} },`);
   if (carrier) L.push(`      carrier: ${j(key(carrier, `${ST}partKey`))},`);
   L.push(`    },`);
 }
