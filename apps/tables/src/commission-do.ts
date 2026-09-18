@@ -137,7 +137,7 @@ export class CommissionDO extends DurableObject<Env> {
       // Only when no persona was ever chartered for the part is the person's own agent its address.
       if (person) {
         const own = standing.find((c) => c.role === r.id);
-        return { role: r.id, agent: own?.agent ?? person.playerId, name: r.name, custodian: person.playerId, operator: 'human' as const, playerId: person.playerId, mind: 'human' as const, ...(person.name ? { playedBy: person.name } : {}) };
+        return { role: r.id, agent: own?.agent ?? person.playerId, name: r.name, custodian: person.playerId, operator: 'human' as const, playerId: person.playerId, mind: 'human' as const, ...(person.name ? { playedBy: person.name } : {}), ...(own ? { personaCustodian: own.custodian } : {}) };
       }
       // THE PART'S OWN PERSON, when the estate has chartered one (`COMMISSION_CAST`) — a persona agent somebody
       // custodies, with a vault and a memory of the last night. Then a positional list; then the house's rules.
@@ -201,7 +201,7 @@ export class CommissionDO extends DurableObject<Env> {
         if (seat.operator === 'human') return json({ error: 'somebody is already playing that part' }, 409);
         if (isSilent(this.state, pair2.scenario, seat.role)) return json({ error: 'that part has gone quiet for the night' }, 409);
         // The same character, with the same agent and the same name — only the mind behind it changes.
-        this.state = { ...this.state, cast: this.state.cast.map((c) => (c.role === b.role ? { ...c, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const, ...(b.name ? { playedBy: b.name } : {}) } : c)) };
+        this.state = { ...this.state, cast: this.state.cast.map((c) => (c.role === b.role ? { ...c, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const, ...(b.name ? { playedBy: b.name } : {}), ...(c.custodian !== 'house' && !c.personaCustodian ? { personaCustodian: c.custodian } : {}) } : c)) };
         this.save();
         this.tellEverybody();
         return json({ ok: true, cast: this.castList() });

@@ -261,6 +261,8 @@ export interface Casting {
   custodian: string;
   operator: Operator;
   playerId?: string;
+  /** The person who custodies the character's PERSONA when a person is playing it (then `custodian` is the player). */
+  personaCustodian?: string;
   /**
    * WHO IS DRIVING IT TONIGHT — a person's display name, when a person plays this part.
    *
@@ -436,6 +438,8 @@ export interface ViewPerson {
   role: RoleId; name: string; kind: PartKind; operator: Operator; agent: string;
   room?: RoomId; roomName?: string;
   appearance?: string; look: Look; mind?: 'human' | 'agent' | 'rules'; playedBy?: string;
+  /** The person who custodies this character's own agent — whose Home its messages are read at. */
+  custodian?: string;
   silent?: boolean;
 }
 

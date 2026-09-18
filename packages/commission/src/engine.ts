@@ -482,6 +482,10 @@ function personView(state: CommissionState, scenario: Scenario, region: Region, 
     look: r?.look ?? { skin: '#d8b08a', hair: '#3b2f2a', wear: '#2b333a', accent: '#5b6b74', hairStyle: 'short' },
     ...(c?.mind ? { mind: c.mind } : {}),
     ...(c?.operator === 'human' && c.playedBy ? { playedBy: c.playedBy } : {}),
+    // WHOSE HOME THE CHARACTER'S AGENT LIVES AT. A persona is custodied by one person and its mail lands there whoever
+    // plays the part tonight; a player who is not that custodian needs to be told, or looks for a character at a
+    // Home it was never at. The house's own parts carry no custodian worth naming.
+    ...(c?.personaCustodian ? { custodian: c.personaCustodian } : c?.operator === 'agent' && c.custodian && c.custodian !== 'house' ? { custodian: c.custodian } : {}),
     ...(isSilent(state, scenario, role) ? { silent: true } : {}),
   };
 }

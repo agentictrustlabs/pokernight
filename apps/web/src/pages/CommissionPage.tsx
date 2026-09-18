@@ -141,8 +141,13 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
         </main>
         <aside className="mystery-side">
           {view.reveal ? <Reveal view={view} onAgain={again} busy={busy} /> : null}
-          <You view={view} act={act} />
+          {/* THE PEOPLE COME BEFORE THE PAPERWORK (2026-09-18): the cast list used to sit under the vault, the
+              slips and the forms, and everything above it grew as the night went on, so "select a person" meant
+              scrolling to the bottom of a column that kept getting longer. Who you are, then who is here and
+              where, then your vault and your slips. */}
+          <YouHead view={view} />
           <Cast view={view} goTo={(role) => venue.current?.goTo(role) ?? false} />
+          <You view={view} act={act} />
         </aside>
       </div>
     </div>
@@ -308,6 +313,8 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
   const [households, setHouseholds] = useState('');
   const [admitWho, setAdmitWho] = useState('');
   const [admitRoom, setAdmitRoom] = useState('');
+  /** The (people, phase) pairs you stood behind tonight — the engine counts them; this remembers you pressed. */
+  const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   // Slips you have had a moment to see; a slip not in here is marked new. A ref, so marking them is not a render.
   const seen = useRef(new Set<string>());
   const receivedCount = you?.received.length ?? 0;
@@ -315,21 +322,12 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
     const t = setTimeout(() => { for (const r of you?.received ?? []) seen.current.add(r.disclosure); }, 4000);
     return () => clearTimeout(t);
   }, [receivedCount]);
-  if (!you) return (
-    <section className="panel mystery-you"><h3>Watching</h3><p className="hint">You are not in this story. The public picture is above; the room is not yours.</p></section>
-  );
+  if (!you) return null;
   const roomGrain = view.room?.grain ?? 'people';
   const nameOf = (r: string) => view.cast.find((c) => c.role === r)?.name ?? r;
   const peopleName = (p: string) => view.peoples.find((x) => x.id === p)?.name ?? p;
   return (
     <section className="panel mystery-you gc-you">
-      <div className="mystery-you-head">
-        <Face look={you.look as never} name={you.name} size={40} />
-        <div><strong>{you.name}</strong><div className="muted small">{you.kind} · you</div></div>
-      </div>
-      <p className="hint">{you.blurb}</p>
-      <p className="hint mystery-secret"><b>Yours alone:</b> {you.secret}</p>
-
       <h3>Your vault</h3>
       {you.vault.length === 0 ? <p className="hint">You hold no testimony. What you have is what others show you.</p> : null}
       <ul className="gc-vault">
@@ -371,16 +369,36 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
       {you.received.length ? (
         <>
           <h3>What you have been shown</h3>
-          {/* THE SAME SLIP FROM THE SAME PERSON IS ONE ROW: a count, one Confirm, and a mark while it is new. */}
+          {/* PER PEOPLE, ONE ACT (2026-09-18). A Confirm button on every slip — fifteen of them for one people — was
+              "pretty bad design": what a witness does is STAND BEHIND A PHASE for a people, once, and the slips are
+              the reasons. So: a people, the slips about it (the same one from the same person folded with a count),
+              and one button that names the highest phase those slips support. Pressed, it says so and stays said. */}
+          <p className="hint small">Confirming tells the researcher one more witness stands behind that phase — a count, never your name.</p>
           <ul className="gc-received">
-            {groupReceived(you.received).map((g) => (
-              <li key={g.key} className={g.live ? '' : 'revoked'}>
-                {g.ids.some((id) => !seen.current.has(id)) ? <span className="gc-received-new" title="new" /> : null}
-                <strong>{nameOf(g.first.from)}</strong> on {peopleName(g.first.people)}{g.count > 1 ? <span className="gc-received-count">×{g.count}</span> : null} <span className="muted small">at {g.first.grain} · supports Phase {g.first.supports}{g.live ? '' : ' · withdrawn'}</span>
-                <div className="small">“{g.first.text}”</div>
-                {g.live ? <button type="button" className="small" onClick={() => act({ type: 'corroborate', people: g.first.people, phase: g.first.supports })}>Confirm (Phase {g.first.supports})</button> : null}
-              </li>
-            ))}
+            {groupByPeople(groupReceived(you.received)).map((pg) => {
+              const key = `${pg.people}:${pg.phase}`;
+              const done = confirmed.has(key);
+              return (
+                <li key={pg.people}>
+                  <div className="gc-people-head">
+                    <strong>{peopleName(pg.people)}</strong>
+                    {pg.phase !== null ? (
+                      <button type="button" className={`small${done ? ' confirmed' : ''}`} disabled={done} onClick={() => { act({ type: 'corroborate', people: pg.people, phase: pg.phase! }); setConfirmed(new Set([...confirmed, key])); }}>
+                        {done ? `✓ You stand behind Phase ${pg.phase}` : `Confirm Phase ${pg.phase} · ${phaseName(pg.phase as Phase)}`}
+                      </button>
+                    ) : <span className="muted small">nothing standing</span>}
+                  </div>
+                  <ul className="gc-slips">
+                    {pg.groups.map((g) => (
+                      <li key={g.key} className={g.live ? '' : 'revoked'}>
+                        {g.ids.some((id) => !seen.current.has(id)) ? <span className="gc-received-new" title="new" /> : null}
+                        <span className="small"><b>{nameOf(g.first.from)}</b>{g.count > 1 ? <span className="gc-received-count">×{g.count}</span> : null} <span className="muted">· {g.first.grain} · Phase {g.first.supports}{g.live ? '' : ' · withdrawn'}</span> — “{g.first.text}”</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
           </ul>
         </>
       ) : null}
@@ -456,6 +474,26 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
  * body to them through however many doors it takes (`venue.goTo`, the mystery's precedent). A door shut to you
  * stops the walk at the door, and the row says so.
  */
+/** WHO YOU ARE — the head of the side column: face, part, whose Home your character's agent is at, your brief. */
+function YouHead({ view }: { view: CommissionView }) {
+  const you = view.you;
+  if (!you) return <section className="panel mystery-you"><h3>Watching</h3><p className="hint">You are not in this story. The public picture is above; the room is not yours.</p></section>;
+  return (
+    <section className="panel mystery-you gc-you-head">
+      <div className="mystery-you-head">
+        <Face look={you.look as never} name={you.name} size={40} />
+        <div><strong>{you.name}</strong><div className="muted small">{you.kind} · you</div></div>
+      </div>
+      <details className="gc-fold">
+        <summary>Your brief, and what is yours alone</summary>
+        <p className="hint">{you.blurb}</p>
+        <p className="hint mystery-secret"><b>Yours alone:</b> {you.secret}</p>
+      </details>
+      <WhoseAgent view={view} />
+    </section>
+  );
+}
+
 function Cast({ view, goTo }: { view: CommissionView; goTo: (role: string) => boolean }) {
   const [missed, setMissed] = useState<string | null>(null);
   return (
@@ -519,6 +557,30 @@ function Inspector({ view, looking, onClose }: { view: CommissionView; looking: 
   );
 }
 
+/**
+ * WHERE YOUR CHARACTER'S MAIL IS (2026-09-18). A character's whispers go to the character's own agent, which one
+ * person custodies at their Home — whoever plays the part tonight. A player who is not that custodian looked for
+ * the character at their own Home and found nothing ("I don't see a person agent for that person in my home"), so
+ * the part says whose Home it is, and which of tonight's parts are custodied by the player.
+ */
+function WhoseAgent({ view }: { view: CommissionView }) {
+  const me = view.cast.find((c) => c.role === view.you?.role);
+  if (!me?.agent || me.agent.endsWith('.cast') || me.agent.startsWith('home:')) return null;
+  const theirs = me.custodian;
+  return (
+    <p className="hint small gc-whose">
+      {me.name}'s own agent is <code>{me.agent}</code>{theirs ? <> — custodied by <b>{theirs}</b>, so the whispers {me.name} receives are read at {theirs}'s Home (as {me.agent}).</> : <> — yours to read at your Home, as {me.agent}.</>}
+    </p>
+  );
+}
+
+/** A PEOPLE, THE SLIPS ABOUT IT, AND THE HIGHEST PHASE THE LIVE ONES SUPPORT — what one Confirm stands behind. */
+function groupByPeople<G extends { first: { people: string; supports: number }; live: boolean }>(groups: G[]): Array<{ people: string; phase: number | null; groups: G[] }> {
+  const by = new Map<string, G[]>();
+  for (const g of groups) (by.get(g.first.people) ?? by.set(g.first.people, []).get(g.first.people)!).push(g);
+  return [...by.entries()].map(([people, gs]) => ({ people, groups: gs, phase: gs.filter((g) => g.live).reduce<number | null>((m, g) => (m === null || g.first.supports > m ? g.first.supports : m), null) }));
+}
+
 /** THE SAME SLIP FROM THE SAME PERSON IS ONE ROW: grouped by who, what, at which grain, in which words. */
 function groupReceived(received: CommissionView['you'] extends infer Y ? Y extends { received: infer R } ? R extends ReadonlyArray<infer T> ? T[] : never : never : never) {
   const groups = new Map<string, { key: string; first: (typeof received)[number]; count: number; live: boolean; ids: string[] }>();
@@ -547,7 +609,11 @@ function matches(e: CommissionEvent, f: Filter, roomId: string | undefined, you:
 function Transcript({ view }: { view: CommissionView }) {
   const ref = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<Filter>('all');
-  useEffect(() => { ref.current?.scrollTo({ top: ref.current.scrollHeight }); }, [view.transcript.length, filter]);
+  // FOLLOW THE NEWEST LINE ONLY WHILE YOU ARE AT THE BOTTOM (2026-09-18): scrolled up to read something, the
+  // transcript stays where you put it; a new line arrives underneath and waits. Back at the bottom, it follows again.
+  const pinned = useRef(true);
+  const onScroll = () => { const el = ref.current; if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; };
+  useEffect(() => { if (pinned.current) ref.current?.scrollTo({ top: ref.current.scrollHeight }); }, [view.transcript.length, filter]);
   const name = (r: string) => view.cast.find((c) => c.role === r)?.name ?? r;
   const people = (p: string) => view.peoples.find((x) => x.id === p)?.name ?? p;
   const you = view.you?.role ?? null;
@@ -558,7 +624,7 @@ function Transcript({ view }: { view: CommissionView }) {
         {FILTERS.map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={filter === id} className={`gc-filter${filter === id ? ' active' : ''}`} onClick={() => setFilter(id)}>{label}</button>)}
       </div>
       {/* Live only while unfiltered: re-filtering swaps every line, and that churn is not news. */}
-      <div className="gc-lines" aria-live={filter === 'all' ? 'polite' : 'off'} ref={ref}>
+      <div className="gc-lines" aria-live={filter === 'all' ? 'polite' : 'off'} ref={ref} onScroll={onScroll}>
         {shown.map((e, i) => <Line key={`${e.at}-${i}`} e={e} name={name} people={people} you={you} />)}
         {!shown.length ? <p className="hint">Nothing here yet.</p> : null}
       </div>
