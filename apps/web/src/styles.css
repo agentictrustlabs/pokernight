@@ -6966,18 +6966,65 @@ button.tag.guest {
 
 /* ═══════════════════════════ GREAT COMMISSION (docs/GREAT-COMMISSION.md) ═══════════════════════════
    The mystery page's shell, with the BOARD where the venue was: five peoples and the reading for each. */
-/* THE TRANSCRIPT HAS TO FIT UNDER THE THREE FIXED PANELS (2026-09-17): at 42vh + 34vh + 26vh the column was
-   already full before the transcript, which sat clipped below it. The house is shallower here than the hotel
-   (six rooms, one floor), the picture is five cards, and the room strip is a few buttons. */
-.gc-page .mystery-main > .mystery-venue-wrap .venue { height: min(30vh, 340px); }
-.gc-page .mystery-main > .gc-board { flex: 0 0 auto; max-height: 20vh; overflow-y: auto; overscroll-behavior: contain; }
-.gc-page .mystery-main > .mystery-room { max-height: 18vh; }
-.gc-page .mystery-main > .mystery-transcript { min-height: 11rem; }
-.gc-board header { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
-.gc-board h3 { margin: 0.5rem 0 0.2rem; }
-.gc-people { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem; }
-.gc-people li { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.5rem 0.6rem; border: 1px solid rgba(240, 236, 224, 0.1); border-radius: 6px; }
-.gc-reading { display: flex; flex-direction: column; gap: 0.1rem; }
+/* THE ACTIVITIES ARE THE PAGE (2026-09-18). Four panels each took a fixed slice of the height — picture 30vh,
+   board 20vh, room 18vh — and the transcript got the three lines that were left, clipped, at the bottom (the
+   owner: "I cannot see the activities"). The picture, the board and the room are CONTENT-SIZED STRIPS now, never
+   clipped, and the transcript takes whatever remains. */
+.gc-page .mystery-main > .mystery-venue-wrap .venue { height: min(28vh, 300px); }
+/* A SHORT WINDOW GIVES UP PICTURE, NOT ACTIVITIES: under 760px the picture is a band and the strips are tighter. */
+@media (max-height: 760px) {
+  .gc-page .mystery-main > .mystery-venue-wrap .venue { height: min(19vh, 160px); }
+  .gc-page .mystery-main > .mystery-transcript { min-height: 7rem; }
+  .gc-page .mystery-main { gap: 0.5rem; }
+  .gc-page .mystery-main > .gc-board, .gc-page .mystery-main > .mystery-room { padding: 0.4rem 0.7rem; }
+  .gc-board header .hint { display: none; }
+  .gc-room header p.hint { display: none; }
+  .gc-people li .gc-phase-name { display: none; }
+  .gc-room .mystery-doors button { padding: 0.1rem 0.4rem; font-size: 0.8rem; }
+}
+.gc .topbar button, .gc .topbar a { white-space: nowrap; }
+.gc-page .mystery-main > .gc-board { flex: 0 0 auto; max-height: none; overflow: visible; padding: 0.55rem 0.8rem; }
+.gc-page .mystery-main > .mystery-room { flex: 0 0 auto; max-height: none; overflow: visible; padding: 0.55rem 0.8rem; }
+.gc-page .mystery-main > .mystery-transcript { flex: 1 1 auto; min-height: 10rem; max-height: none; display: flex; flex-direction: column; overflow: hidden; }
+.gc-transcript .gc-lines { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 0.35rem; }
+.gc-board header { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
+.gc-board header h3, .gc-room header h3 { margin: 0; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: #a9b3ba; }
+.gc-board .gc-towns { margin: 0 0 0.3rem; }
+/* ONE ROW OF FIVE: name, reading, witnesses — a strip that wraps on a narrow screen, never a grid of cards */
+.gc-people { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem 0.5rem; }
+.gc-people li { display: flex; flex-direction: row; align-items: baseline; gap: 0.35rem; padding: 0.2rem 0.5rem; border: 1px solid rgba(240, 236, 224, 0.1); border-radius: 6px; flex: 0 1 auto; min-width: 0; font-size: 0.84rem; }
+.gc-people li strong { white-space: nowrap; }
+.gc-reading { display: flex; flex-direction: column; gap: 0; line-height: 1.25; }
+.gc-fold > summary { cursor: pointer; font-size: 0.85rem; color: #a9b3ba; margin-top: 0.3rem; }
+/* the room's blurb is one line — the full text is on the title; the strip is for doing, not reading */
+.gc-room header p.hint { margin: 0.1rem 0 0.35rem; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-here { margin: 0.35rem 0 0.3rem; line-height: 1.5; }
+.mystery .gc-here-chip { background: none; border: 0; border-radius: 0; color: inherit; font: inherit; text-decoration: underline dotted; cursor: pointer; padding: 0 0.1rem; min-height: 0; }
+.mystery .gc-here-chip:hover:not(:disabled), .mystery .gc-here-chip:focus-visible { background: none; color: #ffd98a; }
+.mystery .gc-here-chip[aria-pressed="true"] { color: #c9a14a; text-decoration-style: solid; font-weight: 600; }
+.gc-talk { flex-wrap: wrap; align-items: center; }
+.gc-talk-target { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(201, 161, 74, 0.16); border: 1px solid rgba(201, 161, 74, 0.4); font-size: 0.82rem; white-space: nowrap; }
+.mystery .gc-talk-target button { background: none; border: 0; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.1rem; min-width: 22px; min-height: 22px; }
+.mystery .gc-filter { background: none; border: 1px solid rgba(240, 236, 224, 0.16); padding: 0.1rem 0.55rem; }
+.mystery .gc-filter.active { background: rgba(201, 161, 74, 0.18); border-color: #c9a14a; }
+.gc-room .mystery-doors button, .gc-talk button { padding: 0.2rem 0.5rem; font-size: 0.84rem; }
+.gc-room .mystery-doors { gap: 0.3rem; }
+.gc-people li .gc-phase { white-space: nowrap; font-size: 0.82rem; }
+.gc-talk input { padding: 0.3rem 0.6rem; }
+.gc-room .mystery-doors { margin-top: 0.2rem; }
+.gc-filter-row { display: flex; gap: 0.3rem; flex-wrap: wrap; margin: 0 0 0.4rem; flex: 0 0 auto; }
+.gc-filter { font: inherit; font-size: 0.76rem; padding: 0.15rem 0.6rem; border-radius: 999px; border: 1px solid rgba(240, 236, 224, 0.16); background: none; color: #cfd6da; cursor: pointer; min-height: 0; }
+.gc-filter.active { background: rgba(201, 161, 74, 0.18); border-color: #c9a14a; color: #edeae2; }
+.gc-round-divider { display: flex; align-items: center; gap: 0.6rem; margin: 0.5rem 0 0.2rem; color: #9aa3ab; font-size: 0.76rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.gc-round-divider::before, .gc-round-divider::after { content: ''; flex: 1; height: 1px; background: rgba(240, 236, 224, 0.12); }
+.gc-tome { background: rgba(201, 161, 74, 0.1); border-left: 2px solid #c9a14a; padding: 0.15rem 0.5rem; border-radius: 3px; }
+.gc-received li { position: relative; }
+.gc-received-new { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c9a14a; margin-right: 0.35rem; vertical-align: middle; }
+.gc-received-count { font-size: 0.75rem; color: #9aa3ab; margin-left: 0.3rem; }
+.mystery-cast-row .muted.small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) {
+  .gc-page .mystery-main > .mystery-transcript { max-height: 50vh; }
+}
 .gc-phase { color: #c9a14a; font-weight: 600; }
 .gc-need { color: #8fd0a2; }
 .gc-grain { margin-left: 0.4rem; font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase; }

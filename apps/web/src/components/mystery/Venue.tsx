@@ -571,7 +571,13 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
          * and a face answers. A character no person is playing has no chip, and a night with no huddle
          * running shows none at all, which is the fallback rather than a hole.
          */
-        next.push({ id: `p:${role}`, text: who?.name ?? role, sub: who?.playedBy ?? (who?.operator === 'agent' ? 'an agent' : undefined), ...(who?.playedBy ? { face: who.playedBy } : {}), x: out.x, y: out.y, kind: `${speakingRef.current === role ? 'name speaking' : 'name'}${hover.current === role ? ' lit' : ''}` });
+        // THE PLATE SAYS THE PART AND WHO PLAYS IT (2026-09-18): "Ruth Calloway · researcher · Alice", never "an
+        // agent". A game that carries a part word on its people (`part`, the commission's `kind`) gets it on the
+        // plate; the person behind a played character follows; an agent-played part shows only the part, because
+        // the agent's name is on the cast list and in the inspector and a plate is read from across a room.
+        const part = (who as { part?: string } | undefined)?.part;
+        const sub = [part, who?.playedBy].filter(Boolean).join(' · ') || undefined;
+        next.push({ id: `p:${role}`, text: who?.name ?? role, ...(sub ? { sub } : {}), ...(who?.playedBy ? { face: who.playedBy } : {}), x: out.x, y: out.y, kind: `${speakingRef.current === role ? 'name speaking' : 'name'}${hover.current === role ? ' lit' : ''}` });
       }
       /**
        * NAMES THAT DO NOT SIT ON TOP OF EACH OTHER (2026-09-16). Eight people standing in a group project to

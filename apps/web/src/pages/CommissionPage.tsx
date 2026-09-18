@@ -2,11 +2,19 @@
  * A GREAT COMMISSION NIGHT — the page (docs/GREAT-COMMISSION.md §10).
  *
  * The mystery page's shape, because it is the same kind of place: the whole window, two height-bounded columns,
- * the transcript that is the room, a side that is YOUR PART. What differs is what a part is for. There is no
- * 3D venue — the rooms are workspaces, not a hotel — so the main column leads with THE BOARD: five peoples, the
- * reading published for each and the need it emitted, which is the whole object of the night. Your side leads
- * with your VAULT, each item with the grains it may be spoken at here, because choosing the grain is the one
- * decision anybody is ever judged on.
+ * the transcript that is the room, a side that is YOUR PART. What differs is what a part is for. The main column
+ * leads with the meeting house, then THE BOARD: five peoples, the reading published for each and the need it
+ * emitted, which is the whole object of the night. Your side leads with your VAULT, each item with the grains it
+ * may be spoken at here, because choosing the grain is the one decision anybody is ever judged on.
+ *
+ * THE ACTIVITIES ARE THE PAGE (2026-09-18, after a design pass on the owner's verdict "I cannot see the activities
+ * because they scroll at the bottom of the page"). Four panels each took a fixed slice of the height and the
+ * transcript got what was left — three lines. Now the picture, the board and the room are content-sized STRIPS
+ * and the transcript takes the remainder, with filters (all · this room · to me · testimony · readings) and a rule
+ * between rounds. A WHISPER IS A TARGET CHIP ON THE TALK BOX, never a button that says "whispering…": pressing a
+ * name — in the room, in the cast, or in the picture — arms the chip, × clears it, and the button says Say or
+ * Send. THE CAST LIST SAYS WHERE EVERYBODY IS AND PRESSING A NAME WALKS YOU THERE, as the mystery's does. What
+ * you have been shown is GROUPED — the same slip from the same person is one row with a count and one Confirm.
  *
  * NO HOOK AFTER AN EARLY RETURN — every hook in this file is above the first `return`.
  */
@@ -35,7 +43,7 @@ function asVenueView(v: CommissionView): MysteryView {
   const plan = v.room ? planFor(v.region)[v.room.id] : undefined;
   const props = (plan?.things ?? []).filter((t) => t.prop).map((t) => ({ id: t.prop!, name: t.label ?? t.prop!, examined: false }));
   const person = (p: CommissionView['cast'][number]) => ({
-    role: p.role, name: p.name, operator: p.operator, agent: p.agent, alive: !p.silent, look: p.look,
+    role: p.role, name: p.name, operator: p.operator, agent: p.agent, alive: !p.silent, look: p.look, part: p.kind,
     ...(p.room ? { room: p.room } : {}), ...(p.roomName ? { roomName: p.roomName } : {}),
     ...(p.appearance ? { appearance: p.appearance } : {}), ...(p.mind ? { mind: p.mind } : {}), ...(p.playedBy ? { playedBy: p.playedBy } : {}),
   });
@@ -82,6 +90,11 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
   };
   const venue = useRef<VenueHandle | null>(null);
   const venueView = useMemo(() => (view ? asVenueView(view) : null), [view]);
+  /** WHO A WHISPER GOES TO — armed by pressing a name anywhere (the room strip, the cast, a body in the picture). */
+  const [whisperTo, setWhisperTo] = useState<string | null>(null);
+  const [looking, setLooking] = useState<{ kind: 'person' | 'thing'; id: string } | null>(null);
+  // A target who has left the room is no target: the chip clears itself rather than sending into the wrong room.
+  useEffect(() => { if (whisperTo && view?.room && !view.room.people.some((p) => p.role === whisperTo)) setWhisperTo(null); }, [view?.room?.id, view?.room?.people.length]);
   /** A DOOR IS WALKED THROUGH, not teleported: the room takes the move and sends it down the socket on arrival. */
   const actThroughRoom = (a: unknown) => {
     const m = a as { type?: string; room?: string };
@@ -116,18 +129,20 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
           {view.room && venueView ? (
             <Suspense fallback={<section className="panel"><p className="hint">Opening the meeting house…</p></section>}>
               <div className="mystery-venue-wrap">
-                <Venue ref={venue} plan={planFor(view.region)} view={venueView} speaking={null} act={(a) => sock?.act(a)} />
+                <Venue ref={venue} plan={planFor(view.region)} view={venueView} speaking={null} act={(a) => sock?.act(a)}
+                  onPerson={(role) => setWhisperTo((cur) => (cur === role ? null : role))} onInspect={setLooking} />
+                <Inspector view={view} looking={looking} onClose={() => setLooking(null)} />
               </div>
             </Suspense>
           ) : null}
           <Board view={view} />
-          <Room view={view} act={actThroughRoom} />
+          <Room view={view} act={actThroughRoom} whisperTo={whisperTo} setWhisperTo={setWhisperTo} />
           <Transcript view={view} />
         </main>
         <aside className="mystery-side">
           {view.reveal ? <Reveal view={view} onAgain={again} busy={busy} /> : null}
           <You view={view} act={act} />
-          <Cast view={view} />
+          <Cast view={view} goTo={(role) => venue.current?.goTo(role) ?? false} />
         </aside>
       </div>
     </div>
@@ -150,32 +165,26 @@ function Board({ view }: { view: CommissionView }) {
     : [];
   return (
     <section className="panel gc-board">
-      <header><h3>The picture · {view.regionName}</h3><span className="hint">{view.objective}</span></header>
-      {/* THE MAP IS THE REGION'S, NOT EACH PEOPLE'S. Every people in a county shares its towns, so printing the
-          same list on five cards is five copies of one fact and it pushed the readings off the card. */}
-      {towns.length ? <p className="small muted gc-towns">{towns.join(' · ')}</p> : null}
+      {/* THE MAP IS THE REGION'S, NOT EACH PEOPLE'S. Every people in a county shares its towns, so the list is said
+          once — on the title's tooltip, since a strip has one line for the objective. */}
+      <header><h3 title={towns.length ? towns.join(' · ') : undefined}>The picture · {view.regionName}</h3><span className="hint">{view.objective}</span></header>
+      {/* ONE ROW OF FIVE: a people and its reading — two lines a card; strength, witnesses, round and the need it
+          emitted are on the card's tooltip. A strip, so the board is content-sized and the transcript gets the height. */}
       <ul className="gc-people">
-        {view.peoples.map((p) => (
-          <li key={p.id}>
-            <div>
+        {view.peoples.map((p) => {
+          const r = p.reading;
+          const more = [r ? `${r.strength} · ${r.corroboration} witness${r.corroboration === 1 ? '' : 'es'} · round ${r.round}` : 'no reading published yet', p.need ? `needs: ${p.need}` : '', p.places?.length ? p.places.join(' · ') : ''].filter(Boolean).join('\n');
+          return (
+            <li key={p.id} title={more}>
               <strong>{p.name}</strong>
-              {p.places?.length && p.places.join('·') !== towns.join('·') ? <div className="small muted">{p.places.join(' · ')}</div> : null}
-            </div>
-            <div className="gc-reading">
-              {p.reading ? (
-                <>
-                  <span className="gc-phase">Phase {p.reading.phase === '0-R' ? '0-R' : p.reading.phase} · {phaseName(p.reading.phase)}</span>
-                  <span className="small muted">{p.reading.strength} · {p.reading.corroboration} witness{p.reading.corroboration === 1 ? '' : 'es'} · round {p.reading.round}</span>
-                </>
-              ) : <span className="muted">no reading yet</span>}
-              {p.need ? <span className="small gc-need">needs: {p.need}</span> : null}
-            </div>
-          </li>
-        ))}
+              {r ? <span className="gc-phase">Phase {r.phase === '0-R' ? '0-R' : r.phase} <span className="gc-phase-name">· {phaseName(r.phase)}</span> <span className="muted small">· {r.corroboration}w</span></span> : <span className="muted small">no reading</span>}
+            </li>
+          );
+        })}
       </ul>
       {view.commitments.length ? (
-        <>
-          <h3>Commitments</h3>
+        <details className="gc-fold">
+          <summary>Commitments ({view.commitments.length})</summary>
           <ul className="gc-commits">
             {view.commitments.map((c) => (
               <li key={c.id} className={c.stale ? 'stale' : c.fulfilled ? 'done' : ''}>
@@ -184,56 +193,77 @@ function Board({ view }: { view: CommissionView }) {
               </li>
             ))}
           </ul>
-        </>
+        </details>
       ) : null}
     </section>
   );
 }
 
-/** THE ROOM you are standing in: its rule, who is here, where you can go. */
-function Room({ view, act }: { view: CommissionView; act: (a: unknown) => void }) {
-  const [text, setText] = useState('');
-  const [whisperTo, setWhisperTo] = useState<string | null>(null);
+/**
+ * THE ROOM you are standing in: its rule, the talk box, who is here, where you can go. A strip, not a panel to
+ * read. A WHISPER IS A TARGET ON THE BOX: press a name to arm it (again to disarm), × to clear, and the button
+ * says what pressing it does — Say, or Send. There is no button whose own label changes to a participle.
+ */
+function Room({ view, act, whisperTo, setWhisperTo }: { view: CommissionView; act: (a: unknown) => void; whisperTo: string | null; setWhisperTo: (r: string | null) => void }) {
   const room = view.room;
   if (!room || !view.you) return null;
-  const submit = () => {
-    const t = text.trim();
-    if (!t) return;
-    if (whisperTo) act({ type: 'whisper', to: whisperTo, text: t }); else act({ type: 'say', text: t });
-    setText('');
-  };
+  const toggle = (role: string) => setWhisperTo(whisperTo === role ? null : role);
   return (
-    <section className="panel mystery-room">
+    <section className="panel mystery-room gc-room">
       <header>
         <h3>{room.name} <span className="tag gc-grain">rule: {room.grain} grain</span></h3>
         <p className="hint">{room.blurb}</p>
       </header>
-      {room.people.length ? (
-        <ul className="mystery-people">
-          {room.people.map((p) => (
-            <li key={p.role}>
-              <Face look={p.look as never} name={p.name} size={22} />
-              <strong>{p.name}</strong> <span className="muted small">{p.kind}{p.silent ? ' · gone quiet' : ''}{p.playedBy ? ` · ${p.playedBy}` : p.mind === 'agent' ? ` · ${p.agent}` : ''}</span>
-              <button type="button" className="small" onClick={() => setWhisperTo(whisperTo === p.role ? null : p.role)}>{whisperTo === p.role ? 'whispering…' : 'whisper'}</button>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="hint">Nobody else is here.</p>}
       {view.you.silent ? <p className="hint">You have gone quiet. Nothing you do reaches anybody.</p> : (
-        <div className="mystery-say">
-          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} placeholder={whisperTo ? `Whisper to ${room.people.find((p) => p.role === whisperTo)?.name ?? whisperTo}…` : `Say something in ${room.name}…`} maxLength={280} />
-          <button type="button" onClick={submit}>{whisperTo ? 'Whisper' : 'Say'}</button>
-        </div>
+        <TalkBox room={room} target={whisperTo} onTarget={setWhisperTo} act={act} />
       )}
-      {room.board ? <Wall board={room.board} act={act} silent={view.you.silent} /> : null}
+      <p className="gc-here small">
+        <span className="muted">Here: </span>
+        {room.people.length ? room.people.map((p, i) => (
+          <span key={p.role}>{i ? ', ' : ''}
+            <button type="button" className="gc-here-chip" aria-pressed={whisperTo === p.role} title={`${p.kind}${p.silent ? ', gone quiet' : ''} — ${whisperTo === p.role ? 'stop whispering to' : 'whisper to'} ${p.name}`} onClick={() => toggle(p.role)}>{p.name}</button>
+            {p.silent ? <span className="muted"> (quiet)</span> : null}
+          </span>
+        )) : <span className="muted">nobody else.</span>}
+        <span className="muted small"> (press a name to whisper)</span>
+      </p>
       <div className="mystery-doors">
         {room.doors.map((d) => (
-          <button key={d.id} type="button" disabled={!d.open} title={d.open ? '' : 'not a member — the convener admits'} onClick={() => act({ type: 'move', room: d.id })}>
+          <button key={d.id} type="button" disabled={!d.open} title={d.open ? `Go through to ${d.name}` : 'not a member — the convener admits'} aria-label={d.open ? undefined : `${d.name}, not open to you — the convener admits`} onClick={() => act({ type: 'move', room: d.id })}>
             → {d.name}{d.open ? '' : ' 🔒'}
           </button>
         ))}
       </div>
+      {room.board ? (
+        <details className="gc-fold">
+          <summary>The wall ({room.board.length}) <span className="hint">— topics, unsigned</span></summary>
+          <Wall board={room.board} act={act} silent={view.you.silent} />
+        </details>
+      ) : null}
     </section>
+  );
+}
+
+/** The one box for saying and whispering. The target is a chip IN the box, so what will happen is on the screen. */
+function TalkBox({ room, target, onTarget, act }: { room: NonNullable<CommissionView['room']>; target: string | null; onTarget: (r: string | null) => void; act: (a: unknown) => void }) {
+  const [text, setText] = useState('');
+  const targetName = room.people.find((p) => p.role === target)?.name;
+  const submit = () => {
+    const t = text.trim();
+    if (!t) return;
+    act(target ? { type: 'whisper', to: target, text: t } : { type: 'say', text: t });
+    setText('');
+  };
+  return (
+    <div className="mystery-say gc-talk">
+      {target ? (
+        <span className="gc-talk-target">To {targetName ?? target}
+          <button type="button" aria-label={`Stop whispering to ${targetName ?? target}`} onClick={() => onTarget(null)}>×</button>
+        </span>
+      ) : null}
+      <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} placeholder={target ? `Whisper to ${targetName ?? target}…` : `Say something in ${room.name}…`} maxLength={280} />
+      <button type="button" onClick={submit}>{target ? 'Send' : 'Say'}</button>
+    </div>
   );
 }
 
@@ -247,7 +277,6 @@ function Wall({ board, act, silent }: { board: Array<{ id: string; text: string;
   const put = () => { const t = text.trim(); if (!t) return; act({ type: 'post', text: t }); setText(''); };
   return (
     <div className="gc-wall">
-      <h3>The wall <span className="hint">— topics, unsigned</span></h3>
       {board.length ? (
         <ul className="gc-postits">
           {board.map((p, i) => <li key={p.id} className={`gc-postit c${i % 3}`} style={{ transform: `rotate(${((i * 7) % 5) - 2}deg)` }}>{p.text}<span className="small muted">round {p.round}</span></li>)}
@@ -279,6 +308,13 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
   const [households, setHouseholds] = useState('');
   const [admitWho, setAdmitWho] = useState('');
   const [admitRoom, setAdmitRoom] = useState('');
+  // Slips you have had a moment to see; a slip not in here is marked new. A ref, so marking them is not a render.
+  const seen = useRef(new Set<string>());
+  const receivedCount = you?.received.length ?? 0;
+  useEffect(() => {
+    const t = setTimeout(() => { for (const r of you?.received ?? []) seen.current.add(r.disclosure); }, 4000);
+    return () => clearTimeout(t);
+  }, [receivedCount]);
   if (!you) return (
     <section className="panel mystery-you"><h3>Watching</h3><p className="hint">You are not in this story. The public picture is above; the room is not yours.</p></section>
   );
@@ -335,12 +371,14 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
       {you.received.length ? (
         <>
           <h3>What you have been shown</h3>
+          {/* THE SAME SLIP FROM THE SAME PERSON IS ONE ROW: a count, one Confirm, and a mark while it is new. */}
           <ul className="gc-received">
-            {you.received.map((r) => (
-              <li key={r.disclosure} className={r.revoked ? 'revoked' : ''}>
-                <strong>{nameOf(r.from)}</strong> on {peopleName(r.people)} <span className="muted small">at {r.grain} · supports Phase {r.supports}{r.revoked ? ' · withdrawn' : ''}</span>
-                <div className="small">“{r.text}”</div>
-                {!r.revoked ? <button type="button" className="small" onClick={() => act({ type: 'corroborate', people: r.people, phase: r.supports })}>Confirm (Phase {r.supports})</button> : null}
+            {groupReceived(you.received).map((g) => (
+              <li key={g.key} className={g.live ? '' : 'revoked'}>
+                {g.ids.some((id) => !seen.current.has(id)) ? <span className="gc-received-new" title="new" /> : null}
+                <strong>{nameOf(g.first.from)}</strong> on {peopleName(g.first.people)}{g.count > 1 ? <span className="gc-received-count">×{g.count}</span> : null} <span className="muted small">at {g.first.grain} · supports Phase {g.first.supports}{g.live ? '' : ' · withdrawn'}</span>
+                <div className="small">“{g.first.text}”</div>
+                {g.live ? <button type="button" className="small" onClick={() => act({ type: 'corroborate', people: g.first.people, phase: g.first.supports })}>Confirm (Phase {g.first.supports})</button> : null}
               </li>
             ))}
           </ul>
@@ -413,31 +451,117 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
   );
 }
 
-function Cast({ view }: { view: CommissionView }) {
+/**
+ * EVERYONE, WHERE THEY ARE, AND A WAY THERE. Each row says the room a person is in; pressing it walks your own
+ * body to them through however many doors it takes (`venue.goTo`, the mystery's precedent). A door shut to you
+ * stops the walk at the door, and the row says so.
+ */
+function Cast({ view, goTo }: { view: CommissionView; goTo: (role: string) => boolean }) {
+  const [missed, setMissed] = useState<string | null>(null);
   return (
     <section className="panel mystery-cast">
-      <h3>Everyone in {view.regionName}</h3>
+      <h3 className="eyebrow-h">Everyone in {view.regionName}</h3>
       <ul>
-        {view.cast.map((c) => (
-          <li key={c.role} className={c.silent ? 'dead' : ''}>
-            <Face look={c.look as never} name={c.name} size={20} />
-            <strong>{c.name}</strong>
-            <span className="muted small">{c.kind} · {c.roomName ?? '—'}{c.silent ? ' · gone quiet' : ''}{c.playedBy ? ` · ${c.playedBy}` : c.mind === 'agent' ? ` · ${c.agent}` : c.mind === 'rules' ? ' · the house' : ''}</span>
-          </li>
-        ))}
+        {view.cast.map((c) => {
+          const you = c.role === view.you?.role;
+          return (
+            <li key={c.role} className={c.silent ? 'dead' : ''}>
+              <button type="button" className="mystery-cast-row" disabled={you} onClick={() => setMissed(goTo(c.role) ? null : c.role)}
+                title={you ? 'This is you' : `Walk to ${c.name}${c.roomName ? ` in ${c.roomName}` : ''}`}>
+                <Face look={c.look as never} name={c.name} size={20} />
+                <strong>{c.name}</strong>
+                <span className="muted small">
+                  {c.kind}{you ? ' · you' : c.playedBy ? ` · ${c.playedBy}` : c.mind === 'agent' ? ` · ${c.agent}` : c.mind === 'rules' ? ' · the house' : ''}
+                  {c.roomName ? <> · in <span className="mystery-where">{c.roomName}</span></> : ' · not placed yet'}
+                  {c.silent ? ' · gone quiet' : ''}
+                </span>
+              </button>
+              {missed === c.role ? <em className="hint mystery-elsewhere">no way there from here — a room on the way may be shut to you; the convener admits.</em> : null}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
 }
 
+/** What is pressed in the picture: a person (who they are, which part, who plays them) or a thing. */
+function Inspector({ view, looking, onClose }: { view: CommissionView; looking: { kind: 'person' | 'thing'; id: string } | null; onClose: () => void }) {
+  if (!looking) return null;
+  let name = '', lines: string[] = [], look: CommissionView['cast'][number]['look'] | null = null;
+  if (looking.kind === 'person') {
+    const p = view.cast.find((c) => c.role === looking.id);
+    if (!p) return null;
+    name = p.name; look = p.look;
+    lines = [
+      `${p.kind}${p.role === view.you?.role ? ' — you' : ''}`,
+      p.appearance ?? '',
+      p.role === view.you?.role ? '' : p.playedBy ? `Played by ${p.playedBy}.` : p.mind === 'agent' ? `Played by their own agent, ${p.agent}.` : 'Played by the house.',
+      p.roomName ? `In ${p.roomName}.` : '',
+      p.silent ? 'Gone quiet — nothing has come from them.' : '',
+    ].filter(Boolean);
+  } else {
+    const plan = view.room ? planFor(view.region)[view.room.id] : undefined;
+    const t = (plan?.things ?? []).find((x) => x.prop === looking.id);
+    if (!t) return null;
+    name = t.label ?? looking.id;
+    lines = [(t as { detail?: string }).detail ?? 'A thing in the room. Nothing about it says anything yet.'];
+  }
+  return (
+    <aside className="mystery-inspector">
+      <button type="button" className="mystery-inspector-close" onClick={onClose} aria-label="Stop looking at this">×</button>
+      <div className="mystery-inspector-head">
+        {look ? <Face look={look as never} name={name} size={40} /> : null}
+        <h3>{name}</h3>
+      </div>
+      {lines.map((l, i) => <p key={i} className={i === 0 ? '' : 'hint'}>{l}</p>)}
+    </aside>
+  );
+}
+
+/** THE SAME SLIP FROM THE SAME PERSON IS ONE ROW: grouped by who, what, at which grain, in which words. */
+function groupReceived(received: CommissionView['you'] extends infer Y ? Y extends { received: infer R } ? R extends ReadonlyArray<infer T> ? T[] : never : never : never) {
+  const groups = new Map<string, { key: string; first: (typeof received)[number]; count: number; live: boolean; ids: string[] }>();
+  for (const r of received) {
+    const key = `${r.from}|${r.people}|${r.grain}|${r.supports}|${r.text}`;
+    const g = groups.get(key) ?? { key, first: r, count: 0, live: false, ids: [] };
+    g.count++; g.ids.push(r.disclosure); if (!r.revoked) g.live = true;
+    groups.set(key, g);
+  }
+  return [...groups.values()];
+}
+
+const FILTERS = [['all', 'All'], ['room', 'This room'], ['tome', 'To me'], ['testimony', 'Testimony'], ['readings', 'Readings']] as const;
+type Filter = (typeof FILTERS)[number][0];
+/** Night-wide markers (a round, a cue, a reveal, somebody gone quiet) show under every filter. */
+function matches(e: CommissionEvent, f: Filter, roomId: string | undefined, you: string | null): boolean {
+  if (f === 'all') return true;
+  if (e.type === 'cue' || e.type === 'round' || e.type === 'revealed' || e.type === 'silent') return true;
+  if (f === 'room') return 'room' in e && e.room === roomId;
+  if (f === 'tome') return (e.type === 'whispered' && e.to === you) || (e.type === 'testified' && e.to === you) || (e.type === 'admitted' && e.who === you);
+  if (f === 'testimony') return e.type === 'testified' || e.type === 'replayed' || e.type === 'fabricated' || e.type === 'revoked';
+  return e.type === 'assessed' || e.type === 'corroborated';
+}
+
+/** THE ACTIVITIES: everything that happened, filtered, with a rule between rounds — and the height left over. */
 function Transcript({ view }: { view: CommissionView }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { ref.current?.scrollTo({ top: ref.current.scrollHeight }); }, [view.transcript.length]);
+  const [filter, setFilter] = useState<Filter>('all');
+  useEffect(() => { ref.current?.scrollTo({ top: ref.current.scrollHeight }); }, [view.transcript.length, filter]);
   const name = (r: string) => view.cast.find((c) => c.role === r)?.name ?? r;
   const people = (p: string) => view.peoples.find((x) => x.id === p)?.name ?? p;
+  const you = view.you?.role ?? null;
+  const shown = view.transcript.filter((e) => matches(e, filter, view.room?.id, you));
   return (
-    <section className="panel mystery-transcript" aria-live="polite" ref={ref}>
-      {view.transcript.map((e, i) => <Line key={`${e.at}-${i}`} e={e} name={name} people={people} you={view.you?.role ?? null} />)}
+    <section className="panel mystery-transcript gc-transcript">
+      <div className="gc-filter-row" role="tablist" aria-label="Show">
+        {FILTERS.map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={filter === id} className={`gc-filter${filter === id ? ' active' : ''}`} onClick={() => setFilter(id)}>{label}</button>)}
+      </div>
+      {/* Live only while unfiltered: re-filtering swaps every line, and that churn is not news. */}
+      <div className="gc-lines" aria-live={filter === 'all' ? 'polite' : 'off'} ref={ref}>
+        {shown.map((e, i) => <Line key={`${e.at}-${i}`} e={e} name={name} people={people} you={you} />)}
+        {!shown.length ? <p className="hint">Nothing here yet.</p> : null}
+      </div>
     </section>
   );
 }
@@ -445,13 +569,13 @@ function Transcript({ view }: { view: CommissionView }) {
 function Line({ e, name, people, you }: { e: CommissionEvent; name: (r: string) => string; people: (p: string) => string; you: string | null }) {
   switch (e.type) {
     case 'cue': return <p className="m-cue">{e.text}</p>;
-    case 'round': return <p className="m-act">{e.phase === 'closing' ? 'THE CLOSING' : e.phase === 'interlude' ? `end of round ${e.round}` : `ROUND ${e.round}`}</p>;
+    case 'round': return <p className="gc-round-divider">{e.phase === 'closing' ? 'The closing' : e.phase === 'interlude' ? `end of round ${e.round}` : `Round ${e.round}`}</p>;
     case 'revealed': return <p className="m-act">THE REVEAL</p>;
     case 'said': return <p><strong>{name(e.by)}</strong> {e.text}</p>;
-    case 'whispered': return <p className="m-words"><strong>{name(e.by)}</strong> <em>whispers to {name(e.to)}:</em> {e.text}</p>;
+    case 'whispered': return <p className={`m-words${e.to === you ? ' gc-tome' : ''}`}><strong>{name(e.by)}</strong> <em>whispers to {e.to === you ? 'you' : name(e.to)}:</em> {e.text}</p>;
     case 'moved': return <p className="m-move">{name(e.who)} goes through to another room.</p>;
     case 'admitted': return <p className="m-move">{name(e.by)} admits {name(e.who)}.</p>;
-    case 'testified': return <p className={e.leak ? 'gc-leak' : ''}><strong>{name(e.by)}</strong> <em>testifies at {e.grain} grain{e.to ? ` to ${name(e.to)}` : ''}:</em> {e.text}{e.leak && e.by === you ? <span className="small"> — finer than this room allows</span> : null}</p>;
+    case 'testified': return <p className={`${e.leak ? 'gc-leak' : ''}${e.to === you ? ' gc-tome' : ''}`}><strong>{name(e.by)}</strong> <em>testifies at {e.grain} grain{e.to ? ` to ${e.to === you ? 'you' : name(e.to)}` : ''}:</em> {e.text}{e.leak && e.by === you ? <span className="small"> — finer than this room allows</span> : null}</p>;
     case 'assessed': return <p className="m-cue"><strong>{name(e.by)}</strong> publishes {people(e.people)}: Phase {String(e.phase)} · {phaseName(e.phase)}, {e.strength}, {e.corroboration} witness{e.corroboration === 1 ? '' : 'es'}. Needs: {e.need}.</p>;
     case 'corroborated': return <p className="m-move">A witness confirms {people(e.people)} at Phase {String(e.phase)} — {e.corroboration} now.</p>;
     case 'committed': return <p><strong>{name(e.by)}</strong> commits <em>{e.resource}</em> against “{e.need}” for {people(e.people)}.</p>;

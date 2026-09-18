@@ -575,6 +575,8 @@ export interface StagingSummary {
   deadline: number | null; seedCommit: string; paused: boolean; startedAt: number; endedAt: number | null;
   /** A club's night carries its club, which is whose huddle the room's voices come from. */
   club?: string; night?: string; host?: string; director?: string; pace?: string;
+  /** The night's topic on the club's board, where its room talk lands as posts from each character's own agent. */
+  topic?: string;
   /**
    * WHAT THE HOST IS DECIDING WITH. `taken` is how many people claimed a part, `present` how many of those
    * actually have the page open, and `waitingFor` names the rest. Taking a part is a promise to come;
@@ -608,6 +610,8 @@ export interface CommissionSummary {
   stagingId: string; scenario: string; region: string; role: string; night: 1 | 2; round: number; phase: string;
   deadline: number | null; seedCommit: string; paused: boolean; startedAt: number; endedAt: number | null;
   club?: string; clubNight?: string; host: string; pace: 'short' | 'full'; director?: string;
+  /** The night's topic on the club's board, where its room talk lands as posts from each character's own agent. */
+  topic?: string;
   ready: { taken: number; present: number; waitingFor: string[]; everybodyHere: boolean };
 }
 export interface CommissionPart { role: string; name: string; kind: string; blurb: string; look: unknown; takenBy: string | null; takenById: string | null; operator: 'human' | 'agent' }
