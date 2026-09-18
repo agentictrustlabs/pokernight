@@ -143,11 +143,19 @@ function CommissionCard({ session }: { session: AppSession }) {
         <span className="play-suit" aria-hidden="true">✦</span>
         <div>
           <span className="play-kicker">{chosen ? `${chosen.regionName} · ${chosen.cast} parts · ${chosen.rounds} rounds` : 'Great Commission'}</span>
-          <h2>{chosen ? chosen.name : 'Great Commission'}</h2>
+          <h2>{chosen ? chosen.name : scenarios === null ? 'Great Commission' : 'Great Commission — unavailable'}</h2>
         </div>
       </div>
       <div className="play-body">
-        <p className="hint">{chosen ? chosen.blurb : 'A substrate test played as a game: find the motion before the adversary finds the person.'}</p>
+        {/* THE CARD BEFORE IT KNOWS WHICH NIGHT. Three states and each says which it is: still asking, nothing
+            offered (the button is disabled either way, and a disabled button with no sentence is a dead end),
+            or the night's own words. The old fallback promised an adversary the game no longer has — the part
+            that carries it out of the room is drawn now, and nobody at the table knows who. */}
+        <p className="hint">
+          {chosen ? chosen.blurb
+            : scenarios === null ? 'A substrate test played as a game: assemble a true picture of where the gospel is moving, before somebody assembles a dangerous one.'
+              : 'No night is being offered here at the moment. Try again in a minute.'}
+        </p>
         {scenarios && scenarios.length > 1 ? (
           <label className="mystery-part">
             Which night
