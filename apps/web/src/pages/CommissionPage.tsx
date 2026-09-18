@@ -90,7 +90,7 @@ export function CommissionPage({ stagingId, session, onSignOut }: { stagingId: s
   };
   const roundLabel = useMemo(() => (view ? (view.phase === 'closing' ? 'The closing' : view.phase === 'revealed' ? 'The reveal' : `Round ${view.round} · ${view.roundName}`) : ''), [view]);
 
-  if (!session) return <div className="page"><section className="panel"><p className="hint">Sign in to come to the marches.</p></section></div>;
+  if (!session) return <div className="page"><section className="panel"><p className="hint">Sign in to come to the night.</p></section></div>;
   if (!view) return <div className="page"><section className="panel"><p className="hint">{state.error ?? (state.connection === 'reconnecting' ? 'Reconnecting…' : 'Walking in…')}</p></section></div>;
 
   // THE TOPBAR IS OUTSIDE THE GRID, as the mystery's is. `.mystery-page` is a two-column grid whose DIRECT children
@@ -416,7 +416,7 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
 function Cast({ view }: { view: CommissionView }) {
   return (
     <section className="panel mystery-cast">
-      <h3>Everyone in the marches</h3>
+      <h3>Everyone in {view.regionName}</h3>
       <ul>
         {view.cast.map((c) => (
           <li key={c.role} className={c.silent ? 'dead' : ''}>
@@ -490,7 +490,7 @@ function Reveal({ view, onAgain, busy }: { view: CommissionView; onAgain: () => 
       {sc.replays.length ? <><h3>Replays</h3><ul className="gc-score">{sc.replays.map((x, i) => <li key={i} className="miss">{name(x.by)} stood on a withdrawn slip, round {x.round}</li>)}</ul></> : null}
       {sc.stale.length ? <><h3>Stale</h3><ul className="gc-score">{sc.stale.map((s, i) => <li key={i} className="miss">{people(s.people)} still read as Phase {String(s.assessedPhase)} after its carrier went quiet in round {s.sinceRound}</li>)}</ul></> : null}
       <p className="hint small">Seed {r.seed.slice(0, 16)}… — the same scenario and seed replay this night exactly.</p>
-      <button type="button" className="primary" disabled={busy} onClick={onAgain}>Another night in the marches</button>
+      <button type="button" className="primary" disabled={busy} onClick={onAgain}>Another night</button>
     </section>
   );
 }
