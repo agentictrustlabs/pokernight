@@ -33,7 +33,14 @@ const all = (s, p) => store.getObjects(s, namedNode(p), null);
 const lit = (s, p) => { const o = one(s, p); return o ? o.value : null; };
 const num = (s, p) => { const v = lit(s, p); return v === null ? null : Number(v); };
 const byOrder = (a, b) => (num(a, `${ST}order`) ?? 0) - (num(b, `${ST}order`) ?? 0);
-const phaseOf = (node) => { const t = node.value.slice(POE.length); return t === 'Phase0R' ? '0-R' : t.replace('Phase', ''); };
+// A PHASE IS AN IRI IN EITHER VOCABULARY: the faith ontology's `fci:lvl-poe-N` (what both A-boxes say since 2026-09-17)
+// or the Toolkit's own `poe:PhaseN`; 0-R is the restart indicator. The world compiler reads the same way (`levelOf`).
+const phaseOf = (node) => {
+  const v = node.value;
+  if (v.startsWith(POE)) { const t = v.slice(POE.length); return t === 'Phase0R' ? '0-R' : t.replace('Phase', ''); }
+  const m = v.match(/lvl-poe-(\d+)(-r)?$/i);
+  return m ? (m[2] ? '0-R' : m[1]) : v.slice(v.lastIndexOf('#') + 1);
+};
 const PHASE_WORD = { '0': 'Waiting', '1': 'Entry', '2': 'Evangelism', '3': 'Discipleship', '4': 'Local Church', '5': 'Reproducing Church', '6': 'Multiplying Church', '7': 'Sustained Gospel Presence', '0-R': 'Restart' };
 
 const stories = store.getSubjects(namedNode(`${RDF}type`), namedNode(`${ST}Story`), null).sort((a, b) => (num(a, `${CM}nightNumber`) ?? 0) - (num(b, `${CM}nightNumber`) ?? 0));
