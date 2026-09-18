@@ -525,7 +525,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   naming a tool the playbook lacks is refused as `unknown_tool`), the rail (`enableMessaging` — without it an
   authorized send cannot leave, `wire_absent`), the standing grant recorded on the character's own object, the ask wire.
   The note is thirty kilobytes of signed delegations, so it lives in KV `CLUB_WIRES` under `cast-messaging` (a Worker
-  secret holds five; `CAST_MESSAGING` in the env is the dev/test path). **THE CHARACTER IS THE IDENTITY** (corrected
+  secret holds five; `CAST_MESSAGING` in the env is the dev/test path). **`wrangler kv key … --remote`, ALWAYS**
+  (2026-09-18): Wrangler 4 reads and writes the LOCAL simulator (`.wrangler/state`) unless told `--remote`, so the
+  note was "put" and "got" and listed on this machine and the deployed Worker never had it — every whisper for a day
+  "stayed in the room" without a word, because a missing note was the configured-off case. The loader now says which
+  of the three it lacks and never caches a miss. **THE CHARACTER IS THE IDENTITY** (corrected
   the same day, and it is a rule about the whole game, not about messaging): a `Casting`'s `agent` and `name` are the
   CHARACTER's and stay the character's through a takeover — Dr Wren is `wren-alice.me` and is called Dr Wren whoever is
   behind her — and the person driving her is `playerId` / `custodian` / `playedBy`. Taking a part used to overwrite both

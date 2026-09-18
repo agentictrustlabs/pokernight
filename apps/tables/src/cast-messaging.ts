@@ -161,7 +161,8 @@ export interface CastMessagingPart {
   character: string;
   /** The ask wire: character → this Worker's session key, `harness.ask` only. */
   wire: Record<string, unknown>;
-  /** The open mandate: character → this Worker's session key, `messaging.direct.send`, no intent binding. */
+  /** The open mandate: character → this Worker's session key, `messaging.direct.send` (and, once equipped for a
+   *  club, `messaging.topic.post` with the club among its locations), no intent binding. */
   standing: StandingGrantV1;
 }
 export interface CastMessaging {
@@ -196,14 +197,17 @@ const CACHE_MS = 60_000;
 /** What this deployment holds; null when messaging is not configured (a night then keeps every whisper in the room).
  *  `CAST_MESSAGING` in the environment wins (dev, tests); otherwise KV, read at most once a minute per isolate. */
 export async function castMessaging(env: Pick<Env, 'CAST_MESSAGING' | 'HOUSE_A2A_SESSION_KEY' | 'CLUB_WIRES'>): Promise<CastMessaging | null> {
-  if (!(env.HOUSE_A2A_SESSION_KEY ?? '').trim()) return null;
+  if (!(env.HOUSE_A2A_SESSION_KEY ?? '').trim()) { console.warn('[cast-messaging] no HOUSE_A2A_SESSION_KEY'); return null; }
   const inline = (env.CAST_MESSAGING ?? '').trim();
   if (inline) return parseCastMessaging(inline);
-  if (!env.CLUB_WIRES) return null;
+  if (!env.CLUB_WIRES) { console.warn('[cast-messaging] no CLUB_WIRES binding'); return null; }
   if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
   const raw = await env.CLUB_WIRES.get(CAST_MESSAGING_KEY);
-  cached = { at: Date.now(), value: raw ? parseCastMessaging(raw) : null };
-  return cached.value;
+  const value = raw ? parseCastMessaging(raw) : null;
+  if (!value) console.warn(`[cast-messaging] KV ${CAST_MESSAGING_KEY}: ${raw ? `${raw.length} bytes that did not parse as a note` : 'no such key'}`);
+  // A NOTE is remembered a minute; NOTHING is not — a KV miss must not silence a whole isolate's whispers for a minute.
+  cached = value ? { at: Date.now(), value } : null;
+  return value;
 }
 
 /** Who a cast entry's agent is as an ADDRESS a message can go to: a cast persona (by name), or a person's own agent (`home:<sa>`). */
@@ -254,9 +258,41 @@ export function whispersToCarry(
   return out;
 }
 
+export interface LineToCarry { key: string; from: CastMessagingPart; text: string }
+
+/**
+ * WHICH ROOM TALK GOES TO THE CLUB'S BOARD (2026-09-18). A line SAID in a room is a post in the night's topic on
+ * the club's board, from the character's own agent — the same identity rule as a whisper: the part's standing
+ * persona, whoever plays it tonight. Only `said` lines: a POST-IT IS ANONYMOUS BY CONSTRUCTION (the author sits in
+ * state for the score alone), and carrying one under a character's name would print the one thing the wall
+ * exists not to say — so the wall stays in the room. A speaker with no persona in the note stays in the room too.
+ * Pure; the caller says which keys it has already carried.
+ */
+export function roomTalkToCarry(
+  log: ReadonlyArray<{ type: string }>,
+  cast: ReadonlyArray<{ role: string; agent: string; name?: string }>,
+  cm: CastMessaging,
+  carried: ReadonlySet<string>,
+  personaOf: (role: string) => string | null = () => null,
+): LineToCarry[] {
+  const out: LineToCarry[] = [];
+  const agentOf = (role: string): string | null => personaOf(role) ?? cast.find((c) => c.role === role)?.agent ?? null;
+  for (const raw of log) {
+    const e = raw as { type: string; at?: number; by?: string; room?: string; text?: string };
+    if (e.type !== 'said' || !e.by || !e.text || typeof e.at !== 'number') continue;
+    const key = `said:${e.at}:${e.by}:${e.text.length}`;
+    if (carried.has(key)) continue;
+    const speaker = agentOf(e.by);
+    const from = speaker ? cm.parts[speaker] : undefined;
+    if (!from) continue;
+    out.push({ key, from, text: e.text });
+  }
+  return out;
+}
+
 export type WhisperResult = { ok: true; state: string } | { ok: false; error: string };
 
-/** The character's agent, asked to send — and the mandate derived and presented when it parks for one. */
+/** The character's agent, asked to send a whisper — and the mandate derived and presented when it parks for one. */
 export async function whisperAs(
   env: Pick<Env, 'HOUSE_A2A_SESSION_KEY'>,
   cm: CastMessaging,
@@ -266,15 +302,44 @@ export async function whisperAs(
   text: string,
   opts: { fetch?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<WhisperResult> {
+  return runAs(env, cm, from, `Whisper to ${toName}: ${text}`, { toolId: 'messaging.direct.send', args: { recipient: toSa, message: text } }, opts);
+}
+
+/** The character's agent, asked to post a line in the night's topic on the club's board — same road, other verb. */
+export async function postAs(
+  env: Pick<Env, 'HOUSE_A2A_SESSION_KEY'>,
+  cm: CastMessaging,
+  from: CastMessagingPart,
+  org: Address,
+  channelId: string,
+  text: string,
+  opts: { fetch?: typeof fetch; timeoutMs?: number } = {},
+): Promise<WhisperResult> {
+  return runAs(env, cm, from, `Say in the night's topic: ${text}`, { toolId: 'messaging.topic.post', args: { org, channelId, message: text } }, opts);
+}
+
+/**
+ * ONE STEP, AS THE CHARACTER: the ask with the plan supplied, the need it parks on, the mandate for exactly that
+ * derived from the standing grant, and the same task continued presenting [child, standing]. A whisper and a post
+ * differ only in the tool and its arguments; the harness verifies the chain where it is used either way.
+ */
+async function runAs(
+  env: Pick<Env, 'HOUSE_A2A_SESSION_KEY'>,
+  cm: CastMessaging,
+  from: CastMessagingPart,
+  ask: string,
+  step: { toolId: string; args: Record<string, unknown> },
+  opts: { fetch?: typeof fetch; timeoutMs?: number } = {},
+): Promise<WhisperResult> {
   const key = (env.HOUSE_A2A_SESSION_KEY ?? '').trim() as Hex;
   if (!key) return { ok: false, error: 'no session key' };
   const signer: Signer = (digest) => sign({ hash: digest, privateKey: key, to: 'hex' });
   const client = clientAs(cm.edge, from.name, from.wire as unknown as DelegationWireV1, key, opts.fetch);
-  const plan = { steps: [{ toolId: 'messaging.direct.send', args: { recipient: toSa, message: text } }] };
+  const plan = { steps: [step] };
   const timeoutMs = opts.timeoutMs ?? 60_000;
   try {
     // 1. the ask, with the plan supplied (spec 400 W1: a deterministic step costs no planner turn)
-    const sent = await client.sendMessage([{ text: `Whisper to ${toName}: ${text}` }], { metadata: { plan } });
+    const sent = await client.sendMessage([{ text: ask }], { metadata: { plan } });
     const task0 = sent.task && !TERMINAL.has(sent.task.status.state) ? await client.awaitTask(sent.task.id, timeoutMs) : sent.task;
     const first = outcomeOf(textOf(task0, sent.message), task0, sent.message ? 'MESSAGE' : 'UNKNOWN');
     if (first.state === 'TASK_STATE_COMPLETED') return { ok: true, state: first.state };
@@ -292,5 +357,36 @@ export async function whisperAs(
     return { ok: false, error: `${second.state}: ${second.text.slice(0, 200)}` };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * ROOM TALK, CARRIED — the shared half of both game objects' `carryRoomTalk`. Each `said` line by a part with a
+ * persona is posted once in the night's topic on the club's board; a night with no club (a night of your own) has
+ * no board and every line stays in the room. The topic is asked for lazily through `topic()` — the object opens it
+ * through the club's agent the first time there is something to say and stamps the channel id on the night — and
+ * a night whose topic cannot be opened marks its lines carried anyway: like a missed whisper, the room's copy is the
+ * record, and asking the club again on every save would be a request per keystroke.
+ */
+export async function carryRoomTalk(
+  env: Pick<Env, 'HOUSE_A2A_SESSION_KEY'>,
+  cm: CastMessaging,
+  night: { log: ReadonlyArray<{ type: string }>; cast: ReadonlyArray<{ role: string; agent: string; name?: string }>; club: string | undefined; topic: () => Promise<string | null> },
+  carried: Set<string>,
+  personaOf: (role: string) => string | null,
+  tag: string,
+): Promise<void> {
+  if (!night.club) return;
+  const lines = roomTalkToCarry(night.log, night.cast, cm, carried, personaOf);
+  if (!lines.length) return;
+  const org = night.club.toLowerCase() as Address;
+  const channelId = await night.topic();
+  for (const l of lines) {
+    carried.add(l.key);
+    if (carried.size > 600) for (const k of [...carried].slice(0, 200)) carried.delete(k);
+    if (!channelId) continue;
+    void postAs(env, cm, l.from, org, channelId, l.text)
+      .then((r) => { if (!r.ok) console.warn(`[${tag}] ${l.from.character}'s line stayed in the room: ${r.error}`); })
+      .catch((e: unknown) => console.warn(`[${tag}] the post threw:`, String(e)));
   }
 }

@@ -23,7 +23,8 @@ import {
 import { MYSTERY_DIRECT_SKILL } from '@pokernight/protocol';
 import { askCharacter, askDirector } from './mystery-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
-import { castMessaging, whisperAs, whispersToCarry } from './cast-messaging.js';
+import { carryRoomTalk, castMessaging, whisperAs, whispersToCarry } from './cast-messaging.js';
+import { clubTopic } from './clubs.js';
 import { mysteryCast, mysteryCastAgents, mysteryDirector, type Env } from './env.js';
 import { MYSTERY_ACT_SKILL } from '@pokernight/protocol';
 
@@ -33,6 +34,9 @@ interface Meta {
   /** A CLUB'S NIGHT rather than a night of your own: who may take a part is the club's roster, and it waits
    *  in `casting` until the host says the curtain is up. A solo night has neither. */
   club?: string; night?: string; casting?: boolean;
+  /** THE NIGHT'S TOPIC on the club's board — the channel the club's agent opened for it (`clubTopic`), where the
+   *  night's room talk lands as posts from each character's own agent. Stamped once; a night of your own has none. */
+  topic?: string;
   /**
    * WHO DIRECTS. An agent, by name — the agent of whoever's night this is, or a service they name. The house
    * spends no tokens, so the prose is thought for at somebody's own Home and costs them; a director that does
@@ -118,6 +122,30 @@ export class MysteryDO extends DurableObject<Env> {
     void this.carryWhispers().catch((e: unknown) => console.warn('[mystery] carrying whispers threw:', String(e)));
   }
 
+  /** The topic being opened, so two saves in one moment ask the club once. */
+  private topicOpening: Promise<string | null> | null = null;
+
+  /**
+   * THE NIGHT'S TOPIC ON THE CLUB'S BOARD (2026-09-18): opened by the club's own agent (`club.topic`, idempotent by
+   * title, so a night restarted finds the same one) the first time the night has something to say there, and stamped
+   * on the night. A night of your own has no club and no topic.
+   */
+  private topicFor(): Promise<string | null> {
+    if (!this.meta?.club) return Promise.resolve(null);
+    if (this.meta.topic) return Promise.resolve(this.meta.topic);
+    if (!this.topicOpening) {
+      const title = `${stagingOf(this.meta.title)?.title.name ?? this.meta.title} · ${this.meta.night ?? `night ${this.meta.stagingId.slice(0, 8)}`}`;
+      this.topicOpening = clubTopic(this.env, this.meta.club, title)
+        .then((t) => {
+          if (!t.ok) { console.warn(`[mystery] the club opened no topic for the night: ${t.error}`); return null; }
+          if (this.meta) { this.meta.topic = t.channelId; this.save(); }
+          return t.channelId;
+        })
+        .finally(() => { this.topicOpening = null; });
+    }
+    return this.topicOpening;
+  }
+
   /** Whispers this object has already sent over A2A, by event key — remembered, never re-sent; bounded. */
   private carried = new Set<string>();
 
@@ -135,10 +163,13 @@ export class MysteryDO extends DurableObject<Env> {
     for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried, personaOf)) {
       this.carried.add(w.key);
       if (this.carried.size > 600) for (const k of [...this.carried].slice(0, 200)) this.carried.delete(k);
+      console.log(`[mystery] carrying ${w.from.character}'s whisper to ${w.toName} over A2A as ${w.from.name}`);
       void whisperAs(this.env, cm, w.from, w.toSa, w.toName, w.text)
-        .then((r) => { if (!r.ok) console.warn(`[mystery] ${w.from.character}'s whisper to ${w.toName} stayed in the room: ${r.error}`); })
+        .then((r) => { if (!r.ok) console.warn(`[mystery] ${w.from.character}'s whisper to ${w.toName} stayed in the room: ${r.error}`); else console.log(`[mystery] ${w.from.character}'s whisper to ${w.toName} landed at the Home`); })
         .catch((e: unknown) => console.warn(`[mystery] the whisper threw:`, String(e)));
     }
+    // AND THE ROOM TALK, to the night's topic on the club's board — same identity rule, other verb; the wall stays.
+    await carryRoomTalk(this.env, cm, { log: this.state.log, cast: this.state.cast, club: this.meta?.club, topic: () => this.topicFor() }, this.carried, personaOf, 'mystery');
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -400,6 +431,7 @@ export class MysteryDO extends DurableObject<Env> {
       deadline: s?.deadline ?? null, seedCommit: s?.seedCommit ?? '', paused: this.paused,
       startedAt: s?.startedAt ?? 0, endedAt: s?.endedAt ?? null,
       ...(m.club ? { club: m.club } : {}), ...(m.night ? { night: m.night } : {}),
+      ...(m.topic ? { topic: m.topic } : {}),
       host: m.owner, pace: m.pace ?? 'full', ...(m.director ? { director: m.director } : {}),
       // what the host is deciding with — see `readiness()`
       ready: this.readiness(),

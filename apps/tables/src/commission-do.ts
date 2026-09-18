@@ -17,13 +17,17 @@ import {
 import { COMMISSION_ACT_SKILL, COMMISSION_DIRECT_SKILL } from '@pokernight/protocol';
 import { askDirector, askPart } from './commission-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
-import { castMessaging, whisperAs, whispersToCarry } from './cast-messaging.js';
+import { carryRoomTalk, castMessaging, whisperAs, whispersToCarry } from './cast-messaging.js';
+import { clubTopic } from './clubs.js';
 import { commissionCast, commissionCastAgents, commissionDirector, type Env } from './env.js';
 
 interface Attachment { playerId: string; name: string }
 interface Meta {
   stagingId: string; owner: string; ownerName: string; scenario: string; role: RoleId; pace?: 'short' | 'full';
   club?: string; night?: string; casting?: boolean;
+  /** THE NIGHT'S TOPIC on the club's board — the channel the club's agent opened for it (`clubTopic`), where the
+   *  night's room talk lands as posts from each character's own agent. Stamped once; a night of your own has none. */
+  topic?: string;
   director?: string;
 }
 
@@ -70,6 +74,30 @@ export class CommissionDO extends DurableObject<Env> {
     void this.carryWhispers().catch((e: unknown) => console.warn('[commission] carrying whispers threw:', String(e)));
   }
 
+  /** The topic being opened, so two saves in one moment ask the club once. */
+  private topicOpening: Promise<string | null> | null = null;
+
+  /**
+   * THE NIGHT'S TOPIC ON THE CLUB'S BOARD (2026-09-18): opened by the club's own agent (`club.topic`, idempotent by
+   * title, so a night restarted finds the same one) the first time the night has something to say there, and stamped
+   * on the night. A night of your own has no club and no topic.
+   */
+  private topicFor(): Promise<string | null> {
+    if (!this.meta?.club) return Promise.resolve(null);
+    if (this.meta.topic) return Promise.resolve(this.meta.topic);
+    if (!this.topicOpening) {
+      const title = `${stagingOf(this.meta.scenario)?.scenario.name ?? this.meta.scenario} · ${this.meta.night ?? `night ${this.meta.stagingId.slice(0, 8)}`}`;
+      this.topicOpening = clubTopic(this.env, this.meta.club, title)
+        .then((t) => {
+          if (!t.ok) { console.warn(`[commission] the club opened no topic for the night: ${t.error}`); return null; }
+          if (this.meta) { this.meta.topic = t.channelId; this.save(); }
+          return t.channelId;
+        })
+        .finally(() => { this.topicOpening = null; });
+    }
+    return this.topicOpening;
+  }
+
   /** Whispers this object has already sent over A2A, by event key — remembered, never re-sent; bounded. */
   private carried = new Set<string>();
 
@@ -80,17 +108,21 @@ export class CommissionDO extends DurableObject<Env> {
    */
   private async carryWhispers(): Promise<void> {
     const cm = await castMessaging(this.env);
-    if (!cm || !this.state) return;
+    if (!this.state) return;
+    if (!cm) { if (this.state.log.some((e) => e.type === 'whispered')) console.warn('[commission] a whisper stayed in the room: this deployment holds no cast-messaging note'); return; }
     // THE CHARACTER IS THE IDENTITY: both ends are the part's standing persona, whoever plays it tonight.
     const standing = commissionCast(this.env, this.state.scenario);
     const personaOf = (role: string) => standing.find((m) => m.role === role)?.agent ?? null;
     for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried, personaOf)) {
       this.carried.add(w.key);
       if (this.carried.size > 600) for (const k of [...this.carried].slice(0, 200)) this.carried.delete(k);
+      console.log(`[commission] carrying ${w.from.character}'s whisper to ${w.toName} over A2A as ${w.from.name}`);
       void whisperAs(this.env, cm, w.from, w.toSa, w.toName, w.text)
-        .then((r) => { if (!r.ok) console.warn(`[commission] ${w.from.character}'s whisper to ${w.toName} stayed in the room: ${r.error}`); })
+        .then((r) => { if (!r.ok) console.warn(`[commission] ${w.from.character}'s whisper to ${w.toName} stayed in the room: ${r.error}`); else console.log(`[commission] ${w.from.character}'s whisper to ${w.toName} landed at the Home`); })
         .catch((e: unknown) => console.warn(`[commission] the whisper threw:`, String(e)));
     }
+    // AND THE ROOM TALK, to the night's topic on the club's board — same identity rule, other verb; the wall stays.
+    await carryRoomTalk(this.env, cm, { log: this.state.log, cast: this.state.cast, club: this.meta?.club, topic: () => this.topicFor() }, this.carried, personaOf, 'commission');
   }
 
   /** The cast for a night: the person in their part, and everybody else from the deployment's list or the house. */
@@ -259,6 +291,7 @@ export class CommissionDO extends DurableObject<Env> {
       deadline: s?.deadline ?? null, seedCommit: s?.seedCommit ?? '', paused: this.paused,
       startedAt: s?.startedAt ?? 0, endedAt: s?.endedAt ?? null,
       ...(m.club ? { club: m.club } : {}), ...(m.night ? { clubNight: m.night } : {}),
+      ...(m.topic ? { topic: m.topic } : {}),
       host: m.owner, pace: m.pace ?? 'full', ...(m.director ? { director: m.director } : {}),
       ready: this.readiness(),
     };
@@ -347,7 +380,12 @@ export class CommissionDO extends DurableObject<Env> {
       if (!move) continue;
       const done = apply(this.state, pair.scenario, pair.region, c.role, move.action, now, 'agent');
       if (done.ok) { this.state = done.state; changed = true; }
-      if (move.line && move.action.type !== 'say') {
+      // THE LINE EXPLAINS THE MOVE; a move the night refused has no line — saying it anyway was how a refused slip
+      // still filled the room with its sentence every wake.
+      // A line that is the slip's own words is the slip said twice ("X testifies: …" then "X …"): the room has it.
+      const slipWords = done.ok ? done.events.find((e) => e.type === 'testified') : undefined;
+      const redundant = !!slipWords && 'text' in slipWords && move.line?.trim() === slipWords.text.trim();
+      if (done.ok && move.line && move.action.type !== 'say' && !redundant) {
         const said = apply(this.state, pair.scenario, pair.region, c.role, { type: 'say', text: move.line }, now, 'agent');
         if (said.ok) { this.state = said.state; changed = true; }
       }
@@ -428,8 +466,10 @@ export class CommissionDO extends DurableObject<Env> {
       }
       if (out.output.say) {
         const cur = this.state ?? base;
-        const mine = [...cur.log].reverse().find((e) => e.type === 'said' && e.by === role);
-        const repeat = mine?.type === 'said' && mine.text.trim() === out.output.say.trim();
+        // NOT THE SAME THING AGAIN: a part that has said this in its last few lines is repeating itself, and a
+        // language model with one good sentence will say it every turn it is asked.
+        const mine = [...cur.log].reverse().filter((e) => e.type === 'said' && e.by === role).slice(0, 4);
+        const repeat = mine.some((e) => e.type === 'said' && e.text.trim().toLowerCase() === out.output.say!.trim().toLowerCase());
         if (!repeat) {
           const said = apply(cur, pair2.scenario, pair2.region, role, { type: 'say', text: out.output.say }, now, 'agent');
           if (said.ok) { this.state = said.state; changed = true; }
