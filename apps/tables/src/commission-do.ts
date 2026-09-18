@@ -82,7 +82,7 @@ export class CommissionDO extends DurableObject<Env> {
     const cm = await castMessaging(this.env);
     if (!cm || !this.state) return;
     // THE CHARACTER IS THE IDENTITY: both ends are the part's standing persona, whoever plays it tonight.
-    const standing = commissionCast(this.env);
+    const standing = commissionCast(this.env, this.state.scenario);
     const personaOf = (role: string) => standing.find((m) => m.role === role)?.agent ?? null;
     for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried, personaOf)) {
       this.carried.add(w.key);
@@ -94,9 +94,9 @@ export class CommissionDO extends DurableObject<Env> {
   }
 
   /** The cast for a night: the person in their part, and everybody else from the deployment's list or the house. */
-  private castFor(roles: ReadonlyArray<{ id: RoleId; name: string }>, human: (r: RoleId) => { name: string; playerId: string } | null): Casting[] {
+  private castFor(roles: ReadonlyArray<{ id: RoleId; name: string }>, human: (r: RoleId) => { name: string; playerId: string } | null, scenarioId?: string): Casting[] {
     const minds = commissionCastAgents(this.env);
-    const standing = commissionCast(this.env);
+    const standing = commissionCast(this.env, scenarioId);
     let handed = 0;
     return roles.map((r) => {
       const person = human(r.id);
@@ -128,7 +128,7 @@ export class CommissionDO extends DurableObject<Env> {
       const wantsOther = (!!b.role && !!this.meta && this.meta.role !== b.role) || (!!b.pace && !!this.meta && (this.meta.pace ?? 'full') !== b.pace);
       if (this.state && !b.restart && !wantsOther && this.state.phase !== 'revealed') return json({ ok: true, staging: this.summary() });
       const role = scenario.roles.find((r) => r.id === b.role)?.id ?? scenario.roles[0]!.id;
-      const cast = this.castFor(scenario.roles, (r) => (r === role ? { name: b.ownerName, playerId: b.owner } : null));
+      const cast = this.castFor(scenario.roles, (r) => (r === role ? { name: b.ownerName, playerId: b.owner } : null), scenario.id);
       const seed = randomSeed();
       this.state = openStaging({ scenario, region, cast, seedHex: bytesToHex(seed), seedCommit: seedCommit(seed), now: Date.now(), pace: b.pace === 'short' ? 0.25 : 1 });
       this.meta = { stagingId: b.stagingId, owner: b.owner, ownerName: b.ownerName, scenario: scenario.id, role, pace: b.pace === 'short' ? 'short' : 'full', ...(commissionDirector(this.env) ? { director: commissionDirector(this.env)! } : {}) };
@@ -190,7 +190,7 @@ export class CommissionDO extends DurableObject<Env> {
       if (this.meta.owner !== b.by) return json({ error: 'the host raises the curtain' }, 403);
       const pair = stagingOf(this.meta.scenario);
       if (!pair) return json({ error: 'no such scenario' }, 404);
-      const cast = this.castFor(pair.scenario.roles, (r) => { const p = Object.entries(this.taken).find(([, t]) => t.role === r); return p ? { name: p[1].name, playerId: p[0] } : null; });
+      const cast = this.castFor(pair.scenario.roles, (r) => { const p = Object.entries(this.taken).find(([, t]) => t.role === r); return p ? { name: p[1].name, playerId: p[0] } : null; }, pair.scenario.id);
       const seed = randomSeed();
       this.state = openStaging({ scenario: pair.scenario, region: pair.region, cast, seedHex: bytesToHex(seed), seedCommit: seedCommit(seed), now: Date.now(), pace: this.meta.pace === 'short' ? 0.25 : 1 });
       this.meta = { ...this.meta, casting: false };

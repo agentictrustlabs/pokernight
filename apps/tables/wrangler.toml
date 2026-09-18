@@ -380,7 +380,12 @@ MYSTERY_CAST = "concierge=emile-elena.me@elena,heiress=delphine-alice.me@alice,i
 # The positional list stays for a deployment whose stand-ins really are interchangeable. This one's are not.
 MYSTERY_CAST_AGENTS = ""
 # GREAT COMMISSION: the same three for a commission night — `role=agent@custodian` for the parts, and who narrates.
+# THE CAST BELONGS TO THE NIGHT: one variable cast Greeley's people as the marches' when a second
+# scenario arrived. `COMMISSION_CAST` is the fallback; a night that names its own wins.
 COMMISSION_CAST = "returnee=naw-elena.me@elena,household=abdi-dave.me@dave,agency=dale-carol.me@carol,funder=marguerite-bob.me@bob,researcher=ruth-alice.me@alice,convener=tom-nathan.me@nathan,welcomer=bonnie-david.me@david"
+COMMISSION_CAST_THURSDAY_IN_GREELEY = "returnee=naw-elena.me@elena,household=abdi-dave.me@dave,agency=dale-carol.me@carol,funder=marguerite-bob.me@bob,researcher=ruth-alice.me@alice,convener=tom-nathan.me@nathan,welcomer=bonnie-david.me@david"
+COMMISSION_CAST_FIRST_LIGHT = "returnee=ilse-elena.me@elena,household=teodor-dave.me@dave,agency=margit-carol.me@carol,funder=anselm-bob.me@bob,researcher=wren-alice.me@alice,convener=bram-nathan.me@nathan,welcomer=caspar-david.me@david"
+COMMISSION_CAST_SECOND_WINTER = "returnee=ilse-elena.me@elena,household=teodor-dave.me@dave,agency=margit-carol.me@carol,funder=anselm-bob.me@bob,researcher=wren-alice.me@alice,convener=bram-nathan.me@nathan,welcomer=caspar-david.me@david"
 COMMISSION_CAST_AGENTS = ""
 COMMISSION_DIRECTOR = ""
 MYSTERY_DIRECTOR = "belvedere-house-svc.faithnet.ai"

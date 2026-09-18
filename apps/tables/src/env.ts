@@ -81,6 +81,10 @@ export interface Env {
   /** The same three, for a Great Commission night: the parts nobody is playing, and who narrates. */
   COMMISSION_CAST_AGENTS?: string;
   COMMISSION_CAST?: string;
+  /** Per night, when a deployment stages more than one: `COMMISSION_CAST_<SCENARIO ID>`. See `commissionCast`. */
+  COMMISSION_CAST_THURSDAY_IN_GREELEY?: string;
+  COMMISSION_CAST_FIRST_LIGHT?: string;
+  COMMISSION_CAST_SECOND_WINTER?: string;
   COMMISSION_DIRECTOR?: string;
   MYSTERY_DIRECTOR?: string;
   /**
@@ -362,7 +366,17 @@ function parseCast(csv: string | undefined): CastMember[] {
 export function commissionCastAgents(env: Env): string[] {
   return (env.COMMISSION_CAST_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 }
-export function commissionCast(env: Env): CastMember[] { return parseCast(env.COMMISSION_CAST); }
+/**
+ * THE CAST BELONGS TO THE NIGHT, NOT TO THE DEPLOYMENT (2026-09-17). One `COMMISSION_CAST` was right while
+ * there was one scenario; with two it cast Naw Paw Htoo as Ilse Varrow, because the roles are the same seven
+ * words in both and nothing said which night the names were for. A scenario may name its own
+ * (`COMMISSION_CAST_THURSDAY_IN_GREELEY`, the id uppercased with dashes as underscores); `COMMISSION_CAST`
+ * remains the fallback for a deployment with one night, and for any night that names no cast of its own.
+ */
+export function commissionCast(env: Env, scenarioId?: string): CastMember[] {
+  const own = scenarioId ? (env as unknown as Record<string, string | undefined>)[`COMMISSION_CAST_${scenarioId.toUpperCase().replace(/-/g, '_')}`] : undefined;
+  return parseCast((own ?? '').trim() ? own : env.COMMISSION_CAST);
+}
 export function commissionDirector(env: Env): string | null {
   const name = (env.COMMISSION_DIRECTOR ?? '').trim();
   return name || null;
