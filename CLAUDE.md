@@ -496,6 +496,20 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   on 10th Street, derived
   from the meeting house — the living room in Evans is deliberately NOT in the building, because household grain
   does not belong in a church hall. `pnpm gen:commission` builds both worlds and both plans.
+- **A PART SAYS A THING ONCE, AND THE ACTIVITIES ARE THE PAGE** (2026-09-18). A night's transcript was one sentence
+  fifteen times with a Confirm button on each: the engine now refuses a slip every listener already holds
+  (`already-shown`) and an agent's line already among its last five (`said-that`, a person may repeat themselves);
+  a refused move has no line, a slip's own words are not said twice, and a rules-played part says a stock line once
+  per room and is otherwise quiet. The page (`pages/CommissionPage.tsx`) is the picture, the board and the room as
+  content-sized STRIPS with the transcript taking the rest (filters: all · this room · to me · testimony · readings;
+  a rule between rounds; a whisper to you marked); a whisper is a TARGET CHIP on the talk box (press a name in the
+  room, the cast or the picture; × clears; the button says Say or Send — never "whispering…"); the cast list says
+  where everybody is and pressing a name walks you there (`venue.goTo`); the 3D plate says the PART and who plays
+  it (`part` on the venue's person); the same slip from the same person is one row with a count and one Confirm.
+  Under 760px tall the picture gives way, never the activities. The world's CONTENT — the log, the baptisms, what
+  each people can read, where the workers go — lives in `weld.ttl` and rides every model turn as brief, vault and
+  voice notes; the archetypes are regenerated (`scenario-to-archetypes.mjs`, which now reads `fci:lvl-poe-N`),
+  re-published (`~/skills/scripts/register-commission.mjs`) and re-assigned (`assign-org-archetype.mts`).
 - **THE WORLD IS AUTHORED UNDER THE FAITH ONTOLOGY**:
   `~/skills/ontology/commission.tbox.ttl` sits under `faith.ttl` and `story.ttl`. WHO A PEOPLE IS AND WHERE THEY ARE ARE
   TWO NODES (2026-09-17; the first draft subclassed `gc:PeopleGroup`, which is not a class): `cm:People ⊑
@@ -545,6 +559,12 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   the JSON-RPC client is our own too, because the pinned a2a (alpha.22) `createStandardA2aClient` has no `signRequest` and
   silently sent the first version unsigned ("admits only an authenticated principal").
   Proven live before any of this was written: Ilse's agent → Teodor's inbox, one conversation on both sides.
+  **ROOM TALK GOES TO THE NIGHT'S TOPIC ON THE CLUB'S BOARD** (2026-09-18): the same road with `messaging.topic.post`.
+  The club's agent opens a topic titled for the night (`club.topic` on the Home's club door, idempotent by title;
+  `meta.topic` on the night) and every `said` line by a part with a persona is posted from that persona; a night of
+  your own has no board; POST-ITS STAY IN THE ROOM (anonymous by construction). Per club, the host invites the cast
+  into the workspace and the standing grants are re-minted with both verbs (`equip-cast-board.mts`), then the KV
+  note is rebuilt. Proven in Alice's club: seven personas, 23 posts, Ruth's typed line from `ruth-alice.me`.
 - **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
   hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
   actually has. `lib/brand.ts` still owns the product name.
