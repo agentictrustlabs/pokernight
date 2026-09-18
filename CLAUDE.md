@@ -242,6 +242,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   answers **404, never 403**. A table with no `club` is a PICKUP table: public, and what every table was.
   Tables, the lobby per club, and the person's session stay in Durable Objects because they are live.
   `pnpm walk:club` proves the whole road; `pnpm walk:nav` presses the two-ceremony start.
+- **A CLUB IS ONE GAME** (2026-09-18). `games[0]` on the profile is the game a club plays — chosen at founding (a
+  picker on the form), changeable by its host in About (`PUT /clubs/:id/game`), and the page shows that game and
+  nothing else: a table club has Nights · Tables and "Open a table"; a night club has Nights · <the night>, staged
+  by `components/MysteryNight.tsx`, which serves BOTH nights (`game` prop; `NIGHTS` is the one place they differ).
+  No stamp means hold'em. A club whose page offered tables and a mystery and a commission was three clubs in one name.
 - **A CLUB IS RETIRED BY ITS HOST, AND ITS AGENT IS NOT OURS TO RETIRE.** `DELETE /clubs/:clubId` LOOKS FIRST
   and refuses (409, naming them) if anybody is seated at one of the club's tables; then closes the club's
   tables; then marks the club's profile `retiredAt` at its Home (the rail skips retired clubs) and lets go of
@@ -543,7 +548,11 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   (2026-09-18): Wrangler 4 reads and writes the LOCAL simulator (`.wrangler/state`) unless told `--remote`, so the
   note was "put" and "got" and listed on this machine and the deployed Worker never had it — every whisper for a day
   "stayed in the room" without a word, because a missing note was the configured-off case. The loader now says which
-  of the three it lacks and never caches a miss. **THE CHARACTER IS THE IDENTITY** (corrected
+  of the three it lacks and never caches a miss. **A PLAYER IS TOLD WHOSE HOME THE CHARACTER'S AGENT IS AT** (2026-09-18): each persona is
+  custodied by one demo person (ruth-alice, tom-nathan, …) and its mail lands there whoever plays it; "Your part"
+  says so (`ViewPerson.custodian` — the persona's, carried as `Casting.personaCustodian` through a takeover), because
+  a player who was not the custodian looked for the character at their own Home and found nothing.
+  **THE CHARACTER IS THE IDENTITY** (corrected
   the same day, and it is a rule about the whole game, not about messaging): a `Casting`'s `agent` and `name` are the
   CHARACTER's and stay the character's through a takeover — Dr Wren is `wren-alice.me` and is called Dr Wren whoever is
   behind her — and the person driving her is `playerId` / `custodian` / `playedBy`. Taking a part used to overwrite both
@@ -573,6 +582,9 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   socket on the way, so removing them at once made everybody watch them VANISH and reappear seconds later. The
   body lingers; a reconnect inside the grace cancels the removal and is seamless. The room page also POSES INTO
   THE CHAIR BEFORE IT NAVIGATES, and the seat's page poses the moment the manifest lands rather than on a timer.
+- **PLAY IS FOUR CARDS AND THE CHOICES ARE BEHIND ONE PRESS** (2026-09-18). Two night cards with their options open
+  pushed hold'em below the fold; a card is a band, a paragraph and a button, four fit across a laptop, and a night's
+  choices (which night, how long, your part) open in a `Drawer` beside the page.
 - **THE FRONT DOOR IS ONE CHOICE AND A LIST OF ERRANDS** (2026-09-15): "Come play or hang out" is the button,
   and beside it a quiet, evenly-weighted list — sign up, start a club, the missions, how it works — each row
   saying where it goes and each going to a PAGE that stands on its own. Four buttons of similar weight had made
