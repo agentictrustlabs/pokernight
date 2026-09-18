@@ -270,6 +270,13 @@ export function apply(state: CommissionState, scenario: Scenario, region: Region
         events.push(...push(s, { type: 'fabricated', at: now, by: role, people: item.people, count: action.count, room: here }));
       }
       const audience = action.to ? [action.to] : saw().filter((r) => r !== role);
+      // A SLIP EVERYBODY LISTENING ALREADY HOLDS IS NOT TESTIMONY (2026-09-18). A part with one item and nothing
+      // else to do testified it every wake, and a night's transcript was the same sentence fifteen times with a
+      // Confirm button on each. The same item, at the same grain, from the same speaker, still standing, and
+      // already received by every one of the intended hearers is refused — a fresh hearer in the room or another
+      // grain is new, and goes.
+      const alreadyHolds = (r: RoleId) => (s.received[r] ?? []).some((id) => { const d = s.disclosures.find((x) => x.id === id); return !!d && !d.revokedAt && d.by === role && d.evidence === item.id && d.grain === action.grain; });
+      if (audience.length && audience.every(alreadyHolds)) return no('already-shown', action.to ? 'They already have that from you.' : 'Everybody here already has that from you.');
       const id = `d${s.disclosures.length + 1}`;
       const leak = !coarserOrEqual(action.grain, room.grain);
       const text = projectText(item, action.grain) + (action.count !== undefined ? ` (${action.count})` : '');

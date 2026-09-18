@@ -17,6 +17,29 @@ export interface CastLines { greet: string; probe: string; deflect: string; pres
 
 const pick = <T,>(xs: readonly T[], tick: number): T | undefined => (xs.length ? xs[tick % xs.length] : undefined);
 
+/**
+ * NOT THE SAME THING AGAIN (2026-09-18). A rules-played part used to say its greeting or its deflection on every
+ * wake it had no move, so a night's transcript was "Who needs to be in a room they are not in?" forty times. A
+ * part says a stock line once per ROOM VISIT — if the words are already in its recent lines as the transcript
+ * shows them, it says nothing and the wake passes in silence, which is what a person with nothing to add does.
+ */
+function saidLately(view: CommissionView, text: string): boolean {
+  const me = view.you?.role;
+  const t = text.trim().toLowerCase();
+  const mine = view.transcript.filter((e) => e.type === 'said' && (e as { by: string }).by === me).slice(-6);
+  return mine.some((e) => (e as { text: string }).text.trim().toLowerCase() === t);
+}
+function sayOnce(view: CommissionView, text: string | undefined): { action: CommissionAction; line: string } | null {
+  if (!text || saidLately(view, text)) return null;
+  return { action: { type: 'say', text }, line: text };
+}
+/** A slip about this people this part has already put before the room it is in, at this grain — the engine refuses
+ *  the repeat (`already-shown`), so do not choose it. Read from the transcript as this part sees it. */
+function shownHere(view: CommissionView, people: string, grain: string): boolean {
+  const me = view.you?.role; const here = view.room?.id;
+  return view.transcript.some((e) => e.type === 'testified' && (e as { by: string }).by === me && (e as { room: string }).room === here && (e as { people: string }).people === people && (e as { grain: string }).grain === grain && (e as { to: string | null }).to === null);
+}
+
 /** The highest phase at least `n` distinct witnesses' received testimony reaches, for one people. */
 function corroboratedPhase(view: CommissionView, people: string, n: number): PhaseNumber | null {
   const bySupport = new Map<PhaseNumber, Set<string>>();
@@ -66,26 +89,23 @@ export function chooseAction(view: CommissionView, lines: CastLines, tick: numbe
         }
       }
       const q = pick(WALK, tick);
-      return { action: { type: 'say', text: `${lines.probe} ${q?.question ?? ''}`.trim() }, line: `${lines.probe} ${q?.question ?? ''}`.trim() };
+      return sayOnce(view, `${lines.probe} ${q?.question ?? ''}`.trim());
     }
     case 'welcomer': {
       // The warmest person in the room, and the least disciplined: tells the story to whoever is listening.
-      const mine = (you.vault ?? []).filter((v) => !v.revoked);
+      // THE FINEST GRAIN THIS ROOM ALLOWS. "You may coarsen, never refine" is a ceiling, not an instruction to
+      // say as little as possible: the useful, safe sentence is the finest one the room's rule permits, and a
+      // part that answers every question at people grain has told the room nothing. Each story ONCE per room.
+      const mine = (you.vault ?? []).filter((v) => !v.revoked).map((v) => ({ v, g: (v.projections ?? []).filter((x) => x.allowedHere)[0] })).filter((x) => x.g && !shownHere(view, x.v.people, x.g.grain));
       const item = pick(mine, tick);
-      if (item && here) {
-        // THE FINEST GRAIN THIS ROOM ALLOWS. "You may coarsen, never refine" is a ceiling, not an instruction to
-        // say as little as possible: the useful, safe sentence is the finest one the room's rule permits, and a
-        // part that answers every question at people grain has told the room nothing.
-        const g = (item.projections ?? []).filter((x) => x.allowedHere)[0];
-        if (g) return { action: { type: 'testify', people: item.people, evidence: item.id, grain: g.grain }, line: g.text };
-      }
-      return { action: { type: 'say', text: lines.greet }, line: lines.greet };
+      if (item?.g && here) return { action: { type: 'testify', people: item.v.people, evidence: item.v.id, grain: item.g.grain }, line: item.g.text };
+      return sayOnce(view, lines.greet);
     }
 
     case 'funder': {
       const need = view.peoples.find((p) => p.need && !view.commitments.some((c) => c.people === p.id && c.by === you.role));
       if (need?.need) return { action: { type: 'commit', people: need.id, need: need.need, resource: 'a two-year grant' }, line: `${need.name}: I will fund ${need.need}. I need to be able to show my board what it bought.` };
-      return { action: { type: 'say', text: lines.press }, line: lines.press };
+      return sayOnce(view, lines.press);
     }
     default: {
       // A CARRIER: testify to something not yet said here, at the room's grain — never finer.
@@ -108,7 +128,7 @@ export function chooseAction(view: CommissionView, lines: CastLines, tick: numbe
         }
       }
       void said;
-      return { action: { type: 'say', text: pick([lines.greet, lines.deflect], tick) ?? lines.greet }, line: pick([lines.greet, lines.deflect], tick) };
+      return sayOnce(view, pick([lines.greet, lines.deflect], tick) ?? lines.greet);
     }
   }
 }

@@ -95,6 +95,17 @@ describe('permission slips — testify at a grain', () => {
     expect(coarse.ok).toBe(true);
     if (coarse.ok) { const e = coarse.events.find((x) => x.type === 'testified'); expect(e && 'text' in e && e.text).toMatch(/upper marches/); }
   });
+  it('a slip everybody listening already holds is refused — a new hearer or another grain makes it new', () => {
+    let s = open(); // everybody in the commons
+    s = ok(go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'county' }));
+    const again = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'county' });
+    expect(again.ok).toBe(false); if (!again.ok) expect(again.code).toBe('already-shown');
+    // to one person who already has it: the same refusal
+    const toOne = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'county', to: 'researcher' });
+    expect(toOne.ok).toBe(false); if (!toOne.ok) expect(toOne.code).toBe('already-shown');
+    // coarser is a different slip
+    expect(go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'people' }).ok).toBe(true);
+  });
   it('a slip finer than the room’s rule is a LEAK, recorded on the slip and in the score', () => {
     let s = open(); // everybody in the commons: county grain
     const r = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'household' });

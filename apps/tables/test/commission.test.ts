@@ -57,9 +57,9 @@ describe('a night of your own in Weld County', () => {
     expect(r.status).toBe(200);
     const b = (await r.json()) as { scenarios: Array<{ id: string; night: number; roles: unknown[]; regionName: string }> };
     // The default night is the real county; the invented marches remain beside it.
-    expect(b.scenarios.map((s) => s.id)).toEqual(['first-light', 'second-winter', 'thursday-in-greeley']);
+    expect(b.scenarios.map((s) => s.id)).toEqual(['thursday-in-greeley', 'first-light', 'second-winter']);
     expect(b.scenarios[0]?.roles).toHaveLength(7);
-    expect(b.scenarios[1]?.night).toBe(2);
+    expect(b.scenarios[2]?.night).toBe(2);
   });
 
   it('opens with you in your part and the rest played by agents; your socket carries your vault and never the hidden state', async () => {
