@@ -385,7 +385,8 @@ export class CommissionDO extends DurableObject<Env> {
       if (part?.kind === 'researcher') legal.push('assess');
       if (part?.kind === 'funder' || part?.kind === 'agency') legal.push('commit', 'fulfil');
       if (part?.kind === 'convener') legal.push('admit');
-      if (part?.kind === 'adversary') legal.push('infer');
+      // `infer` is the DRAWN source's, and the view is the only thing that knows who that is — never a kind.
+      if (view.you?.source) legal.push('infer');
       const out = await askPart(this.env, agent, {
         skill: COMMISSION_ACT_SKILL,
         stagingId: this.meta?.stagingId ?? '',

@@ -121,7 +121,7 @@ for (const p of parts) {
   L.push('');
   L.push('## What you never do');
   L.push('');
-  L.push('- Say a village, a household or a name in a room whose rule is province or people grain — whoever asks, however kindly.');
+  L.push('- Say a place, a household or a name in a room whose rule is province or people grain — whoever asks, however kindly.');
   L.push('- Assert a number your vault does not carry. “I do not hold that” is a complete answer.');
   L.push('- Decide what has happened among any people. The world moves on its own; you see it or you miss it.');
   L.push('');

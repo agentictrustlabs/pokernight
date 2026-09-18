@@ -79,14 +79,14 @@ for (const p of all(region, `${CM}hasPeople`).sort(byOrder)) {
   const schedule = all(one(p, `${CM}hasSchedule`), `${CM}hasState`).sort(byRound);
   const carrier = one(p, `${CM}carriedBy`);
   L.push(`    {`);
-  L.push(`      id: ${j(peopleKeyOf(p))}, name: ${j(lit(identityOf(p), `${RDFS}label`))}, province: ${j(lit(p, `${CM}inProvince`))},`);
-  L.push(`      villages: [${all(p, `${CM}hasVillage`).sort(byOrder).map((v) => j(key(v, `${CM}villageKey`))).join(', ')}],`);
+  L.push(`      id: ${j(peopleKeyOf(p))}, name: ${j(lit(identityOf(p), `${RDFS}label`))}, county: ${j(lit(p, `${CM}inCounty`))},`);
+  L.push(`      places: [${all(p, `${CM}hasPlace`).sort(byOrder).map((v) => j(key(v, `${CM}placeKey`))).join(', ')}],`);
   // A READING says the faith ontology's own properties (it is a gc:CommunityPhaseResult); a HIDDEN STATE says cm:phase.
   if (pub) L.push(`      publicReading: { phase: ${j(phaseAt(pub, `${GC}assignedLevel`, `${FCI}phaseQualifier`))}, strength: ${j(strengthOf(one(pub, `${GC}engagementStrength`)))}, vintage: ${num(pub, `${CM}afterRound`) ?? 0} },`);
   L.push(`      schedule: [${schedule.map((s) => `{ phase: ${j(phaseAt(s, `${CM}phase`, `${CM}phaseQualifier`))}, strength: ${j(strengthOf(one(s, `${CM}strength`)))} }`).join(', ')}],`);
-  // THE HIDDEN STATE'S FINE END IS A CIRCLE: the kin households (a gc:FormationCommunity) that meet within one village.
+  // THE HIDDEN STATE'S FINE END IS A CIRCLE: the kin households (a gc:FormationCommunity) that meet within one place.
   const circle = one(p, `${CM}hiddenCircle`);
-  L.push(`      truth: { village: ${j(key(one(circle, `${FCI}circleWithinCommunity`), `${CM}villageKey`))}, households: ${num(circle, `${CM}householdCount`)} },`);
+  L.push(`      truth: { place: ${j(key(one(circle, `${FCI}circleWithinCommunity`), `${CM}placeKey`))}, households: ${num(circle, `${CM}householdCount`)} },`);
   if (carrier) L.push(`      carrier: ${j(key(carrier, `${ST}partKey`))},`);
   L.push(`    },`);
 }
@@ -117,7 +117,7 @@ const partLines = (p) => {
   out.push(`      vault: [`);
   for (const v of all(p, `${CM}holdsTestimony`).sort(byOrder)) {
     const coarse = all(v, `${CM}coarseAs`).map((c) => [grainOf(one(c, `${CM}atGrain`)), lit(c, `${RDFS}label`)]);
-    const order = ['person', 'household', 'village', 'province', 'people'];
+    const order = ['person', 'household', 'place', 'county', 'people'];
     coarse.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
     const count = num(v, `${CM}holdsCount`);
     const fields = [

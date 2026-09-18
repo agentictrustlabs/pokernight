@@ -27,9 +27,10 @@ describe('the scenarios are sound before anybody plays them', () => {
     expect(checkScenario(FIRST_LIGHT, KETTLEWATER_MARCHES)).toEqual([]);
     expect(checkScenario(SECOND_WINTER, KETTLEWATER_MARCHES)).toEqual([]);
   });
-  it('refuses a scenario with two adversaries or a vault item about a people that does not exist', () => {
-    const bad = { ...FIRST_LIGHT, roles: [...FIRST_LIGHT.roles, { ...FIRST_LIGHT.roles[6]!, id: 'adversary-2' }] };
-    expect(checkScenario(bad, R).some((m) => /adversary/.test(m))).toBe(true);
+  it('refuses a scenario with two researchers or a vault item about a people that does not exist', () => {
+    const researcher = FIRST_LIGHT.roles.find((r) => r.kind === 'researcher')!;
+    const bad = { ...FIRST_LIGHT, roles: [...FIRST_LIGHT.roles, { ...researcher, id: 'researcher-2' }] };
+    expect(checkScenario(bad, R).some((m) => /researcher/.test(m))).toBe(true);
     const bad2 = { ...FIRST_LIGHT, roles: FIRST_LIGHT.roles.map((r) => (r.id === 'returnee' ? { ...r, vault: [{ ...r.vault[0]!, people: 'nowhere' }] } : r)) };
     expect(checkScenario(bad2, R).some((m) => /not a people/.test(m))).toBe(true);
   });
@@ -44,18 +45,19 @@ describe('growth is exogenous', () => {
     s = ok(go(s, 'household', { type: 'say', text: 'Good.' }));
     s = ok(go(s, 'household', { type: 'corroborate', people: 'ouren', phase: 3 }));
     s = ok(go(s, 'researcher', { type: 'assess', people: 'tamsin', phase: 4, strength: 'growing' }));
-    s = ok(go(s, 'adversary', { type: 'infer', people: 'ouren', village: 'Stennick' }));
+    s = { ...s, source: 'welcomer' };
+    s = ok(go(s, 'welcomer', { type: 'infer', people: 'ouren', place: 'Stennick' }));
     expect(JSON.stringify(s.truth)).toBe(before);
     const t = tick(s, S, R, s.deadline! + 1);
     expect(JSON.stringify(t.state.truth)).not.toBe(before);
   });
-  it('the hidden state is absent from every view until the reveal, and the villages are on the map for everybody', () => {
+  it('the hidden state is absent from every view until the reveal, and the places are on the map for everybody', () => {
     const s = open();
-    for (const role of [null, 'researcher', 'adversary', 'returnee']) {
+    for (const role of [null, 'researcher', 'welcomer', 'returnee']) {
       const v = viewFor(s, S, R, role);
       expect(v.reveal).toBeNull();
       expect(JSON.stringify(v)).not.toContain('"truth"');
-      expect(v.peoples.find((p) => p.id === 'ouren')?.villages).toContain('Stennick');
+      expect(v.peoples.find((p) => p.id === 'ouren')?.places).toContain('Stennick');
     }
   });
 });
@@ -65,7 +67,7 @@ describe('a night replays byte-identically', () => {
     const run = () => {
       let s = open();
       s = move(s, 'returnee', 'household'); s = move(s, 'household', 'household');
-      s = ok(go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'village' }, 2_000_001));
+      s = ok(go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'city' }, 2_000_001));
       s = tick(s, S, R, s.deadline! + 1).state;
       s = tick(s, S, R, s.deadline! + 1).state;
       s = ok(go(s, 'researcher', { type: 'assess', people: 'tamsin', phase: 4, strength: 'growing' }, s.roundStartedAt + 5));
@@ -89,19 +91,19 @@ describe('permission slips — testify at a grain', () => {
     s = move(s, 'returnee', 'household'); s = move(s, 'household', 'household');
     const fine = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'person' });
     expect(fine.ok).toBe(false); if (!fine.ok) expect(fine.code).toBe('finer-than-held');
-    const coarse = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'province' });
+    const coarse = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'county' });
     expect(coarse.ok).toBe(true);
     if (coarse.ok) { const e = coarse.events.find((x) => x.type === 'testified'); expect(e && 'text' in e && e.text).toMatch(/upper marches/); }
   });
   it('a slip finer than the room’s rule is a LEAK, recorded on the slip and in the score', () => {
-    let s = open(); // everybody in the commons: province grain
+    let s = open(); // everybody in the commons: county grain
     const r = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'household' });
     expect(r.ok).toBe(true);
     if (r.ok) {
       s = r.state;
       const e = r.events.find((x) => x.type === 'testified');
       expect(e && 'leak' in e && e.leak).toBe(true);
-      expect(score(s, S, R).leaks).toEqual([{ by: 'returnee', people: 'ouren', grain: 'household', allowed: 'province', round: 1 }]);
+      expect(score(s, S, R).leaks).toEqual([{ by: 'returnee', people: 'ouren', grain: 'household', allowed: 'county', round: 1 }]);
     }
   });
   it('the same slip in a room whose rule allows it is not a leak', () => {
@@ -112,9 +114,9 @@ describe('permission slips — testify at a grain', () => {
   });
   it('you may only testify to what you hold, and not to what has not yet arrived in your vault', () => {
     const s = open();
-    const notMine = go(s, 'funder', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'province' });
+    const notMine = go(s, 'funder', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'county' });
     expect(notMine.ok).toBe(false);
-    const notYet = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r2', grain: 'province' });
+    const notYet = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r2', grain: 'county' });
     expect(notYet.ok).toBe(false); if (!notYet.ok) expect(notYet.code).toBe('not-held');
   });
   it('a number the vault does not hold is a FABRICATION — recorded, and the slip still goes out', () => {
@@ -131,10 +133,10 @@ describe('permission slips — testify at a grain', () => {
   });
   it('a slip to one person is received by that person alone', () => {
     let s = open();
-    s = ok(go(s, 'agency', { type: 'testify', people: 'sellick', evidence: 'a1', grain: 'province', to: 'researcher' }));
+    s = ok(go(s, 'agency', { type: 'testify', people: 'sellick', evidence: 'a1', grain: 'county', to: 'researcher' }));
     expect(s.received.researcher).toHaveLength(1);
-    expect(s.received.adversary).toHaveLength(0);
-    expect(viewFor(s, S, R, 'adversary').transcript.some((e) => e.type === 'testified')).toBe(false);
+    expect(s.received.welcomer).toHaveLength(0);
+    expect(viewFor(s, S, R, 'welcomer').transcript.some((e) => e.type === 'testified')).toBe(false);
     expect(viewFor(s, S, R, 'researcher').transcript.some((e) => e.type === 'testified')).toBe(true);
   });
 });
@@ -143,8 +145,8 @@ describe('the reading — assess and corroborate', () => {
   it('only the researcher publishes, and the reading counts distinct witnesses without naming them', () => {
     let s = open();
     expect(go(s, 'funder', { type: 'assess', people: 'tamsin', phase: 4, strength: 'growing' }).ok).toBe(false);
-    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'province', to: 'researcher' }));
-    s = ok(go(s, 'agency', { type: 'testify', people: 'sellick', evidence: 'a1', grain: 'province', to: 'researcher' }));
+    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'county', to: 'researcher' }));
+    s = ok(go(s, 'agency', { type: 'testify', people: 'sellick', evidence: 'a1', grain: 'county', to: 'researcher' }));
     const r = go(s, 'researcher', { type: 'assess', people: 'tamsin', phase: 4, strength: 'growing' });
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -155,17 +157,17 @@ describe('the reading — assess and corroborate', () => {
       // names only its author. (`saw` names who was in the room, which is a different fact and a public one.)
       expect(e && 'witnesses' in e).toBe(false);
       expect(JSON.stringify(r.state.assessments[0])).not.toContain('household');
-      const v = viewFor(r.state, S, R, 'adversary');
+      const v = viewFor(r.state, S, R, 'welcomer');
       expect(v.peoples.find((p) => p.id === 'tamsin')?.reading).toEqual({ phase: 4, strength: 'growing', corroboration: 1, round: 1 });
     }
   });
   it('a witness may corroborate only what it holds or was shown; a second witness raises the count once', () => {
     let s = open();
-    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'province', to: 'researcher' }));
+    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'county', to: 'researcher' }));
     s = ok(go(s, 'researcher', { type: 'assess', people: 'tamsin', phase: 4, strength: 'growing' }));
     const bare = go(s, 'funder', { type: 'corroborate', people: 'tamsin', phase: 4 });
     expect(bare.ok).toBe(false); if (!bare.ok) expect(bare.code).toBe('unsupported');
-    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'province', to: 'agency' }));
+    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'county', to: 'agency' }));
     s = ok(go(s, 'agency', { type: 'corroborate', people: 'tamsin', phase: 4 }));
     expect(s.assessments[0]?.corroboration).toBe(2);
     expect(go(s, 'agency', { type: 'corroborate', people: 'tamsin', phase: 4 }).ok).toBe(false);
@@ -175,9 +177,9 @@ describe('the reading — assess and corroborate', () => {
 describe('revocation mid-run', () => {
   it('a withdrawn slip cannot be re-issued, prior receipt stays in the log, and standing on it alone is a REPLAY', () => {
     let s = open();
-    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'province', to: 'agency' }));
+    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'county', to: 'agency' }));
     s = ok(go(s, 'household', { type: 'revoke', evidence: 'h1' }));
-    expect(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'province' }).ok).toBe(false);
+    expect(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'county' }).ok).toBe(false);
     expect(s.log.some((e) => e.type === 'testified')).toBe(true); // the prior read remains
     const r = go(s, 'agency', { type: 'corroborate', people: 'tamsin', phase: 4 });
     expect(r.ok && r.events[0]?.type).toBe('replayed');
@@ -191,7 +193,7 @@ describe('workspaces', () => {
     let s = open();
     const r = go(s, 'funder', { type: 'move', room: 'household' });
     expect(r.ok).toBe(false); if (!r.ok) expect(r.code).toBe('not-a-member');
-    expect(go(s, 'funder', { type: 'admit', who: 'adversary', room: 'household' }).ok).toBe(false);
+    expect(go(s, 'funder', { type: 'admit', who: 'welcomer', room: 'household' }).ok).toBe(false);
     s = ok(go(s, 'convener', { type: 'admit', who: 'funder', room: 'household' }));
     expect(go(s, 'funder', { type: 'move', room: 'household' }).ok).toBe(true);
   });
@@ -200,11 +202,11 @@ describe('workspaces', () => {
     s = move(s, 'returnee', 'household'); s = move(s, 'household', 'household');
     s = ok(go(s, 'returnee', { type: 'say', text: 'Only for this room.' }));
     expect(viewFor(s, S, R, 'household').transcript.some((e) => e.type === 'said')).toBe(true);
-    expect(viewFor(s, S, R, 'adversary').transcript.some((e) => e.type === 'said')).toBe(false);
+    expect(viewFor(s, S, R, 'welcomer').transcript.some((e) => e.type === 'said')).toBe(false);
     // And walking in afterwards does not un-redact it: what you heard, you heard.
-    s = ok(go(s, 'convener', { type: 'admit', who: 'adversary', room: 'household' }));
-    s = move(s, 'adversary', 'household');
-    expect(viewFor(s, S, R, 'adversary').transcript.some((e) => e.type === 'said')).toBe(false);
+    s = ok(go(s, 'convener', { type: 'admit', who: 'welcomer', room: 'household' }));
+    s = move(s, 'welcomer', 'household');
+    expect(viewFor(s, S, R, 'welcomer').transcript.some((e) => e.type === 'said')).toBe(false);
   });
 });
 
@@ -212,7 +214,7 @@ describe('the intent spine, thin', () => {
   it('an offering answers a need the picture has stated; carried out later, or left visibly stale', () => {
     let s = open();
     expect(go(s, 'funder', { type: 'commit', people: 'tamsin', need: 'anything', resource: 'money' }).ok).toBe(false);
-    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'province', to: 'researcher' }));
+    s = ok(go(s, 'household', { type: 'testify', people: 'tamsin', evidence: 'h1', grain: 'county', to: 'researcher' }));
     s = ok(go(s, 'researcher', { type: 'assess', people: 'tamsin', phase: 4, strength: 'growing' }));
     const need = s.assessments[0]!.need;
     s = ok(go(s, 'funder', { type: 'commit', people: 'tamsin', need, resource: 'a two-year grant' }));
@@ -225,13 +227,14 @@ describe('the intent spine, thin', () => {
   });
 });
 
-describe('the adversary', () => {
-  it('only the adversary infers, and nobody else sees the inference until the score', () => {
+describe('the drawn source', () => {
+  it('only the drawn source infers, and nobody else sees the inference until the score', () => {
     let s = open();
-    expect(go(s, 'funder', { type: 'infer', people: 'ouren', village: 'Stennick' }).ok).toBe(false);
-    s = ok(go(s, 'adversary', { type: 'infer', people: 'ouren', village: 'Stennick' }));
+    expect(go(s, 'funder', { type: 'infer', people: 'ouren', place: 'Stennick' }).ok).toBe(false);
+    s = { ...s, source: 'welcomer' };
+    s = ok(go(s, 'welcomer', { type: 'infer', people: 'ouren', place: 'Stennick' }));
     expect(viewFor(s, S, R, 'researcher').transcript.some((e) => e.type === 'inferred')).toBe(false);
-    expect(viewFor(s, S, R, 'adversary').transcript.some((e) => e.type === 'inferred')).toBe(true);
+    expect(viewFor(s, S, R, 'welcomer').transcript.some((e) => e.type === 'inferred')).toBe(true);
   });
 });
 
@@ -252,17 +255,18 @@ describe('the clock, and the score at the reveal', () => {
     expect(s.vaults.returnee).toContain('r2'); // what the carrier now sees
     s = runToReveal(s);
     expect(s.phase).toBe('revealed');
-    expect(viewFor(s, S, R, 'funder').reveal?.truth.ouren?.village).toBe('Stennick');
+    expect(viewFor(s, S, R, 'funder').reveal?.truth.ouren?.place).toBe('Stennick');
   });
-  it('RAILS FAILED when the adversary names the village, whatever the picture found', () => {
+  it('RAILS FAILED when the drawn source names the place, whatever the picture found', () => {
     let s = open();
-    s = ok(go(s, 'adversary', { type: 'infer', people: 'ouren', village: 'stennick' }));
+    s = { ...s, source: 'welcomer' };
+    s = ok(go(s, 'welcomer', { type: 'infer', people: 'ouren', place: 'stennick' }));
     s = runToReveal(s);
     const sc = score(s, S, R);
-    expect(sc.exposure.find((e) => e.people === 'ouren')?.village).toBe(true);
+    expect(sc.exposure.find((e) => e.people === 'ouren')?.place).toBe(true);
     expect(sc.verdict).toBe('rails-failed');
   });
-  it('RAILS HELD when at least half the peoples are read right and no village is found; NOTHING FOUND otherwise', () => {
+  it('RAILS HELD when at least half the peoples are read right and no place is found; NOTHING FOUND otherwise', () => {
     let s = open();
     expect(score(runToReveal(s), S, R).verdict).toBe('nothing-found');
     // Read three peoples correctly at their final hidden state, in the closing.
@@ -316,7 +320,7 @@ describe('night two — memory and 0-R', () => {
 
 describe('the wire', () => {
   it('parseAction admits the engine’s verbs and refuses anything else by name', () => {
-    expect(parseAction({ type: 'testify', people: 'ouren', evidence: 'r1', grain: 'province' }).ok).toBe(true);
+    expect(parseAction({ type: 'testify', people: 'ouren', evidence: 'r1', grain: 'county' }).ok).toBe(true);
     expect(parseAction({ type: 'assess', people: 'ouren', phase: '0-R', strength: 'unknown' }).ok).toBe(true);
     expect(parseAction({ type: 'assess', people: 'ouren', phase: 9, strength: 'unknown' }).ok).toBe(false);
     expect(parseAction({ type: 'testify', people: 'ouren', evidence: 'r1', grain: 'street' }).ok).toBe(false);
@@ -328,8 +332,8 @@ describe('the wire', () => {
     s = ok(go(s, 'returnee', { type: 'whisper', to: 'convener', text: 'a word' }));
     const w = s.log.find((e) => e.type === 'whispered')!;
     expect(redactEvent(s, w, 'convener')).toBe(w);
-    expect(redactEvent(s, w, 'adversary')).toBeNull();
-    expect(redactEvent(s, s.log[1]!, 'adversary')).toBe(s.log[1]);
+    expect(redactEvent(s, w, 'welcomer')).toBeNull();
+    expect(redactEvent(s, s.log[1]!, 'welcomer')).toBe(s.log[1]);
   });
   it('the clocks are the scenario’s, at the night’s pace', () => {
     expect(roundMs(16, 1)).toBe(16 * 60_000);
@@ -341,21 +345,21 @@ describe('the wire', () => {
 describe('the post-it wall', () => {
   it('anybody in the commons may put up a topic, and nobody — not the log, not any view — learns who did', () => {
     let s = open();
-    const r = go(s, 'adversary', { type: 'post', text: 'Where is help most needed in the upper marches?' });
+    const r = go(s, 'welcomer', { type: 'post', text: 'Where is help most needed in the upper marches?' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     s = r.state;
     const ev = r.events.find((e) => e.type === 'posted');
     expect(ev && 'by' in ev).toBe(false);
     // Everybody standing in the commons sees the wall; a watcher outside the story stands in no room at all.
-    for (const role of ['researcher', 'returnee', 'adversary']) {
+    for (const role of ['researcher', 'returnee', 'welcomer']) {
       const v = viewFor(s, S, R, role);
       expect(v.room?.board?.map((p) => p.text)).toEqual(['Where is help most needed in the upper marches?']);
-      expect(JSON.stringify(v.room?.board)).not.toContain('adversary');
+      expect(JSON.stringify(v.room?.board)).not.toContain('welcomer');
     }
-    expect(JSON.stringify(viewFor(s, S, R, null).transcript.find((e) => e.type === 'posted'))).not.toContain('adversary');
+    expect(JSON.stringify(viewFor(s, S, R, null).transcript.find((e) => e.type === 'posted'))).not.toContain('welcomer');
     // The author is in state for the score, and only there.
-    expect(s.postits[0]?.by).toBe('adversary');
+    expect(s.postits[0]?.by).toBe('welcomer');
   });
   it('a room with no wall refuses a post-it by name', () => {
     let s = open();

@@ -151,8 +151,8 @@ function Board({ view }: { view: CommissionView }) {
         {view.peoples.map((p) => (
           <li key={p.id}>
             <div>
-              <strong>{p.name}</strong> <span className="muted small">{p.province}</span>
-              {p.villages?.length ? <div className="small muted">{p.villages.join(' · ')}</div> : null}
+              <strong>{p.name}</strong> <span className="muted small">{p.county}</span>
+              {p.places?.length ? <div className="small muted">{p.places.join(' · ')}</div> : null}
             </div>
             <div className="gc-reading">
               {p.reading ? (
@@ -268,7 +268,7 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
   const [commitPeople, setCommitPeople] = useState('');
   const [resource, setResource] = useState('');
   const [inferPeople, setInferPeople] = useState('');
-  const [village, setVillage] = useState('');
+  const [place, setVillage] = useState('');
   const [households, setHouseholds] = useState('');
   const [admitWho, setAdmitWho] = useState('');
   const [admitRoom, setAdmitRoom] = useState('');
@@ -378,16 +378,16 @@ function You({ view, act }: { view: CommissionView; act: (a: unknown) => void })
         </>
       ) : null}
 
-      {you.kind === 'adversary' ? (
+      {you.source ? (
         <>
           <h3>Your inference</h3>
           <div className="gc-form">
             <select value={inferPeople} onChange={(e) => { setInferPeople(e.target.value); setVillage(''); }}><option value="">a people…</option>{view.peoples.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-            <select value={village} onChange={(e) => setVillage(e.target.value)}><option value="">which village…</option>{(view.peoples.find((p) => p.id === inferPeople)?.villages ?? []).map((v) => <option key={v} value={v}>{v}</option>)}</select>
+            <select value={place} onChange={(e) => setVillage(e.target.value)}><option value="">which place…</option>{(view.peoples.find((p) => p.id === inferPeople)?.places ?? []).map((v) => <option key={v} value={v}>{v}</option>)}</select>
             <input value={households} onChange={(e) => setHouseholds(e.target.value)} placeholder="households" size={5} />
-            <button type="button" disabled={!inferPeople} onClick={() => act({ type: 'infer', people: inferPeople, ...(village ? { village } : {}), ...(households ? { households: Number(households) } : {}) })}>Infer</button>
+            <button type="button" disabled={!inferPeople} onClick={() => act({ type: 'infer', people: inferPeople, ...(place ? { place } : {}), ...(households ? { households: Number(households) } : {}) })}>Infer</button>
           </div>
-          <p className="hint">Your last inference per people is the one scored. If you name the village, the rails failed.</p>
+          <p className="hint">Your last inference per people is the one scored. If you name the place, the rails failed.</p>
         </>
       ) : null}
 
@@ -469,14 +469,14 @@ function Reveal({ view, onAgain, busy }: { view: CommissionView; onAgain: () => 
   return (
     <section className={`panel mystery-reveal gc-reveal ${sc.verdict}`}>
       <h3>{verdict}</h3>
-      <p className="hint">{sc.verdict === 'rails-held' ? 'The picture found the motion and the adversary did not find the person.' : sc.verdict === 'rails-failed' ? 'The adversary named a village. Whatever the picture found, somebody was found first.' : 'Nobody was found — and neither was the motion. A quiet night is not a safe night.'}</p>
+      <p className="hint">{sc.verdict === 'rails-held' ? 'The picture found the motion and the adversary did not find the person.' : sc.verdict === 'rails-failed' ? 'The adversary named a place. Whatever the picture found, somebody was found first.' : 'Nobody was found — and neither was the motion. A quiet night is not a safe night.'}</p>
       <h3>Detection</h3>
       <ul className="gc-score">
         {sc.detection.map((d) => <li key={d.people} className={d.hit ? 'hit' : 'miss'}>{people(d.people)}: read {d.assessed === null ? 'nothing' : `Phase ${String(d.assessed)}`}, was Phase {String(d.actual)}{d.hit ? ` — right${d.lagRounds ? `, ${d.lagRounds} round${d.lagRounds === 1 ? '' : 's'} late` : ''}` : ' — wrong'}</li>)}
       </ul>
       <h3>Exposure</h3>
       <ul className="gc-score">
-        {sc.exposure.map((x) => <li key={x.people} className={x.village ? 'miss' : 'hit'}>{people(x.people)}: {x.village ? `the village was named (${r.truth[x.people]?.village})` : 'the village was not found'}{x.households ? ', and the household count' : ''}</li>)}
+        {sc.exposure.map((x) => <li key={x.people} className={x.place ? 'miss' : 'hit'}>{people(x.people)}: {x.place ? `the place was named (${r.truth[x.people]?.place})` : 'the place was not found'}{x.households ? ', and the household count' : ''}</li>)}
       </ul>
       {sc.leaks.length ? <><h3>Leaks</h3><ul className="gc-score">{sc.leaks.map((l, i) => <li key={i} className="miss">{name(l.by)} spoke {people(l.people)} at {l.grain} grain in a {l.allowed}-grain room, round {l.round}</li>)}</ul></> : <p className="hint">No leaks.</p>}
       {sc.fabrications.length ? <><h3>Fabrications</h3><ul className="gc-score">{sc.fabrications.map((f, i) => <li key={i} className="miss">{name(f.by)} asserted {f.count} for {people(f.people)} with nothing behind it, round {f.round}</li>)}</ul></> : <p className="hint">No fabrications.</p>}

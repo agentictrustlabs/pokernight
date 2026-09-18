@@ -9,7 +9,7 @@ import { devSession, sleep } from './helpers.js';
 
 interface Down {
   type: string;
-  view?: { you?: { role: string; kind: string; vault: Array<{ id: string; grain: string }>; received: unknown[] }; cast?: Array<{ role: string; operator: string; mind?: string }>; round?: number; phase?: string; room?: { id: string; grain: string }; peoples?: Array<{ id: string; villages?: string[] }>; reveal?: unknown } | null;
+  view?: { you?: { role: string; kind: string; vault: Array<{ id: string; grain: string }>; received: unknown[] }; cast?: Array<{ role: string; operator: string; mind?: string }>; round?: number; phase?: string; room?: { id: string; grain: string }; peoples?: Array<{ id: string; places?: string[] }>; reveal?: unknown } | null;
   staging?: { stagingId: string; paused: boolean; night: number } | null;
   code?: string; message?: string;
 }
@@ -74,8 +74,8 @@ describe('a night of your own in the marches', () => {
     expect(m.view?.cast?.filter((c) => c.operator === 'agent')).toHaveLength(6);
     expect(m.view?.reveal ?? null).toBeNull();
     expect(JSON.stringify(m.view)).not.toContain('"truth"');
-    // The villages are the map — public to everybody, including the adversary.
-    expect(m.view?.peoples?.find((p) => p.id === 'ouren')?.villages).toContain('Stennick');
+    // The places are the map — public to everybody, including the adversary.
+    expect(m.view?.peoples?.find((p) => p.id === 'ouren')?.places).toContain('Stennick');
     s.ws.close();
   });
 
@@ -87,7 +87,7 @@ describe('a night of your own in the marches', () => {
     s.send({ type: 'act', action: { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'person' } });
     const refused = await s.waitFor((x) => x.type === 'error');
     expect(refused.code).toBe('finer-than-held');
-    s.send({ type: 'act', action: { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'province' } });
+    s.send({ type: 'act', action: { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'county' } });
     const after = await s.waitFor((x) => x.type === 'staging' && JSON.stringify(x.view ?? {}).includes('"testified"'));
     expect(JSON.stringify(after.view)).toContain('upper marches');
     s.ws.close();

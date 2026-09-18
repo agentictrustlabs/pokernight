@@ -62,8 +62,20 @@ export const WALK: ReadonlyArray<{ phase: PhaseNumber; question: string }> = [
 // killed; a people-grain fact is what a map is made of. Ordered finest → coarsest, so "you may coarsen, never
 // refine" is one comparison.
 
-export type Grain = 'person' | 'household' | 'village' | 'province' | 'people';
-export const GRAINS: readonly Grain[] = ['person', 'household', 'village', 'province', 'people'];
+/**
+ * HOW FINE A LOCATION IS, finest to coarsest — the one axis the whole safeguarding argument runs on.
+ *
+ * It is the administrative hierarchy, because that is what a real picture is actually made of, and it maps onto
+ * the faith ontology's own location precisions: person and household are `exact`, city is `settlement`, county is
+ * `admin-area`, state is `region`, country is `country`, and `people` — the identity with no place at all — is
+ * `suppressed`.
+ *
+ * THE COARSE END IS NOT AUTOMATICALLY THE SAFE END, which is the thing an invented world could never teach. For a
+ * diaspora people, "Somalis in Greeley are responding" names nobody here and travels to Somalia, where the families
+ * are. `people` grain is the coarsest and, for a transnational identity, sometimes the most dangerous.
+ */
+export type Grain = 'person' | 'household' | 'city' | 'county' | 'state' | 'country' | 'people';
+export const GRAINS: readonly Grain[] = ['person', 'household', 'city', 'county', 'state', 'country', 'people'];
 export const grainRank = (g: Grain): number => GRAINS.indexOf(g);
 /** Is `a` at least as coarse as `b`? */
 export const coarserOrEqual = (a: Grain, b: Grain): boolean => grainRank(a) >= grainRank(b);
@@ -82,8 +94,8 @@ export interface PeopleDef {
   id: PeopleId;
   name: string;
   /** Where in the region, for the map. Fictional. */
-  province: string;
-  villages: string[];
+  county: string;
+  places: string[];
   /** What everybody knows going in — the public reading at the start of the night, if any. */
   publicReading?: { phase: Phase; strength: Strength; vintage: number };
   /**
@@ -93,7 +105,7 @@ export interface PeopleDef {
    */
   schedule: Array<{ phase: Phase; strength: Strength }>;
   /** The fine-grain facts the adversary wants and the picture must never carry. */
-  truth: { village: string; households: number };
+  truth: { place: string; households: number };
   /** Which part is the carrier here — adjacent, or returned — whose vault sees this people move first. */
   carrier?: RoleId;
 }
@@ -172,7 +184,13 @@ export interface ChoiceDef {
 }
 
 /** What kind of part this is — decides which verbs are its own. */
-export type PartKind = 'returnee' | 'household' | 'agency' | 'funder' | 'researcher' | 'convener' | 'adversary';
+/**
+ * THE SEVEN PARTS, AND ALL SEVEN ARE LEGITIMATE (2026-09-17). There is no `adversary` kind any more: the part that
+ * carries what it hears out of the room is DRAWN BY THE SEED before the night, committed, and revealed at the
+ * score — the mystery's rule, for the same reason. An adversary everybody can see is the easy version of the test;
+ * presence data leaks because somebody was helpful to the wrong person, and nobody knew which person that was.
+ */
+export type PartKind = 'returnee' | 'household' | 'agency' | 'funder' | 'researcher' | 'convener' | 'welcomer';
 
 export interface Role {
   id: RoleId;
@@ -191,6 +209,15 @@ export interface Role {
   /** Written lines the house uses when no model is asked. */
   lines: { greet: string; probe: string; deflect: string; press: string; report: string };
   choices?: ChoiceDef[];
+  /**
+   * MAY THE SEED DRAW THIS PART AS THE SOURCE — the one carrying what it hears to a reporter outside the room.
+   * Default true: every one of these parts has a plausible reason (a newsletter, a relative who asks, a
+   * journalist who calls about methodology, a warm story told to whoever was listening), and a scenario that
+   * exempted the people most at risk would be saying the quiet part out loud. A scenario may still exempt a part.
+   */
+  mayBeSource?: boolean;
+  /** What the drawn one is told, privately, at the curtain. An OFFER (`st:standingRefusal`): they may decline. */
+  sourceBrief?: string;
 }
 
 export interface RoundDef {
@@ -296,7 +323,7 @@ export interface Commitment {
 export interface Inference {
   by: RoleId;
   people: PeopleId;
-  village?: string;
+  place?: string;
   households?: number;
   round: number;
   at: number;
@@ -310,6 +337,11 @@ export interface PeopleTruth { phase: Phase; strength: Strength }
 export interface CommissionState {
   scenario: string;
   region: string;
+  /**
+   * WHO CARRIES IT OUT OF THE ROOM — drawn by the seed at the curtain, committed in `seedCommit`, told to that
+   * part alone, and revealed at the score. Never in any view but their own; `redactEvent` never mentions it.
+   */
+  source: RoleId | null;
   seedCommit: string;
   seedHex?: string;
   cast: Casting[];
@@ -367,7 +399,7 @@ export type CommissionAction =
   | { type: 'commit'; people: PeopleId; need: string; resource: string }
   | { type: 'fulfil'; commitment: string }
   | { type: 'revoke'; evidence: EvidenceId }
-  | { type: 'infer'; people: PeopleId; village?: string; households?: number }
+  | { type: 'infer'; people: PeopleId; place?: string; households?: number }
   | { type: 'post'; text: string }
   | { type: 'choose'; choice: string; option: string };
 
@@ -418,7 +450,7 @@ export interface ViewReceived { disclosure: string; from: RoleId; people: People
 
 export interface Score {
   detection: Array<{ people: PeopleId; assessed: Phase | null; actual: Phase; lagRounds: number | null; hit: boolean }>;
-  exposure: Array<{ people: PeopleId; village: boolean; households: boolean }>;
+  exposure: Array<{ people: PeopleId; place: boolean; households: boolean }>;
   leaks: Array<{ by: RoleId; people: PeopleId; grain: Grain; allowed: Grain; round: number }>;
   replays: Array<{ by: RoleId; round: number }>;
   fabrications: Array<{ by: RoleId; people: PeopleId; count: number; round: number }>;
@@ -436,15 +468,18 @@ export interface CommissionView {
     vault: ViewVaultItem[];
     received: ViewReceived[];
     silent: boolean;
+    /** Only ever true in the drawn part's OWN view: you are the one carrying it out. An offer, not an order. */
+    source?: true;
+    sourceBrief?: string;
   } | null;
   room: { id: RoomId; name: string; blurb: string; grain: Grain; people: ViewPerson[]; doors: Array<{ id: RoomId; name: string; open: boolean }>; board: Array<{ id: string; text: string; round: number }> | null } | null;
   cast: ViewPerson[];
   rooms: Array<{ id: RoomId; name: string; grain: Grain }>;
   /** The public picture: every people, its published reading if any, and the needs the readings emitted. */
-  peoples: Array<{ id: PeopleId; name: string; province: string; reading: { phase: Phase; strength: Strength; corroboration: number; round: number } | null; need: string | null; villages?: string[] }>;
+  peoples: Array<{ id: PeopleId; name: string; county: string; reading: { phase: Phase; strength: Strength; corroboration: number; round: number } | null; need: string | null; places?: string[] }>;
   commitments: Array<{ id: string; people: PeopleId; need: string; resource: string; by: RoleId; round: number; fulfilled: boolean; stale: boolean }>;
   outcomes: Array<{ key: string; by: RoleId }>;
   choices: Array<{ id: string; question: string; options: Array<{ id: string; label: string }> }>;
   transcript: CommissionEvent[];
-  reveal: { seed: string; truth: Record<PeopleId, PeopleTruth & { village: string; households: number }>; score: Score; inferences: Inference[] } | null;
+  reveal: { seed: string; truth: Record<PeopleId, PeopleTruth & { place: string; households: number }>; score: Score; inferences: Inference[] } | null;
 }

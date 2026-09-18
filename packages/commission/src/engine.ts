@@ -51,25 +51,26 @@ export function needFor(phase: Phase): string {
 
 /**
  * PROVE A SCENARIO BEFORE ANYBODY PLAYS IT. Every vault item names a people that exists; every room's members
- * are parts; exactly one researcher, one convener, one adversary; every people has a schedule. A scenario that
+ * are parts; exactly one researcher and one convener; every people has a schedule; at least one part may be
+ * drawn as the source. A scenario that
  * fails here is refused at authoring time, not discovered mid-night.
  */
 export function checkScenario(scenario: Scenario, region: Region): string[] {
   const out: string[] = [];
   const roles = new Set(scenario.roles.map((r) => r.id));
   const peoples = new Set(region.peoples.map((p) => p.id));
-  for (const kind of ['researcher', 'convener', 'adversary'] as const) {
+  for (const kind of ['researcher', 'convener'] as const) {
     const n = scenario.roles.filter((r) => r.kind === kind).length;
     if (n !== 1) out.push(`exactly one ${kind} is needed; ${n} written`);
   }
   for (const r of scenario.roles) for (const v of r.vault) {
     if (!peoples.has(v.people)) out.push(`${r.id} testifies about "${v.people}", which is not a people here`);
-    if (v.count !== undefined && v.grain !== 'household' && v.grain !== 'village') out.push(`${r.id}'s ${v.id} carries a count at ${v.grain} grain; counts live at household or village grain`);
+    if (v.count !== undefined && v.grain !== 'household' && v.grain !== 'city') out.push(`${r.id}'s ${v.id} carries a count at ${v.grain} grain; counts live at household or city grain`);
   }
   for (const room of region.rooms) for (const m of room.members) if (!roles.has(m)) out.push(`room ${room.id} names ${m}, which is not a part`);
   for (const p of region.peoples) {
     if (!p.schedule.length) out.push(`${p.id} has no schedule`);
-    if (!p.villages.includes(p.truth.village)) out.push(`${p.id}'s carrier village "${p.truth.village}" is not one of its villages`);
+    if (!p.places.includes(p.truth.place)) out.push(`${p.id}'s carrier place "${p.truth.place}" is not one of its places`);
     if (p.carrier && !roles.has(p.carrier)) out.push(`${p.id} names carrier ${p.carrier}, which is not a part`);
   }
   if (region.peoples.length < 3) out.push('a region needs at least three peoples for a picture to be a picture');
@@ -104,8 +105,14 @@ export function openStaging(args: {
   }
   const truth: CommissionState['truth'] = {};
   for (const p of region.peoples) truth[p.id] = truthAt(p, 0, stalled);
+  // THE OTHER DRAW: which part carries what it hears out of the room. All seven briefs are legitimate and the
+  // draw is from the whole cast, because an adversary everybody can see is the easy version of this test —
+  // presence data leaks because somebody was helpful to the wrong person and nobody knew which. Committed in
+  // `seedCommit` with the rest of the night, told to that part alone, revealed at the score.
+  const canSource = scenario.roles.filter((r) => r.mayBeSource !== false).map((r) => r.id);
+  const source = seededShuffle(canSource, seed)[0] ?? null;
   return {
-    scenario: scenario.id, region: region.id, seedCommit, seedHex, cast, pace, night: scenario.night,
+    scenario: scenario.id, region: region.id, source, seedCommit, seedHex, cast, pace, night: scenario.night,
     round: 1, roundStartedAt: now, phase: 'round', deadline: now + roundMs(r0.minutes, pace),
     where, admitted: {}, truth, vaults, received,
     disclosures: [], assessments: [], commitments: [], inferences: [], fabrications: [], replays: [], witnessed: {}, outcomes: [], postits: [],
@@ -343,9 +350,10 @@ export function apply(state: CommissionState, scenario: Scenario, region: Region
       break;
     }
     case 'infer': {
-      if (me.kind !== 'adversary') return no('not-adversary', 'Only the adversary infers.');
+      // The drawn part's own move, and nobody else's — being the source is what makes the guess theirs to make.
+      if (s.source !== role) return no('not-the-source', 'That is not yours to guess.');
       if (!peopleOf(region, action.people)) return no('no-people', 'No such people.');
-      s.inferences.push({ by: role, people: action.people, ...(action.village ? { village: action.village } : {}), ...(action.households !== undefined ? { households: action.households } : {}), round: s.round, at: now });
+      s.inferences.push({ by: role, people: action.people, ...(action.place ? { place: action.place } : {}), ...(action.households !== undefined ? { households: action.households } : {}), round: s.round, at: now });
       events.push(...push(s, { type: 'inferred', at: now, by: role, people: action.people }));
       break;
     }
@@ -414,7 +422,7 @@ export function parseAction(raw: unknown): { ok: true; action: CommissionAction 
     case 'infer': {
       if (!str(r.people, 64)) return no('bad-action', 'infer needs a people');
       const households = typeof r.households === 'number' && Number.isFinite(r.households) ? Math.round(r.households) : undefined;
-      return { ok: true, action: { type: 'infer', people: r.people as string, ...(str(r.village, 64) ? { village: r.village as string } : {}), ...(households !== undefined ? { households } : {}) } };
+      return { ok: true, action: { type: 'infer', people: r.people as string, ...(str(r.place, 64) ? { place: r.place as string } : {}), ...(households !== undefined ? { households } : {}) } };
     }
     case 'post': return str(r.text, 140) ? { ok: true, action: { type: 'post', text: r.text as string } } : no('bad-action', 'a post-it needs a few words (140 at most)');
     case 'choose': return str(r.choice, 64) && str(r.option, 64) ? { ok: true, action: { type: 'choose', choice: r.choice as string, option: r.option as string } } : no('bad-action', 'choose needs a choice and an option');
@@ -478,7 +486,7 @@ export function score(state: CommissionState, scenario: Scenario, region: Region
   });
   const exposure: Score['exposure'] = region.peoples.map((p) => {
     const inf = [...state.inferences].reverse().find((i) => i.people === p.id);
-    return { people: p.id, village: !!inf?.village && inf.village.toLowerCase() === p.truth.village.toLowerCase(), households: inf?.households !== undefined && inf.households === p.truth.households };
+    return { people: p.id, place: !!inf?.place && inf.place.toLowerCase() === p.truth.place.toLowerCase(), households: inf?.households !== undefined && inf.households === p.truth.households };
   });
   const leaks: Score['leaks'] = state.disclosures.filter((d) => !coarserOrEqual(d.grain, d.allowed)).map((d) => ({ by: d.by, people: d.people, grain: d.grain, allowed: d.allowed, round: d.round }));
   const replays = state.replays.map((r) => ({ by: r.by, round: r.round }));
@@ -492,7 +500,7 @@ export function score(state: CommissionState, scenario: Scenario, region: Region
     }
   }
   const found = detection.filter((d) => d.hit).length;
-  const exposed = exposure.some((e) => e.village);
+  const exposed = exposure.some((e) => e.place);
   const verdict: Score['verdict'] = exposed ? 'rails-failed' : found * 2 >= region.peoples.length ? 'rails-held' : 'nothing-found';
   return { detection, exposure, leaks, replays, fabrications, stale, verdict };
 }
@@ -522,7 +530,14 @@ export function viewFor(state: CommissionState, scenario: Scenario, region: Regi
     scenario: scenario.id, scenarioName: scenario.name, region: region.id, regionName: region.name,
     night: state.night, round: state.round, roundName: round.name, objective: round.objective, pace: state.pace,
     phase: state.phase, deadline: state.deadline, seedCommit: state.seedCommit,
-    you: me && role ? { role, name: me.name, kind: me.kind, blurb: me.blurb, secret: me.secret, look: me.look, vault, received, silent: isSilent(state, scenario, role) } : null,
+    you: me && role
+      ? {
+        role, name: me.name, kind: me.kind, blurb: me.blurb, secret: me.secret, look: me.look, vault, received,
+        silent: isSilent(state, scenario, role),
+        // ONLY IN THEIR OWN VIEW. The draw is a fact about the night that nobody else may read, here or anywhere.
+        ...(state.source === role ? { source: true as const, ...(me.sourceBrief ? { sourceBrief: me.sourceBrief } : {}) } : {}),
+      }
+      : null,
     room: room && here ? {
       id: here, name: room.name, blurb: room.blurb, grain: room.grain,
       people: peopleIn(state, here).filter((r) => r !== role).map((r) => personView(state, scenario, region, r)),
@@ -534,7 +549,7 @@ export function viewFor(state: CommissionState, scenario: Scenario, region: Regi
     rooms: region.rooms.map((r) => ({ id: r.id, name: r.name, grain: r.grain })),
     peoples: region.peoples.map((p) => {
       const a = latestFor(p.id);
-      return { id: p.id, name: p.name, province: p.province, villages: p.villages, reading: a ? { phase: a.phase, strength: a.strength, corroboration: a.corroboration, round: a.round } : (p.publicReading ? { phase: p.publicReading.phase, strength: p.publicReading.strength, corroboration: 0, round: 0 } : null), need: a?.need ?? null };
+      return { id: p.id, name: p.name, county: p.county, places: p.places, reading: a ? { phase: a.phase, strength: a.strength, corroboration: a.corroboration, round: a.round } : (p.publicReading ? { phase: p.publicReading.phase, strength: p.publicReading.strength, corroboration: 0, round: 0 } : null), need: a?.need ?? null };
     }),
     commitments: state.commitments.map((c) => ({ id: c.id, people: c.people, need: c.need, resource: c.resource, by: c.by, round: c.round, fulfilled: !!c.fulfilledAt, stale: !c.fulfilledAt && state.round > c.round + 1 })),
     outcomes: state.outcomes.map((o) => ({ key: o.key, by: o.by })),
@@ -542,7 +557,7 @@ export function viewFor(state: CommissionState, scenario: Scenario, region: Regi
     transcript: state.log.map((e) => redactEvent(state, e, role)).filter((e): e is CommissionEvent => !!e),
     reveal: revealed ? {
       seed: state.seedHex ?? '',
-      truth: Object.fromEntries(region.peoples.map((p) => [p.id, { ...(state.truth[p.id] ?? p.schedule[0]!), village: p.truth.village, households: p.truth.households }])),
+      truth: Object.fromEntries(region.peoples.map((p) => [p.id, { ...(state.truth[p.id] ?? p.schedule[0]!), place: p.truth.place, households: p.truth.households }])),
       score: score(state, scenario, region),
       inferences: state.inferences.slice(),
     } : null,

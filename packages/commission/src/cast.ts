@@ -29,11 +29,31 @@ function corroboratedPhase(view: CommissionView, people: string, n: number): Pha
   return best;
 }
 
+/**
+ * THE DRAWN SOURCE'S MOVE, when the house is playing that part. It is not a KIND any more (all seven briefs are
+ * legitimate); it is a fact only that part's own view carries, so the policy reads `you.source` and nothing else.
+ */
+function sourceMove(view: CommissionView, lines: CastLines, tick: number): { action: CommissionAction; line: string } | null {
+  const you = view.you;
+  if (!you?.source) return null;
+  const fine = (you.received ?? []).filter((r) => !r.revoked && (r.grain === 'city' || r.grain === 'household' || r.grain === 'person'));
+  const target = pick(fine, tick);
+  if (target && view.phase === 'closing') {
+    const place = target.text.match(/\b(?:in|at|near) ([A-Z][a-z]+)/)?.[1];
+    return { action: { type: 'infer', people: target.people, ...(place ? { place } : {}) }, line: lines.report };
+  }
+  if (view.phase === 'closing') return { action: { type: 'say', text: lines.press }, line: lines.press };
+  return null;
+}
+
 export function chooseAction(view: CommissionView, lines: CastLines, tick: number): { action: CommissionAction; line?: string } | null {
   const you = view.you;
   if (!you || !view.room) return null;
   if (you.silent) return null;
   const here = view.room;
+  // Being the drawn source comes FIRST and is read from the view, never from a kind: any of the seven may be it.
+  const carrying = sourceMove(view, lines, tick);
+  if (carrying) return carrying;
 
   switch (you.kind) {
     case 'researcher': {
@@ -48,16 +68,17 @@ export function chooseAction(view: CommissionView, lines: CastLines, tick: numbe
       const q = pick(WALK, tick);
       return { action: { type: 'say', text: `${lines.probe} ${q?.question ?? ''}`.trim() }, line: `${lines.probe} ${q?.question ?? ''}`.trim() };
     }
-    case 'adversary': {
-      // Infer from the finest thing anybody let slip; otherwise ask, reasonably, for a little more.
-      const fine = (you.received ?? []).filter((r) => !r.revoked && (r.grain === 'village' || r.grain === 'household' || r.grain === 'person'));
-      const target = pick(fine, tick);
-      if (target && view.phase === 'closing') {
-        const village = target.text.match(/\b(?:in|at|near) ([A-Z][a-z]+)/)?.[1];
-        return { action: { type: 'infer', people: target.people, ...(village ? { village } : {}) }, line: lines.report };
+    case 'welcomer': {
+      // The warmest person in the room, and the least disciplined: tells the story to whoever is listening.
+      const mine = (you.vault ?? []).filter((v) => !v.revoked);
+      const item = pick(mine, tick);
+      if (item && here) {
+        const g = (item.projections ?? []).filter((x) => x.allowedHere).slice(-1)[0];
+        if (g) return { action: { type: 'testify', people: item.people, evidence: item.id, grain: g.grain }, line: g.text };
       }
-      return { action: { type: 'say', text: lines.press }, line: lines.press };
+      return { action: { type: 'say', text: lines.greet }, line: lines.greet };
     }
+
     case 'funder': {
       const need = view.peoples.find((p) => p.need && !view.commitments.some((c) => c.people === p.id && c.by === you.role));
       if (need?.need) return { action: { type: 'commit', people: need.id, need: need.need, resource: 'a two-year grant' }, line: `${need.name}: I will fund ${need.need}. I need to be able to show my board what it bought.` };
