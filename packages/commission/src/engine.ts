@@ -245,6 +245,15 @@ export function apply(state: CommissionState, scenario: Scenario, region: Region
     case 'say': {
       const text = action.text.trim().slice(0, 280);
       if (!text) return no('empty', 'Say something.');
+      // AN AGENT DOES NOT SAY THE SAME THING AGAIN (2026-09-18). A model-played part with one good sentence said
+      // it on every wake it was asked, and the room read "We are meeting. That is as much as I say" eight times
+      // in four minutes. The engine is where every path meets — the house's rules, a persona's model, a fallback —
+      // so the rule lives here: an agent's line already among its last few is refused. A PERSON may repeat
+      // themselves; that is theirs to do.
+      if (via === 'agent') {
+        const mine = s.log.filter((e): e is Extract<CommissionEvent, { type: 'said' }> => e.type === 'said' && e.by === role).slice(-5);
+        if (mine.some((e) => e.text.toLowerCase() === text.toLowerCase())) return no('said-that', 'You said that already.');
+      }
       events.push(...push(s, { type: 'said', at: now, by: role, room: here, text, via, saw: saw() }));
       break;
     }

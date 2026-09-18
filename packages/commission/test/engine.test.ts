@@ -106,6 +106,17 @@ describe('permission slips — testify at a grain', () => {
     // coarser is a different slip
     expect(go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'people' }).ok).toBe(true);
   });
+  it('an agent does not say the same thing again; a person may', () => {
+    const s = open();
+    const twice = (via: 'human' | 'agent') => {
+      const first = apply(s, S, R, 'returnee', { type: 'say', text: 'We are meeting.' }, 2_000_005, via);
+      expect(first.ok).toBe(true);
+      return first.ok ? apply(first.state, S, R, 'returnee', { type: 'say', text: 'we are meeting.' }, 2_000_006, via) : first;
+    };
+    const agent = twice('agent');
+    expect(agent.ok).toBe(false); if (!agent.ok) expect(agent.code).toBe('said-that');
+    expect(twice('human').ok).toBe(true);
+  });
   it('a slip finer than the room’s rule is a LEAK, recorded on the slip and in the score', () => {
     let s = open(); // everybody in the commons: county grain
     const r = go(s, 'returnee', { type: 'testify', people: 'ouren', evidence: 'r1', grain: 'household' });
