@@ -479,7 +479,17 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   (ROP 103458, Maay) that a coarse picture files under Somali and the census files under Swahili, and the three
   communities the registry marks confidence C are the three where the night puts the motion. AN ARCHETYPE BELONGS
   TO A NIGHT, NOT A ROLE (it carries the character): the marches keep `commission-*`, Greeley has `greeley-*`, and
-  `scenario-to-archetypes.mjs` takes any scenario's A-box. The place is the host church on 10th Street, derived
+  `scenario-to-archetypes.mjs` takes any scenario's A-box. WALKED LIVE: `scripts/greeley-walk.cjs` (the front door,
+  the board, the seven parts, the rooms, a line, an anonymous post-it, a published reading, the drawn bodies) and
+  `scripts/greeley-grain.cjs` (the ceiling: a slip finer than you hold is refused by NAME, the same item at county
+  grain names no town, at household grain in a county room it is not refused but LEAKS — recorded, never
+  adjudicated, so the only observable proof is that the town is now in the room — and the living room is where
+  household grain may be said). TWO TRAPS THESE PROBES KEEP FALLING INTO, written down because I fell into both
+  again: a kicker is uppercased by CSS and `innerText` returns the TRANSFORMED text, so a case-sensitive regex
+  misses it; and ACTS TRAVEL ONLY OVER THE SOCKET — there is no HTTP act route, so a probe that invents one gets
+  `404 not found` and, if it counts "no `ok:false`" as success, reports GREEN having tested nothing. A refusal is
+  `{type:'error', code:'finer-than-held'}`: the code is the answer, the type is not. The place is the host church
+  on 10th Street, derived
   from the meeting house — the living room in Evans is deliberately NOT in the building, because household grain
   does not belong in a church hall. `pnpm gen:commission` builds both worlds and both plans.
 - **THE WORLD IS AUTHORED UNDER THE FAITH ONTOLOGY**:
