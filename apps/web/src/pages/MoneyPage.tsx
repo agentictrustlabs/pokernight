@@ -1,6 +1,6 @@
 import type { AppSession } from '../lib/types';
 import { StartPanel } from '../components/StartPanel';
-import { TABLES_HASH } from '../lib/routes';
+import { newTableHash } from '../lib/routes';
 import { pickSeat } from '../lib/lobby';
 import { stakeStage } from '../lib/stake';
 import type { TreasuryView } from '../lib/treasury';
@@ -35,7 +35,8 @@ export function MoneyPage({
 }) {
   const ready = stakeStage(treasury) === 'ready';
   // Where "take a seat" goes once somebody is set up: a money table with room, because that is what
-  // they just got set up FOR.
+  // they just got set up FOR — and ONLY a money table. This button stands under "buy-ins come out of
+  // this"; a play-money seat here is a promise about the balance that the table cannot keep.
   const target = pickSeat(tables);
   return (
     <div className="stack money-page">
@@ -49,8 +50,8 @@ export function MoneyPage({
       />
       {ready && !target ? (
         <p className="hint">
-          You are set up to play. <a href={TABLES_HASH}>No table has a free seat right now</a> — open one and it is ready
-          when you are.
+          You are set up to play. No table playing for Sheqels has a free seat right now —{' '}
+          <a href={newTableHash()}>open one</a> and it is ready when you are.
         </p>
       ) : null}
     </div>

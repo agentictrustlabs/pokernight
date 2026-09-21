@@ -186,17 +186,19 @@ describe('describeMoment', () => {
  * be one. Poker shows its blinds; anything else shows what it is rather than an invented number.
  */
 describe('pickSeat', () => {
-  it('prefers a settled table with room, and takes any free seat otherwise', () => {
+  it('offers a settled table with room, and NEVER a play-money one', () => {
     const play = table({ tableId: 'play', seated: 1 });
     const money = table({ tableId: 'money', seated: 1, settlement: 'mandate-transfer' });
     expect(pickSeat([play, money])?.tableId).toBe('money');
-    expect(pickSeat([play])?.tableId).toBe('play');
-    expect(pickSeat([table({ seated: 6 })])).toBeNull();
+    // The money page's button stands under "buy-ins come out of this". A play-money seat there sent
+    // somebody to lose 200 chips and come back to a balance that had, correctly, not moved.
+    expect(pickSeat([play])).toBeNull();
+    expect(pickSeat([table({ seated: 6, settlement: 'mandate-transfer' })])).toBeNull();
     expect(pickSeat(null)).toBeNull();
   });
 
   it('offers a canasta seat, because this client has a canasta board', () => {
-    expect(pickSeat([table({ tableId: 'canasta', seated: 0, game: 'canasta' })])?.tableId).toBe('canasta');
+    expect(pickSeat([table({ tableId: 'canasta', seated: 0, game: 'canasta', settlement: 'mandate-transfer' })])?.tableId).toBe('canasta');
   });
 
   it('never sends a player to a game this client has no board for', () => {
@@ -204,7 +206,7 @@ describe('pickSeat', () => {
     // must not be offered: there is no seat on the screen it would open.
     const gin = table({ tableId: 'gin', seated: 0, game: 'gin-rummy', settlement: 'mandate-transfer' });
     expect(pickSeat([gin])).toBeNull();
-    expect(pickSeat([gin, table({ tableId: 'holdem', seated: 3 })])?.tableId).toBe('holdem');
+    expect(pickSeat([gin, table({ tableId: 'holdem', seated: 3, settlement: 'mandate-transfer' })])?.tableId).toBe('holdem');
   });
 });
 
