@@ -77,6 +77,17 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   page: a club you are not in is indistinguishable from one that does not exist, so an invitation
   carries the club instead. A club's page leads with ITS TABLES, then the roster. No rail at a table.
   `pnpm walk:nav` drives all of it against the live deployment as a real signed-in person.
+- **MONEY MOVES ONLY AT A TABLE THAT SETTLES, AND THE APP MUST NEVER POINT AT A PLAY-MONEY ONE AS IF IT DID**
+  (2026-09-21). A person bought in 200 at "Guest night", lost, and found Your money still at 10,000 — the table
+  was `play-money`, so the balance was right and the app was wrong twice: the money page's "Take a seat at …"
+  fell back to ANY free seat (`pickSeat` now answers only a settled table, or null and "open one"), and the
+  new-table form opened on play money for everybody (it now defaults to Sheqels for somebody who is `ready`,
+  following `ready` until they pick). `pnpm walk:allin` is the proof: Alice and Bob through the real door, a
+  Sheqel table, all in, and the chain and both screens read −200/+200 — and it says out loud when the table it
+  was pointed at is play money, because at one of those "did the money move" has no answer. AND THE SEED IS A
+  STAKE FOR AN EMPTY ACCOUNT, NOT A FLOOR: `quick-start` used to mint any balance under 10 000 back up to it, and
+  it runs on every arrival, so the same person's 200 SHQ loss was refunded the next time they signed in
+  (`seedOwed`: the whole seed at zero, nothing otherwise; the money page's "add" is the way up from low).
 - **A PRACTICE TABLE IS ONE PER PERSON, DERIVED NOT STORED, AND IN NO LOBBY.** `POST /practice`
   returns `sha256(playerId + game)` as a UUID and inits that table, so asking twice is asking about
   the same one and nothing has to remember it exists. It is created directly rather than by a

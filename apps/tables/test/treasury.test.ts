@@ -176,15 +176,15 @@ describe('GET /tables/:id/settlement', () => {
     b.close();
   });
 
-  it('tops a chosen treasury up to the seed floor rather than only funding an empty one', async () => {
-    // A treasury the player CHOSE can hold less than a buy-in. Leaving it there is the same dead end
-    // as having no treasury: a 3-Sheqel balance at a 40-Sheqel table has no way forward.
-    const { SEED_AMOUNT } = await import('../src/routes-treasury.js');
+  it('seeds an EMPTY treasury and never tops a played one back up', async () => {
+    // The seed used to be a floor: any balance under 10 000 was minted back up to 10 000, and since
+    // quick-start runs on every arrival a person who lost 200 signed in the next day to find it back.
+    // The balance is the record of what happened at the tables; only an empty account is staked.
+    const { SEED_AMOUNT, seedOwed } = await import('../src/routes-treasury.js');
     expect(SEED_AMOUNT).toBe('10000');
-    // The floor is compared against the balance, so a partly-funded treasury is under it.
-    const floor = 10_000n * 1_000_000n;
-    expect(3n * 1_000_000n < floor).toBe(true);
-    // And a treasury already at or above the floor is left alone.
-    expect(floor >= floor).toBe(true);
+    expect(seedOwed(0n)).toBe(10_000n * 1_000_000n);
+    expect(seedOwed(9_800n * 1_000_000n)).toBe(0n); // lost 200: stays lost
+    expect(seedOwed(3n * 1_000_000n)).toBe(0n); // low, but theirs — the money page's "add" is the way up
+    expect(seedOwed(10_400n * 1_000_000n)).toBe(0n);
   });
 });

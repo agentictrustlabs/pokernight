@@ -29,6 +29,7 @@
     "play:canasta:practice": "node scripts/play-canasta.cjs --practice",
     "walk:club": "node scripts/walk-club.cjs",
     "walk:money": "node scripts/walk-money.cjs",
+    "walk:allin": "node scripts/walk-allin.cjs",
     "walk:fill": "node scripts/walk-fill.cjs",
     "walk:coach": "node scripts/walk-coach.cjs",
     "walk:round-end": "node scripts/walk-round-end.cjs",
