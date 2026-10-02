@@ -142,6 +142,8 @@ export class FieldOpsDO extends DurableObject<Env> {
     const cast = this.castFor(pair.scenario.roles, human, pair.scenario.id);
     // A SEASON OPENED AGAIN LEAVES ITS CHARTERED AGENTS BEHIND — they are in the chartered ledger for a reset to retire.
     this.charters = {}; this.admitted = [];
+    // The talk caches are keyed by the board's agent, but clear them too so a re-opened season starts its boards clean.
+    this.boards = {}; this.talked = new Set();
     const seed = randomSeed();
     const pace = this.paceFor(cast, pair.scenario.dayMinutes, b.pace === 'short' ? 'short' : 'full');
     this.state = openStaging({ scenario: pair.scenario, region: pair.region, cast, seedHex: bytesToHex(seed), seedCommit: seedCommit(seed), now: Date.now(), pace });
@@ -678,9 +680,9 @@ export class FieldOpsDO extends DurableObject<Env> {
         if (e.type === 'said') {
           const teamId = s.membership[e.by];
           const team = teamId ? s.teams.find((t) => t.id === teamId) : undefined;
-          const boardKey = team?.agent ? team.id : 'org';
           const boardSa = team?.agent ?? estate.organization?.sa;
           if (!boardSa) continue;
+          const boardKey = boardSa.toLowerCase(); // the agent address: a re-chartered team gets a fresh board, never the old one's channel
           let channel = this.boards[boardKey];
           if (!channel) {
             // The team's founder opens its `general`; the organization's custodian opens the organization's.
