@@ -39,7 +39,15 @@
     "bench:preflop": "tsx bench/pokerbench.mts --set preflop",
     "bench:postflop": "tsx bench/pokerbench.mts --set postflop",
     "bench:chart": "tsx bench/build-preflop-chart.mts && tsx bench/build-postflop-chart.mts",
-    "provision:missions-registry": "tsx scripts/provision-missions-registry.mts"
+    "provision:missions-registry": "tsx scripts/provision-missions-registry.mts",
+    "gen:fieldops": "node scripts/registry-to-fieldops.mjs > packages/fieldops/src/worlds/registry.generated.ts && node scripts/world-to-fieldops.mjs > packages/fieldops/src/worlds/northern-colorado.generated.ts && node scripts/fieldops-to-archetypes.mjs",
+    "provision:fieldops": "node scripts/provision-fieldops.mjs",
+    "walk:fieldops": "node scripts/walk-fieldops.cjs",
+    "reset:fieldops": "node scripts/reset-fieldops-estate.mjs",
+    "watch:fieldops": "node scripts/watch-fieldops.cjs",
+    "rehang:fieldops": "node scripts/rehang-fieldops.mjs",
+    "admit:fieldops": "node scripts/admit-fieldops-realm.mjs",
+    "cleanup:fieldops": "node scripts/cleanup-fieldops-homes.mjs"
   },
   "devDependencies": {
     "@agenticprimitives/a2a": "0.0.0-alpha.22",

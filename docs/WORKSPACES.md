@@ -256,6 +256,18 @@ without a Home gets one at sign-in and is invited by the name they took), the de
 comes through a Home), guests with a validity window (a night's guest list is a follow-up), and the
 materialiser (nights are derived from the rule at read time, exceptions laid over).
 
+**The organization behind the workspace (2026-10-02).** A `.workspace` agent is a SERVICE that coordinates the
+club's workspace (`aporg:coordinatedBy`); it is not an organization and cannot have members. The Home's
+`workspace-create` now charters the club's ORGANIZATION (`<label>.org`) first and parents the workspace under it
+(`aporg:governedBy`), and the two membership ceremonies above record the member on the organization — the
+`org.membership:member:<sa>` record with its role assignment lives there, the has-member credential is the
+member's to accept and grants nothing, and the host's stewardship is a third record beside them. The club's id is
+still the workspace agent (the wire, the tables and the huddle scope bind to it), and `club.read` still answers
+the roster and the asking person's standing — the Home derives both from the governing organization, resolved from
+the workspace's `workspace.governor` pointer. A club chartered before this holds its own records until the Home's
+`workspace-governor.mts` gives it an organization and moves them. The same rule, with the same ceremonies, is what
+Field Operations and the field app (`~/engage`) run on.
+
 **Still to do:** ending a membership at the Home from the card room (the Home's own remove ceremony);
 a "finish setting up" road for a club whose wire ceremony did not complete; RSVPs on the nights
 record; and the Home-side reads are ~2 s per club page, which is the vault's floor today.

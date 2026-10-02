@@ -41,6 +41,7 @@ bindings = [
   { name = "ROOMS", class_name = "SceneDO" },
   { name = "STAGINGS", class_name = "MysteryDO" },
   { name = "COMMISSIONS", class_name = "CommissionDO" },
+  { name = "FIELDOPS", class_name = "FieldOpsDO" },
 ]
 
 # Migration history is shared across envs and is applied to live Workers. Migration tags must NEVER be
@@ -84,6 +85,11 @@ new_sqlite_classes = ["MysteryDO"]
 tag = "v8"
 new_sqlite_classes = ["CommissionDO"]
 
+# FIELD OPERATIONS (docs/FIELD-OPERATIONS.md): one object per season — real agents on real-shaped field work, written to the field app.
+[[migrations]]
+tag = "v9"
+new_sqlite_classes = ["FieldOpsDO"]
+
 [[kv_namespaces]]
 binding = "CLUB_WIRES"
 id = "e8fd7d1531324551a74655bb622dab58"
@@ -109,6 +115,11 @@ MYSTERY_CAST_AGENTS = ""
 COMMISSION_CAST = ""
 COMMISSION_CAST_AGENTS = ""
 COMMISSION_DIRECTOR = ""
+# FIELD OPERATIONS: the cast of a season (`role=agent@custodian`), who narrates, and the estate note (a secret in production).
+FIELDOPS_CAST = ""
+FIELDOPS_CAST_AGENTS = ""
+FIELDOPS_DIRECTOR = ""
+FIELDOPS_ESTATE = ""
 MYSTERY_DIRECTOR = ""
 CHAIN_ID = "31337"
 RPC_URL = "http://127.0.0.1:8545"
@@ -175,6 +186,7 @@ bindings = [
   { name = "ROOMS", class_name = "SceneDO" },
   { name = "STAGINGS", class_name = "MysteryDO" },
   { name = "COMMISSIONS", class_name = "CommissionDO" },
+  { name = "FIELDOPS", class_name = "FieldOpsDO" },
 ]
 
 [[env.faithnet.migrations]]
@@ -209,6 +221,11 @@ new_sqlite_classes = ["MysteryDO"]
 [[env.faithnet.migrations]]
 tag = "v8"
 new_sqlite_classes = ["CommissionDO"]
+
+# FIELD OPERATIONS (docs/FIELD-OPERATIONS.md): one object per season — real agents on real-shaped field work, written to the field app.
+[[env.faithnet.migrations]]
+tag = "v9"
+new_sqlite_classes = ["FieldOpsDO"]
 
 [[env.faithnet.kv_namespaces]]
 binding = "CLUB_WIRES"
@@ -388,4 +405,10 @@ COMMISSION_CAST_FIRST_LIGHT = "returnee=ilse-elena.me@elena,household=teodor-dav
 COMMISSION_CAST_SECOND_WINTER = "returnee=ilse-elena.me@elena,household=teodor-dave.me@dave,agency=margit-carol.me@carol,funder=anselm-bob.me@bob,researcher=wren-alice.me@alice,convener=bram-nathan.me@nathan,welcomer=caspar-david.me@david"
 COMMISSION_CAST_AGENTS = ""
 COMMISSION_DIRECTOR = ""
+# FIELD OPERATIONS: sixteen parts, each a persona of a demo person (charter-cast.mts --cast demo/fieldops-cast.json). Empty until
+# chartered; the house plays every part until then. The estate note (`FIELDOPS_ESTATE`) is a secret, not a var.
+FIELDOPS_CAST = "naomi=naomi-elena.me@elena,yusuf=yusuf-dave.me@dave,carla=carla-carol.me@carol,farid=farid-bob.me@bob,grace=grace-alice.me@alice,tomas=tomas-nathan.me@nathan,olena=olena-david.me@david,mark=mark-bob.me@bob,hodan=hodan-elena.me@elena,luis=luis-dave.me@dave,priya=priya-alice.me@alice,sam=sam-nathan.me@nathan,dan=dan-carol.me@carol,kim=kim-david.me@david,jenna=jenna-alice.me@alice,walt=walt-bob.me@bob"
+FIELDOPS_CAST_NORTH_OF_DENVER = "naomi=naomi-elena.me@elena,yusuf=yusuf-dave.me@dave,carla=carla-carol.me@carol,farid=farid-bob.me@bob,grace=grace-alice.me@alice,tomas=tomas-nathan.me@nathan,olena=olena-david.me@david,mark=mark-bob.me@bob,hodan=hodan-elena.me@elena,luis=luis-dave.me@dave,priya=priya-alice.me@alice,sam=sam-nathan.me@nathan,dan=dan-carol.me@carol,kim=kim-david.me@david,jenna=jenna-alice.me@alice,walt=walt-bob.me@bob"
+FIELDOPS_CAST_AGENTS = ""
+FIELDOPS_DIRECTOR = ""
 MYSTERY_DIRECTOR = "belvedere-house-svc.faithnet.ai"

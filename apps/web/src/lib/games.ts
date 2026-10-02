@@ -93,6 +93,7 @@ export const CLUB_GAMES: ReadonlyArray<{ id: string; name: string; kind: ClubGam
   { id: 'canasta', name: 'Canasta', kind: 'table', line: 'Four-handed partnership canasta, played for score.' },
   { id: 'mystery', name: 'Mystery Night', kind: 'night', line: 'An evening at the Hôtel Belvedere: eight parts, three acts, one of you did it.' },
   { id: 'commission', name: 'Thursday in Greeley', kind: 'night', line: 'Seven parts, five peoples, one county — a picture assembled from permission slips.' },
+  { id: 'fieldops', name: 'Field Operations', kind: 'night', line: 'A season of field work north of Denver, played by real agents; days in minutes, toward Phase 7.' },
 ];
 export function clubGameOf(games: ReadonlyArray<string> | null | undefined): string {
   const g = games?.[0];

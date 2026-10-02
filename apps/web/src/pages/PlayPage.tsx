@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { AppSession, TableSummary } from '../lib/types';
-import { ApiError, api, commissionApi, mysteryApi, type CommissionScenarioSummary, type MysteryTitleSummary } from '../lib/api';
+import { ApiError, api, commissionApi, fieldOpsApi, mysteryApi, type CommissionScenarioSummary, type FieldOpsScenarioSummary, type MysteryTitleSummary } from '../lib/api';
 import { gameLabel } from '../lib/games';
-import { commissionHash, goTo, mysteryHash, TABLES_HASH } from '../lib/routes';
+import { commissionHash, fieldOpsHash, goTo, mysteryHash, TABLES_HASH } from '../lib/routes';
 import { seatsFree, withRoom } from '../lib/lobby';
 import { Drawer } from '../components/Drawer';
 
@@ -27,6 +27,7 @@ export function PlayPage({ session }: { session: AppSession }) {
     <div className="play">
       <MysteryCard session={session} />
       <CommissionCard session={session} />
+      <FieldOpsCard session={session} />
       <PracticeCard session={session} game="canasta" />
       <PracticeCard session={session} game="poker" />
       <Running session={session} />
@@ -192,7 +193,7 @@ function CommissionCard({ session }: { session: AppSession }) {
               <option value="">Whoever the house gives you</option>
               {chosen.roles.map((r) => <option key={r.id} value={r.id}>{r.name} — {r.kind}</option>)}
             </select>
-            <span className="hint">{chosen.roles.find((r) => r.id === role)?.blurb ?? chosen.tone}</span>
+            <span className="hint">{role === 'watch' ? 'Every part is played by its own agent at the Home; you look on, and the season runs while you are actually at the page.' : chosen.roles.find((r) => r.id === role)?.blurb ?? chosen.tone}</span>
           </label>
         ) : null}
         {err ? <div className="form-error">{err}</div> : null}
@@ -210,6 +211,88 @@ function CommissionCard({ session }: { session: AppSession }) {
           }}
         >
           {busy ? 'Opening the road…' : `Come to ${chosen?.regionName ?? 'the night'}`}
+        </button>
+      </Drawer>
+    </section>
+  );
+}
+
+
+/**
+ * A SEASON OF FIELD OPERATIONS (docs/FIELD-OPERATIONS.md).
+ *
+ * The fourth game and the first played on a map by REAL AGENTS: four teams of worker personas, four partner-church
+ * agents, twelve of the public registry's people communities, each starting where the public picture puts it. One
+ * press and you are a worker on a team for six weeks that play out in minutes; what the season does is written to
+ * the field app, marked as a game's, and the score says how far the field moved and how every agent played.
+ */
+function FieldOpsCard({ session }: { session: AppSession }) {
+  const [scenarios, setScenarios] = useState<FieldOpsScenarioSummary[] | null>(null);
+  const [role, setRole] = useState('');
+  const [pace, setPace] = useState<'short' | 'full'>('short');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fieldOpsApi.scenarios().then((r) => alive && setScenarios(r.scenarios)).catch(() => alive && setScenarios([]));
+    return () => { alive = false; };
+  }, []);
+  const chosen = scenarios?.[0] ?? null;
+  const floors = chosen ? chosen.communities.reduce<Record<number, number>>((m, c) => ({ ...m, [c.phase]: (m[c.phase] ?? 0) + 1 }), {}) : {};
+  return (
+    <section className="panel play-card play-fieldops">
+      <div className="play-band">
+        <span className="play-suit" aria-hidden="true">⛰</span>
+        <div>
+          <span className="play-kicker">{chosen ? `${chosen.regionName} · ${chosen.teams.length} teams · ${chosen.communities.length} communities · ${chosen.weeks} weeks` : 'Field Operations'}</span>
+          <h2>{chosen ? chosen.name : scenarios === null ? 'Field Operations' : 'Field Operations — unavailable'}</h2>
+        </div>
+      </div>
+      <div className="play-body">
+        <p className="hint">
+          {chosen ? chosen.blurb : scenarios === null ? 'A season of field work north of Denver, played by real agents toward Phase 7.' : 'No season is being offered here at the moment. Try again in a minute.'}
+        </p>
+        {chosen ? <p className="hint small">The registry's floor: {Object.entries(floors).sort().map(([p, n]) => `${n} at P${p}`).join(', ')}{chosen.registryReadAt ? ` (read ${chosen.registryReadAt.slice(0, 10)})` : ''}.</p> : null}
+        <button type="button" className="primary" disabled={!chosen} onClick={() => setOpen(true)}>Set up the season…</button>
+      </div>
+      <Drawer open={open} title={chosen ? chosen.name : 'Field Operations'} onClose={() => setOpen(false)}>
+        {chosen ? (
+          <label className="mystery-part">
+            How long you have
+            <select value={pace} onChange={(e) => setPace(e.target.value as 'short' | 'full')}>
+              <option value="short">A short season — six weeks in about twenty minutes</option>
+              <option value="full">The whole season — a day a minute, about an hour</option>
+            </select>
+            <span className="hint">A day lasts longer when agents are playing, so every one of them gets asked.</span>
+          </label>
+        ) : null}
+        {chosen ? (
+          <label className="mystery-part">
+            Your part
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="">Whoever the field gives you</option>
+              <option value="watch">Nobody — watch all sixteen agents play it</option>
+              {chosen.roles.map((r) => <option key={r.id} value={r.id}>{r.name} — {r.kind}{r.team ? ` · ${chosen.teams.find((t) => t.id === r.team)?.name ?? r.team}` : ''}</option>)}
+            </select>
+            <span className="hint">{chosen.roles.find((r) => r.id === role)?.blurb ?? chosen.tone}</span>
+          </label>
+        ) : null}
+        {err ? <div className="form-error">{err}</div> : null}
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !chosen}
+          onClick={async () => {
+            if (!chosen) return;
+            setBusy(true); setErr(null);
+            try {
+              const r = await fieldOpsApi.solo({ scenario: chosen.id, pace, ...(role ? { role } : {}) }, session.token);
+              goTo(fieldOpsHash(r.staging.stagingId));
+            } catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false); }
+          }}
+        >
+          {busy ? 'Driving out…' : 'Start the season'}
         </button>
       </Drawer>
     </section>

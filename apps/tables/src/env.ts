@@ -2,6 +2,7 @@ import type { LobbyDO } from './lobby-do.js';
 import type { MissionRegistryDO } from './missions.js';
 import type { MysteryDO } from './mystery-do.js';
 import type { CommissionDO } from './commission-do.js';
+import type { FieldOpsDO } from './fieldops-do.js';
 import type { SceneDO } from './scene-do.js';
 import type { SessionDO } from './session-do.js';
 import type { PokerTableDO } from './table-do.js';
@@ -18,6 +19,8 @@ export interface Env {
   STAGINGS: DurableObjectNamespace<MysteryDO>;
   /** GREAT COMMISSION (docs/GREAT-COMMISSION.md): one object per staging — a substrate test played as a game. */
   COMMISSIONS: DurableObjectNamespace<CommissionDO>;
+  /** FIELD OPERATIONS (docs/FIELD-OPERATIONS.md): one object per season — a test of the agents, written to the field app. */
+  FIELDOPS: DurableObjectNamespace<FieldOpsDO>;
   /** One instance per playerId; holds the server-side half of a Home session (see session-do.ts). */
   SESSIONS: DurableObjectNamespace<SessionDO>;
   /** One instance per club; holds its roster and answers standing (see club-do.ts). */
@@ -86,6 +89,16 @@ export interface Env {
   COMMISSION_CAST_FIRST_LIGHT?: string;
   COMMISSION_CAST_SECOND_WINTER?: string;
   COMMISSION_DIRECTOR?: string;
+  /** FIELD OPERATIONS: the same three for a season, plus the ESTATE NOTE naming every chartered agent and who custodies it. */
+  FIELDOPS_CAST?: string;
+  FIELDOPS_CAST_NORTH_OF_DENVER?: string;
+  FIELDOPS_CAST_AGENTS?: string;
+  FIELDOPS_DIRECTOR?: string;
+  /** JSON (`field-estate.ts` `FieldEstate`): the workspace, teams, partners, workers and body pool a season writes to. A secret; KV `CLUB_WIRES` under `fieldops-estate` is the other place it may live. */
+  FIELDOPS_ESTATE?: string;
+  /** The public registry, for publishing a season's founded bodies to the game's own graph at the reveal. Secrets; absent means not published. */
+  GRAPHDB_URL?: string;
+  GRAPHDB_BASIC?: string;
   MYSTERY_DIRECTOR?: string;
   /**
    * EACH CAST AGENT AS ITS OWN RUNTIME HERE (`cast-messaging.ts`): per character, an ask wire (character → the
@@ -376,6 +389,18 @@ export function commissionCastAgents(env: Env): string[] {
 export function commissionCast(env: Env, scenarioId?: string): CastMember[] {
   const own = scenarioId ? (env as unknown as Record<string, string | undefined>)[`COMMISSION_CAST_${scenarioId.toUpperCase().replace(/-/g, '_')}`] : undefined;
   return parseCast((own ?? '').trim() ? own : env.COMMISSION_CAST);
+}
+/** FIELD OPERATIONS' cast, per season like the commission's; the positional list and the director beside it. */
+export function fieldOpsCast(env: Env, scenarioId?: string): CastMember[] {
+  const own = scenarioId ? (env as unknown as Record<string, string | undefined>)[`FIELDOPS_CAST_${scenarioId.toUpperCase().replace(/-/g, '_')}`] : undefined;
+  return parseCast((own ?? '').trim() ? own : env.FIELDOPS_CAST);
+}
+export function fieldOpsCastAgents(env: Env): string[] {
+  return (env.FIELDOPS_CAST_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+export function fieldOpsDirector(env: Env): string | null {
+  const name = (env.FIELDOPS_DIRECTOR ?? '').trim();
+  return name || null;
 }
 export function commissionDirector(env: Env): string | null {
   const name = (env.COMMISSION_DIRECTOR ?? '').trim();

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppSession } from '../lib/types';
-import { ApiError, clubCommission, clubMystery, commissionApi, type CommissionPart, type CommissionSummary, type StagedPart, type StagingSummary } from '../lib/api';
-import { commissionHash, goTo, mysteryHash } from '../lib/routes';
+import { ApiError, clubCommission, clubFieldOps, clubMystery, commissionApi, fieldOpsApi, type CommissionPart, type CommissionSummary, type FieldOpsPart, type FieldOpsSummary, type StagedPart, type StagingSummary } from '../lib/api';
+import { commissionHash, fieldOpsHash, goTo, mysteryHash } from '../lib/routes';
 import { Face } from './mystery/Face';
 import type { Look } from '@pokernight/mystery';
 void (null as unknown as StagedPart);
@@ -22,6 +22,19 @@ void (null as unknown as StagedPart);
  * what kind of evening it is. Swapping in a photograph is one file and nothing here changes.
  */
 function Curtain({ status, game }: { status: string; game: NightGame }) {
+  if (game === 'fieldops') return (
+    <div className="mystery-hero fo-hero">
+      <div className="mystery-hero-art fo-hero-art" role="img"
+        aria-label="Northern Colorado from above: the Front Range, I-25, four corridors of towns, and the plains going east." />
+      <div className="mystery-hero-words">
+        <span className="mystery-hero-eyebrow">Field Operations{status ? ` · ${status}` : ''}</span>
+        <h2>A Season North of Denver</h2>
+        <p>Four teams, twelve of the registry's people communities, four partner churches, six weeks. Every team, worker
+          and church is a real agent, marked as the game's; every community starts where the public picture puts it.
+          Days play out in minutes, and the field app shows what the season did.</p>
+      </div>
+    </div>
+  );
   if (game === 'commission') return (
     <div className="mystery-hero gc-hero">
       <div className="mystery-hero-art gc-hero-art" role="img"
@@ -54,7 +67,7 @@ function Curtain({ status, game }: { status: string; game: NightGame }) {
  * a cast sheet, a doorway, a curtain, a way in); what differs is which API, which poster, which page, and
  * whether the middle of the night is an act or a round. `NightApi` is that difference, and nothing else is.
  */
-export type NightGame = 'mystery' | 'commission';
+export type NightGame = 'mystery' | 'commission' | 'fieldops';
 type Part = { role: string; name: string; blurb: string; look: unknown; takenBy: string | null; takenById: string | null };
 type Summary = { stagingId: string; phase: string; ready?: StagingSummary['ready']; host?: string; middle: string };
 type NightApi = {
@@ -69,6 +82,7 @@ type NightApi = {
 };
 const asMysterySummary = (s: (StagingSummary & { host?: string }) | null): Summary | null => (s ? { stagingId: s.stagingId, phase: s.phase, ready: s.ready, host: s.host, middle: `Act ${s.act}` } : null);
 const asCommissionSummary = (s: CommissionSummary | null): Summary | null => (s ? { stagingId: s.stagingId, phase: s.phase, ready: s.ready, host: s.host, middle: `Round ${s.round}` } : null);
+const asFieldOpsSummary = (s: FieldOpsSummary | null): Summary | null => (s ? { stagingId: s.stagingId, phase: s.phase, ready: s.ready, host: s.host, middle: `Day ${s.day}` } : null);
 const NIGHTS: Record<NightGame, NightApi> = {
   mystery: {
     read: async (clubId, token) => { const r = await clubMystery.read(clubId, token); return { staging: asMysterySummary(r.staging), cast: r.cast ?? [] }; },
@@ -83,6 +97,13 @@ const NIGHTS: Record<NightGame, NightApi> = {
     take: (id, role, token) => commissionApi.take(id, role, token),
     curtain: (id, token) => commissionApi.curtain(id, token),
     hash: commissionHash, setUp: 'Set up a Thursday in Greeley', shortLine: 'A short night — three rounds in about fifteen minutes', fullLine: 'The whole lunch — three rounds in about an hour',
+  },
+  fieldops: {
+    read: async (clubId, token) => { const r = await clubFieldOps.read(clubId, token); return { staging: asFieldOpsSummary(r.staging), cast: (r.cast ?? []).map((p: FieldOpsPart) => ({ role: p.role, name: p.name, blurb: p.blurb, look: p.look, takenBy: p.takenBy, takenById: p.takenById })) }; },
+    plan: (clubId, body, token) => clubFieldOps.plan(clubId, body, token),
+    take: (id, role, token) => fieldOpsApi.take(id, role, token),
+    curtain: (id, token) => fieldOpsApi.curtain(id, token),
+    hash: fieldOpsHash, setUp: 'Set up a season north of Denver', shortLine: 'A short season — six weeks in about twenty minutes', fullLine: 'The whole season — a day a minute, about an hour',
   },
 };
 

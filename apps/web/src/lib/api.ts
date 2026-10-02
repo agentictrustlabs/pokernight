@@ -618,6 +618,7 @@ export interface CommissionPart { role: string; name: string; kind: string; blur
 export const commissionApi = {
   scenarios: () => request<{ scenarios: CommissionScenarioSummary[] }>('/commissions'),
   /** YOUR OWN NIGHT: the same one each time you ask, until you ask for another (`restart`). */
+  /** `role: 'watch'` opens a season in which every part is its agent's and you look on. */
   solo: (body: { scenario?: string; role?: string; restart?: boolean; pace?: 'short' | 'full' }, token: string) =>
     request<{ ok: boolean; staging: CommissionSummary }>('/commissions/solo', { method: 'POST', body: JSON.stringify(body) }, token),
   read: (stagingId: string, token: string) =>
@@ -639,6 +640,51 @@ export const clubCommission = {
     ),
   plan: (clubId: string, body: { scenario?: string; night?: string; pace?: 'short' | 'full'; restart?: boolean }, token: string) =>
     request<{ ok: boolean; staging: CommissionSummary; cast: CommissionPart[] }>(`/clubs/${encodeURIComponent(clubId)}/commission`, { method: 'POST', body: JSON.stringify(body) }, token),
+};
+
+// ═══════════════════════════ FIELD OPERATIONS (docs/FIELD-OPERATIONS.md) ═══════════════════════════
+export interface FieldOpsScenarioSummary {
+  id: string; name: string; blurb: string; tone: string; region: string; regionName: string; registryReadAt: string | null; weeks: number; days: number; cast: number;
+  teams: Array<{ id: string; name: string; corridor: string }>;
+  communities: Array<{ id: string; name: string; corridor: string; phase: number; resultDate: string | null; iri: string }>;
+  roles: Array<{ id: string; name: string; kind: string; blurb: string; team: string | null; partner: string | null }>;
+}
+export interface FieldOpsSummary {
+  stagingId: string; scenario: string; region: string; role: string; day: number; week: number; phase: string;
+  deadline: number | null; seedCommit: string; paused: boolean; startedAt: number; endedAt: number | null;
+  club?: string; clubNight?: string; topic?: string; host: string; pace: 'short' | 'full'; director?: string;
+  ready: { taken: number; present: number; waitingFor: string[]; everybodyHere: boolean };
+  /** What the season has written to the field app, and through which day. */
+  estate: { ok: boolean; written: number; failures: string[]; at: number; throughDay: number } | null;
+  graph: { ok: boolean; error?: string; at: number } | null;
+  /** The agents the season is chartering as its parts' own acts — a team founded, a circle or church begun. */
+  charters?: Array<{ key: string; kind: string; name: string; step: string; sa: string | null; error: string | null; tries: number }>;
+}
+/** One agent-played part's tally: the season is a test of the agents. */
+export interface FieldOpsAgentRow { role: string; asked: number; answered: number; applied: number; refused: number; unparsed: number; missed: number; rested: number; byRules: number; avgMs: number | null; muted: string | null; resting: boolean }
+export interface FieldOpsPart { role: string; name: string; kind: string; blurb: string; look: unknown; team: string | null; takenBy: string | null; takenById: string | null; operator: 'human' | 'agent' }
+export const fieldOpsApi = {
+  scenarios: () => request<{ scenarios: FieldOpsScenarioSummary[] }>('/fieldops'),
+  solo: (body: { scenario?: string; role?: string; restart?: boolean; pace?: 'short' | 'full' }, token: string) =>
+    request<{ ok: boolean; staging: FieldOpsSummary }>('/fieldops/solo', { method: 'POST', body: JSON.stringify(body) }, token),
+  read: (stagingId: string, token: string) =>
+    request<{ staging: FieldOpsSummary; view: unknown; cast: FieldOpsPart[]; agents: FieldOpsAgentRow[] }>(`/fieldops/${encodeURIComponent(stagingId)}`, {}, token),
+  take: (stagingId: string, role: string | null, token: string) =>
+    request<{ ok: boolean; cast: FieldOpsPart[] }>(`/fieldops/${encodeURIComponent(stagingId)}/cast`, { method: 'POST', body: JSON.stringify({ role }) }, token),
+  curtain: (stagingId: string, token: string) =>
+    request<{ ok: boolean; staging: FieldOpsSummary }>(`/fieldops/${encodeURIComponent(stagingId)}/curtain`, { method: 'POST', body: '{}' }, token),
+  /** The host asks for the season's records to be written to the field app now rather than at the week's end. */
+  estate: (stagingId: string, token: string) =>
+    request<{ ok: boolean; report: { ok: boolean; written: number; failures: string[] } }>(`/fieldops/${encodeURIComponent(stagingId)}/estate`, { method: 'POST', body: '{}' }, token),
+};
+export function fieldOpsSocketUrl(stagingId: string, token: string): string {
+  return `${socketBase()}/fieldops/${encodeURIComponent(stagingId)}/ws?token=${encodeURIComponent(token)}`;
+}
+export const clubFieldOps = {
+  read: (clubId: string, token: string, scenario?: string) =>
+    request<{ staging: FieldOpsSummary | null; view: unknown; cast: FieldOpsPart[]; host: boolean }>(`/clubs/${encodeURIComponent(clubId)}/fieldops${scenario ? `?scenario=${encodeURIComponent(scenario)}` : ''}`, {}, token),
+  plan: (clubId: string, body: { scenario?: string; night?: string; pace?: 'short' | 'full'; restart?: boolean }, token: string) =>
+    request<{ ok: boolean; staging: FieldOpsSummary; cast: FieldOpsPart[] }>(`/clubs/${encodeURIComponent(clubId)}/fieldops`, { method: 'POST', body: JSON.stringify(body) }, token),
 };
 
 /** A CLUB'S MYSTERY NIGHT — the parts, who has taken them, and the two acts of the host's own. */

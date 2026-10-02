@@ -201,7 +201,7 @@ export function ClubPage({
       ) : shown === 'mystery' ? (
         // A NIGHT IS NOT A TABLE: it is staged, cast before it begins, and played in a place rather than at a
         // felt (docs/MYSTERY-NIGHT.md, docs/GREAT-COMMISSION.md). Which night is the club's game.
-        <MysteryNight clubId={clubId} session={session} host={host} game={game.id === 'commission' ? 'commission' : 'mystery'} />
+        <MysteryNight clubId={clubId} session={session} host={host} game={game.id === 'commission' ? 'commission' : game.id === 'fieldops' ? 'fieldops' : 'mystery'} />
       ) : shown === 'people' ? (
         <People view={view} session={session} config={config} onChanged={() => { void loadView(); onChanged(); }} />
       ) : (

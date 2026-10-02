@@ -7081,3 +7081,84 @@ button.tag.guest {
 .club-game-option { display: flex; gap: 0.5rem; align-items: baseline; cursor: pointer; padding: 0.2rem 0.3rem; border-radius: 6px; }
 .club-game-option.on { background: rgba(201, 161, 74, 0.1); }
 .club-game { margin: 0.4rem 0 0.6rem; }
+
+/* ═══════════════════════════ FIELD OPERATIONS (docs/FIELD-OPERATIONS.md §7) ═══════════════════════════ */
+.fo-hero-art { background: linear-gradient(180deg, #1b2a3a 0%, #243a2e 55%, #3b3a26 100%); }
+.fo-page .mystery-main > .fo-map-wrap { flex: 0 0 auto; padding: 0.4rem 0.5rem 0.3rem; overflow: visible; }
+.fo-map { width: 100%; height: auto; max-height: min(42vh, 440px); display: block; border-radius: 8px; }
+.fo-map-label { font-size: 10px; fill: #cfd6da; pointer-events: none; }
+.fo-map-corridor { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; pointer-events: none; }
+.fo-map-road { font-size: 9px; fill: #6d7f78; pointer-events: none; }
+.fo-map-town.selected circle { filter: url(#fo-glow); }
+.fo-map-person circle { transition: stroke 300ms; }
+.fo-map-body.stalled circle { stroke-dasharray: 2 2; }
+.fo-days { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; margin: 0.35rem 0.2rem 0; }
+.fo-day { width: 9px; height: 7px; border-radius: 2px; background: rgba(240, 236, 224, 0.12); }
+.fo-day.past { background: rgba(201, 161, 74, 0.5); }
+.fo-day.today { background: #ffd98a; box-shadow: 0 0 6px #ffd98a; }
+.fo-day.week-end { margin-right: 5px; }
+.fo-days-label { margin-left: 0.5rem; font-size: 0.78rem; color: #a9b3ba; }
+.fo-page .mystery-main > .fo-board { flex: 0 0 auto; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain; }
+.fo-corridors { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.4rem 0.8rem; }
+.fo-corridor h4 { margin: 0.2rem 0 0.2rem; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.fo-weld h4 { color: #c9a14a; } .fo-larimer h4 { color: #8fd0a2; } .fo-boulder h4 { color: #9ab7e0; } .fo-plains h4 { color: #e0a07a; }
+.fo-communities { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.fo-communities li { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.25rem 0.45rem; border: 1px solid rgba(240, 236, 224, 0.1); border-radius: 6px; font-size: 0.84rem; }
+.fo-communities li.dim { opacity: 0.4; }
+.fo-community-head { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+.fo-gauge { display: inline-flex; gap: 2px; margin: 0.1rem 0; }
+.fo-gauge-cell { width: 14px; height: 8px; border-radius: 2px; background: rgba(240, 236, 224, 0.1); position: relative; }
+.fo-gauge-cell.on { background: #c9a14a; }
+.fo-gauge-cell.floor::after { content: ''; position: absolute; left: 0; right: 0; bottom: -4px; height: 2px; background: #9ab7e0; }
+.fo-gauge-cell.published { outline: 1.5px solid #8fd0a2; outline-offset: 1px; }
+.fo-phase-words { line-height: 1.3; }
+.fo-counts { color: #cfd6da; letter-spacing: 0.02em; }
+.fo-next { font-style: italic; }
+.fo-ok { color: #8fd0a2; } .fo-off { color: #e5b3b3; }
+.fo-line { display: flex; gap: 0.45rem; align-items: flex-start; font-size: 0.9rem; line-height: 1.35; }
+.fo-line.mine .fo-line-body { background: rgba(201, 161, 74, 0.08); border-radius: 4px; padding: 0 0.3rem; }
+.fo-line-dot { width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%; background: rgba(240, 236, 224, 0.08); }
+.fo-line.fo-founded .fo-line-body, .fo-line.fo-recognized .fo-line-body { color: #ffd98a; }
+.fo-line.fo-phase .fo-line-body { color: #8fd0a2; font-weight: 600; }
+.fo-line.fo-stalled .fo-line-body { color: #e5b3b3; }
+.fo-line.fo-cue .fo-line-body { color: #cfd6da; }
+.fo-line.fo-whisper .fo-line-body { background: rgba(201, 161, 74, 0.1); border-left: 2px solid #c9a14a; padding: 0.1rem 0.5rem; border-radius: 3px; }
+.fo-energy { display: flex; align-items: center; gap: 0.5rem; margin: 0.3rem 0; }
+.fo-energy-bar { display: inline-block; width: 90px; height: 7px; border-radius: 4px; background: rgba(240, 236, 224, 0.12); overflow: hidden; }
+.fo-energy-bar span { display: block; height: 100%; background: #8fd0a2; }
+.fo-verbs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.4rem 0 0.3rem; }
+.mystery .fo-verb { padding: 0.25rem 0.6rem; font-size: 0.84rem; }
+.mystery .fo-verb.on { background: rgba(201, 161, 74, 0.22); border-color: #c9a14a; }
+.fo-teams .mystery-cast-list { margin: 0.2rem 0 0.4rem; }
+.fo-cast-row { flex-wrap: wrap; }
+.fo-cast-row .muted.small { flex-basis: 100%; padding-left: 1.9rem; }
+.mystery .fo-cast-name { display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; }
+.mystery .fo-cast-name[aria-pressed="true"] strong { color: #c9a14a; }
+.fo-agent-rows, .fo-partner-rows, .fo-score { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.88rem; }
+.fo-agents h3 .muted { font-weight: 400; }
+.fo-estate .hint a { color: #c9a14a; }
+.play-fieldops .play-band { background: linear-gradient(135deg, #243a2e, #1b2a3a); }
+@media (max-height: 760px) {
+  .fo-map { max-height: min(30vh, 300px); }
+  .fo-page .mystery-main > .fo-board { max-height: 26vh; }
+}
+.fo-road { list-style: none; margin: 0 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.84rem; }
+.fo-road li { padding: 0.2rem 0.5rem; border-left: 3px solid #9aa3ab; background: rgba(240, 236, 224, 0.05); border-radius: 3px; }
+.fo-road li.fo-road-barrier { border-left-color: #e5b3b3; } .fo-road li.fo-road-pressure { border-left-color: #e0a07a; }
+.fo-line.fo-trail .fo-line-body { color: #e0c9a0; font-style: italic; }
+.fo-line.fo-chose .fo-line-body { color: #ffd98a; }
+.fo-choice { margin: 0.4rem 0; padding: 0.5rem 0.6rem; border: 1px solid rgba(201, 161, 74, 0.5); border-radius: 8px; background: rgba(201, 161, 74, 0.08); }
+.fo-choice-q { margin: 0 0 0.4rem; font-size: 0.92rem; }
+.fo-choice-options { display: flex; flex-direction: column; gap: 0.3rem; }
+
+/* Field Operations — bootstrapping: the plan, the bell, the invite list, the charters, a community defined in play. */
+.fo-plan, .fo-bell { padding: 0.35rem 0.5rem; border-left: 3px solid #c9a86a; background: rgba(201, 168, 106, 0.08); }
+.fo-bell { border-color: #8fd0a2; background: rgba(143, 208, 162, 0.08); }
+.fo-invite-list { display: flex; flex-direction: column; gap: 0.2rem; max-height: 180px; overflow: auto; padding: 0.3rem 0.4rem; border: 1px solid rgba(240, 236, 224, 0.12); border-radius: 6px; }
+.fo-invite-list label { display: flex; gap: 0.4rem; align-items: center; cursor: pointer; }
+.fo-team-agent { margin: 0.2rem 0 0.4rem; }
+.fo-team-agent code { font-size: 0.85em; }
+.fo-charters { list-style: none; padding: 0; margin: 0.4rem 0 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.fo-defined { font-size: 0.7rem; margin-left: 0.4rem; background: rgba(201, 168, 106, 0.18); }
+.fo-unworked { font-style: italic; }
+.gc-form textarea { width: 100%; font: inherit; background: rgba(240, 236, 224, 0.06); color: inherit; border: 1px solid rgba(240, 236, 224, 0.18); border-radius: 6px; padding: 0.4rem 0.5rem; }
