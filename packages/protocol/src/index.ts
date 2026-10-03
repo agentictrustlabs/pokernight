@@ -1297,6 +1297,105 @@ export function sceneAnswerShape(): { action: string; say: string } {
   };
 }
 
+/* ═══════════════════════════ GREAT COMMISSION — a substrate test (docs/GREAT-COMMISSION.md) ═══════════════════════════
+ *
+ * A PART IS ASKED THE WAY A CHARACTER IS ASKED. `commission.act` rides the same envelope as `mystery.act` —
+ * the staging sends the part's own view (its room and the room's grain, its vault with each item's projections,
+ * what it has been shown) and the verbs it may use, and the agent answers with ONE action and ONE line. What
+ * differs is the SHAPE of the answer, because the verbs are a different game's: testify at a grain, assess,
+ * corroborate, commit, revoke, infer. `commission.direct` and `commission.consult` are the director's and the
+ * player's asks, as for a mystery.
+ */
+export const COMMISSION_ACT_SKILL = 'commission.act';
+export const COMMISSION_DIRECT_SKILL = 'commission.direct';
+export const COMMISSION_CONSULT_SKILL = 'commission.consult';
+export const COMMISSION_SKILLS = { act: COMMISSION_ACT_SKILL, direct: COMMISSION_DIRECT_SKILL, consult: COMMISSION_CONSULT_SKILL } as const;
+
+/** HOW A PART SHOULD SHAPE ITS ANSWER — the commission engine's own verbs, named exactly. */
+export function commissionAnswerShape(): { action: string; say: string } {
+  return {
+    action:
+      'what you do, EXACTLY one of {"type":"testify","people":<people id>,"evidence":<an item id from your vault>,"grain":<a grain allowed here — see each item\'s projections>,"to":<optional role id in your room>} | {"type":"assess","people":<people id>,"phase":<0-7 or "0-R">,"strength":<"unknown"|"initial"|"growing"|"active"|"flourishing">} (researcher only) | {"type":"corroborate","people":<people id>,"phase":<phase>} | {"type":"commit","people":<people id>,"need":<the need a reading emitted, verbatim>,"resource":<what you offer>} (funder or agency) | {"type":"revoke","evidence":<item id>} | {"type":"infer","people":<people id>,"place":<name>,"households":<n>} (adversary only) | {"type":"move","room":<room id from your doors>} | {"type":"admit","who":<role id>,"room":<room id>} (convener only) | {"type":"whisper","to":<role id>,"text":<words>} | {"type":"say","text":<words>} | {"type":"choose","choice":<id>,"option":<id>} — or omit "action" to only speak',
+    say: 'one line, IN CHARACTER, first person, at most two sentences — what the room hears you say',
+  };
+}
+
+/** The two parts a part\'s turn is sent as, for the commission: the same envelope as a scene, the commission\'s shape. */
+export function encodeCommissionParts(input: SceneInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const shape = commissionAnswerShape();
+  const text = [
+    `${input.skill}: you are ${input.roleName} in a Great Commission night, round ${input.act}.`,
+    input.brief,
+    ...(input.craft ?? []).map((c) => `- ${c}`),
+    input.question ? `Your player asks: "${input.question}".` : 'It is your moment. Stay in character, and do one thing.',
+    `Answer with ONE JSON object and nothing else: {"say": ${shape.say}, "action": ${shape.action}}.`,
+    `What you may do here: ${input.legal.join(', ')}`,
+    `The night as you see it — your room and its grain, your vault and what each item may be said as here, what you have been shown, the board: ${JSON.stringify(input.view)}`,
+  ].join('\n');
+  return [
+    { kind: 'data', data: { skill: input.skill, input: input as unknown as Record<string, unknown>, answer: shape } },
+    { kind: 'text', text },
+  ];
+}
+
+/* ═══════════════════════════ FIELD OPERATIONS — a season played by real agents (docs/FIELD-OPERATIONS.md) ═══════════════════════════
+ *
+ * A PART IS ASKED FOR ITS DAY. `fieldops.act` rides the scene envelope: the staging sends the part's own view — where
+ * it stands, its team, the communities and bodies there, the board, and the engine's own list of what it MAY do today
+ * — and the agent answers with ONE action and ONE line. The verbs are a field's: move, visit, share, study, found,
+ * gather, baptize, train, recognize, send, coach, report, assess, support, rest. `fieldops.direct` is the narration
+ * between weeks; `fieldops.consult` is the player asking their own part what it would do.
+ */
+export const FIELDOPS_ACT_SKILL = 'fieldops.act';
+export const FIELDOPS_DIRECT_SKILL = 'fieldops.direct';
+export const FIELDOPS_CONSULT_SKILL = 'fieldops.consult';
+export const FIELDOPS_SKILLS = { act: FIELDOPS_ACT_SKILL, direct: FIELDOPS_DIRECT_SKILL, consult: FIELDOPS_CONSULT_SKILL } as const;
+
+/** HOW A PART SHOULD SHAPE ITS DAY — the field engine's own verbs, named exactly. */
+export function fieldOpsAnswerShape(): { action: string; say: string } {
+  return {
+    action:
+      'what you do today, EXACTLY one of {"type":"found-team","name":<team name>,"invite":[<role ids>],"plan":<your intended team id>} (a day: you become its steward and a real team agent is chartered) | {"type":"join","team":<team id in you.invitedTo>} (free) | {"type":"decline","team":<id>} (free) | {"type":"invite","who":<role id>} (free; a steward) | {"type":"adopt","communities":[<community ids>]} (free; a steward takes them up — nobody works a people nobody took up) | {"type":"define-community","name":…,"people":…,"town":<town id>,"definition":<why these people are one community>} (a day; a steward; invented and marked) | {"type":"move","town":<town id>} (free; then you may still act) | {"type":"visit","community":<community id in your town>} | {"type":"share","community":<id>} | {"type":"study","community":<id>} | {"type":"found","community":<id>} | {"type":"gather","body":<circle or church id in your town>} | {"type":"baptize","body":<id>} | {"type":"train","body":<id>} | {"type":"recognize","body":<circle id>} | {"type":"send","body":<church id>,"town":<town id in the corridor>} | {"type":"coach","who":<role id>} (coach) | {"type":"report","community":<id>,"text":<what you saw>} | {"type":"assess","community":<id>,"phase":<0-7>} (steward) | {"type":"support","team":<team id>,"resource":<"funds"|"volunteers"|"venue"|"prayer">} (partner) | {"type":"rest"} | {"type":"whisper","to":<role id>,"text":<words>} | {"type":"say","text":<words>} — choose ONLY from the "may" list in your view; omit "action" to only speak',
+    say: 'one line, IN CHARACTER, first person, at most two sentences — what the team hears you say',
+  };
+}
+
+/** The two parts a part\'s day is sent as, for a season: the scene envelope, the field\'s shape. */
+export function encodeFieldOpsParts(input: SceneInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const shape = fieldOpsAnswerShape();
+  const text = [
+    `${input.skill}: you are ${input.roleName}, on day ${input.act} of a season of field work north of Denver.`,
+    input.brief,
+    ...(input.craft ?? []).map((c) => `- ${c}`),
+    input.question ? `Your player asks: "${input.question}".` : 'It is your day. Stay in character, and do one thing.',
+    `Answer with ONE JSON object and nothing else: {"say": ${shape.say}, "action": ${shape.action}}.`,
+    `What you may do today, where you are: ${input.legal.join(', ')}`,
+    `The season as you see it — your town, your team, the communities and circles there, the board, and "you.may": ${JSON.stringify(input.view)}`,
+  ].join('\n');
+  return [
+    { kind: 'data', data: { skill: input.skill, input: input as unknown as Record<string, unknown>, answer: shape } },
+    { kind: 'text', text },
+  ];
+}
+
+/** The narration between weeks, asked in the field\'s own words rather than a murder mystery\'s. */
+export function encodeFieldOpsDirectParts(input: DirectInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
+  const shape = { cue: 'the narration — two to five sentences, present tense, the field\'s own voice: which teams moved, which stalled, at town grain and never finer; name no household and no person outside the cast' };
+  const text = [
+    `${input.skill}: you are the voice of a season of field work north of Denver, at the end of week ${input.act} (${input.phase}).`,
+    ...(input.craft ?? []).map((c) => `- ${c}`),
+    'Carry these facts, exactly as given, in your own words. Invent nothing; decide nothing:',
+    ...input.facts.map((f) => `  - ${f}`),
+    `Answer with ONE JSON object and nothing else: {"cue": ${shape.cue}}.`,
+    `If you say nothing the field will hear the house\'s own line instead — "${input.fallback}" — so do not write that. Write the same week differently, or answer with nothing at all.`,
+    `The field as everybody can see it: ${JSON.stringify(input.publicView)}`,
+  ].join('\n');
+  return [
+    { kind: 'data', data: { skill: input.skill, input: input as unknown as Record<string, unknown>, answer: shape } },
+    { kind: 'text', text },
+  ];
+}
+
 /** The two parts a character's turn is sent as: the data an answering step reads, the text a planner reads. */
 export function encodeSceneParts(input: SceneInput): Array<{ kind: 'data'; data: Record<string, unknown> } | { kind: 'text'; text: string }> {
   const shape = sceneAnswerShape();

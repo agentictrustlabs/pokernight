@@ -26,6 +26,14 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 - `packages/agent-kit` helpers and a rules-based baseline poker strategy for agents.
 - `packages/canasta-agent` the same for canasta: `chooseCanastaAction(view, legal, seat)`, pure, and
   verified against the engine's own helpers before it returns. Property-tested over 200 seeded rounds.
+- `packages/commission` pure Great Commission engine — a substrate test played as a game (`docs/GREAT-COMMISSION.md`):
+  five fictional peoples whose hidden state moves on its own, seven parts who testify at a grain, assess,
+  corroborate, commit, revoke and infer, and a score. Regions and scenarios are CONTENT, generated from the
+  ontology (`pnpm gen:commission`). Seeded, replayable, no I/O.
+- `packages/fieldops`  pure Field Operations engine — a season of field work north of Denver played by REAL agents
+  (`docs/FIELD-OPERATIONS.md`): the registry's people communities (cited by node, opening at the registry's latest
+  phase), teams of workers, partner churches, the work that founds circles and recognises churches, the road's events,
+  the parts' decisions, a derived phase and a score. Compiled from the ontology AND `gc-public` (`pnpm gen:fieldops`).
 - `packages/treasury` house money layer: read/move the 6-decimal settlement asset from Smart Agents the
   house custodies. Names no currency: the address and ticker are injected by `apps/*`.
   Config injected (rpc, chain id, deployments, signer); no hostnames, no addresses, no keys.
@@ -73,6 +81,17 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   page: a club you are not in is indistinguishable from one that does not exist, so an invitation
   carries the club instead. A club's page leads with ITS TABLES, then the roster. No rail at a table.
   `pnpm walk:nav` drives all of it against the live deployment as a real signed-in person.
+- **MONEY MOVES ONLY AT A TABLE THAT SETTLES, AND THE APP MUST NEVER POINT AT A PLAY-MONEY ONE AS IF IT DID**
+  (2026-09-21). A person bought in 200 at "Guest night", lost, and found Your money still at 10,000 — the table
+  was `play-money`, so the balance was right and the app was wrong twice: the money page's "Take a seat at …"
+  fell back to ANY free seat (`pickSeat` now answers only a settled table, or null and "open one"), and the
+  new-table form opened on play money for everybody (it now defaults to Sheqels for somebody who is `ready`,
+  following `ready` until they pick). `pnpm walk:allin` is the proof: Alice and Bob through the real door, a
+  Sheqel table, all in, and the chain and both screens read −200/+200 — and it says out loud when the table it
+  was pointed at is play money, because at one of those "did the money move" has no answer. AND THE SEED IS A
+  STAKE FOR AN EMPTY ACCOUNT, NOT A FLOOR: `quick-start` used to mint any balance under 10 000 back up to it, and
+  it runs on every arrival, so the same person's 200 SHQ loss was refunded the next time they signed in
+  (`seedOwed`: the whole seed at zero, nothing otherwise; the money page's "add" is the way up from low).
 - **A PRACTICE TABLE IS ONE PER PERSON, DERIVED NOT STORED, AND IN NO LOBBY.** `POST /practice`
   returns `sha256(playerId + game)` as a UUID and inits that table, so asking twice is asking about
   the same one and nothing has to remember it exists. It is created directly rather than by a
@@ -213,6 +232,21 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   never become a migration.
 - Every hand must replay byte-identically from (seed, action log). Tests assert this.
 - Hole cards and the deck never leave the DO except through `viewFor` / `redactEvent`.
+- **A `.workspace` IS A SERVICE AND CANNOT HAVE MEMBERS; MEMBERSHIP LIVES ON THE ORGANIZATION THAT GOVERNS IT**
+  (2026-10-02, the owner's rule, for every game and for the field app). `aporg:Workspace` is not an agent: it is
+  `coordinatedBy` an `ap:WorkspaceAgent` (`<label>.workspace`, service class) and `governedBy` ONE organization
+  (`<label>.org`). `aporg:OrganizationMembership` (`org.membership:member:<sa>`, with its role assignment
+  `materializedByDelegation`) is written on the ORGANIZATION by the Home's own ceremonies — a steward's
+  `/connect/org-invite/agent`, the member's own `/connect/org-membership`, the member's acceptance of the has-member
+  `ap:RelationshipCredential` (which grants nothing); stewardship (`ap:Stewardship`) is a third thing beside
+  membership and role. Roster rows in a vault are PROJECTIONS of that membership and never the fact. The Home's
+  `workspace-create` now charters the organization first and parents the workspace under it (the token's `org`
+  payload carries `governor`), `workspace-member-invite`/`workspace-join` record the member on the governor, and a
+  workspace agent holds a pointer `workspace.governor`; the runtime's club standing and roster, the Members page and
+  the trust graph read the governor. A workspace chartered before that is LEGACY — it still holds its own records
+  until `apps/home/scripts/workspace-governor.mts` gives it an organization and moves them. Field Operations was the
+  proof (its organization `Northern Colorado Field — Game Night (organization)`, its sixteen characters members, its
+  teams organizations of their own); the field app (`~/engage`) and the clubs below follow the same ceremonies.
 - **A CLUB IS ITS WORKSPACE AGENT AT THE HOME, AND THE CARD ROOM KEEPS NOTHING OF IT BUT THE WIRE**
   (2026-09-13, `docs/WORKSPACES.md` §5.0; `apps/tables/src/clubs.ts`). There is no `ClubDO`, no roster
   table, no club index, no email invitations, no dev login: everyone is a person with a Home, and a club is a
@@ -231,13 +265,20 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   model, ~2 s): the view is ONE read (profile, schedule, nights record, roster, and the person's standing —
   host/member/none — derived by the Home from ITS records and the chain, never a row here). Nights are DERIVED
   from the rule at read time (`nightsOf`), exceptions laid over; nothing is materialised. Standing at a club
-  is asked of the Home per request; the Home remembers a POSITIVE answer a minute, never `none`. Each act
+  is asked of the Home per request; the Home remembers a POSITIVE answer a minute, never `none`. THE CLUB'S ID STAYS
+  THE WORKSPACE AGENT (the wire, the tables, the huddle scope bind to it) and its MEMBERS are the records of the
+  organization that governs it (rule above), derived there by the Home — nothing here changed when the rule did. Each act
   carries a nonce, because the assertion is spent once and a page reads the club several times a second. The
   one read still on the paired secret is `GET <a2a>/clubs/mine` — which of a person's linked workspaces keep a
   club profile — for the rail. A club nobody has standing in, or that this card room holds no wire for,
   answers **404, never 403**. A table with no `club` is a PICKUP table: public, and what every table was.
   Tables, the lobby per club, and the person's session stay in Durable Objects because they are live.
   `pnpm walk:club` proves the whole road; `pnpm walk:nav` presses the two-ceremony start.
+- **A CLUB IS ONE GAME** (2026-09-18). `games[0]` on the profile is the game a club plays — chosen at founding (a
+  picker on the form), changeable by its host in About (`PUT /clubs/:id/game`), and the page shows that game and
+  nothing else: a table club has Nights · Tables and "Open a table"; a night club has Nights · <the night>, staged
+  by `components/MysteryNight.tsx`, which serves BOTH nights (`game` prop; `NIGHTS` is the one place they differ).
+  No stamp means hold'em. A club whose page offered tables and a mystery and a commission was three clubs in one name.
 - **A CLUB IS RETIRED BY ITS HOST, AND ITS AGENT IS NOT OURS TO RETIRE.** `DELETE /clubs/:clubId` LOOKS FIRST
   and refuses (409, naming them) if anybody is seated at one of the club's tables; then closes the club's
   tables; then marks the club's profile `retiredAt` at its Home (the rail skips retired clubs) and lets go of
@@ -444,6 +485,266 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   context; the engine owns facts and the director service owns only words; the killer is drawn by the seed,
   committed before the night and revealed after; a clue is a card (`viewFor`/`redact`); one player and seven of
   the estate's own agents is the DEFAULT shape, drawn as the room's own bodies. Read it before building any of it.
+- **GREAT COMMISSION IS A SECOND GAME, NOT A TITLE** (2026-09-17, `docs/GREAT-COMMISSION.md`). Paul Martel's
+  tabletop note re-skinned Mystery Night as a substrate test: five fictional peoples whose hidden state moves on
+  its own, seven parts (returnee, household network, sending agency, funder, researcher, convener, adversary)
+  who hold testimony in vaults, a picture assembled from PERMISSION SLIPS, and one adversary reading the same
+  coarsened signals. THE RAILS PASS IF THE PICTURE FINDS THE MOTION BEFORE THE ADVERSARY FINDS THE PERSON. Its
+  hidden truth, verbs and score are not a murder's, so it is what the layout rule says a new game is — its own
+  package (`packages/commission`), `CommissionDO`, `/commissions/*`, `pages/CommissionPage.tsx` at `#/gc/<id>`,
+  `commission.act|direct|consult`, cast personas and archetypes — sharing every PATTERN a mystery proved (seeded
+  draw and commitment, `saw` on every room-scoped event, `viewFor`/`redactEvent`, the cast table, takeover, the
+  host's hold, presence and attention) and no code. **GROWTH IS EXOGENOUS**: `state.truth` is written in `tick`
+  and nowhere else, and no action carries a field that names it — the CAS brief's boundary (carriers are agents;
+  the response of those who hear is never modelled) as a type. **THE HIDDEN STATE IS NEVER CALLED THE TRUE
+  PHASE**: a phase is an assessment made from testimony; the engine's value is the fictional ground truth the
+  assessment is scored against, and `cm:HiddenEventState` and `cm:PhaseReading` are two classes no property
+  joins. **YOU MAY COARSEN, NEVER REFINE**: a slip finer than its room's rule is a LEAK, a number the vault does
+  not hold is a FABRICATION, a corroboration standing only on a withdrawn slip is a REPLAY — recorded, never
+  adjudicated in the room, and shown in the score. **THURSDAY IN GREELEY IS THE DEFAULT NIGHT, AND IT IS A REAL COUNTY** (2026-09-17, `~/skills/ontology/weld.ttl`).
+  Weld County, Colorado (FIPS 08123) and five peoples the IMB/PeopleGroups registry says one word about —
+  Burmese, Somalis, Somali Bantus, Guatemalans, Mexicans — each cited by ROP, PEID and PG id. THE FENCE IS WHERE
+  THE DANGER IS, not around everything: identity, community and town are PUBLIC and admissible only two ways,
+  CITED to their registry and census or explicitly FICTIONAL (the uncited unmarked middle is what the shape
+  forbids, because that is what a real people looks like when somebody has quietly invented facts about it); the
+  HOUSEHOLD CIRCLE, its town, its count and anything person-grain are INVENTED, always, by shape; and every
+  reading and hidden state between them is STAMPED `cm:isSimulated true` and may not say `gc:assignedLevel`, so
+  nothing in the graph can be read as an assessment of a real community. THE COARSE END IS NOT THE SAFE END:
+  "Somalis in Greeley are responding" names nobody in the county and reaches Somalia, which is why every identity
+  carries `cm:homeCountry` and why people-grain is the coarsest rank and sometimes the most dangerous sentence in
+  the room. Two things the real data gives that no invented world could — the Somali Bantus are a distinct people
+  (ROP 103458, Maay) that a coarse picture files under Somali and the census files under Swahili, and the three
+  communities the registry marks confidence C are the three where the night puts the motion. AN ARCHETYPE BELONGS
+  TO A NIGHT, NOT A ROLE (it carries the character): the marches keep `commission-*`, Greeley has `greeley-*`, and
+  `scenario-to-archetypes.mjs` takes any scenario's A-box. AND THE CAST BELONGS TO THE NIGHT: one
+  `COMMISSION_CAST` was right while there was one scenario, and with two it cast Naw Paw Htoo as Ilse Varrow —
+  the roles are the same seven words in both nights and nothing said which night the names were for. A night
+  may name its own (`COMMISSION_CAST_<SCENARIO ID>`, uppercased with dashes as underscores); the bare variable
+  is the fallback. `scripts/cast-per-night.cjs` proves each night casts its own people. WALKED LIVE: `scripts/greeley-walk.cjs` (the front door,
+  the board, the seven parts, the rooms, a line, an anonymous post-it, a published reading, the drawn bodies) and
+  `scripts/greeley-grain.cjs` (the ceiling: a slip finer than you hold is refused by NAME, the same item at county
+  grain names no town, at household grain in a county room it is not refused but LEAKS — recorded, never
+  adjudicated, so the only observable proof is that the town is now in the room — and the living room is where
+  household grain may be said). TWO TRAPS THESE PROBES KEEP FALLING INTO, written down because I fell into both
+  again: a kicker is uppercased by CSS and `innerText` returns the TRANSFORMED text, so a case-sensitive regex
+  misses it; and ACTS TRAVEL ONLY OVER THE SOCKET — there is no HTTP act route, so a probe that invents one gets
+  `404 not found` and, if it counts "no `ok:false`" as success, reports GREEN having tested nothing. A refusal is
+  `{type:'error', code:'finer-than-held'}`: the code is the answer, the type is not. The place is the host church
+  on 10th Street, derived
+  from the meeting house — the living room in Evans is deliberately NOT in the building, because household grain
+  does not belong in a church hall. `pnpm gen:commission` builds both worlds and both plans.
+- **A PART SAYS A THING ONCE, AND THE ACTIVITIES ARE THE PAGE** (2026-09-18). A night's transcript was one sentence
+  fifteen times with a Confirm button on each: the engine now refuses a slip every listener already holds
+  (`already-shown`) and an agent's line already among its last five (`said-that`, a person may repeat themselves);
+  a refused move has no line, a slip's own words are not said twice, and a rules-played part says a stock line once
+  per room and is otherwise quiet. The page (`pages/CommissionPage.tsx`) is the picture, the board and the room as
+  content-sized STRIPS with the transcript taking the rest (filters: all · this room · to me · testimony · readings;
+  a rule between rounds; a whisper to you marked); a whisper is a TARGET CHIP on the talk box (press a name in the
+  room, the cast or the picture; × clears; the button says Say or Send — never "whispering…"); the cast list says
+  where everybody is and pressing a name walks you there (`venue.goTo`); the 3D plate says the PART and who plays
+  it (`part` on the venue's person); the same slip from the same person is one row with a count and one Confirm.
+  Under 760px tall the picture gives way, never the activities. The world's CONTENT — the log, the baptisms, what
+  each people can read, where the workers go — lives in `weld.ttl` and rides every model turn as brief, vault and
+  voice notes; the archetypes are regenerated (`scenario-to-archetypes.mjs`, which now reads `fci:lvl-poe-N`),
+  re-published (`~/skills/scripts/register-commission.mjs`) and re-assigned (`assign-org-archetype.mts`).
+- **THE WORLD IS AUTHORED UNDER THE FAITH ONTOLOGY**:
+  `~/skills/ontology/commission.tbox.ttl` sits under `faith.ttl` and `story.ttl`. WHO A PEOPLE IS AND WHERE THEY ARE ARE
+  TWO NODES (2026-09-17; the first draft subclassed `gc:PeopleGroup`, which is not a class): `cm:People ⊑
+  gc:PeopleGroupIdentity` (a name in an invented register — no phase, no place) and `cm:PeopleCommunity ⊑
+  gc:PeopleCommunity`, THE KEY CLASS — the body in a place that the schedule, the reading and the carrier belong to and
+  the only thing a phase is claimed of. The grain axis is five faith classes: `at:Person` < `gc:FormationCommunity` (the
+  household circle, the hidden fine end) < `gc:NeighborhoodCommunity` (village) < `gc:PeopleCommunity` (province) <
+  `gc:PeopleGroupIdentity` (people). A reading is a `gc:CommunityPhaseResult` saying `gc:assignedLevel` /
+  `gc:engagementStrength` (`poe:PhaseN`, `poe:StrengthX`); a hidden state says `cm:phase`, NOT a sub-property of it; `kettlewater.ttl` is the A-box; `scripts/world-to-commission.mjs` compiles it
+  and `test/roundtrip.test.ts` proves the compiled world equals the hand-written one (the ontology's `st:order`
+  is canonical — the TypeScript bends to it). Everything an instance names is INVENTED, by shape
+  (`cm:isFictional true`): no real people-group name may appear anywhere in it. The Toolkit's phases are
+  © 2026 Phases of Engagement Collaborative, CC BY-NC-SA 4.0, referenced by IRI and not re-declared.
+- **A CHARACTER'S WHISPER IS A DIRECT MESSAGE FROM ITS OWN AGENT** (2026-09-17, `apps/tables/src/cast-messaging.ts`,
+  both game objects' `carryWhispers` on every save). A whisper is private and 1:1 — the shape of a direct message —
+  so when an agent-played part whispers, its words land in the hearer's inbox at their Home UNDER THE SPEAKER'S NAME
+  (a cast persona's, or the person's own agent when a person plays the hearer), with the sender's own copy beside it.
+  THE HOUSE CANNOT SEND IT: `messaging.direct.send` runs only as the agent whose run it is, and the recipient's
+  delivery door (`messaging.deliver`, at the agent's own subdomain) is behind the estate's gateway assertion, which
+  this Worker must not hold — so the `MYSTERY_CAST_WIRES` idea (a wire pinned to `messaging.deliver`) was a door the
+  card room cannot reach. What works is spec 400 W2a, the card room as EACH CHARACTER'S OWN RUNTIME on the standard
+  surface: an ASK WIRE (character → the house session key, `harness.ask`) makes it the character's principal-by-wire;
+  the run parks AUTH_REQUIRED naming what it needs; the Worker DERIVES that mandate from a STANDING GRANT the custodian
+  signed once (character → session key, `messaging.direct.send`, bounded to the cast and the seven demo people, no
+  intent binding), signs the child with its own key and continues the same task presenting [child, standing]. Four
+  ceremonies per character, all at the estate (`equip-cast-messaging.mts`): the archetype offers the tool (a plan
+  naming a tool the playbook lacks is refused as `unknown_tool`), the rail (`enableMessaging` — without it an
+  authorized send cannot leave, `wire_absent`), the standing grant recorded on the character's own object, the ask wire.
+  The note is thirty kilobytes of signed delegations, so it lives in KV `CLUB_WIRES` under `cast-messaging` (a Worker
+  secret holds five; `CAST_MESSAGING` in the env is the dev/test path). **`wrangler kv key … --remote`, ALWAYS**
+  (2026-09-18): Wrangler 4 reads and writes the LOCAL simulator (`.wrangler/state`) unless told `--remote`, so the
+  note was "put" and "got" and listed on this machine and the deployed Worker never had it — every whisper for a day
+  "stayed in the room" without a word, because a missing note was the configured-off case. The loader now says which
+  of the three it lacks and never caches a miss. **A PLAYER IS TOLD WHOSE HOME THE CHARACTER'S AGENT IS AT** (2026-09-18): each persona is
+  custodied by one demo person (ruth-alice, tom-nathan, …) and its mail lands there whoever plays it; "Your part"
+  says so (`ViewPerson.custodian` — the persona's, carried as `Casting.personaCustodian` through a takeover), because
+  a player who was not the custodian looked for the character at their own Home and found nothing.
+  **THE CHARACTER IS THE IDENTITY** (corrected
+  the same day, and it is a rule about the whole game, not about messaging): a `Casting`'s `agent` and `name` are the
+  CHARACTER's and stay the character's through a takeover — Dr Wren is `wren-alice.me` and is called Dr Wren whoever is
+  behind her — and the person driving her is `playerId` / `custodian` / `playedBy`. Taking a part used to overwrite both
+  with the player's own agent and the player's own name, which put a character's mail in a player's inbox and a player's
+  name where a character's belonged. Only a part the estate never chartered a persona for is addressed at the player's
+  own agent. So both ends of a whisper are the part's STANDING PERSONA from the deployment's cast list, whoever plays it
+  tonight — a whisper to Dr Wren lands in `wren-alice.me`'s inbox and the person reads it at their Home AS that persona
+  (`/as/<address>`), and a whisper a person types as Dr Wren goes out FROM `wren-alice.me`. The first version routed a
+  person-played part to the person's own agent, which put a character's mail in alice.me's inbox; the game addresses
+  characters, never players. Only a role with no persona at all falls back to the cast entry's own agent. The two helpers are
+  `@agenticprimitives/runtime-member`'s `deriveForNeed` and `askAs`/`continueAs`, carried locally because that
+  package's index drags in a Node keystore the Worker cannot load (subpath exports are committed upstream, unpublished);
+  the JSON-RPC client is our own too, because the pinned a2a (alpha.22) `createStandardA2aClient` has no `signRequest` and
+  silently sent the first version unsigned ("admits only an authenticated principal").
+  Proven live before any of this was written: Ilse's agent → Teodor's inbox, one conversation on both sides.
+  **ROOM TALK GOES TO THE NIGHT'S TOPIC ON THE CLUB'S BOARD** (2026-09-18): the same road with `messaging.topic.post`.
+  The club's agent opens a topic titled for the night (`club.topic` on the Home's club door, idempotent by title;
+  `meta.topic` on the night) and every `said` line by a part with a persona is posted from that persona; a night of
+  your own has no board; POST-ITS STAY IN THE ROOM (anonymous by construction). Per club, the host invites the cast
+  into the workspace and the standing grants are re-minted with both verbs (`equip-cast-board.mts`), then the KV
+  note is rebuilt. Proven in Alice's club: seven personas, 23 posts, Ruth's typed line from `ruth-alice.me`.
+- **FIELD OPERATIONS IS THE FOURTH GAME, AND EVERY PIECE OF IT IS A REAL AGENT THAT SAYS IT IS A GAME'S** (2026-10-01,
+  `docs/FIELD-OPERATIONS.md`). Its own package (`packages/fieldops`), `FieldOpsDO` (migration v9), `/fieldops/*`,
+  `pages/FieldOpsPage.tsx` at `#/fo/<id>`, `fieldops.act|direct|consult`, a cast of sixteen persona agents
+  (`demo/fieldops-cast.json`), archetypes `north-<part>` in registry context `field-operations`. THE WORLD IS COMPILED
+  FROM TWO SOURCES: `~/skills/ontology/northern-colorado.ttl` (towns, teams, parts, weeks, partner churches cited to the
+  directory, the road's events, the parts' decisions) and the PUBLIC REGISTRY — `scripts/registry-to-fieldops.mjs`
+  reads `gc-public` with the credential in `.graphdb.env` (gitignored) and stamps when it read; a season opens where
+  the registry's latest `gc:CommunityPhaseResult` put each community and plays toward P7 on the registry's own
+  `fw-npl-phases`. THE WORK OPENS DOORS; THE SEED DECIDES WHAT WALKS THROUGH (hidden readiness, revealed at the end).
+  A PHASE IS DERIVED FROM THE RECORDS (`phaseOf`), a reading is a claim scored against it, nothing is ever an assessment
+  of a real community. THE ESTATE IS CHARTERED BY `pnpm provision:fieldops` (sourcing `~/engage/scripts/seed/faithnet.env`):
+  the workspace "Northern Colorado Field — Game Night" (its own realm, never the real field), a team org agent per
+  corridor, a partner-church agent per congregation (`fo:representsChurch`, cited; holds none of its authority), a POOL
+  of body agents the season adopts when it founds a circle or recognises a church — every name carries `(game)`, every
+  description says what it is, and the game's graph `https://graph.global.church/g/gamenight/field-operations` marks
+  every node `fo:isGame true`. THE SEASON IS WRITTEN TO THE FIELD APP (`field-estate.ts`) at every week's end: activities,
+  observations, circles, churches, body profiles and counts, readings — by signing in as the demo person who custodies
+  each vault, which is a DEMO estate's property and is said so in the code. The ESTATE NOTE the Worker reads is KV
+  `CLUB_WIRES` `fieldops-estate` (`--remote`!) or secret `FIELDOPS_ESTATE`; absent, the season says it wrote nothing.
+  **A SEASON BOOTSTRAPS FROM ITS CHARACTERS, AND EVERY TEAM, CIRCLE AND CHURCH IS CHARTERED AS THEIR ACT** (2026-10-02).
+  The first estate seeded four teams and a pool of body agents; the owner asked why a character could not found a team,
+  invite the others and begin the circles and churches itself, as a person does in the field app — and nothing stood
+  in the way but the Home's lack of an agent-runnable charter, which the Home does not need: it SIGNS FOR A DEMO
+  CUSTODIAN on request (`/connect/persona-sign`, the field app's own door for demo accounts, reached with the
+  `homeSession` a demo sign-in returns), with the same EOA the personas file holds. So: the season opens with NO teams
+  and NO community taken up. `found-team` (a day; the founder is steward; `invite` names who is asked; `plan` the
+  intended team from the content), `invite` / `join` / `decline` (free — the bell), `adopt` (free; a steward takes
+  communities up — NOBODY WORKS AMONG A PEOPLE NOBODY HAS TAKEN UP, `not-worked`), `define-community` (a day; a steward
+  invents a People Community in a town, in their own words; its readiness is the SEED's draw at definition, the one
+  place `truth` is written after open). `TeamDef` in the content is now the PLAN each part carries (`you.intended`);
+  the house founds from it on day one and the control test proves four teams by day two with every community taken
+  up. `field-charter.ts` runs the field app's ceremonies as a CHECKPOINTED machine in the season object (`charters`,
+  persisted step by step, retried with backoff, failed honestly): deploy · vault · links (THE STEWARD IS THE CHARACTER'S
+  PERSONA, the custodian and the workspace's custodian are members, each invited member is linked when they join —
+  `admit`, the custodian-signed half of the field app's invite) · storage planes — then `attachAgent` writes the
+  address and custodian into the season and the records follow (`team-*`, `ws-team`, `ws-agent`, `ws-community` with
+  the team as steward, `community-context` for a defined community in the team's vault, the workspace's pointer).
+  A free act an agent answers (move, join, adopt, choose, invite) is followed by the house spending its day
+  (`FREE_ACTS`). The estate note shrank to the realm — workspace, partners, personas — plus the DOORS (a2a, mcp, the
+  two service agents); `provision:fieldops` charters only that; KV `fieldops-chartered` lists every agent a season
+  chartered, which is what `reset:fieldops` RETIRES (unlinks at every Home, `--retire-seeded` for the old teams and pool).
+  PROVEN LIVE 2026-10-02 (`pnpm watch:fieldops`, Alice watching, sixteen agents): Naomi, Farid, Tomás and Hodan founded
+  the four teams by day 2, each chartered in under a minute at Elena's, Bob's, Nathan's and Elena's Homes; invited parts
+  joined; nine communities taken up; Naomi's S'gaw Karen circle chartered with its own agent and drawn at
+  field.faithnet.io under the Weld team with its four participants. Three things that run learned: THE CUSTODIAN IS A
+  STEWARD TOO (the library writes as the custodian's demo session and takes a write only from a steward — the field
+  app's "Create team" leaves its creator both; a member-only custodian got `unauthorized … only a steward`, repaired
+  by `stewardCustodian`); A SENT CIRCLE IS THE SENDER'S TEAM'S (the registry's floor church belongs to no team, and the
+  circle Naomi sent out of it inherited `team: null`, so no record of it was ever written — the writer also falls back
+  to the founder's team); THE FIELD APP FOLLOWS BY THE DAY (records were written at week's end and when a charter
+  landed, so a circle sat unseen for days; every day's end writes now). AND AN EMPTY ANSWER IS A MISS: the agents' Home
+  answered every ask with "openai-compat … HTTP 402 … prepayment credits are depleted" for an hour, which the season
+  counted as ANSWERED with nothing applied — a season full of silent answers looks exactly like one going well. It is
+  logged with its raw parts, counted (`AgentStats.empty`) and treated as a miss, so the house takes the part after three.
+  **MEMBERSHIP, THE ROLE ON IT, AND STEWARDSHIP ARE THREE THINGS, AND ONLY THE DELEGATION IS AUTHORITY** (2026-10-02,
+  the owner's correction, from `packages/ontology/tbox/org.ttl` and `core.ttl`): `aporg:OrganizationMembership` says this
+  agent belongs to this organization and authorizes nothing; `aporg:RoleAssignment` on it names a role (a word) and the
+  delegation that materializes it; `ap:Stewardship` is a DIFFERENT situation — steward, stewarded, the digest of the
+  oversight delegation — not custody of the key and not membership; `ap:RelationshipCredential` (has-member, steward-of)
+  is the two-sided record both parties signed and grants nothing. THE GAME'S CHARTER NOW RUNS THE HOME'S OWN CEREMONIES
+  (`field-charter.ts` `join`, `stewardOf`, the `membership` step): the organization INVITES (`/connect/org-invite/agent`
+  with the org→member access grant and the org-signed has-member offer, as its custodian's session); the member JOINS
+  (`/connect/org-membership` as the MEMBER'S OWN session, consenting member→org — the Home writes their private link, the
+  roster index and the organization's own `org.membership:member:<sa>` record with the role assignment); the member
+  COUNTERSIGNS (`<a2a>/relationships/credential/accept`, both signatures checked on chain, a copy in each vault); the
+  steward gets a steward-of credential the same way. A CHARACTER HAS ITS OWN SESSION: `demo-signin` with `as: <persona>`
+  under its custodian mints a session whose subject is the persona (a person-class agent the custodian's Home lists as
+  `self`); the custodian still signs. A roster row at the field app is a PROJECTION: `active` only when the member's own
+  join put the record and the credential at the Home, `invited` until then, a declined invitation no row at all; the row
+  names `membershipRecord`, `credential`, `stewardship` when it has them (field-domain `TeamMembershipRecord`).
+  **A `.workspace` IS A SERVICE AND HAS NO MEMBERS; ITS ORGANIZATION DOES** (2026-10-02, the owner's rule, `org.ttl`:
+  `aporg:Workspace` is NOT an agent — a governed coordination plane, `governedBy` exactly one organization, `coordinatedBy`
+  an `ap:WorkspaceAgent` that is inert without the governor's delegation; `ap:charteredUnder` is "whose it is", readable as
+  the `parent` on a link, and never custody or authority). So the game's workspace has an ACCOMPANYING ORGANIZATION,
+  "Northern Colorado Field — Game Night (organization)" (`provision:fieldops`, custodied by Nathan, in the estate note as
+  `organization`): the workspace's link hangs under it; the CHARACTERS are its members (`admit:fieldops`: each persona's own
+  session joins — invite, listing, consent, countersigned has-member); Nathan is its founder and steward (steward-of); the
+  workspace's `ws-membership` rows are a PROJECTION of that roster (`organization`, `membershipRecord` on each row);
+  NOBODY joins the workspace, and NO CUSTODIAN IS A MEMBER OF ANYTHING for custodying a character — a person looks at a
+  team as their character (the Home's "as" sign-in). A team's members are the characters on it alone; its custodian keeps
+  a stewardship link (custody), and the workspace's custodian is linked to no team — the field app's roll-up of team-held
+  records for him is a read it does not have yet (through the governor), said in the doc rather than papered over by a
+  membership. A partner church's agent is stewarded by its custodian and its representative character is its member.
+  A MEMBER'S VIEW OF A ROSTER IS THE DIRECTORY LISTINGS (2026-10-02, the owner: "we should not need steward to see and
+  message these members"): the Home's members page and trust graph build a steward's roster from the membership index
+  but a MEMBER's from the listings members published into the org's directory, and the members gate wants the access
+  grant the JOIN records — a person let in by a link alone sees "join this community first" and zero members. So the
+  join publishes the member's signed listing (`publishListing`, sha-256 over sorted-key JSON, ERC-1271 proof, with the
+  invitation's access grant) before it consents, exactly as the Home's own `joinOrganization` does, and the realm's own
+  people — the workspace's seven, each partner church's custodian and Nathan — go through the same road
+  (`pnpm admit:fieldops`, which also re-grants the realm's storage under the Home's scope list). Proven: Bob, a member and
+  no steward, sees the workspace's seven members and one steward and can message them.
+  The Home does not mint steward-of itself yet; its accept door takes one. AN ORGANIZATION'S STORAGE GRANT MUST CARRY THE
+  HOME'S OWN SCOPE LIST (`INTERACTIONS_GRANT_CORE_SCOPES` from `@agenticprimitives/fabric` + `INTERACTIONS_APP_SCOPES`,
+  inlined in `field-charter.ts` under `STORAGE_V`): the first charters copied engage's older list, and the credential's
+  second copy — in the organization's vault — answered `record_scope_denied`; a charter granted under an older
+  `storageV` is re-granted on the next wake. A member link never exposes an org's roster
+  (ADR-0025): the trust graph centred on a team shows its members to its STEWARD'S Home, and to Nathan only the hold.
+  **THE TRUST GRAPH IS BUILT FROM TWO FIELDS ON A LINK, AND NOTHING ELSE** (2026-10-02; the owner: "the trust graph
+  building out is the key part of the game — the interconnection of agents"). The Home draws an organization's graph
+  from (a) its ROSTER — the org's `delegated-idx`, which a `related-orgs` link feeds only when `relationship: member`
+  carries a MEMBERSHIP wire (a record-scope delegation org → member, no targets) — and (b) the agents whose link says
+  `parent` = the org ("holds"). A team linked with `parent: person` is the person's, never the hub's; a member
+  seeded with a stewardship wire is nobody on the roster. **THE ORG IS THE HUB, NOT A CHAIN** (2026-10-03,
+  `~/agenticprimitives` `workspace-governor.ts` doctrine): the GOVERNING ORG holds the members and the teams AND
+  governs the workspace; the workspace references only the org (`governedBy`). `org → workspace → teams` is WRONG —
+  it is `org → { members, teams, workspace }` with `workspace → org`. So a team's links hang `under` the GOVERNING
+  ORG (`estate.organization.sa`), a body's under its team, a partner church's under the org; members get membership
+  wires; `reparent` and `stewardCustodian` repair older charters; `provision:fieldops --relink` redoes the realm's
+  links; `pnpm rehang:fieldops` re-hangs every agent in the chartered ledger to the hub (a team under the org — the
+  one-off for charters a restarted season left behind, or the pre-hub shape). A MEMBER READS THE WORKSPACE THROUGH
+  THE GOVERNOR (spec 424): belonging to the org that governs the workspace is what grants the content read — a
+  scoped `workspace → member` grant minted at join — not a relationship to the workspace agent; the field runtime
+  resolves `my-agents`/`orgWire`/`workspace-read` through that grant. The persona's own
+  link hangs under itself (a persona belongs to no workspace, and the Home refuses a parent the person does not control).
+  The roster endpoints (`received-delegations`, `directory`) answer a HOME session, not an app id_token — probe them with
+  the `homeSession` a demo sign-in returns, or they read as empty. `watch:fieldops` CONTINUES the season that is there;
+  `--restart` opens a fresh one and leaves the old one's chartered agents behind for the ledger.
+  **A SEASON'S RECORDS ARE WIPED, THE ESTATE IS KEPT** (2026-10-01, `pnpm reset:fieldops`): a season's records live in
+  folders of their own (`field/activities|observations|circles|churches|body-communities|phase-results`), so a reset deletes
+  those artifacts one at a time through the Home's library `delete` (sequential — the catalog is rewritten whole on each),
+  rewrites every pool body's profile and `ws-body` row back to UNFOUNDED/suspended, clears the KV pool ledger
+  (`fieldops-pool-adopted`) and the seasons' subjects in the game graph (`…/fieldops/<staging>/…`, never `/estate/`,
+  `/church/`, `/community/`). The agents, their planes, `ws-*`, `team-*` and the partners' profiles are the operator's
+  and stay. The season objects at gamenight keep their own state; "another season" opens a fresh one. `--dry` lists.
+  **THE TALK GOES WHERE THE TEAM TALKS** (2026-10-02): a team is an organization, so it has a board, and what a
+  character SAYS is posted to its team's open `general` topic (the field app's own team conversation — every member is
+  in it by membership, nothing invited per conversation) AS THAT CHARACTER, by the character's own session; a
+  character on no team speaks on the organization's `general`. What a character WHISPERS is a DIRECT MESSAGE from its
+  own agent (`messaging.send` as the character), which needs the character's MESSAGING WIRE — a delegation
+  character → the deployment's interactions session key over the messaging skills and the counterparties, with a
+  transport grant, signed by the custodian and installed by the character's session (`messaging.wireEnable`; without
+  it a send is `wire_absent`). `pnpm admit:fieldops --wires-only` mints the sixteen rails and opens the organization's
+  `general`; `FieldOpsDO.carryTalk` carries each line once (`boards`, `talked` in its storage) and says in the log
+  when one stayed in the field.
+  IT IS A TEST OF THE AGENTS: every ask of a part's agent is counted (asked · answered · applied · refused · missed ·
+  latency · days the house played for it), shown while the season runs and beside the house-played control at the
+  reveal; a day is at least nine seconds per agent-played part so every agent is asked once a day. `pnpm walk:fieldops`
+  walks it live.
 - **THE PLACES ARE A ROOM, A TABLE AND A CLUB — there is no "card room"** (2026-09-15). That phrase was in a
   hundred lines of copy and named nothing a person could point at; the vocabulary is the three things the app
   actually has. `lib/brand.ts` still owns the product name.
@@ -452,6 +753,9 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   socket on the way, so removing them at once made everybody watch them VANISH and reappear seconds later. The
   body lingers; a reconnect inside the grace cancels the removal and is seamless. The room page also POSES INTO
   THE CHAIR BEFORE IT NAVIGATES, and the seat's page poses the moment the manifest lands rather than on a timer.
+- **PLAY IS FOUR CARDS AND THE CHOICES ARE BEHIND ONE PRESS** (2026-09-18). Two night cards with their options open
+  pushed hold'em below the fold; a card is a band, a paragraph and a button, four fit across a laptop, and a night's
+  choices (which night, how long, your part) open in a `Drawer` beside the page.
 - **THE FRONT DOOR IS ONE CHOICE AND A LIST OF ERRANDS** (2026-09-15): "Come play or hang out" is the button,
   and beside it a quiet, evenly-weighted list — sign up, start a club, the missions, how it works — each row
   saying where it goes and each going to a PAGE that stands on its own. Four buttons of similar weight had made
@@ -719,6 +1023,9 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
 
 ## Commands
 - `pnpm install` · `pnpm test` · `pnpm typecheck`
+- `pnpm gen:commission` (compiles `~/skills/ontology/kettlewater.ttl` into the commission's world; `pnpm gen:story` is the mystery's)
+- `pnpm gen:fieldops` (reads `gc-public` — needs `.graphdb.env` — then compiles `northern-colorado.ttl` and writes the sixteen `north-*` archetypes)
+- `pnpm provision:fieldops [--dry] [--graph]` (charters the game's REALM on faithnet — the workspace with every custodian on its roster, and the partner-church agents; teams, circles and churches are chartered by the seasons themselves; writes the estate note with the doors) · `pnpm reset:fieldops [--dry] [--keep-graph] [--retire-seeded]` (ANOTHER SEASON: retires every agent the seasons chartered — unlinked at every Home — wipes the workspace's rows for them, clears the ledger and the seasons' triples; the realm stays) · `pnpm cleanup:fieldops [--dry] [--all]` (let go of the game orgs that pile up on the demo users' Homes across seasons — keeps the realm, and the current season unless `--all`) · `pnpm admit:fieldops [--listings-only]` (the realm's people join the workspace and the partner churches the Home's way: invite, listing, consent, countersigned credential; steward-of for the custodians) · `pnpm walk:fieldops` (the live season, as Alice playing Naomi) · `pnpm watch:fieldops [--minutes 30]` (a season played by ALL SIXTEEN agents, Alice watching: prints the teams they found, the charters landing, the agents' tally)
 - `pnpm dev:tables` (wrangler dev on :8787) · `pnpm dev:web` (vite on :5173) · `pnpm dev:agents` (wrangler dev on :8788)
 - `pnpm --filter pokernight-agent bot -- --table <id> --seat 3` (rules-based bot)
 - `pnpm walk:nav` (presses every road through the card room on the live deployment as one of the Home's
@@ -758,3 +1065,9 @@ repository is public and links to no private checkout: bump the pins when the pl
 consuming app. Deployment addresses come from `@agenticprimitives/contracts/deployments/faithchain`; never
 copy addresses into packages/*. The estate's Home (sign-in, agents, vaults, the coach services, club
 workspaces) is operated separately; what this card room needs of it is documented where it is used.
+
+**THE LIVE HOME IS `~/agenticprimitives/apps/demo-sso-next`, AND THAT MONOREPO IS THE ONLY ESTATE TREE (2026-10-02).**
+faithnet.me is served from `~/agenticprimitives` (the Home app `apps/demo-sso-next`, the A2A runtime `apps/demo-a2a`,
+and the shared `packages/*`). NEVER read or edit `~/ap-home`: it is a stale, separate checkout that does not deploy
+anywhere, and work done there is lost. Any estate change — the Home, the interactions runtime, the ontology, the
+context package — is made in `~/agenticprimitives` and nowhere else.

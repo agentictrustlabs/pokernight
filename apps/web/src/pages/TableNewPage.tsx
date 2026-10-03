@@ -39,7 +39,15 @@ export function TableNewPage({ session, money, club, night: nightId, ready = tru
   const [name, setName] = useState('');
   const [game, setGame] = useState<string>(DRAWN_GAME);
   const [guest, setGuest] = useState<string | null>(null);
-  const [settlement, setSettlement] = useState<'play-money' | 'mandate-transfer'>('play-money');
+  // SHEQELS BY DEFAULT for somebody who is set up to play for them; play money only when chosen, or
+  // when they could not sit at a money table anyway. The form used to open on play money for
+  // everybody, so a person who had just funded an account and authorised buy-ins opened "Guest
+  // night", took a seat, lost 200, and found their money untouched — the table had been play money
+  // since the moment it was opened and nobody had chosen that. `ready` arrives after the treasury
+  // read, so the default FOLLOWS it until the person picks for themselves.
+  const [picked, setPicked] = useState<'play-money' | 'mandate-transfer' | null>(null);
+  const settlement: 'play-money' | 'mandate-transfer' = picked ?? (ready ? 'mandate-transfer' : 'play-money');
+  const setSettlement = setPicked;
   const [seats, setSeats] = useState(6);
   const [sb, setSb] = useState(1);
   const [bb, setBb] = useState(2);

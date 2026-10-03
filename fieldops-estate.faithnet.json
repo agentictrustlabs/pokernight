@@ -1,0 +1,424 @@
+{
+  "v": 1,
+  "note": "Field Operations estate on faithnet — scripts/provision-fieldops.mjs (DEV estate; the production path is the Home’s ceremony).",
+  "chainId": 34348,
+  "workspace": {
+    "name": "Northern Colorado Field — Game Night",
+    "kind": "workspace",
+    "purpose": "field-workspace",
+    "custodian": "nathan",
+    "sa": "0xF28BE6eF1b4EdB1313bcF89dd304a426F1537bB6",
+    "salt": "332576572196294809998474756032038830125",
+    "custodianEoa": "0xFfcE797B2766726b418Ad7daB92F00E6a1B937fF"
+  },
+  "teams": {
+    "weld-team": {
+      "name": "Weld Corridor Team (game)",
+      "kind": "team",
+      "purpose": "field-team",
+      "custodian": "alice",
+      "sa": "0x5a5c7e32a758c653ddfC2cdCFF3bF0F9F4C02576",
+      "salt": "259651500618099869734741480718120727818",
+      "custodianEoa": "0xe36310847C8A35406f48312EC04fb4464e03ef21"
+    },
+    "larimer-team": {
+      "name": "Larimer Team (game)",
+      "kind": "team",
+      "purpose": "field-team",
+      "custodian": "bob",
+      "sa": "0x34D511EA2e312CD86baeCd4d63fd4C82F4F4999B",
+      "salt": "309335929666172671966106062235236103592",
+      "custodianEoa": "0xF5a3db6115C48bf460cb7E0c04AA04BBf3E10745"
+    },
+    "boulder-team": {
+      "name": "Boulder–Longmont Team (game)",
+      "kind": "team",
+      "purpose": "field-team",
+      "custodian": "carol",
+      "sa": "0x1611bAe364b4d64fb23Eb769387A342fB81Fa767",
+      "salt": "117099514767081152467174930739838867522",
+      "custodianEoa": "0x9FccA64a57D398b2C4976f984Ad66a88719e110B"
+    },
+    "plains-team": {
+      "name": "Plains Team (game)",
+      "kind": "team",
+      "purpose": "field-team",
+      "custodian": "dave",
+      "sa": "0xA65dADcF341055145Aa8D0780e96D268Ca62Ee31",
+      "salt": "63854093835319083575438838733527807645",
+      "custodianEoa": "0x144f167aAFcaD96C7e9fe5173858EA3915b0eB6e"
+    }
+  },
+  "partners": {
+    "christ-community-greeley": {
+      "name": "Christ Community Church (game agent)",
+      "kind": "org",
+      "purpose": "field-partner",
+      "custodian": "alice",
+      "sa": "0x77ecd16630BFFE0066187A175dc419491387ed8e",
+      "salt": "180619754075466409508958364283132237678",
+      "custodianEoa": "0xe36310847C8A35406f48312EC04fb4464e03ef21"
+    },
+    "timberline-fort-collins": {
+      "name": "Timberline Church (game agent)",
+      "kind": "org",
+      "purpose": "field-partner",
+      "custodian": "bob",
+      "sa": "0x6c5d26F9D0068b4bEE76303ACdB4a6a48592Dc6c",
+      "salt": "213500287761896237011853695406785893317",
+      "custodianEoa": "0xF5a3db6115C48bf460cb7E0c04AA04BBf3E10745"
+    },
+    "lifebridge-longmont": {
+      "name": "LifeBridge Christian Church (game agent)",
+      "kind": "org",
+      "purpose": "field-partner",
+      "custodian": "carol",
+      "sa": "0x06350Bf0553dc833B9e1280871e5aADd943956A7",
+      "salt": "259804046592956854507884871803371899202",
+      "custodianEoa": "0x9FccA64a57D398b2C4976f984Ad66a88719e110B"
+    },
+    "trinity-fort-morgan": {
+      "name": "Trinity Lutheran Church (game agent)",
+      "kind": "org",
+      "purpose": "field-partner",
+      "custodian": "dave",
+      "sa": "0xc7Bb16262e71C1028C41c5c333E292977ED9103F",
+      "salt": "235744938154135535700439566524612424267",
+      "custodianEoa": "0x144f167aAFcaD96C7e9fe5173858EA3915b0eB6e"
+    }
+  },
+  "pool": {
+    "circle": [
+      {
+        "sa": "0x9591249ca5cde6336d28F5EdBBD300EaCB104b6b",
+        "custodian": "alice",
+        "label": "Circle 1, Weld Corridor Team (game, unfounded)",
+        "team": "weld-team"
+      },
+      {
+        "sa": "0xDb39d97837139c15E31C1233C8a8B44081A02AaA",
+        "custodian": "alice",
+        "label": "Circle 2, Weld Corridor Team (game, unfounded)",
+        "team": "weld-team"
+      },
+      {
+        "sa": "0xECEa4372fF664Ee1dd59Cd265d095538D080ec1F",
+        "custodian": "bob",
+        "label": "Circle 1, Larimer Team (game, unfounded)",
+        "team": "larimer-team"
+      },
+      {
+        "sa": "0xc9DDbd3A1Cb2C912b8266Ca33b94bf118b69865a",
+        "custodian": "bob",
+        "label": "Circle 2, Larimer Team (game, unfounded)",
+        "team": "larimer-team"
+      },
+      {
+        "sa": "0x1662b375390B4bE5E71D3Ed1403298d01A952831",
+        "custodian": "carol",
+        "label": "Circle 1, Boulder–Longmont Team (game, unfounded)",
+        "team": "boulder-team"
+      },
+      {
+        "sa": "0x7a4c8B364CEFC7a37F7eE6deB6e89803Ed9A7865",
+        "custodian": "carol",
+        "label": "Circle 2, Boulder–Longmont Team (game, unfounded)",
+        "team": "boulder-team"
+      },
+      {
+        "sa": "0x0DAbeafFc475693Ce15e3BA32B8Abf9C3c10B3Dd",
+        "custodian": "dave",
+        "label": "Circle 1, Plains Team (game, unfounded)",
+        "team": "plains-team"
+      },
+      {
+        "sa": "0xC9e7f218F65524023591E83ef66E3b1b0195bBD7",
+        "custodian": "dave",
+        "label": "Circle 2, Plains Team (game, unfounded)",
+        "team": "plains-team"
+      }
+    ],
+    "church": [
+      {
+        "sa": "0x3970108BD7976384fC076F9BB0Ca36d185C82Eaa",
+        "custodian": "alice",
+        "label": "Church 1, Weld Corridor Team (game, unfounded)",
+        "team": "weld-team"
+      },
+      {
+        "sa": "0x6350610EE932442d9d4dcEFFBc4b16431Ea43122",
+        "custodian": "bob",
+        "label": "Church 1, Larimer Team (game, unfounded)",
+        "team": "larimer-team"
+      },
+      {
+        "sa": "0x19292215B671d2DD231F70672326cDeDD84D709d",
+        "custodian": "carol",
+        "label": "Church 1, Boulder–Longmont Team (game, unfounded)",
+        "team": "boulder-team"
+      },
+      {
+        "sa": "0xadb6328Ce0dCDf9a9023e7B6a4a33a78cdc11bD3",
+        "custodian": "dave",
+        "label": "Church 1, Plains Team (game, unfounded)",
+        "team": "plains-team"
+      }
+    ]
+  },
+  "steps": {
+    "workspace:deploy": true,
+    "workspace:vault": true,
+    "workspace:link:nathan": true,
+    "workspace:link:alice": true,
+    "workspace:link:bob": true,
+    "workspace:link:carol": true,
+    "workspace:link:dave": true,
+    "workspace:storage": true,
+    "teams:weld-team:deploy": true,
+    "teams:weld-team:vault": true,
+    "teams:weld-team:link:alice": true,
+    "teams:weld-team:storage": true,
+    "teams:larimer-team:deploy": true,
+    "teams:larimer-team:vault": true,
+    "teams:larimer-team:link:bob": true,
+    "teams:larimer-team:storage": true,
+    "teams:boulder-team:deploy": true,
+    "teams:boulder-team:vault": true,
+    "teams:boulder-team:link:carol": true,
+    "teams:boulder-team:storage": true,
+    "teams:plains-team:deploy": true,
+    "teams:plains-team:vault": true,
+    "teams:plains-team:link:dave": true,
+    "teams:plains-team:storage": true,
+    "partners:christ-community-greeley:deploy": true,
+    "partners:christ-community-greeley:vault": true,
+    "partners:christ-community-greeley:link:alice": true,
+    "partners:christ-community-greeley:storage": true,
+    "partners:timberline-fort-collins:deploy": true,
+    "partners:timberline-fort-collins:vault": true,
+    "partners:timberline-fort-collins:link:bob": true,
+    "partners:timberline-fort-collins:storage": true,
+    "partners:lifebridge-longmont:deploy": true,
+    "partners:lifebridge-longmont:vault": true,
+    "partners:lifebridge-longmont:link:carol": true,
+    "partners:lifebridge-longmont:storage": true,
+    "partners:trinity-fort-morgan:deploy": true,
+    "partners:trinity-fort-morgan:vault": true,
+    "partners:trinity-fort-morgan:link:dave": true,
+    "partners:trinity-fort-morgan:storage": true,
+    "pool-circle-weld-team-1:deploy": true,
+    "pool-circle-weld-team-1:vault": true,
+    "pool-circle-weld-team-1:link": true,
+    "pool-circle-weld-team-1:storage": true,
+    "pool-circle-weld-team-2:deploy": true,
+    "pool-circle-weld-team-2:vault": true,
+    "pool-circle-weld-team-2:link": true,
+    "pool-circle-weld-team-2:storage": true,
+    "pool-church-weld-team-1:deploy": true,
+    "pool-church-weld-team-1:vault": true,
+    "pool-church-weld-team-1:link": true,
+    "pool-church-weld-team-1:storage": true,
+    "pool-circle-larimer-team-1:deploy": true,
+    "pool-circle-larimer-team-1:vault": true,
+    "pool-circle-larimer-team-1:link": true,
+    "pool-circle-larimer-team-1:storage": true,
+    "pool-circle-larimer-team-2:deploy": true,
+    "pool-circle-larimer-team-2:vault": true,
+    "pool-circle-larimer-team-2:link": true,
+    "pool-circle-larimer-team-2:storage": true,
+    "pool-church-larimer-team-1:deploy": true,
+    "pool-church-larimer-team-1:vault": true,
+    "pool-church-larimer-team-1:link": true,
+    "pool-church-larimer-team-1:storage": true,
+    "pool-circle-boulder-team-1:deploy": true,
+    "pool-circle-boulder-team-1:vault": true,
+    "pool-circle-boulder-team-1:link": true,
+    "pool-circle-boulder-team-1:storage": true,
+    "pool-circle-boulder-team-2:deploy": true,
+    "pool-circle-boulder-team-2:vault": true,
+    "pool-circle-boulder-team-2:link": true,
+    "pool-circle-boulder-team-2:storage": true,
+    "pool-church-boulder-team-1:deploy": true,
+    "pool-church-boulder-team-1:vault": true,
+    "pool-church-boulder-team-1:link": true,
+    "pool-church-boulder-team-1:storage": true,
+    "pool-circle-plains-team-1:deploy": true,
+    "pool-circle-plains-team-1:vault": true,
+    "pool-circle-plains-team-1:link": true,
+    "pool-circle-plains-team-1:storage": true,
+    "pool-circle-plains-team-2:deploy": true,
+    "pool-circle-plains-team-2:vault": true,
+    "pool-circle-plains-team-2:link": true,
+    "pool-circle-plains-team-2:storage": true,
+    "pool-church-plains-team-1:deploy": true,
+    "pool-church-plains-team-1:vault": true,
+    "pool-church-plains-team-1:link": true,
+    "pool-church-plains-team-1:storage": true,
+    "records:workspace": true,
+    "records:team:weld-team": true,
+    "records:team:larimer-team": true,
+    "records:team:boulder-team": true,
+    "records:team:plains-team": true,
+    "records:partner:christ-community-greeley": true,
+    "records:partner:timberline-fort-collins": true,
+    "records:partner:lifebridge-longmont": true,
+    "records:partner:trinity-fort-morgan": true,
+    "records:pool:0x9591249ca5cde6336d28F5EdBBD300EaCB104b6b": true,
+    "records:pool:0xDb39d97837139c15E31C1233C8a8B44081A02AaA": true,
+    "records:pool:0xECEa4372fF664Ee1dd59Cd265d095538D080ec1F": true,
+    "records:pool:0xc9DDbd3A1Cb2C912b8266Ca33b94bf118b69865a": true,
+    "records:pool:0x1662b375390B4bE5E71D3Ed1403298d01A952831": true,
+    "records:pool:0x7a4c8B364CEFC7a37F7eE6deB6e89803Ed9A7865": true,
+    "records:pool:0x0DAbeafFc475693Ce15e3BA32B8Abf9C3c10B3Dd": true,
+    "records:pool:0xC9e7f218F65524023591E83ef66E3b1b0195bBD7": true,
+    "records:pool:0x3970108BD7976384fC076F9BB0Ca36d185C82Eaa": true,
+    "records:pool:0x6350610EE932442d9d4dcEFFBc4b16431Ea43122": true,
+    "records:pool:0x19292215B671d2DD231F70672326cDeDD84D709d": true,
+    "records:pool:0xadb6328Ce0dCDf9a9023e7B6a4a33a78cdc11bD3": true,
+    "teams:weld-team:link:nathan": true,
+    "teams:larimer-team:link:nathan": true,
+    "teams:boulder-team:link:nathan": true,
+    "teams:plains-team:link:nathan": true,
+    "pool-circle-weld-team-1:link:nathan": true,
+    "pool-circle-weld-team-2:link:nathan": true,
+    "pool-church-weld-team-1:link:nathan": true,
+    "pool-circle-larimer-team-1:link:nathan": true,
+    "pool-circle-larimer-team-2:link:nathan": true,
+    "pool-church-larimer-team-1:link:nathan": true,
+    "pool-circle-boulder-team-1:link:nathan": true,
+    "pool-circle-boulder-team-2:link:nathan": true,
+    "pool-church-boulder-team-1:link:nathan": true,
+    "pool-circle-plains-team-1:link:nathan": true,
+    "pool-circle-plains-team-2:link:nathan": true,
+    "pool-church-plains-team-1:link:nathan": true,
+    "workspace:link:elena": true,
+    "workspace:link:david": true,
+    "partners:christ-community-greeley:link:nathan": true,
+    "partners:timberline-fort-collins:link:nathan": true,
+    "partners:lifebridge-longmont:link:nathan": true,
+    "partners:trinity-fort-morgan:link:nathan": true,
+    "organization:deploy": true,
+    "organization:vault": true,
+    "organization:link:nathan": true,
+    "organization:storage": true
+  },
+  "poolSlots": {
+    "pool-circle-weld-team-1": {
+      "name": "Circle 1, Weld Corridor Team (game, unfounded)",
+      "custodian": "alice",
+      "kind": "circle",
+      "purpose": "field-circle",
+      "sa": "0x9591249ca5cde6336d28F5EdBBD300EaCB104b6b",
+      "salt": "209985526497910241202841751679133221876",
+      "custodianEoa": "0xe36310847C8A35406f48312EC04fb4464e03ef21"
+    },
+    "pool-circle-weld-team-2": {
+      "name": "Circle 2, Weld Corridor Team (game, unfounded)",
+      "custodian": "alice",
+      "kind": "circle",
+      "purpose": "field-circle",
+      "sa": "0xDb39d97837139c15E31C1233C8a8B44081A02AaA",
+      "salt": "97029632287709728487978828655623959206",
+      "custodianEoa": "0xe36310847C8A35406f48312EC04fb4464e03ef21"
+    },
+    "pool-church-weld-team-1": {
+      "name": "Church 1, Weld Corridor Team (game, unfounded)",
+      "custodian": "alice",
+      "kind": "church",
+      "purpose": "field-church",
+      "sa": "0x3970108BD7976384fC076F9BB0Ca36d185C82Eaa",
+      "salt": "296087006381473553056663770937728197902",
+      "custodianEoa": "0xe36310847C8A35406f48312EC04fb4464e03ef21"
+    },
+    "pool-circle-larimer-team-1": {
+      "name": "Circle 1, Larimer Team (game, unfounded)",
+      "custodian": "bob",
+      "kind": "circle",
+      "purpose": "field-circle",
+      "sa": "0xECEa4372fF664Ee1dd59Cd265d095538D080ec1F",
+      "salt": "203318842603465958054952185747969222351",
+      "custodianEoa": "0xF5a3db6115C48bf460cb7E0c04AA04BBf3E10745"
+    },
+    "pool-circle-larimer-team-2": {
+      "name": "Circle 2, Larimer Team (game, unfounded)",
+      "custodian": "bob",
+      "kind": "circle",
+      "purpose": "field-circle",
+      "sa": "0xc9DDbd3A1Cb2C912b8266Ca33b94bf118b69865a",
+      "salt": "268795635345545841552259337468180810645",
+      "custodianEoa": "0xF5a3db6115C48bf460cb7E0c04AA04BBf3E10745"
+    },
+    "pool-church-larimer-team-1": {
+      "name": "Church 1, Larimer Team (game, unfounded)",
+      "custodian": "bob",
+      "kind": "church",
+      "purpose": "field-church",
+      "sa": "0x6350610EE932442d9d4dcEFFBc4b16431Ea43122",
+      "salt": "92715302709597275686041579202847498263",
+      "custodianEoa": "0xF5a3db6115C48bf460cb7E0c04AA04BBf3E10745"
+    },
+    "pool-circle-boulder-team-1": {
+      "name": "Circle 1, Boulder–Longmont Team (game, unfounded)",
+      "custodian": "carol",
+      "kind": "circle",
+      "purpose": "field-circle",
+      "sa": "0x1662b375390B4bE5E71D3Ed1403298d01A952831",
+      "salt": "7740795340233839580795119708661542202",
+      "custodianEoa": "0x9FccA64a57D398b2C4976f984Ad66a88719e110B"
+    },
+    "pool-circle-boulder-team-2": {
+      "name": "Circle 2, Boulder–Longmont Team (game, unfounded)",
+      "custodian": "carol",
+      "kind": "circle",
+      "purpose": "field-circle",
+      "sa": "0x7a4c8B364CEFC7a37F7eE6deB6e89803Ed9A7865",
+      "salt": "153825065383716050633875752885882968387",
+      "custodianEoa": "0x9FccA64a57D398b2C4976f984Ad66a88719e110B"
+    },
+    "pool-church-boulder-team-1": {
+      "name": "Church 1, Boulder–Longmont Team (game, unfounded)",
+      "custodian": "carol",
+      "kind": "church",
+      "purpose": "field-church",
+      "sa": "0x19292215B671d2DD231F70672326cDeDD84D709d",
+      "salt": "193698321226850050617327317669223221075",
+      "custodianEoa": "0x9FccA64a57D398b2C4976f984Ad66a88719e110B"
+    },
+    "pool-circle-plains-team-1": {
+      "name": "Circle 1, Plains Team (game, unfounded)",
+      "custodian": "dave",
+      "kind": "circle",
+      "purpose": "field-circle",
+      "sa": "0x0DAbeafFc475693Ce15e3BA32B8Abf9C3c10B3Dd",
+      "salt": "293301737040634422215598169507260618639",
+      "custodianEoa": "0x144f167aAFcaD96C7e9fe5173858EA3915b0eB6e"
+    },
+    "pool-circle-plains-team-2": {
+      "name": "Circle 2, Plains Team (game, unfounded)",
+      "custodian": "dave",
+      "kind": "circle",
+      "purpose": "field-circle",
+      "sa": "0xC9e7f218F65524023591E83ef66E3b1b0195bBD7",
+      "salt": "283243910476804033571185139582862020777",
+      "custodianEoa": "0x144f167aAFcaD96C7e9fe5173858EA3915b0eB6e"
+    },
+    "pool-church-plains-team-1": {
+      "name": "Church 1, Plains Team (game, unfounded)",
+      "custodian": "dave",
+      "kind": "church",
+      "purpose": "field-church",
+      "sa": "0xadb6328Ce0dCDf9a9023e7B6a4a33a78cdc11bD3",
+      "salt": "214768527513843886428904404477723927592",
+      "custodianEoa": "0x144f167aAFcaD96C7e9fe5173858EA3915b0eB6e"
+    }
+  },
+  "organization": {
+    "name": "Northern Colorado Field — Game Night (organization)",
+    "kind": "org",
+    "purpose": "field-organization",
+    "custodian": "nathan",
+    "sa": "0x8E32C713f44c7747D97a589522806A8e1Dd810fB",
+    "salt": "200981335166318502700647655637005187991",
+    "custodianEoa": "0xFfcE797B2766726b418Ad7daB92F00E6a1B937fF"
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "home": "https://www.faithnet.me",
+  "clientId": "field-app",
+  "chainId": 34348,
+  "mark": "game",
+  "a2a": "https://a2a.faithnet.io",
+  "mcp": "https://mcp.faithnet.io",
+  "origin": "https://www.faithnet.me",
+  "deliveryServiceSa": "0x0AF2455e3f76594E81d9042aD5FE22A5A35dc57f",
+  "interactionsServiceSa": "0x39508624387fed3b9d6dd15ba86d3ace8a3f0a6a",
+  "organization": {
+    "sa": "0x8E32C713f44c7747D97a589522806A8e1Dd810fB",
+    "custodian": "nathan",
+    "name": "Northern Colorado Field — Game Night (organization)"
+  },
+  "workspace": {
+    "sa": "0xF28BE6eF1b4EdB1313bcF89dd304a426F1537bB6",
+    "custodian": "nathan",
+    "name": "Northern Colorado Field — Game Night"
+  },
+  "partners": {
+    "christ-community-greeley": {
+      "sa": "0x77ecd16630BFFE0066187A175dc419491387ed8e",
+      "custodian": "alice",
+      "name": "Christ Community Church (game agent)"
+    },
+    "timberline-fort-collins": {
+      "sa": "0x6c5d26F9D0068b4bEE76303ACdB4a6a48592Dc6c",
+      "custodian": "bob",
+      "name": "Timberline Church (game agent)"
+    },
+    "lifebridge-longmont": {
+      "sa": "0x06350Bf0553dc833B9e1280871e5aADd943956A7",
+      "custodian": "carol",
+      "name": "LifeBridge Christian Church (game agent)"
+    },
+    "trinity-fort-morgan": {
+      "sa": "0xc7Bb16262e71C1028C41c5c333E292977ED9103F",
+      "custodian": "dave",
+      "name": "Trinity Lutheran Church (game agent)"
+    }
+  },
+  "workers": {
+    "naomi": {
+      "sa": "0x8482b1963f8435c111ffc57aa3b4754addb1a2a5",
+      "custodian": "elena",
+      "name": "naomi-elena.me"
+    },
+    "yusuf": {
+      "sa": "0xcfa3a0d66989cd821afc8ab7b592b429d4ac6a52",
+      "custodian": "dave",
+      "name": "yusuf-dave.me"
+    },
+    "carla": {
+      "sa": "0x20d00a1d9dc3b9093eff8b4ae4f7c89ea1ff718d",
+      "custodian": "carol",
+      "name": "carla-carol.me"
+    },
+    "farid": {
+      "sa": "0x52fe2f69adbc0d266111f26ba33381637db8d454",
+      "custodian": "bob",
+      "name": "farid-bob.me"
+    },
+    "grace": {
+      "sa": "0x4f4d0a2b4d8d42b50f06c5a6e936078d66c0e76f",
+      "custodian": "alice",
+      "name": "grace-alice.me"
+    },
+    "tomas": {
+      "sa": "0x368106f610b6bd7b5685ed005222f45b2326fd6b",
+      "custodian": "nathan",
+      "name": "tomas-nathan.me"
+    },
+    "olena": {
+      "sa": "0x5eb427ad88248a4def7027c52075d4ca0d4d8d37",
+      "custodian": "david",
+      "name": "olena-david.me"
+    },
+    "mark": {
+      "sa": "0x33585c2e3abbdd46f7d4dc4aeb0dfa8506e9913e",
+      "custodian": "bob",
+      "name": "mark-bob.me"
+    },
+    "hodan": {
+      "sa": "0x04d5bbc026eb5a20dcf24c8ce3beb84b97ef7623",
+      "custodian": "elena",
+      "name": "hodan-elena.me"
+    },
+    "luis": {
+      "sa": "0x59748637e9f1a651034e3078a24ed9ee6626959c",
+      "custodian": "dave",
+      "name": "luis-dave.me"
+    },
+    "priya": {
+      "sa": "0x30b6024424772e2a6247a4a8ffcd4ced26c9856f",
+      "custodian": "alice",
+      "name": "priya-alice.me"
+    },
+    "sam": {
+      "sa": "0x8777c65a87703fc432cff7b97311592b83b330ab",
+      "custodian": "nathan",
+      "name": "sam-nathan.me"
+    },
+    "dan": {
+      "sa": "0xa4485f10786815aa0df672d87066f70c2921e710",
+      "custodian": "carol",
+      "name": "dan-carol.me"
+    },
+    "kim": {
+      "sa": "0xacd2c1601eb245e3077823fcd573ba5ebe455cd5",
+      "custodian": "david",
+      "name": "kim-david.me"
+    },
+    "jenna": {
+      "sa": "0xe43492038f6567055703d2f7a7b1ef288876625f",
+      "custodian": "alice",
+      "name": "jenna-alice.me"
+    },
+    "walt": {
+      "sa": "0x4fe8e324006c830899de9ac8c8f5426c34a97469",
+      "custodian": "bob",
+      "name": "walt-bob.me"
+    }
+  }
+}

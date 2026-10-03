@@ -1033,11 +1033,20 @@ export async function fundTreasury(c: Ctx, session: SessionClaims, amountRaw: st
  *
  * Test money on faithchain, and enough of it that nobody has to think about topping up on their
  * first night. There is ONE currency, so this is one number and one mint — nothing is seeded "in
- * every settled currency" and nothing is converted. It only ever tops a treasury up TO this floor:
- * a player who already has money is not given more, because that would be the card room deciding to
- * change somebody's balance behind their back.
+ * every settled currency" and nothing is converted. It is a STAKE FOR AN EMPTY ACCOUNT, never a
+ * floor: this used to top any treasury below 10 000 back up to 10 000, and quick-start runs on every
+ * arrival, so a person who lost 200 at a Sheqel table came back the next day to 10 000 and could not
+ * tell a loss from a buy-in that had failed to settle (2026-09-21). A balance is the record of what
+ * happened at the tables; the card room does not edit it behind somebody's back. Somebody who has
+ * run low adds money themselves on the money page (`POST /treasury/fund`), which is the same open
+ * mint, asked for.
  */
 export const SEED_AMOUNT = '10000';
+
+/** How much quick-start mints into a treasury holding `balance`: the whole seed into an empty one, nothing otherwise. */
+export function seedOwed(balance: bigint): bigint {
+  return balance === 0n ? parseAmount(SEED_AMOUNT) : 0n;
+}
 
 /** One thing the card room did, or could not do, said in money rather than machinery. */
 export interface QuickStartStep {
@@ -1231,7 +1240,6 @@ export async function quickStart(c: Ctx, session: SessionClaims): Promise<Respon
 
   // ONE currency, so one stake: 10 000 Sheqels, and no branching about which coin a player might
   // need for which table. There is nothing to convert and nothing to top up in a second asset.
-  const floor = parseAmount(SEED_AMOUNT);
   let balance: bigint;
   try {
     balance = await readOnlyTreasury(c.env).readBalance(chosen as Address);
@@ -1239,12 +1247,13 @@ export async function quickStart(c: Ctx, session: SessionClaims): Promise<Respon
     steps.push({ step: 'stake', status: 'failed', said: `We could not read your balance: ${e instanceof Error ? e.message : String(e)}` });
     return answer(false, chosen, match.name, null, { action: 'retry', said: 'Try again in a moment.' });
   }
-  // The invariant is a floor, not "is it empty". A treasury the player CHOSE can hold less than a
-  // buy-in, and a player who arrives with 3 at a table with a 40 minimum is stuck with no way
-  // forward — the same dead end as having no treasury at all.
+  // EMPTY, not "below the seed". A treasury with anything in it is a balance somebody played to, and
+  // topping it up here erased every loss the moment they signed in again. Nothing in it is the one
+  // case with no history to preserve — a new account, or a stack lost to the last chip.
   let funded = false;
   let lastTx = '';
-  if (balance < floor) {
+  const seed = seedOwed(balance);
+  if (seed > 0n) {
     // Gated on the ASSET ITSELF answering "anyone may mint me", never on a flag or a name: real
     // money is never minted, and the refusal names the token rather than pretending money arrived.
     const faucet = await isTestAsset(c.env);
@@ -1252,12 +1261,10 @@ export async function quickStart(c: Ctx, session: SessionClaims): Promise<Respon
       steps.push({ step: 'stake', status: 'blocked', said: `Nothing was added: ${faucet.reason}` });
     } else {
       try {
-        // Mint the SHORTFALL, so a partly-funded treasury lands exactly on the floor rather than
-        // being handed another full seed on top of what it already had.
-        lastTx = await custodialTreasury(c.env).mintTestAsset(chosen as Address, floor - balance);
+        lastTx = await custodialTreasury(c.env).mintTestAsset(chosen as Address, seed);
         balance = await readOnlyTreasury(c.env)
           .readBalance(chosen as Address)
-          .catch(() => floor);
+          .catch(() => seed);
         funded = true;
       } catch (e) {
         const reason = e instanceof TreasuryConfigError ? configFailure(e) : e instanceof Error ? e.message : String(e);

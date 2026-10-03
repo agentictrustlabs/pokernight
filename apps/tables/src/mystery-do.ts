@@ -23,6 +23,8 @@ import {
 import { MYSTERY_DIRECT_SKILL } from '@pokernight/protocol';
 import { askCharacter, askDirector } from './mystery-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
+import { carryRoomTalk, castMessaging, whisperAs, whispersToCarry } from './cast-messaging.js';
+import { clubTopic } from './clubs.js';
 import { mysteryCast, mysteryCastAgents, mysteryDirector, type Env } from './env.js';
 import { MYSTERY_ACT_SKILL } from '@pokernight/protocol';
 
@@ -32,6 +34,9 @@ interface Meta {
   /** A CLUB'S NIGHT rather than a night of your own: who may take a part is the club's roster, and it waits
    *  in `casting` until the host says the curtain is up. A solo night has neither. */
   club?: string; night?: string; casting?: boolean;
+  /** THE NIGHT'S TOPIC on the club's board — the channel the club's agent opened for it (`clubTopic`), where the
+   *  night's room talk lands as posts from each character's own agent. Stamped once; a night of your own has none. */
+  topic?: string;
   /**
    * WHO DIRECTS. An agent, by name — the agent of whoever's night this is, or a service they name. The house
    * spends no tokens, so the prose is thought for at somebody's own Home and costs them; a director that does
@@ -114,6 +119,57 @@ export class MysteryDO extends DurableObject<Env> {
       `INSERT OR REPLACE INTO kv (k, v) VALUES ('state', ?), ('meta', ?), ('paused', ?), ('taken', ?), ('heard', ?)`,
       JSON.stringify(this.state), JSON.stringify(this.meta), this.paused ? '1' : '0', JSON.stringify(this.taken), String(this.heard),
     );
+    void this.carryWhispers().catch((e: unknown) => console.warn('[mystery] carrying whispers threw:', String(e)));
+  }
+
+  /** The topic being opened, so two saves in one moment ask the club once. */
+  private topicOpening: Promise<string | null> | null = null;
+
+  /**
+   * THE NIGHT'S TOPIC ON THE CLUB'S BOARD (2026-09-18): opened by the club's own agent (`club.topic`, idempotent by
+   * title, so a night restarted finds the same one) the first time the night has something to say there, and stamped
+   * on the night. A night of your own has no club and no topic.
+   */
+  private topicFor(): Promise<string | null> {
+    if (!this.meta?.club) return Promise.resolve(null);
+    if (this.meta.topic) return Promise.resolve(this.meta.topic);
+    if (!this.topicOpening) {
+      const title = `${stagingOf(this.meta.title)?.title.name ?? this.meta.title} · ${this.meta.night ?? `night ${this.meta.stagingId.slice(0, 8)}`}`;
+      this.topicOpening = clubTopic(this.env, this.meta.club, title)
+        .then((t) => {
+          if (!t.ok) { console.warn(`[mystery] the club opened no topic for the night: ${t.error}`); return null; }
+          if (this.meta) { this.meta.topic = t.channelId; this.save(); }
+          return t.channelId;
+        })
+        .finally(() => { this.topicOpening = null; });
+    }
+    return this.topicOpening;
+  }
+
+  /** Whispers this object has already sent over A2A, by event key — remembered, never re-sent; bounded. */
+  private carried = new Set<string>();
+
+  /**
+   * A WHISPER BETWEEN TWO PARTS IS A DIRECT MESSAGE FROM THE ONE AGENT TO THE OTHER (`cast-messaging.ts`). Called
+   * on every save, because every change to the night passes through one; each whisper is carried once, after the
+   * room already has it, and a miss is logged and never retried — the room's copy is the record of what was said.
+   */
+  private async carryWhispers(): Promise<void> {
+    const cm = await castMessaging(this.env);
+    if (!cm || !this.state) return;
+    // THE CHARACTER IS THE IDENTITY: both ends are the part's standing persona, whoever plays it tonight.
+    const standing = mysteryCast(this.env);
+    const personaOf = (role: string) => standing.find((m) => m.role === role)?.agent ?? null;
+    for (const w of whispersToCarry(this.state.log, this.state.cast, cm, this.carried, personaOf)) {
+      this.carried.add(w.key);
+      if (this.carried.size > 600) for (const k of [...this.carried].slice(0, 200)) this.carried.delete(k);
+      console.log(`[mystery] carrying ${w.from.character}'s whisper to ${w.toName} over A2A as ${w.from.name}`);
+      void whisperAs(this.env, cm, w.from, w.toSa, w.toName, w.text)
+        .then((r) => { if (!r.ok) console.warn(`[mystery] ${w.from.character}'s whisper to ${w.toName} stayed in the room: ${r.error}`); else console.log(`[mystery] ${w.from.character}'s whisper to ${w.toName} landed at the Home`); })
+        .catch((e: unknown) => console.warn(`[mystery] the whisper threw:`, String(e)));
+    }
+    // AND THE ROOM TALK, to the night's topic on the club's board — same identity rule, other verb; the wall stays.
+    await carryRoomTalk(this.env, cm, { log: this.state.log, cast: this.state.cast, club: this.meta?.club, topic: () => this.topicFor() }, this.carried, personaOf, 'mystery');
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -135,7 +191,12 @@ export class MysteryDO extends DurableObject<Env> {
       const standing = mysteryCast(this.env);
       let handed = 0;
       const cast: Casting[] = title.roles.map((r) => {
-        if (r.id === role) return { role: r.id, agent: b.owner, name: b.ownerName || r.name, custodian: b.owner, operator: 'human' as const, playerId: b.owner, mind: 'human' as const };
+        // A PERSON CHANGES THE MIND, NOT THE CHARACTER (see `Casting.playedBy`): the part keeps its own agent
+        // and its own name. Only a part with no chartered persona is addressed at the person's own agent.
+        if (r.id === role) {
+          const mine = standing.find((c) => c.role === r.id);
+          return { role: r.id, agent: mine?.agent ?? b.owner, name: r.name, custodian: b.owner, operator: 'human' as const, playerId: b.owner, mind: 'human' as const, ...(b.ownerName ? { playedBy: b.ownerName } : {}) };
+        }
         // A PART NOBODY IS PLAYING GETS AN AGENT, from the deployment's list — and a short list is a REPERTORY
         // COMPANY rather than a shortage: one agent plays several parts, because the part is in the ask (the
         // brief, the view, the room) and not in the agent. The house's rules play the rest when the list is empty.
@@ -223,7 +284,7 @@ export class MysteryDO extends DurableObject<Env> {
         this.state = {
           ...this.state,
           cast: this.state.cast.map((c) => (c.role === b.role
-            ? { ...c, agent: b.playerId, name: b.name || c.name, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const }
+            ? { ...c, custodian: b.playerId, operator: 'human' as const, playerId: b.playerId, mind: 'human' as const, ...(b.name ? { playedBy: b.name } : {}) }
             : c)),
         };
         this.save();
@@ -252,7 +313,10 @@ export class MysteryDO extends DurableObject<Env> {
       let handed = 0;
       const cast: Casting[] = pair.title.roles.map((r) => {
         const person = Object.entries(this.taken).find(([, t]) => t.role === r.id);
-        if (person) return { role: r.id, agent: person[0], name: person[1].name || r.name, custodian: person[0], operator: 'human' as const, playerId: person[0], mind: 'human' as const };
+        if (person) {
+          const mine = standing.find((c) => c.role === r.id);
+          return { role: r.id, agent: mine?.agent ?? person[0], name: r.name, custodian: person[0], operator: 'human' as const, playerId: person[0], mind: 'human' as const, ...(person[1].name ? { playedBy: person[1].name } : {}) };
+        }
         /**
          * THE CHARACTER'S OWN PERSON, when the estate has chartered one (`MYSTERY_CAST`). Émile Rossi is
          * `emile-elena.me`, a person agent Elena custodies — not a service agent standing in for eight
@@ -367,6 +431,7 @@ export class MysteryDO extends DurableObject<Env> {
       deadline: s?.deadline ?? null, seedCommit: s?.seedCommit ?? '', paused: this.paused,
       startedAt: s?.startedAt ?? 0, endedAt: s?.endedAt ?? null,
       ...(m.club ? { club: m.club } : {}), ...(m.night ? { night: m.night } : {}),
+      ...(m.topic ? { topic: m.topic } : {}),
       host: m.owner, pace: m.pace ?? 'full', ...(m.director ? { director: m.director } : {}),
       // what the host is deciding with — see `readiness()`
       ready: this.readiness(),
@@ -383,7 +448,7 @@ export class MysteryDO extends DurableObject<Env> {
       const playing = this.state?.cast.find((c) => c.role === r.id);
       return {
         role: r.id, name: r.name, blurb: r.blurb, look: r.look,
-        takenBy: person ? person[1].name : playing?.operator === 'human' ? playing.name : null,
+        takenBy: person ? person[1].name : playing?.operator === 'human' ? playing.playedBy ?? null : null,
         takenById: person ? person[0] : playing?.playerId ?? null,
         operator: person || playing?.operator === 'human' ? 'human' : 'agent',
       };

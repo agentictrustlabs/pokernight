@@ -109,7 +109,7 @@ export type ClubAct =
  * bytes, the Home's origin and the moment, and the Home spends it once — the same shape the house
  * presents to a person's agent (`house-caller.ts`), with the club's wire in place of the house's.
  */
-export async function actAsClub(env: Env, club: string, skill: 'club.read' | 'club.write', input: Record<string, unknown>): Promise<ClubAct> {
+export async function actAsClub(env: Env, club: string, skill: 'club.read' | 'club.write' | 'club.topic', input: Record<string, unknown>): Promise<ClubAct> {
   const a2a = (env.HOME_A2A_ORIGIN ?? '').trim().replace(/\/$/, '');
   const pk = (env.HOUSE_A2A_SESSION_KEY ?? '').trim();
   if (!a2a || !pk) return { ok: false, status: 503, error: 'this card room cannot reach its Home' };
@@ -364,6 +364,20 @@ export async function writeClubRecord(env: Env, club: string, record: 'profile' 
   const out = await actAsClub(env, club, 'club.write', { record, value });
   forgetClub(club);
   return out;
+}
+
+/**
+ * THE NIGHT'S TOPIC ON THE CLUB'S BOARD (2026-09-18). A club's game night is talked about where the club already
+ * talks: the club's agent opens an open topic titled for the night — or finds the one it opened before, by title —
+ * and the night's room talk lands there as posts from each character's own agent (`cast-messaging.ts`). Asked by
+ * the night's object once, when the night is created in a club; the channel id is stamped on the night's meta.
+ */
+export async function clubTopic(env: Env, club: string, title: string): Promise<{ ok: true; channelId: string; created: boolean } | { ok: false; error: string }> {
+  const out = await actAsClub(env, club, 'club.topic', { title });
+  if (!out.ok) return { ok: false, error: out.error };
+  const channelId = typeof out.data.channelId === 'string' ? out.data.channelId : '';
+  if (!channelId) return { ok: false, error: 'the club opened no topic' };
+  return { ok: true, channelId, created: out.data.created === true };
 }
 
 /** Compose the schedule record from what the host asked for, or say what is wrong with it. */

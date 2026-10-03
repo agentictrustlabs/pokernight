@@ -796,9 +796,11 @@ label > select {
 }
 
 /* PLAY: the two ways to be dealt in, side by side, then a quiet line about other people. */
+/* FOUR CARDS IN ONE ROW ON A LAPTOP (2026-09-18): the choices are behind a press now, so a card is a band, a
+   paragraph and a button, and four of them fit across at 1100px wide; nothing to play is below the fold. */
 .play {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
   gap: 1rem;
   /* Stretch, so two cards with blurbs of different lengths still put their buttons on one line. The
      `flex: 1` on the blurb inside each card is what turns the extra height into space above the
@@ -843,7 +845,7 @@ label > select {
 }
 .play-band h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   letter-spacing: -0.02em;
   color: var(--hero-ink);
 }
@@ -857,6 +859,7 @@ label > select {
 .play-card .hint {
   margin: 0;
   flex: 1; /* so two cards of unequal blurb still line their buttons up */
+  font-size: 0.9rem;
 }
 .play-card .primary {
   align-self: flex-start;
@@ -869,6 +872,9 @@ label > select {
 .play-card .primary:hover:not(:disabled) {
   background: var(--cta-bg-hover);
 }
+/* the night's choices, opened beside the page: the same stack the card used to carry */
+.drawer-body .mystery-part { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.8rem; }
+.drawer-body > .primary { margin-top: 0.4rem; }
 /* The "other people" line is not a third way to play, so it spans the row and reads quieter. */
 .play-running {
   grid-column: 1 / -1;
@@ -6856,6 +6862,8 @@ button.tag.guest {
   min-height: 280px; display: flex; align-items: flex-end; }
 .mystery-hero-art { position: absolute; inset: 0;
   background: #0E1628 url('/art/belvedere-night.svg') center 30% / cover no-repeat; }
+/* the Greeley poster: no artwork yet — a fellowship-hall gradient with the county's map colours */
+.gc-hero-art { background: radial-gradient(ellipse at 30% 20%, #3b2f1f 0%, #1a1712 45%, #0d0f12 100%); }
 .mystery-hero-words { position: relative; width: 100%; padding: 4.5rem 1.15rem 1.05rem;
   background: linear-gradient(to top, rgba(6,10,20,.92) 8%, rgba(6,10,20,.72) 42%, rgba(6,10,20,0) 100%); }
 .mystery-hero-eyebrow { display: block; font-size: .68rem; letter-spacing: .16em; text-transform: uppercase;
@@ -6963,3 +6971,194 @@ button.tag.guest {
 .venue-door { color: #8fd0a2; font-size: 11px; }
 .venue-door.shut { color: #7f8b93; }
 .venue-help { position: absolute; left: 0.7rem; bottom: 0.5rem; margin: 0; font-size: 11px; color: #a9b3ba; }
+
+/* ═══════════════════════════ GREAT COMMISSION (docs/GREAT-COMMISSION.md) ═══════════════════════════
+   The mystery page's shell, with the BOARD where the venue was: five peoples and the reading for each. */
+/* THE ACTIVITIES ARE THE PAGE (2026-09-18). Four panels each took a fixed slice of the height — picture 30vh,
+   board 20vh, room 18vh — and the transcript got the three lines that were left, clipped, at the bottom (the
+   owner: "I cannot see the activities"). The picture, the board and the room are CONTENT-SIZED STRIPS now, never
+   clipped, and the transcript takes whatever remains. */
+.gc-page .mystery-main > .mystery-venue-wrap .venue { height: min(28vh, 300px); }
+/* A SHORT WINDOW GIVES UP PICTURE, NOT ACTIVITIES: under 760px the picture is a band and the strips are tighter. */
+@media (max-height: 760px) {
+  .gc-page .mystery-main > .mystery-venue-wrap .venue { height: min(19vh, 160px); }
+  .gc-page .mystery-main > .mystery-transcript { min-height: 7rem; }
+  .gc-page .mystery-main { gap: 0.5rem; }
+  .gc-page .mystery-main > .gc-board, .gc-page .mystery-main > .mystery-room { padding: 0.4rem 0.7rem; }
+  .gc-board header .hint { display: none; }
+  .gc-room header p.hint { display: none; }
+  .gc-people li .gc-phase-name { display: none; }
+  .gc-room .mystery-doors button { padding: 0.1rem 0.4rem; font-size: 0.8rem; }
+}
+.gc .topbar button, .gc .topbar a { white-space: nowrap; }
+.gc-page .mystery-main > .gc-board { flex: 0 0 auto; max-height: none; overflow: visible; padding: 0.55rem 0.8rem; }
+.gc-page .mystery-main > .mystery-room { flex: 0 0 auto; max-height: none; overflow: visible; padding: 0.55rem 0.8rem; }
+.gc-page .mystery-main > .mystery-transcript { flex: 1 1 auto; min-height: 10rem; max-height: none; display: flex; flex-direction: column; overflow: hidden; }
+.gc-transcript .gc-lines { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 0.35rem; }
+.gc-board header { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
+.gc-board header h3, .gc-room header h3 { margin: 0; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: #a9b3ba; }
+.gc-board .gc-towns { margin: 0 0 0.3rem; }
+/* ONE ROW OF FIVE: name, reading, witnesses — a strip that wraps on a narrow screen, never a grid of cards */
+.gc-people { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem 0.5rem; }
+.gc-people li { display: flex; flex-direction: row; align-items: baseline; gap: 0.35rem; padding: 0.2rem 0.5rem; border: 1px solid rgba(240, 236, 224, 0.1); border-radius: 6px; flex: 0 1 auto; min-width: 0; font-size: 0.84rem; }
+.gc-people li strong { white-space: nowrap; }
+.gc-reading { display: flex; flex-direction: column; gap: 0; line-height: 1.25; }
+.gc-fold > summary { cursor: pointer; font-size: 0.85rem; color: #a9b3ba; margin-top: 0.3rem; }
+/* the room's blurb is one line — the full text is on the title; the strip is for doing, not reading */
+.gc-room header p.hint { margin: 0.1rem 0 0.35rem; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-here { margin: 0.35rem 0 0.3rem; line-height: 1.5; }
+.mystery .gc-here-chip { background: none; border: 0; border-radius: 0; color: inherit; font: inherit; text-decoration: underline dotted; cursor: pointer; padding: 0 0.1rem; min-height: 0; }
+.mystery .gc-here-chip:hover:not(:disabled), .mystery .gc-here-chip:focus-visible { background: none; color: #ffd98a; }
+.mystery .gc-here-chip[aria-pressed="true"] { color: #c9a14a; text-decoration-style: solid; font-weight: 600; }
+.gc-talk { flex-wrap: wrap; align-items: center; }
+.gc-talk-target { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(201, 161, 74, 0.16); border: 1px solid rgba(201, 161, 74, 0.4); font-size: 0.82rem; white-space: nowrap; }
+.mystery .gc-talk-target button { background: none; border: 0; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.1rem; min-width: 22px; min-height: 22px; }
+.mystery .gc-filter { background: none; border: 1px solid rgba(240, 236, 224, 0.16); padding: 0.1rem 0.55rem; }
+.mystery .gc-filter.active { background: rgba(201, 161, 74, 0.18); border-color: #c9a14a; }
+.gc-room .mystery-doors button, .gc-talk button { padding: 0.2rem 0.5rem; font-size: 0.84rem; }
+.gc-room .mystery-doors { gap: 0.3rem; }
+.gc-people li .gc-phase { white-space: nowrap; font-size: 0.82rem; }
+.gc-talk input { padding: 0.3rem 0.6rem; }
+.gc-room .mystery-doors { margin-top: 0.2rem; }
+.gc-filter-row { display: flex; gap: 0.3rem; flex-wrap: wrap; margin: 0 0 0.4rem; flex: 0 0 auto; }
+.gc-filter { font: inherit; font-size: 0.76rem; padding: 0.15rem 0.6rem; border-radius: 999px; border: 1px solid rgba(240, 236, 224, 0.16); background: none; color: #cfd6da; cursor: pointer; min-height: 0; }
+.gc-filter.active { background: rgba(201, 161, 74, 0.18); border-color: #c9a14a; color: #edeae2; }
+.gc-round-divider { display: flex; align-items: center; gap: 0.6rem; margin: 0.5rem 0 0.2rem; color: #9aa3ab; font-size: 0.76rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.gc-round-divider::before, .gc-round-divider::after { content: ''; flex: 1; height: 1px; background: rgba(240, 236, 224, 0.12); }
+.gc-tome { background: rgba(201, 161, 74, 0.1); border-left: 2px solid #c9a14a; padding: 0.15rem 0.5rem; border-radius: 3px; }
+.gc-received li { position: relative; }
+.gc-people-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.mystery .gc-people-head button.confirmed { background: rgba(143, 208, 162, 0.16); border-color: #8fd0a2; color: #dff5e6; opacity: 1; }
+.gc-slips { list-style: none; margin: 0.25rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.gc-slips li { display: block; border: 0; padding: 0; }
+.gc-slips li.revoked { opacity: 0.55; }
+.gc-you-head { padding-bottom: 0.6rem; }
+.gc-you-head .mystery-you-head { margin-bottom: 0.3rem; }
+.gc-whose { margin: 0.3rem 0 0; }
+.gc-whose code { font-size: 0.85em; }
+.gc-received-new { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c9a14a; margin-right: 0.35rem; vertical-align: middle; }
+.gc-received-count { font-size: 0.75rem; color: #9aa3ab; margin-left: 0.3rem; }
+/* a cast row is two lines here: the name, then part · agent · room — a name is never cut to "Naw …" */
+.gc .mystery-cast-row { flex-wrap: wrap; row-gap: 0; }
+.gc .mystery-cast-row strong { white-space: normal; overflow: visible; }
+.gc .mystery-cast-row .muted.small { flex-basis: 100%; white-space: normal; padding-left: 1.75rem; line-height: 1.3; }
+@media (max-width: 900px) {
+  .gc-page .mystery-main > .mystery-transcript { max-height: 50vh; }
+}
+.gc-phase { color: #c9a14a; font-weight: 600; }
+.gc-need { color: #8fd0a2; }
+.gc-grain { margin-left: 0.4rem; font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.gc-commits { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.92rem; }
+.gc-commits li.stale { color: #e5b3b3; }
+.gc-commits li.done { color: #8fd0a2; }
+.gc-vault, .gc-received { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+.gc-vault li, .gc-received li { display: flex; flex-direction: column; gap: 0.25rem; border-bottom: 1px solid rgba(240, 236, 224, 0.08); padding-bottom: 0.5rem; font-size: 0.92rem; }
+.gc-vault li.revoked, .gc-received li.revoked { opacity: 0.55; }
+.gc-slip { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.2rem; }
+.gc-slip label { display: inline-flex; gap: 0.35rem; align-items: center; font-size: 0.85rem; margin-right: 0.6rem; }
+.gc-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.gc-form select, .gc-form input { max-width: 100%; }
+.gc-leak { color: #e5b3b3; }
+.gc-reveal.rails-held { border-color: #8fd0a2; }
+.gc-reveal.rails-failed { border-color: #8d3a3a; }
+.gc-score { list-style: none; margin: 0.2rem 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+.gc-score li.hit { color: #8fd0a2; }
+.gc-score li.miss { color: #e5b3b3; }
+.play-commission .play-suit { color: #8fd0a2; }
+.gc-wall { margin: 0.5rem 0; }
+.gc-wall h3 { margin: 0.4rem 0 0.3rem; }
+.gc-postits { list-style: none; margin: 0; padding: 0.3rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.gc-postit { width: 9.5rem; min-height: 5rem; padding: 0.5rem 0.55rem; font-size: 0.85rem; line-height: 1.3; color: #1c1c18; box-shadow: 0 2px 4px rgba(0,0,0,0.35); display: flex; flex-direction: column; justify-content: space-between; }
+.gc-postit .small { color: #4a4a40; margin-top: 0.3rem; }
+.gc-postit.c0 { background: #f2e26a; } .gc-postit.c1 { background: #8fd0a2; } .gc-postit.c2 { background: #f2a76a; }
+
+/* The county's map, said once above the readings. */
+.gc-towns { margin: 0 0 0.5rem; letter-spacing: 0.01em; }
+
+/* A CLUB IS ONE GAME (2026-09-18): the pick at founding, and the line in About */
+.club-game-pick { border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.5rem 0.8rem; margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.club-game-pick legend { font-size: 0.8rem; color: var(--muted); padding: 0 0.3rem; }
+.club-game-option { display: flex; gap: 0.5rem; align-items: baseline; cursor: pointer; padding: 0.2rem 0.3rem; border-radius: 6px; }
+.club-game-option.on { background: rgba(201, 161, 74, 0.1); }
+.club-game { margin: 0.4rem 0 0.6rem; }
+
+/* ═══════════════════════════ FIELD OPERATIONS (docs/FIELD-OPERATIONS.md §7) ═══════════════════════════ */
+.fo-hero-art { background: linear-gradient(180deg, #1b2a3a 0%, #243a2e 55%, #3b3a26 100%); }
+.fo-page .mystery-main > .fo-map-wrap { flex: 0 0 auto; padding: 0.4rem 0.5rem 0.3rem; overflow: visible; }
+.fo-map { width: 100%; height: auto; max-height: min(42vh, 440px); display: block; border-radius: 8px; }
+.fo-map-label { font-size: 10px; fill: #cfd6da; pointer-events: none; }
+.fo-map-corridor { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; pointer-events: none; }
+.fo-map-road { font-size: 9px; fill: #6d7f78; pointer-events: none; }
+.fo-map-town.selected circle { filter: url(#fo-glow); }
+.fo-map-person circle { transition: stroke 300ms; }
+.fo-map-body.stalled circle { stroke-dasharray: 2 2; }
+.fo-days { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; margin: 0.35rem 0.2rem 0; }
+.fo-day { width: 9px; height: 7px; border-radius: 2px; background: rgba(240, 236, 224, 0.12); }
+.fo-day.past { background: rgba(201, 161, 74, 0.5); }
+.fo-day.today { background: #ffd98a; box-shadow: 0 0 6px #ffd98a; }
+.fo-day.week-end { margin-right: 5px; }
+.fo-days-label { margin-left: 0.5rem; font-size: 0.78rem; color: #a9b3ba; }
+.fo-page .mystery-main > .fo-board { flex: 0 0 auto; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain; }
+.fo-corridors { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.4rem 0.8rem; }
+.fo-corridor h4 { margin: 0.2rem 0 0.2rem; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.fo-weld h4 { color: #c9a14a; } .fo-larimer h4 { color: #8fd0a2; } .fo-boulder h4 { color: #9ab7e0; } .fo-plains h4 { color: #e0a07a; }
+.fo-communities { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.fo-communities li { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.25rem 0.45rem; border: 1px solid rgba(240, 236, 224, 0.1); border-radius: 6px; font-size: 0.84rem; }
+.fo-communities li.dim { opacity: 0.4; }
+.fo-community-head { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+.fo-gauge { display: inline-flex; gap: 2px; margin: 0.1rem 0; }
+.fo-gauge-cell { width: 14px; height: 8px; border-radius: 2px; background: rgba(240, 236, 224, 0.1); position: relative; }
+.fo-gauge-cell.on { background: #c9a14a; }
+.fo-gauge-cell.floor::after { content: ''; position: absolute; left: 0; right: 0; bottom: -4px; height: 2px; background: #9ab7e0; }
+.fo-gauge-cell.published { outline: 1.5px solid #8fd0a2; outline-offset: 1px; }
+.fo-phase-words { line-height: 1.3; }
+.fo-counts { color: #cfd6da; letter-spacing: 0.02em; }
+.fo-next { font-style: italic; }
+.fo-ok { color: #8fd0a2; } .fo-off { color: #e5b3b3; }
+.fo-line { display: flex; gap: 0.45rem; align-items: flex-start; font-size: 0.9rem; line-height: 1.35; }
+.fo-line.mine .fo-line-body { background: rgba(201, 161, 74, 0.08); border-radius: 4px; padding: 0 0.3rem; }
+.fo-line-dot { width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%; background: rgba(240, 236, 224, 0.08); }
+.fo-line.fo-founded .fo-line-body, .fo-line.fo-recognized .fo-line-body { color: #ffd98a; }
+.fo-line.fo-phase .fo-line-body { color: #8fd0a2; font-weight: 600; }
+.fo-line.fo-stalled .fo-line-body { color: #e5b3b3; }
+.fo-line.fo-cue .fo-line-body { color: #cfd6da; }
+.fo-line.fo-whisper .fo-line-body { background: rgba(201, 161, 74, 0.1); border-left: 2px solid #c9a14a; padding: 0.1rem 0.5rem; border-radius: 3px; }
+.fo-energy { display: flex; align-items: center; gap: 0.5rem; margin: 0.3rem 0; }
+.fo-energy-bar { display: inline-block; width: 90px; height: 7px; border-radius: 4px; background: rgba(240, 236, 224, 0.12); overflow: hidden; }
+.fo-energy-bar span { display: block; height: 100%; background: #8fd0a2; }
+.fo-verbs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.4rem 0 0.3rem; }
+.mystery .fo-verb { padding: 0.25rem 0.6rem; font-size: 0.84rem; }
+.mystery .fo-verb.on { background: rgba(201, 161, 74, 0.22); border-color: #c9a14a; }
+.fo-teams .mystery-cast-list { margin: 0.2rem 0 0.4rem; }
+.fo-cast-row { flex-wrap: wrap; }
+.fo-cast-row .muted.small { flex-basis: 100%; padding-left: 1.9rem; }
+.mystery .fo-cast-name { display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; }
+.mystery .fo-cast-name[aria-pressed="true"] strong { color: #c9a14a; }
+.fo-agent-rows, .fo-partner-rows, .fo-score { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.88rem; }
+.fo-agents h3 .muted { font-weight: 400; }
+.fo-estate .hint a { color: #c9a14a; }
+.play-fieldops .play-band { background: linear-gradient(135deg, #243a2e, #1b2a3a); }
+@media (max-height: 760px) {
+  .fo-map { max-height: min(30vh, 300px); }
+  .fo-page .mystery-main > .fo-board { max-height: 26vh; }
+}
+.fo-road { list-style: none; margin: 0 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.84rem; }
+.fo-road li { padding: 0.2rem 0.5rem; border-left: 3px solid #9aa3ab; background: rgba(240, 236, 224, 0.05); border-radius: 3px; }
+.fo-road li.fo-road-barrier { border-left-color: #e5b3b3; } .fo-road li.fo-road-pressure { border-left-color: #e0a07a; }
+.fo-line.fo-trail .fo-line-body { color: #e0c9a0; font-style: italic; }
+.fo-line.fo-chose .fo-line-body { color: #ffd98a; }
+.fo-choice { margin: 0.4rem 0; padding: 0.5rem 0.6rem; border: 1px solid rgba(201, 161, 74, 0.5); border-radius: 8px; background: rgba(201, 161, 74, 0.08); }
+.fo-choice-q { margin: 0 0 0.4rem; font-size: 0.92rem; }
+.fo-choice-options { display: flex; flex-direction: column; gap: 0.3rem; }
+
+/* Field Operations — bootstrapping: the plan, the bell, the invite list, the charters, a community defined in play. */
+.fo-plan, .fo-bell { padding: 0.35rem 0.5rem; border-left: 3px solid #c9a86a; background: rgba(201, 168, 106, 0.08); }
+.fo-bell { border-color: #8fd0a2; background: rgba(143, 208, 162, 0.08); }
+.fo-invite-list { display: flex; flex-direction: column; gap: 0.2rem; max-height: 180px; overflow: auto; padding: 0.3rem 0.4rem; border: 1px solid rgba(240, 236, 224, 0.12); border-radius: 6px; }
+.fo-invite-list label { display: flex; gap: 0.4rem; align-items: center; cursor: pointer; }
+.fo-team-agent { margin: 0.2rem 0 0.4rem; }
+.fo-team-agent code { font-size: 0.85em; }
+.fo-charters { list-style: none; padding: 0; margin: 0.4rem 0 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.fo-defined { font-size: 0.7rem; margin-left: 0.4rem; background: rgba(201, 168, 106, 0.18); }
+.fo-unworked { font-style: italic; }
+.gc-form textarea { width: 100%; font: inherit; background: rgba(240, 236, 224, 0.06); color: inherit; border: 1px solid rgba(240, 236, 224, 0.18); border-radius: 6px; padding: 0.4rem 0.5rem; }

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AppSession, ClubView, KnownPerson, Night } from '../lib/types';
-import { ApiError, api, roomApi } from '../lib/api';
+import { ApiError, api, clubGameApi, roomApi } from '../lib/api';
 import { CHARTER_BLURB, canInvite, confirmsRetire, retireConsequences, standingLabel } from '../lib/clubs';
 import { NameCheck, useNameCheck } from './NameCheck';
 import { startClubCharter, startMembershipInvite, type AuthConfig } from '../lib/home';
 import { shortAddress } from '../lib/format';
 import { clubHash } from '../lib/routes';
 import { downloadUrl, googleCalendarLink, nextNight } from '../lib/nights';
-import { gameBlurb } from '../lib/games';
+import { CLUB_GAMES, clubGame, gameBlurb } from '../lib/games';
 import { retiredLine } from '../lib/clubs';
 
 /**
@@ -101,12 +101,41 @@ export function About({ view, session, tables, onChanged, onRetired }: { view: C
         {view.name} <span className="club-role">{standingLabel(view.you.standing)}</span>
       </h2>
       <Welcome view={view} session={session} host={host} onChanged={onChanged} />
+      <TheGame view={view} session={session} host={host} onChanged={onChanged} />
       <Calendar clubId={view.clubId} clubName={view.name} session={session} nights={view.nights} />
       <p className="hint club-agent">
         Its agent: <code className="mono" title={view.clubId}>{shortAddress(view.clubId)}</code> — at {host ? 'your' : "the host's"} Home; this room acts as it.
       </p>
       {host ? <Retire view={view} session={session} tables={tables} onRetired={onRetired} /> : null}
     </section>
+  );
+}
+
+/** A CLUB IS ONE GAME (2026-09-18): which, said plainly, and the host's to change. */
+function TheGame({ view, session, host, onChanged }: { view: ClubView; session: AppSession; host: boolean; onChanged: () => void }) {
+  const game = clubGame(view.games);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const set = async (id: string) => {
+    if (id === game.id || busy) return;
+    setBusy(true); setErr(null);
+    try { await clubGameApi.set(view.clubId, id, session.token); onChanged(); } catch (e) { setErr(e instanceof ApiError ? e.message : String(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="club-game">
+      <p className="hint">
+        This club plays <strong>{game.name}</strong> — {game.line}
+        {!view.games?.length && host ? ' (Nothing was chosen when it was founded, so it is hold’em until you say otherwise.)' : ''}
+      </p>
+      {host ? (
+        <label className="small">Change it:{' '}
+          <select value={game.id} disabled={busy} onChange={(e) => void set(e.target.value)}>
+            {CLUB_GAMES.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </label>
+      ) : null}
+      {err ? <div className="form-error">{err}</div> : null}
+    </div>
   );
 }
 
@@ -454,6 +483,8 @@ function KnownPeople({ session, roster, busy, onPick }: { session: AppSession; r
  */
 export function StartClub({ config }: { config: AuthConfig | null }) {
   const [name, setName] = useState('');
+  // A CLUB IS ONE GAME (2026-09-18): chosen here, stamped on the profile at founding, changeable in About.
+  const [game, setGame] = useState('poker');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // THE NAME IS CHECKED HERE, before the trip: a taken workspace name was a dead end at the Home's door.
@@ -465,7 +496,7 @@ export function StartClub({ config }: { config: AuthConfig | null }) {
     setBusy(true);
     setErr(null);
     try {
-      location.href = await startClubCharter(config, { name: name.trim() });
+      location.href = await startClubCharter(config, { name: name.trim(), games: [game] });
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : 'The club could not be started');
       setBusy(false);
@@ -479,6 +510,15 @@ export function StartClub({ config }: { config: AuthConfig | null }) {
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Thursday Night" maxLength={64} autoFocus />
       </label>
       <NameCheck check={check} what="club" />
+      <fieldset className="club-game-pick">
+        <legend>What it plays</legend>
+        {CLUB_GAMES.map((g) => (
+          <label key={g.id} className={`club-game-option${game === g.id ? ' on' : ''}`}>
+            <input type="radio" name="club-game" value={g.id} checked={game === g.id} onChange={() => setGame(g.id)} />
+            <span><strong>{g.name}</strong><span className="small muted"> — {g.line}</span></span>
+          </label>
+        ))}
+      </fieldset>
       <p className="hint">{CHARTER_BLURB}</p>
       {err ? <div className="form-error">{err}</div> : null}
       <button className="primary" type="submit" disabled={busy || !name.trim() || !config || check.state === 'taken' || check.state === 'checking'}>

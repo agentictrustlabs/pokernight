@@ -45,6 +45,12 @@ export interface VenueHandle {
 
 export interface VenueProps {
   view: MysteryView;
+  /**
+   * WHICH BUILDING (2026-09-17). The venue drew the Belvedere by name; a second game with a second place —
+   * the meeting house at Kettlewater — needed the same machinery over a different plan. The plan is a prop
+   * now, defaulting to the hotel so nothing that mounts this moves; a room is data, and so is the building.
+   */
+  plan?: Record<string, RoomPlan>;
   /** The character talking right now, so their body says it. */
   speaking: string | null;
   act: (a: unknown) => void;
@@ -61,7 +67,7 @@ const HEAD = 1.86;
 /** Metres a second, the same amble the card room's lounge walks at. */
 const WALK_SPEED = 3.4;
 
-export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, speaking, act, onPerson, onInspect }, ref) {
+export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, speaking, act, onPerson, onInspect, plan: PLAN = BELVEDERE_PLAN }, ref) {
   const host = useRef<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const app = useRef<pc.Application | null>(null);
@@ -330,7 +336,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       const q = [from];
       while (q.length) {
         const here = q.shift()!;
-        for (const nxt of Object.keys(BELVEDERE_PLAN[here]?.doors ?? {})) {
+        for (const nxt of Object.keys(PLAN[here]?.doors ?? {})) {
           if (seen.has(nxt)) continue;
           seen.set(nxt, here);
           if (nxt === to) { let step = nxt; while (seen.get(step) !== from) step = seen.get(step)!; return step; }
@@ -386,7 +392,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
         const to = camera.camera!.screenToWorld(e.x, e.y, camera.camera!.farClip);
         const floor = new pc.Vec3();
         if (new pc.Plane(pc.Vec3.UP, 0).intersectsRay(new pc.Ray(from, to.sub(from).normalize()), floor)) {
-          const plan = BELVEDERE_PLAN[viewRef.current.room?.id ?? ''];
+          const plan = PLAN[viewRef.current.room?.id ?? ''];
           if (plan && Math.abs(floor.x) < plan.w && Math.abs(floor.z) < plan.d) { errand.current = null; goingTo.current = null; goal.current = new pc.Vec3(floor.x, 0, floor.z); }
         }
         return;
@@ -414,7 +420,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
       const v = viewRef.current;
       const me = v.you ? bodies.current.get(v.you.role) : null;
       if (!me) return;
-      const plan = BELVEDERE_PLAN[v.room?.id ?? ''];
+      const plan = PLAN[v.room?.id ?? ''];
       const k = keys.current;
       let dx = 0; let dz = 0;
       if (k.has('up')) dz += 1; if (k.has('down')) dz -= 1; if (k.has('left')) dx -= 1; if (k.has('right')) dx += 1;
@@ -565,7 +571,13 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
          * and a face answers. A character no person is playing has no chip, and a night with no huddle
          * running shows none at all, which is the fallback rather than a hole.
          */
-        next.push({ id: `p:${role}`, text: who?.name ?? role, sub: who?.playedBy ?? (who?.operator === 'agent' ? 'an agent' : undefined), ...(who?.playedBy ? { face: who.playedBy } : {}), x: out.x, y: out.y, kind: `${speakingRef.current === role ? 'name speaking' : 'name'}${hover.current === role ? ' lit' : ''}` });
+        // THE PLATE SAYS THE PART AND WHO PLAYS IT (2026-09-18): "Ruth Calloway · researcher · Alice", never "an
+        // agent". A game that carries a part word on its people (`part`, the commission's `kind`) gets it on the
+        // plate; the person behind a played character follows; an agent-played part shows only the part, because
+        // the agent's name is on the cast list and in the inspector and a plate is read from across a room.
+        const part = (who as { part?: string } | undefined)?.part;
+        const sub = [part, who?.playedBy].filter(Boolean).join(' · ') || undefined;
+        next.push({ id: `p:${role}`, text: who?.name ?? role, ...(sub ? { sub } : {}), ...(who?.playedBy ? { face: who.playedBy } : {}), x: out.x, y: out.y, kind: `${speakingRef.current === role ? 'name speaking' : 'name'}${hover.current === role ? ' lit' : ''}` });
       }
       /**
        * NAMES THAT DO NOT SIT ON TOP OF EACH OTHER (2026-09-16). Eight people standing in a group project to
@@ -618,7 +630,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
     const a = app.current;
     const k = kit.current;
     if (!a || !k || !roomId) return;
-    const plan = BELVEDERE_PLAN[roomId];
+    const plan = PLAN[roomId];
     if (!plan) return;
     let cancelled = false;
     // The kit loads once; a room built before it arrives would be an empty box, so wait for it.
@@ -653,7 +665,7 @@ export const Venue = forwardRef<VenueHandle, VenueProps>(function Venue({ view, 
   useEffect(() => {
     const a = app.current;
     const lib = library.current;
-    const plan = BELVEDERE_PLAN[roomId];
+    const plan = PLAN[roomId];
     if (!a || !lib || !plan) return;
     /**
      * THE VICTIM IS IN THE ROOM THEY DIED IN (2026-09-15).

@@ -1,6 +1,8 @@
 import type { LobbyDO } from './lobby-do.js';
 import type { MissionRegistryDO } from './missions.js';
 import type { MysteryDO } from './mystery-do.js';
+import type { CommissionDO } from './commission-do.js';
+import type { FieldOpsDO } from './fieldops-do.js';
 import type { SceneDO } from './scene-do.js';
 import type { SessionDO } from './session-do.js';
 import type { PokerTableDO } from './table-do.js';
@@ -15,6 +17,10 @@ export interface Env {
   ROOMS: DurableObjectNamespace<SceneDO>;
   /** MYSTERY NIGHT: one object per staging (`mystery-do.ts`, docs/MYSTERY-NIGHT.md). */
   STAGINGS: DurableObjectNamespace<MysteryDO>;
+  /** GREAT COMMISSION (docs/GREAT-COMMISSION.md): one object per staging — a substrate test played as a game. */
+  COMMISSIONS: DurableObjectNamespace<CommissionDO>;
+  /** FIELD OPERATIONS (docs/FIELD-OPERATIONS.md): one object per season — a test of the agents, written to the field app. */
+  FIELDOPS: DurableObjectNamespace<FieldOpsDO>;
   /** One instance per playerId; holds the server-side half of a Home session (see session-do.ts). */
   SESSIONS: DurableObjectNamespace<SessionDO>;
   /** One instance per club; holds its roster and answers standing (see club-do.ts). */
@@ -75,7 +81,32 @@ export interface Env {
   MYSTERY_CAST_AGENTS?: string;
   /** `role=agent@custodian`, comma-separated — see `mysteryCast`. Preferred over the positional list. */
   MYSTERY_CAST?: string;
+  /** The same three, for a Great Commission night: the parts nobody is playing, and who narrates. */
+  COMMISSION_CAST_AGENTS?: string;
+  COMMISSION_CAST?: string;
+  /** Per night, when a deployment stages more than one: `COMMISSION_CAST_<SCENARIO ID>`. See `commissionCast`. */
+  COMMISSION_CAST_THURSDAY_IN_GREELEY?: string;
+  COMMISSION_CAST_FIRST_LIGHT?: string;
+  COMMISSION_CAST_SECOND_WINTER?: string;
+  COMMISSION_DIRECTOR?: string;
+  /** FIELD OPERATIONS: the same three for a season, plus the ESTATE NOTE naming every chartered agent and who custodies it. */
+  FIELDOPS_CAST?: string;
+  FIELDOPS_CAST_NORTH_OF_DENVER?: string;
+  FIELDOPS_CAST_AGENTS?: string;
+  FIELDOPS_DIRECTOR?: string;
+  /** JSON (`field-estate.ts` `FieldEstate`): the workspace, teams, partners, workers and body pool a season writes to. A secret; KV `CLUB_WIRES` under `fieldops-estate` is the other place it may live. */
+  FIELDOPS_ESTATE?: string;
+  /** The public registry, for publishing a season's founded bodies to the game's own graph at the reveal. Secrets; absent means not published. */
+  GRAPHDB_URL?: string;
+  GRAPHDB_BASIC?: string;
   MYSTERY_DIRECTOR?: string;
+  /**
+   * EACH CAST AGENT AS ITS OWN RUNTIME HERE (`cast-messaging.ts`): per character, an ask wire (character → the
+   * house session key, `harness.ask`) and a standing grant (`messaging.direct.send`, no intent binding), both
+   * signed by the character's custodian at the estate (`equip-cast-messaging.mts`). With it a whisper between two
+   * parts is a direct message from the one agent to the other; without it every whisper stays in the room.
+   */
+  CAST_MESSAGING?: string;
   /** Wall clock for one A2A call (agent card fetch, `poker.act` turn). Default 20000. */
   A2A_TIMEOUT_MS?: string;
   /** How long ADVICE may take. Longer than a turn call: a person's own agent at their Home reasons
@@ -332,6 +363,49 @@ export function mysteryCast(env: Env): CastMember[] {
     .filter((c) => c.role && c.agent && c.custodian);
 }
 /** Who narrates, if anybody. Absent means the title's own written lines, which is a complete night. */
+/** The cast parser, shared: `role=agent@custodian`, comma-separated; a half-written entry is dropped, not half-applied. */
+function parseCast(csv: string | undefined): CastMember[] {
+  return (csv ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [role, rest] = entry.split('=', 2);
+      const [agent, custodian] = (rest ?? '').split('@', 2);
+      return { role: (role ?? '').trim(), agent: (agent ?? '').trim(), custodian: (custodian ?? '').trim() };
+    })
+    .filter((c) => c.role && c.agent && c.custodian);
+}
+export function commissionCastAgents(env: Env): string[] {
+  return (env.COMMISSION_CAST_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+/**
+ * THE CAST BELONGS TO THE NIGHT, NOT TO THE DEPLOYMENT (2026-09-17). One `COMMISSION_CAST` was right while
+ * there was one scenario; with two it cast Naw Paw Htoo as Ilse Varrow, because the roles are the same seven
+ * words in both and nothing said which night the names were for. A scenario may name its own
+ * (`COMMISSION_CAST_THURSDAY_IN_GREELEY`, the id uppercased with dashes as underscores); `COMMISSION_CAST`
+ * remains the fallback for a deployment with one night, and for any night that names no cast of its own.
+ */
+export function commissionCast(env: Env, scenarioId?: string): CastMember[] {
+  const own = scenarioId ? (env as unknown as Record<string, string | undefined>)[`COMMISSION_CAST_${scenarioId.toUpperCase().replace(/-/g, '_')}`] : undefined;
+  return parseCast((own ?? '').trim() ? own : env.COMMISSION_CAST);
+}
+/** FIELD OPERATIONS' cast, per season like the commission's; the positional list and the director beside it. */
+export function fieldOpsCast(env: Env, scenarioId?: string): CastMember[] {
+  const own = scenarioId ? (env as unknown as Record<string, string | undefined>)[`FIELDOPS_CAST_${scenarioId.toUpperCase().replace(/-/g, '_')}`] : undefined;
+  return parseCast((own ?? '').trim() ? own : env.FIELDOPS_CAST);
+}
+export function fieldOpsCastAgents(env: Env): string[] {
+  return (env.FIELDOPS_CAST_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+export function fieldOpsDirector(env: Env): string | null {
+  const name = (env.FIELDOPS_DIRECTOR ?? '').trim();
+  return name || null;
+}
+export function commissionDirector(env: Env): string | null {
+  const name = (env.COMMISSION_DIRECTOR ?? '').trim();
+  return name || null;
+}
 export function mysteryDirector(env: Env): string | null {
   const name = (env.MYSTERY_DIRECTOR ?? '').trim();
   return name || null;

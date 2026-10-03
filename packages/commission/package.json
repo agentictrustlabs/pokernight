@@ -1,0 +1,19 @@
+{
+  "name": "@pokernight/commission",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Pure engine for Great Commission — a substrate test played as a game. Five fictional peoples whose hidden state moves on its own; seven parts who testify at a grain, assess, corroborate, commit, revoke and infer; a score for detection, exposure, leaks and fabrication. No I/O, no timers, no randomness except the seed passed in.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pokernight/deal": "workspace:*"
+  },
+  "devDependencies": { "typescript": "^5.6.3", "vitest": "^3.2.4" }
+}

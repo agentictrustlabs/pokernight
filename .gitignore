@@ -19,3 +19,4 @@ contracts/broadcast/
 # from it (packages/agent-kit/src/preflop-chart.json) is committed, because it is what ships.
 bench/pokerbench/*.csv
 bench/pokerbench/*.json
+.graphdb.env

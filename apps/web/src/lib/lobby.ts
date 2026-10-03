@@ -144,13 +144,16 @@ export function withRoom(tables: readonly TableSummary[] | null): TableSummary[]
 }
 
 /**
- * The table to send a set-up player to: one that settles and has a free seat, else any free seat.
- * Null when the room is full or has not been read yet — never a table they could not sit at.
+ * The table to send a set-up player to: one that SETTLES and has a free seat. Null when no such table
+ * exists or the room has not been read yet — never a table they could not sit at, and never a
+ * play-money one. The one caller is the money page, whose button stands directly under "buy-ins come
+ * out of this": it used to fall back to any free seat, so with only a play-money table open a person
+ * was sent from their balance to a table whose chips cost nothing, lost 200 of them, and came back to
+ * find their money untouched — and no way to tell that from a buy-in that had failed to settle.
  */
 export function pickSeat(tables: readonly TableSummary[] | null): TableSummary | null {
   if (!tables) return null;
-  const open = withRoom(tables);
-  return open.find((t) => t.settlement !== 'play-money') ?? open[0] ?? null;
+  return withRoom(tables).find((t) => t.settlement !== 'play-money') ?? null;
 }
 
 export interface Roster {
