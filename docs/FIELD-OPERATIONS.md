@@ -77,6 +77,8 @@ day whatever pace was chosen.
 
 ## 5 · The estate
 
+**The write path is specified, not yet this dump.** [FIELD-RAILS.md](FIELD-RAILS.md) is the design to build: the persona’s demo-a2a run applies **field-circles** skills; Field Circles / Home hold the record; the engine `apply`s only when provenance and a receipt exist. What follows is what **ships today** (composed charter, `writeSeason` library dump). Do not extend that dump; replace it per the rails spec.
+
 **A season bootstraps from its characters** (2026-10-02). It opens with no teams and no community taken up, like a
 workspace nobody has set up. A character founds a team where they stand (`found-team`: a day; they are its steward;
 they ask whom they like, and each asked part joins or declines, free); a team's steward takes the registry's
@@ -134,6 +136,8 @@ workspace, its roster, the partners' agents — stays. `--retire-seeded` does th
 bodies the first provisioning seeded.
 
 ## 6 · The field app
+
+**Target:** the field app shows what the character’s agent already wrote (FIELD-RAILS). **Today:**
 
 At every week's end and at the reveal, `field-estate.ts` writes the season's records where field.faithnet.io reads
 them: `activity` per act and `observation` per report into the team's vault; `formation-community` /
