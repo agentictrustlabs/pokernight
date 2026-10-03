@@ -190,6 +190,9 @@ async function enableMessaging(party, recipients) {
   return to.length;
 }
 const WIRES_ONLY = process.argv.includes('--wires-only');
+// Rewrite ONLY the workspace member projection (now carrying each character's custodian, so the field app can offer a
+// custodian the personas they steward), skipping the heavy re-joins and wires. A fast backfill after the custodian field.
+const PROJECT_ONLY = process.argv.includes('--project-only');
 
 // ── THE ORGANIZATION that governs the workspace: the only thing with members. The characters are its members; its
 // custodian is its founder and steward. A `.workspace` is a service and nobody joins it. ─────────────────────────────
@@ -198,6 +201,13 @@ const org = { sa: note.organization.sa, name: note.organization.name, custodian:
 log(`═══ the organization: ${org.name} ═══`);
 const rows = [];
 const t = new Date().toISOString();
+const memberRow = (w) => ({ kind: 'ws-membership', id: `mem-${lower(w.sa)}`, title: w.name, updatedAt: t, envelope: envelope('L2', 'workspace roster'), workspace: note.workspace.sa, person: lower(w.sa), role: 'member', status: 'active', joinedAt: t, organization: org.sa, membershipRecord: `org.membership:member:${lower(w.sa)}`, custodian: w.custodian });
+if (PROJECT_ONLY) {
+  for (const w of Object.values(note.workers)) rows.push(memberRow(w));
+  await projectRoster(rows);
+  log(`  --project-only: rewrote ${rows.length} member rows with custodian; joins and wires skipped`);
+  process.exit(0);
+}
 if (!DRY) {
   await regrant(org); log('  storage re-granted under the Home\'s scope list');
   const nathan = await signerFor(org.custodian);
@@ -206,7 +216,7 @@ if (!DRY) {
     try {
       const out = await join(org, { sa: w.sa, name: w.name, custodian: w.custodian, persona: true }, 'member');
       log(`  ${role} (${w.name}, custodied by ${w.custodian}): ${out}`);
-      rows.push({ kind: 'ws-membership', id: `mem-${lower(w.sa)}`, title: w.name, updatedAt: t, envelope: envelope('L2', 'workspace roster'), workspace: note.workspace.sa, person: lower(w.sa), role: 'member', status: LISTINGS_ONLY ? 'active' : 'active', joinedAt: t, organization: org.sa, membershipRecord: `org.membership:member:${lower(w.sa)}` });
+      rows.push({ kind: 'ws-membership', id: `mem-${lower(w.sa)}`, title: w.name, updatedAt: t, envelope: envelope('L2', 'workspace roster'), workspace: note.workspace.sa, person: lower(w.sa), role: 'member', status: LISTINGS_ONLY ? 'active' : 'active', joinedAt: t, organization: org.sa, membershipRecord: `org.membership:member:${lower(w.sa)}`, custodian: w.custodian });
     } catch (e) { log(`  ! ${role}: ${e.message}`); }
   }
   if (rows.length) { await projectRoster(rows); log(`  ${rows.length} roster rows projected onto the workspace`); }
