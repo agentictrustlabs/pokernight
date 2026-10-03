@@ -68,9 +68,10 @@ export interface CharterSpec {
   /** People linked as MEMBERS so the field app shows them the agent (the custodian, the workspace's custodian). */
   viewers: string[];
   /**
-   * WHERE IT HANGS IN THE TRUST GRAPH: the agent this one is held under in each person's tree — the workspace for a
-   * team, the team for a circle or church. The Home draws an organization's graph from exactly this (`parent` on the
-   * link), so a team linked under the person is the person's and never the workspace's.
+   * WHERE IT HANGS IN THE TRUST GRAPH: the agent this one is held under in each person's tree — the GOVERNING ORG
+   * for a team (the org is the hub, 2026-10-03: `org → { members, teams, workspace }`, never `org → workspace →
+   * teams`), the team for a circle or church. The Home draws an organization's graph from exactly this (`parent` on
+   * the link), so hanging a team under the org is what makes it one of the org's teams rather than the workspace's.
    */
   under: string;
 }

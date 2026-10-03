@@ -590,8 +590,11 @@ export class FieldOpsDO extends DurableObject<Env> {
         if (!founder || !persona) { c.progress = { ...c.progress, step: 'failed', error: `no persona for ${founder ?? 'the founder'} in the estate note`, at: now }; this.save(); continue; }
         const team = 'team' in ref ? s.teams.find((t) => t.id === ref.team) : s.teams.find((t) => t.id === s.bodies.find((b) => b.id === ref.body)?.team);
         const viewers = [...new Set((team?.members ?? []).map((m) => estate.workers[m]?.custodian).filter((h): h is string => !!h))];
-        // A team hangs under the workspace; a body under its team once that team's agent has landed (the workspace until then).
-        const under = 'team' in c.ref ? estate.workspace.sa : (team?.agent ?? estate.workspace.sa);
+        // THE ORG IS THE HUB (2026-10-03, `workspace-governor.ts` doctrine): a team hangs under the GOVERNING ORG,
+        // not the workspace — `org → { members, teams, workspace }`, with `workspace → org`, never `org → workspace
+        // → teams`. A body hangs under its team once that team's agent has landed (the org hub until then).
+        const hub = estate.organization?.sa ?? estate.workspace.sa; // legacy realm with no org: the workspace, as before
+        const under = 'team' in c.ref ? hub : (team?.agent ?? hub);
         c.spec = { ...c.spec, custodian: persona.custodian, steward: { sa: persona.sa, name: this.nameOf(founder) }, viewers, under };
         const p = await advance(estate, c.spec, c.progress, estate.workspace.custodian);
         c.progress = p;
@@ -616,7 +619,7 @@ export class FieldOpsDO extends DurableObject<Env> {
         if ((c.progress.step === 'done' || c.progress.step === 'failed' || c.progress.step === 'membership') && (c.progress.storageV ?? 0) !== STORAGE_V) { c.progress = { ...c.progress, step: 'storage', tries: 0, at: 0, error: undefined }; this.save(); repaired = true; continue; }
         if (c.progress.step === 'failed') { c.progress = { ...c.progress, step: 'membership', tries: 0, at: 0, error: undefined }; this.save(); repaired = true; continue; }
         if (c.progress.step !== 'done') continue;
-        if (!c.spec.under) { const t = 'team' in c.ref ? undefined : this.state?.teams.find((x) => x.id === this.state?.bodies.find((b) => b.id === (c.ref as { body: string }).body)?.team); c.spec = { ...c.spec, under: 'team' in c.ref ? estate.workspace.sa : (t?.agent ?? estate.workspace.sa) }; }
+        if (!c.spec.under) { const hub = estate.organization?.sa ?? estate.workspace.sa; const t = 'team' in c.ref ? undefined : this.state?.teams.find((x) => x.id === this.state?.bodies.find((b) => b.id === (c.ref as { body: string }).body)?.team); c.spec = { ...c.spec, under: 'team' in c.ref ? hub : (t?.agent ?? hub) }; }
         if (!c.progress.custodianSteward) {
           try { await stewardCustodian(estate, c.spec, sa); c.progress = { ...c.progress, custodianSteward: true }; repaired = true; this.save(); console.log(`[fieldops] ${c.spec.name}: ${c.spec.custodian} now stewards it`); }
           catch (e: unknown) { console.warn(`[fieldops] ${c.spec.name}: could not make ${c.spec.custodian} a steward: ${String(e)}`); }

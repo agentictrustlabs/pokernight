@@ -708,11 +708,18 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   building out is the key part of the game — the interconnection of agents"). The Home draws an organization's graph
   from (a) its ROSTER — the org's `delegated-idx`, which a `related-orgs` link feeds only when `relationship: member`
   carries a MEMBERSHIP wire (a record-scope delegation org → member, no targets) — and (b) the agents whose link says
-  `parent` = the org ("holds"). A team linked with `parent: person` is the person's, never the workspace's; a member
-  seeded with a stewardship wire is nobody on the roster. So a team's links hang `under` the workspace, a body's under
-  its team, a partner church's under the workspace; members get membership wires; `reparent` and `stewardCustodian`
-  repair older charters; `provision:fieldops --relink` redoes the realm's links; `pnpm rehang:fieldops` re-hangs every agent in
-  the chartered ledger under the workspace (the one-off for charters a restarted season left behind). The persona's own
+  `parent` = the org ("holds"). A team linked with `parent: person` is the person's, never the hub's; a member
+  seeded with a stewardship wire is nobody on the roster. **THE ORG IS THE HUB, NOT A CHAIN** (2026-10-03,
+  `~/agenticprimitives` `workspace-governor.ts` doctrine): the GOVERNING ORG holds the members and the teams AND
+  governs the workspace; the workspace references only the org (`governedBy`). `org → workspace → teams` is WRONG —
+  it is `org → { members, teams, workspace }` with `workspace → org`. So a team's links hang `under` the GOVERNING
+  ORG (`estate.organization.sa`), a body's under its team, a partner church's under the org; members get membership
+  wires; `reparent` and `stewardCustodian` repair older charters; `provision:fieldops --relink` redoes the realm's
+  links; `pnpm rehang:fieldops` re-hangs every agent in the chartered ledger to the hub (a team under the org — the
+  one-off for charters a restarted season left behind, or the pre-hub shape). A MEMBER READS THE WORKSPACE THROUGH
+  THE GOVERNOR (spec 424): belonging to the org that governs the workspace is what grants the content read — a
+  scoped `workspace → member` grant minted at join — not a relationship to the workspace agent; the field runtime
+  resolves `my-agents`/`orgWire`/`workspace-read` through that grant. The persona's own
   link hangs under itself (a persona belongs to no workspace, and the Home refuses a parent the person does not control).
   The roster endpoints (`received-delegations`, `directory`) answer a HOME session, not an app id_token — probe them with
   the `homeSession` a demo sign-in returns, or they read as empty. `watch:fieldops` CONTINUES the season that is there;

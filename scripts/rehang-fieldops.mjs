@@ -1,9 +1,10 @@
 /**
- * RE-HANG what the seasons chartered under the workspace in every person's tree — the Home draws an organization's
- * trust graph from the `parent` on each link, so a team linked under the person is the person's and never the
- * workspace's. Reads KV `fieldops-chartered` (every agent any season chartered) and re-links each one: the custodian as
- * steward, the workspace's custodian and the viewers as members, all `under` the workspace (a team) or the workspace
- * too for a body whose team the ledger does not name. Idempotent: a link is replaced, never doubled.
+ * RE-HANG what the seasons chartered to the HUB shape in every person's tree — the Home draws an organization's trust
+ * graph from the `parent` on each link, and the org is the hub (2026-10-03): a team hangs under the GOVERNING ORG,
+ * never the workspace (`org → { members, teams, workspace }`, not `org → workspace → teams`). Reads KV
+ * `fieldops-chartered` (every agent any season chartered) and re-links each one: the custodian as steward, the
+ * workspace's custodian and the viewers as members, all `under` the org (a team) or its team (a body; the org too
+ * when the ledger does not name that team). Idempotent: a link is replaced, never doubled.
  *
  *   set -a; . ~/engage/scripts/seed/faithnet.env; set +a
  *   node scripts/rehang-fieldops.mjs [--dry]
@@ -62,9 +63,11 @@ const chartered = kv.status === 0 ? JSON.parse(kv.stdout.trim() || '[]') : [];
 log(`${chartered.length} chartered agents in the ledger`);
 const teams = chartered.filter((c) => c.kind === 'team');
 for (const c of chartered) {
-  const under = c.kind === 'team' ? note.workspace.sa : (teams.find((t) => t.stagingId === c.stagingId && t.custodian === c.custodian)?.sa ?? note.workspace.sa);
+  // THE ORG IS THE HUB (2026-10-03): a team hangs under the GOVERNING ORG, not the workspace; a body under its team.
+  const hub = note.organization?.sa ?? note.workspace.sa;
+  const under = c.kind === 'team' ? hub : (teams.find((t) => t.stagingId === c.stagingId && t.custodian === c.custodian)?.sa ?? hub);
   const who = [{ handle: c.custodian, relationship: 'steward' }, ...[...new Set([note.workspace.custodian, ...(c.viewers ?? [])])].filter((h) => h !== c.custodian).map((h) => ({ handle: h, relationship: 'member' }))];
-  log(`${c.name} (${c.kind}, ${String(c.sa).slice(0, 10)}…) under ${under === note.workspace.sa ? 'the workspace' : `team ${under.slice(0, 10)}…`}: ${who.map((w) => `${w.handle} ${w.relationship}`).join(', ')}`);
+  log(`${c.name} (${c.kind}, ${String(c.sa).slice(0, 10)}…) under ${under === (note.organization?.sa ?? note.workspace.sa) ? 'the organization' : `team ${under.slice(0, 10)}…`}: ${who.map((w) => `${w.handle} ${w.relationship}`).join(', ')}`);
   if (DRY) continue;
   const orgSigner = await signerFor(c.custodian);
   for (const w of who) { try { const s = await signerFor(w.handle); await linkAt(orgSigner, { sa: c.sa, name: c.name, kind: c.kind }, { sa: s.sa, name: w.handle, signer: s, relationship: w.relationship }, under); } catch (e) { log(`  ! ${e.message}`); } }
