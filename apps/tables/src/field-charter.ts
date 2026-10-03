@@ -26,7 +26,7 @@
  */
 import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
 import {
-  ROOT_AUTHORITY, buildCaveat, buildSessionDelegation, buildVaultKeyUseCaveat, buildVaultRecordScopeCaveat,
+  ROOT_AUTHORITY, buildCaveat, buildVaultKeyUseCaveat, buildVaultRecordScopeCaveat,
   encodeAllowedMethodsTerms, encodeAllowedTargetsTerms, encodeTimestampTerms, encodeValueTerms, hashDelegation,
 } from '@agenticprimitives/delegation';
 import { skillSelector } from '@agenticprimitives/a2a';
@@ -45,6 +45,16 @@ export const DEFAULT_DOORS: Omit<EstateDoors, 'home' | 'clientId' | 'chainId'> =
   deliveryServiceSa: '0x0AF2455e3f76594E81d9042aD5FE22A5A35dc57f', interactionsServiceSa: '0x39508624387fed3b9d6dd15ba86d3ace8a3f0a6a',
 };
 const MCP_SERVER_ID = 'demo-mcp';
+/**
+ * Spec 408 §2.1 session-audience sentinel — the DELEGATES a DEL-001 session leaf's key may present the
+ * principal's delegations to. The estate's vault plane now REFUSES a leaf that carries no audience
+ * (a no-audience leaf reads as stale), so an org leaf must name both service agents or every content
+ * read answers "auth failed — mcp: auth failed". `@agenticprimitives/delegation` alpha.24 (this repo's
+ * pin) predates the builder, so the sentinel is inlined here — `sentinelAddress('urn:smart-agent:session-
+ * audience')` = the first 20 bytes of its keccak256 (off-chain only; judged in the vault, never redeemed
+ * on chain), cross-checked against the live lib. Terms are `abi.encode(address[] delegates)`.
+ */
+const SESSION_AUDIENCE_ENFORCER = '0x8176cd7441055a9022ff24c5447d42be161673b4' as Address;
 
 export type CharterKind = 'team' | 'circle' | 'church';
 export interface CharterSpec {
@@ -369,8 +379,8 @@ const interactionsScopes = () => [
   { server: MCP_SERVER_ID, resources: APP_SEED, ops: ['read', 'write'] },
 ];
 
-/** 4 · STORAGE: the two planes a library write needs — the delivery wire and the interactions grant with its session leaf. `regrant` re-issues the interactions grant under the current scope list. */
-async function enableStorage(doors: EstateDoors, signer: Signer, sa: string, regrant = false): Promise<void> {
+/** 4 · STORAGE: the two planes a library write needs — the delivery wire and the interactions grant with its session leaf. `regrant` re-issues the interactions grant under the current scope list. Exported so a maintenance pass can re-issue an expired org leaf (`repair-fieldops-leaves`, the season self-heal) without re-running a whole charter. */
+export async function enableStorage(doors: EstateDoors, signer: Signer, sa: string, regrant = false): Promise<void> {
   const org = lower(sa) as Address;
   const validUntil = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
   const status = await jsonOf(await fetch(`${doors.a2a}/interactions/${org}/status`));
@@ -397,7 +407,21 @@ async function enableStorage(doors: EstateDoors, signer: Signer, sa: string, reg
     d.signature = await signer.sign(hashDelegation(d, doors.chainId, CONTRACTS.delegationManager));
     const sk = await jsonOf(await fetch(`${doors.a2a}/agent/interactions-session-key`));
     if (!sk.ok || typeof sk.address !== 'string') throw new Error(`no interactions-session key: ${JSON.stringify(sk).slice(0, 160)}`);
-    const { leaf, digest } = buildSessionDelegation({ delegator: org, sessionKeyAddress: sk.address as Address, validUntil: Math.floor(Date.now() / 1000) + 12 * 3600, enforcers: { timestamp: CONTRACTS.timestampEnforcer, value: CONTRACTS.valueEnforcer }, chainId: doors.chainId, delegationManager: CONTRACTS.delegationManager });
+    // THE ORG LEAF LIVES A YEAR AND NAMES BOTH SERVICE AGENTS (2026-10-03). A DEL-001 session leaf was 12 h by
+    // default and carried no audience; a PERSON's self-heals every Home login, but an ORG never logs in, so its
+    // leaf expired overnight and every org vault read answered "auth failed — mcp: auth failed" (409). The two-tier
+    // rule (the Home's `activateInteractionsIfNeeded`): short only for the connected person, long for an org — so
+    // `validUntil` (365 d), like everything else here. AND the audience is EXPLICIT: an org holds two grants (the
+    // interactions grant, delegate = the interactions SA, and the write-only delivery grant where `content.*`
+    // lives, delegate = the delivery SA), and the session key must be allowed to present BOTH, or content reads
+    // fail while interactions reads pass. Hand-built because alpha.24's `buildSessionDelegation` carries no
+    // audience caveat; the shape (timestamp · value · audience) matches the live lib's.
+    const leaf = { delegator: org, delegate: lower(sk.address) as Address, authority: ROOT_AUTHORITY, caveats: [
+      buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, validUntil)),
+      buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)),
+      buildCaveat(SESSION_AUDIENCE_ENFORCER, encodeAbiParameters([{ type: 'address[]' }], [[lower(doors.interactionsServiceSa), lower(doors.deliveryServiceSa)] as Address[]])),
+    ], salt: randSalt(), signature: '0x' as Hex };
+    const digest = hashDelegation(leaf, doors.chainId, CONTRACTS.delegationManager);
     leaf.signature = await signer.sign(digest);
     const r = await jsonOf(await fetch(`${doors.a2a}/interactions/${org}/grant`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ delegation: { ...d, salt: d.salt.toString() }, sessionLeaf: { ...leaf, salt: leaf.salt.toString() } }) }));
     if (r.ok !== true) throw new Error(`interactions grant: ${JSON.stringify(r).slice(0, 200)}`);
@@ -405,6 +429,36 @@ async function enableStorage(doors: EstateDoors, signer: Signer, sa: string, reg
 }
 
 export const purposeOf = (kind: CharterKind): string => (kind === 'team' ? 'field-team' : kind === 'circle' ? 'field-circle' : 'field-church');
+
+/** One chartered agent as the ledger (KV `fieldops-chartered`) and `noteChartered` record it. */
+export interface CharteredEntry { sa: string; kind: CharterKind; name: string; custodian: string; steward?: { sa: string; name: string }; viewers?: string[] }
+/**
+ * RETIRE what a previous season chartered, so a NEW GAME does not leave the last season's teams standing and the
+ * workspace does not accumulate duplicate "Weld Corridor Team (game)" rows. The inverse of the charter's `link` step:
+ * unlink each agent at EVERY Home it was linked at (the steward persona — signed by its custodian — and every viewer,
+ * signed by themselves), exactly as `reset:fieldops` does, via `linkAt(…, remove=true)`. Best-effort: the agents stay
+ * on chain (nobody can delete them), they simply leave every list; what could not be unlinked is returned, never thrown.
+ */
+export async function retireChartered(doors: EstateDoors, entries: readonly CharteredEntry[]): Promise<{ retired: number; failures: string[] }> {
+  const failures: string[] = [];
+  let retired = 0;
+  for (const e of entries) {
+    const org = { sa: lower(e.sa), name: e.name, purpose: purposeOf(e.kind), kind: e.kind };
+    const who: { sa?: string; name: string; custodian: string }[] = [
+      ...(e.steward?.sa ? [{ sa: e.steward.sa, name: e.steward.name, custodian: e.custodian }] : []),
+      ...[...new Set(e.viewers ?? [])].map((h) => ({ name: h, custodian: h })),
+    ];
+    let ok = true;
+    for (const w of who) {
+      try {
+        const signer = await signerFor(doors, w.custodian);
+        await linkAt(doors, signer, org, { sa: lower(w.sa ?? signer.sa), name: w.name, signer, relationship: 'member' }, true);
+      } catch (err) { ok = false; failures.push(`${e.name} ← ${w.name}: ${(err as Error).message.slice(0, 140)}`); }
+    }
+    if (ok) retired += 1;
+  }
+  return { retired, failures };
+}
 
 /**
  * ONE STEP of a charter. Returns the progress to persist; the caller calls again until `done` or `failed`. A step's

@@ -17,7 +17,7 @@ import {
   apply, attachAgent, CHARACTER_CRAFT, chooseAction, DIRECTOR_CRAFT, openStaging, parseAction, roleOf, stagingOf, tick, viewFor,
   type Casting, type FieldOpsEvent, type FieldOpsState, type FieldOpsView, type RoleId,
 } from '@pokernight/fieldops';
-import { admit, advance, directMessage, ensureGeneral, postLine, reparent, sessionOf, stewardCustodian, STORAGE_V, type CharterProgress, type CharterSpec, type Standing } from './field-charter.js';
+import { admit, advance, directMessage, ensureGeneral, postLine, reparent, retireChartered, sessionOf, stewardCustodian, STORAGE_V, type CharteredEntry, type CharterProgress, type CharterSpec, type Standing } from './field-charter.js';
 import { FIELDOPS_ACT_SKILL, FIELDOPS_DIRECT_SKILL } from '@pokernight/protocol';
 import { askFieldDirector, askPart } from './fieldops-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
@@ -165,6 +165,12 @@ export class FieldOpsDO extends DurableObject<Env> {
       if (!pair) return json({ error: `no such scenario: ${b.scenario}` }, 404);
       const wantsOther = (!!b.role && !!this.meta && this.meta.role !== b.role) || (!!b.pace && !!this.meta && (this.meta.pace ?? 'full') !== b.pace);
       if (this.state && !b.restart && !wantsOther && this.state.phase !== 'revealed') return json({ ok: true, staging: this.summary() });
+      // A NEW GAME CLEARS THE LAST ONE. Re-opening over a season that already ran (restart / a different part / a
+      // revealed season) used to leave its chartered teams, circles and churches linked under the workspace, so each
+      // restart piled on another "Weld Corridor Team (game)" (2026-10-03). Now the prior season's agents are retired —
+      // unlinked at every Home — as the new one opens. Best-effort and fire-and-forget (the watcher's polling keeps the
+      // object alive to finish it); idempotent, so a run cut short is retried by the next restart.
+      if (this.state || this.meta) void this.retirePriorChartered();
       // WATCHING: no part is the owner's, so all sixteen are their agents' (or the house's where no persona stands).
       const role = b.role === 'watch' ? 'watch' : pair.scenario.roles.find((r) => r.id === b.role)?.id ?? pair.scenario.roles[0]!.id;
       await this.open({ ...b, role }, (r) => (role !== 'watch' && r === role ? { name: b.ownerName, playerId: b.owner } : null), {});
@@ -704,6 +710,23 @@ export class FieldOpsDO extends DurableObject<Env> {
       if (tally.lines) console.log(`[fieldops] talk carried: ${tally.lines} new of ${recent.length} recent — ${tally.posted} posted to a board, ${tally.sent} whispered, ${tally.failed} refused, ${tally.nobody} without a session`);
       if (changed) this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO kv (k, v) VALUES ('boards', ?), ('talked', ?)`, JSON.stringify(this.boards), JSON.stringify([...this.talked].slice(-800)));
     } finally { this.talking = false; }
+  }
+
+  /** Retire what the PREVIOUS season chartered (the whole ledger — a fresh game adds its own as it founds teams),
+   *  unlinking each agent at every Home, then drop them from the ledger. Reuses the same door the charter linked with. */
+  private async retirePriorChartered(): Promise<void> {
+    try {
+      const raw = (await this.env.CLUB_WIRES?.get(CHARTERED_KEY)) ?? '[]';
+      const list = JSON.parse(raw) as CharteredEntry[];
+      if (!Array.isArray(list) || !list.length) return;
+      const estate = await fieldEstate(this.env);
+      if (!estate) { console.warn('[fieldops] new game: cannot retire the prior season (no estate note)'); return; }
+      const batch = list.slice(0, 60); // bounded; the realm is ~12–24 per season, so this is the whole ledger
+      const { retired, failures } = await retireChartered(estate, batch);
+      // The attempted entries leave the ledger (failures are logged, not retried forever); any overflow stays for next time.
+      await this.env.CLUB_WIRES?.put(CHARTERED_KEY, JSON.stringify(list.slice(60)));
+      console.log(`[fieldops] new game: retired ${retired}/${batch.length} prior chartered agents${failures.length ? `; ${failures.length} stuck: ${failures.slice(0, 3).join(' | ')}` : ''}`);
+    } catch (e) { console.warn('[fieldops] new game: retiring the prior season failed:', String(e)); }
   }
 
   private async noteChartered(entry: Record<string, unknown>): Promise<void> {

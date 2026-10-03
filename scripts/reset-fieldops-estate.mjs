@@ -90,7 +90,20 @@ async function del(token, org, id) {
   }
 }
 const kv = (...args) => spawnSync('pnpm', ['exec', 'wrangler', 'kv', 'key', ...args, '--env', 'faithnet', '--binding', 'CLUB_WIRES', '--remote'], { cwd: TABLES, encoding: 'utf8' });
-function kvGet(key) { const r = kv('get', key); if (r.status !== 0) return null; try { return JSON.parse(r.stdout.trim()); } catch { return null; } }
+// READ LOUDLY, NEVER SILENTLY EMPTY. A transient `wrangler kv get` failure used to return null → `?? []` →
+// "0 agents in the ledger" → retire nothing → "the realm stands", a reset that reported success having done
+// NOTHING (seen live 2026-10-03: one blip left every duplicate team standing). A genuinely-absent key is the
+// only empty we accept; any other failure is retried and then THROWN so the reset aborts instead of no-opping.
+function kvGet(key) {
+  let last;
+  for (let i = 0; i < 3; i++) {
+    const r = kv('get', key); last = r;
+    if (r.status === 0) { try { return JSON.parse(r.stdout.trim()); } catch (e) { throw new Error(`KV ${key}: value present but unparseable — ${String(e).slice(0, 100)}`); } }
+    if (/not found|does not exist|no value|key .* not/i.test((r.stderr || r.stdout || ''))) return null; // legitimately absent ⇒ empty
+    if (i < 2) spawnSync('sleep', ['2']);
+  }
+  throw new Error(`KV ${key}: read failed after 3 tries (refusing to treat a read error as an empty ledger) — ${(last.stderr || last.stdout || '').trim().split('\n').pop()}`);
+}
 
 let retired = 0; let removed = 0;
 // ── 1. what the seasons chartered ────────────────────────────────────────────────────────────────────────
