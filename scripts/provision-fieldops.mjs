@@ -270,6 +270,26 @@ log(`\nestate note written to fieldops-estate.note.json${DRY ? ' (dry: addresses
 log(`put it where the Worker reads it (KV, REMOTE — never the local simulator):`);
 log(`  cd apps/tables && pnpm exec wrangler kv key put --env faithnet --binding CLUB_WIRES --remote fieldops-estate "$(cat ../../fieldops-estate.note.json)"`);
 
+// ── SPEC 424: THE WORKSPACE REFERENCES ITS ORG, AND A MEMBER READS IT THROUGH THE GOVERNOR ──────────────────
+// Set these relationships AT PROVISION, so a fresh/cleared realm comes up fully wired — not a retrofit. The org
+// is already created and stewards the workspace; this writes the governor PAIRING (workspace.governor +
+// workspace:<ws>), then mints the content-only ws→org READ grant and the serving-plane projection every member's
+// /connect/related-orgs synthesises from (the Home's own canonical builder — buildApprovedOrgReadDelegation over
+// WORKSPACE_CONTENT_SCOPE, approved on chain as the workspace). After this a member of the org sees and reads the
+// governed workspace (spec 424 W1); the field runtime (W2) chains their org membership onto the grant.
+if (!DRY && m.organization?.sa && m.workspace?.sa && !m.steps['pair-424']) {
+  const AP_HOME = process.env.AP_HOME_DIR || `${process.env.HOME}/agenticprimitives`;
+  const ROOT = new URL('..', import.meta.url).pathname;
+  const envp = { ...process.env, HOME_ORIGIN: HOME, HOME_URL: HOME };
+  log('\n── spec 424: pairing the workspace with its org, and minting the member read grant ──');
+  const p1 = spawnSync(process.execPath, ['scripts/pair-fieldops-workspace.mjs'], { stdio: 'inherit', cwd: ROOT, env: envp });
+  if (p1.status !== 0) throw new Error('424: the governor pairing failed');
+  const p2 = spawnSync('npx', ['tsx', `${AP_HOME}/scripts/backfill-424-governed-workspace.mts`, CUSTODY.workspace, m.organization.sa, m.workspace.sa, WORKSPACE_NAME], { stdio: 'inherit', cwd: AP_HOME, env: envp });
+  if (p2.status !== 0) throw new Error(`424: the ws→org read grant / projection failed (is ${AP_HOME} present?)`);
+  mark('pair-424');
+  log('  ✓ paired + member read grant minted — a member of the org now sees and reads the governed workspace');
+} else if (!DRY && m.steps['pair-424']) log('spec 424: workspace already paired + member read grant minted (skipping)');
+
 // ── 7. the game's graph: the static part ──────────────────────────────────────────────────────────────
 if (GRAPH && !DRY) {
   const envFile = new URL('../.graphdb.env', import.meta.url);
