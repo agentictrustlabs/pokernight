@@ -17,8 +17,8 @@ import {
   apply, attachAgent, CHARACTER_CRAFT, chooseAction, DIRECTOR_CRAFT, openStaging, parseAction, roleOf, stagingOf, tick, viewFor,
   type Casting, type FieldOpsEvent, type FieldOpsState, type FieldOpsView, type RoleId,
 } from '@pokernight/fieldops';
-import { admit, advance, directMessage, ensureGeneral, postLine, reparent, retireChartered, sessionOf, stewardCustodian, STORAGE_V, type CharteredEntry, type CharterProgress, type CharterSpec, type Standing } from './field-charter.js';
-import { FIELDOPS_ACT_SKILL, FIELDOPS_DIRECT_SKILL } from '@pokernight/protocol';
+import { admit, advance, directMessage, ensureGeneral, postLine, reparent, reprofile, retireChartered, sessionOf, stewardCustodian, STORAGE_V, type CharteredEntry, type CharterProgress, type CharterSpec, type Standing } from './field-charter.js';
+import { FIELDOPS_ACT_SKILL, FIELDOPS_DIRECT_SKILL, type SceneOutput } from '@pokernight/protocol';
 import { askFieldDirector, askPart } from './fieldops-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
 import { fieldEstate, publishSeasonGraph, writeSeason, type EstateWriteReport } from './field-estate.js';
@@ -35,7 +35,17 @@ interface Meta {
   graph?: { ok: boolean; error?: string; at: number };
 }
 /** THE TEST OF ONE AGENT: what it was asked, what came back, and what the engine made of it. */
-export interface AgentStats { asked: number; answered: number; applied: number; refused: number; unparsed: number; missed: number; ms: number[]; rested: number; byRules: number; empty?: number }
+export interface AgentStats {
+  asked: number; answered: number; applied: number; refused: number; unparsed: number; missed: number; ms: number[]; rested: number; byRules: number; empty?: number;
+  /** FIELD RAILS §5 — which field-circles performers the agent's runs SELECTED, and how many APPLIED with proof vs were
+   *  REFUSED for want of it. The page shows which skills ran; a recordable act is not "applied" on the engine until its
+   *  capability is proven (run-provenance + an executor receipt). Keyed by capability id (e.g. `field.record.save`). */
+  skills?: Record<string, { selected: number; applied: number; refused: number }>;
+  /** Recordable acts the engine applied WITHOUT proof while the gate is not yet enforced (the dump, still in place). */
+  unproven?: number;
+  /** Times the house took a recordable part over because the agent kept failing to prove the field write. */
+  houseTaken?: number;
+}
 
 const PACE_MS = 5_000;
 const TICK_MS = 2_000;
@@ -48,6 +58,30 @@ const RULES_PER_WAKE = 3;
 export const CHARTERED_KEY = 'fieldops-chartered';
 /** Acts that spend no day: the house plays the day's act after an agent answers one of these. */
 const FREE_ACTS = new Set(['move', 'join', 'decline', 'invite', 'adopt', 'choose']);
+/**
+ * FIELD RAILS §4 — the engine verbs that MUST be a real Field Circles record (the capture performer, `field.record.save`).
+ * An agent that answers one of these only truly DID it if its run applied that capability as a tool step AND Field Circles
+ * took the write (a receipt). The other performers (coach, found/recognize, assess) join as they become executable.
+ */
+const RECORDS_FIELD: Record<string, string> = {
+  visit: 'field.record.save', share: 'field.record.save', study: 'field.record.save', gather: 'field.record.save',
+  baptize: 'field.record.save', train: 'field.record.save', support: 'field.record.save', report: 'field.record.save',
+};
+/**
+ * FIELD RAILS §10 — the dump is not killed until the walk is green. The apply-iff-proof gate ENFORCES (refuses to apply
+ * an unproven recordable act) only when the operator turns it on; until then the act applies as before and the skill
+ * counters merely record what ran (and that it was unproven). `FIELDOPS_REQUIRE_PROOF=1` flips it, per deployment.
+ */
+const requireFieldProof = (env: Env): boolean => { const v = (env as { FIELDOPS_REQUIRE_PROOF?: string }).FIELDOPS_REQUIRE_PROOF ?? ''; return v === '1' || v.toLowerCase() === 'true'; };
+/**
+ * Did the agent's run PROVE it performed `cap`? The reply carries the run's proof (docs/FIELD-RAILS.md §5): the
+ * capability APPLIED as a tool step (not planner prose) and the executor's own receipt. Both, or it is not proven.
+ */
+function provedField(proof: SceneOutput['proof'] | undefined, cap: string): boolean {
+  if (!proof) return false;
+  const applied = (proof.applied ?? []).map((s) => s.toLowerCase());
+  return applied.includes(cap.toLowerCase()) && proof.receipt != null && Object.keys(proof.receipt).length > 0;
+}
 /** A charter step that failed waits this long per failure before the next try. */
 const CHARTER_BACKOFF_MS = 15_000;
 export interface Charter { ref: { team: string } | { body: string }; spec: CharterSpec; progress: CharterProgress }
@@ -467,16 +501,37 @@ export class FieldOpsDO extends DurableObject<Env> {
       if (out.output.action !== undefined) {
         const parsed = parseAction(out.output.action);
         if (parsed.ok) {
+          // APPLY-IFF-PROOF (docs/FIELD-RAILS.md §0/§5). A recordable verb must be a real Field Circles record: the
+          // agent's run has to have APPLIED the capture performer AND the executor returned a receipt. Until the walk
+          // is green the gate only COUNTS (the dump still applies); `FIELDOPS_REQUIRE_PROOF=1` makes an unproven record
+          // a miss instead of an engine apply, and the house takes the part after three.
+          const cap = RECORDS_FIELD[parsed.action.type];
+          if (cap) {
+            st.skills ??= {};
+            const sk = (st.skills[cap] ??= { selected: 0, applied: 0, refused: 0 });
+            sk.selected += 1;
+            const proved = provedField(out.output.proof, cap);
+            if (!proved && requireFieldProof(this.env)) {
+              sk.refused += 1; st.refused += 1;
+              const misses = (this.misses[role] ?? 0) + 1; this.misses[role] = misses;
+              console.warn(`[fieldops] ${role}'s ${parsed.action.type} had no field proof (run + receipt) — not applied (${misses})`);
+              if (misses >= 3) { this.resting[role] = Date.now() + REST_MS; this.misses[role] = 0; st.rested += 1; st.houseTaken = (st.houseTaken ?? 0) + 1; }
+              this.save(); this.tellEverybody();
+              return;
+            }
+            if (!proved) st.unproven = (st.unproven ?? 0) + 1; // the dump: applied unproven while the gate is off
+          }
           let cur = base;
           const done = apply(cur, pair2.scenario, pair2.region, role, parsed.action, now, 'agent');
           if (done.ok) {
             cur = done.state; changed = true;
             st.applied += 1;
+            if (cap) st.skills![cap]!.applied += 1;
             // A MOVE, A JOIN, AN ADOPTION ARE FREE, and an agent that answered one has a day still to spend: the house
             // spends it, so a thoughtful agent that answered "go to Evans" or "count me in" is not a part that lost its day.
             if (FREE_ACTS.has(parsed.action.type)) { this.state = cur; if (this.playByRules(role, now)) cur = this.state!; }
             this.state = cur;
-          } else { st.refused += 1; console.warn(`[fieldops] ${role}'s agent tried something the season refused: ${done.code}`); }
+          } else { st.refused += 1; if (cap) st.skills![cap]!.refused += 1; console.warn(`[fieldops] ${role}'s agent tried something the season refused: ${done.code}`); }
         } else { st.unparsed += 1; console.warn(`[fieldops] ${role}'s agent answered in no shape the engine knows: ${parsed.code}`); }
       }
       if (out.output.say) {
@@ -628,6 +683,10 @@ export class FieldOpsDO extends DurableObject<Env> {
           const failures = await reparent(estate, c.spec, sa, estate.workspace.custodian);
           if (!failures.length) { c.progress = { ...c.progress, parented: true }; this.save(); console.log(`[fieldops] ${c.spec.name} now hangs under ${c.spec.under.slice(0, 10)}…`); }
           else console.warn(`[fieldops] ${c.spec.name}: not every link could be re-hung: ${failures.join('; ')}`);
+        }
+        if (!c.progress.profiled) {
+          try { await reprofile(estate, c.spec, sa); c.progress = { ...c.progress, profiled: true }; repaired = true; this.save(); console.log(`[fieldops] ${c.spec.name}: org.profile written`); }
+          catch (e: unknown) { console.warn(`[fieldops] ${c.spec.name}: org.profile not written: ${String(e)}`); }
         }
         // A charter from before the Home's ceremonies were run: back to the membership step, which the loop above takes.
         if (!c.progress.standing) { c.progress = { ...c.progress, step: 'membership', tries: 0, at: 0 }; this.save(); repaired = true; }

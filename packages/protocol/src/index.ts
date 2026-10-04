@@ -1285,6 +1285,18 @@ export const SceneOutputSchema = z.object({
   say: z.string().max(280).optional(),
   because: z.string().max(400).optional(),
   source: z.string().max(120).optional(),
+  /**
+   * FIELD RAILS (docs/FIELD-RAILS.md §5) — the PROOF a recordable act actually happened: the run at the agent's Home,
+   * the capabilities it APPLIED as tool steps (so the host can confirm the expected field-circles performer ran, not
+   * just planner prose), and the executor's own receipt (an ExecutorInvocation's store-pointer refs — never cards).
+   * The host's apply-iff-proof gate reads this (or loads `run.provenance:<runRef>` at the Home) before the engine
+   * applies the move. Optional and generic: a scene that performs nothing carries none.
+   */
+  proof: z.object({
+    runRef: z.string().max(200).optional(),
+    applied: z.array(z.string().max(96)).max(32).optional(),
+    receipt: z.record(z.unknown()).optional(),
+  }).optional(),
 });
 export type SceneOutput = z.infer<typeof SceneOutputSchema>;
 

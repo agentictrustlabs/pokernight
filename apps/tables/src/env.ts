@@ -94,6 +94,10 @@ export interface Env {
   FIELDOPS_CAST_NORTH_OF_DENVER?: string;
   FIELDOPS_CAST_AGENTS?: string;
   FIELDOPS_DIRECTOR?: string;
+  /** FIELD RAILS §10 — `1`/`true` turns the apply-iff-proof gate ON: a recordable act (visit, share, study, gather,
+   *  baptize, train, support, report) is applied only when the agent's run proves it (the capture capability applied
+   *  + an executor receipt). Off by default so the dump keeps working until the walk is green. */
+  FIELDOPS_REQUIRE_PROOF?: string;
   /** JSON (`field-estate.ts` `FieldEstate`): the workspace, teams, partners, workers and body pool a season writes to. A secret; KV `CLUB_WIRES` under `fieldops-estate` is the other place it may live. */
   FIELDOPS_ESTATE?: string;
   /** The public registry, for publishing a season's founded bodies to the game's own graph at the reveal. Secrets; absent means not published. */
