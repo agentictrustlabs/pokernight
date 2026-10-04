@@ -49,7 +49,9 @@
     "admit:fieldops": "node scripts/admit-fieldops-realm.mjs",
     "cleanup:fieldops": "node scripts/cleanup-fieldops-homes.mjs",
     "check:field-records": "pnpm --filter pokernight-tables exec tsx scripts/check-field-records.mts",
-    "prune:field-records": "node scripts/prune-field-records.mjs"
+    "prune:field-records": "node scripts/prune-field-records.mjs",
+    "walk:field-season": "node scripts/walk-field-season.cjs",
+    "walk:field-ask": "node scripts/walk-field-ask.cjs"
   },
   "devDependencies": {
     "@agenticprimitives/a2a": "0.0.0-alpha.22",
