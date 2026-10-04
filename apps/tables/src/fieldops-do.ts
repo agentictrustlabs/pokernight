@@ -22,7 +22,7 @@ import { FIELDOPS_ACT_SKILL, FIELDOPS_DIRECT_SKILL, type SceneOutput } from '@po
 import { askFieldDirector, askPart } from './fieldops-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
 import { houseAuthorization } from './house-caller.js';
-import { fieldEstate, publishSeasonGraph, writeSeason, type EstateWriteReport } from './field-estate.js';
+import { fieldEstate, publishSeasonGraph, writeSeason, type EstateWriteReport, type PhaseSeries } from './field-estate.js';
 import { fieldOpsCast, fieldOpsCastAgents, fieldOpsDirector, type Env } from './env.js';
 
 interface Attachment { playerId: string; name: string }
@@ -32,6 +32,8 @@ interface Meta {
   club?: string; night?: string; casting?: boolean; topic?: string; director?: string;
   /** The last day whose records were written to the field app, and how that went. */
   estateDay?: number; estate?: EstateWriteReport & { at: number };
+  /** The last phase result written to the field app per community — what the next one supersedes when the phase moves. */
+  fieldPhases?: PhaseSeries;
   /** Was the season published to the game's graph at the reveal, and if not why. */
   graph?: { ok: boolean; error?: string; at: number };
 }
@@ -291,7 +293,9 @@ export class FieldOpsDO extends DurableObject<Env> {
     if (request.method === 'POST' && url.pathname === '/estate') {
       // The operator (or the host) asks for the season's records to be written now rather than at the week's end.
       if (!this.state) return json({ error: 'no such season' }, 404);
-      const r = await this.writeEstate(true);
+      // `?full=1` writes the WHOLE season again rather than the days since the last write — a re-write is the same rows
+      // (ids are derived), so this is how a season already played picks up a record kind the writer has since learned.
+      const r = await this.writeEstate(true, url.searchParams.get('full') === '1');
       return json({ ok: r.ok, report: r }, r.ok ? 200 : 400);
     }
     if (url.pathname === '/ws') {
@@ -601,19 +605,20 @@ export class FieldOpsDO extends DurableObject<Env> {
   }
 
   /** The season's records to the field app, through the last completed day — once per week's end, or on demand. */
-  private async writeEstate(force: boolean): Promise<EstateWriteReport> {
+  private async writeEstate(force: boolean, full = false): Promise<EstateWriteReport> {
     const s = this.state; const m = this.meta;
     const pair = s ? stagingOf(s.scenario) : null;
     if (!s || !m || !pair) return { ok: false, written: 0, failures: ['no season'] };
     if (this.writing) await this.writing;
-    const since = m.estateDay ?? 0;
+    const since = full ? 0 : m.estateDay ?? 0;
     const through = s.day;
     if (!force && through <= since) return m.estate ?? { ok: true, written: 0, failures: [] };
     const run = (async () => {
       const standing: Record<string, Record<string, Standing>> = {};
       for (const c of Object.values(this.charters)) if ('team' in c.ref && c.progress.standing) standing[c.ref.team] = c.progress.standing;
-      const r = await writeSeason(this.env, s, pair.scenario, pair.region, m.stagingId, since, standing);
-      if (this.meta) { this.meta.estate = { ...r, at: Date.now() }; if (r.ok || r.written > 0) this.meta.estateDay = through; this.save(); this.tellEverybody(); }
+      const r = await writeSeason(this.env, s, pair.scenario, pair.region, m.stagingId, since, standing, m.fieldPhases ?? {});
+      // The phase series is remembered only when the write landed: a result nobody stored must not be superseded.
+      if (this.meta) { this.meta.estate = { ok: r.ok, written: r.written, failures: r.failures, at: Date.now() }; if (r.ok || r.written > 0) this.meta.estateDay = through; if (r.ok && r.phases) this.meta.fieldPhases = r.phases; this.save(); this.tellEverybody(); }
       if (!r.ok) console.warn(`[fieldops] the field app got ${r.written} records; not written: ${r.failures.join('; ')}`); else console.log(`[fieldops] ${r.written} records written to the field app through day ${through}`);
       return r;
     })();

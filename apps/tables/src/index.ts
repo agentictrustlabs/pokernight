@@ -1035,7 +1035,7 @@ app.post('/fieldops/:stagingId/estate', async (c) => {
   if (!read.ok) return c.json({ error: 'no such season' }, 404);
   const host = ((await read.json()) as { staging?: { host?: string } }).staging?.host;
   if (host !== session.playerId) return c.json({ error: 'the host writes the season out' }, 403);
-  const res = await st.fetch('https://staging/estate', { method: 'POST' });
+  const res = await st.fetch(`https://staging/estate${c.req.query('full') === '1' ? '?full=1' : ''}`, { method: 'POST' });
   return c.json((await res.json()) as unknown, res.ok ? 200 : 400);
 });
 

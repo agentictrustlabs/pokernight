@@ -139,15 +139,39 @@ bodies the first provisioning seeded.
 
 **Target:** the field app shows what the character’s agent already wrote (FIELD-RAILS). **Today:**
 
-At every week's end and at the reveal, `field-estate.ts` writes the season's records where field.faithnet.io reads
-them: `activity` per act and `observation` per report into the team's vault; `formation-community` /
-`ekklesia-community` per body the season founded; `body-profile` and `body-community` into an adopted body agent's
-vault and the active `ws-body` row on the workspace; `community-phase-result` per reading on the workspace. Ids derive
-from the season and the event, so a week written twice is the same rows. The writer signs in as the demo person who
-custodies each vault (`/connect/demo-signin`) — a DEMO estate's property, said in the code; a real field would write
-through its own ceremony. At the reveal the founded bodies and readings go to
+At every day's end and at the reveal, `field-estate.ts` writes the season's records where field.faithnet.io reads them.
+**The field app draws each screen from ONE vault and never merges** (a pinned people → its steward team's vault; a
+team → the team's; nothing pinned → the workspace's), joining by id — so a record in the wrong vault, a link that
+points out of its vault or a phase with nothing behind it is a screen that stays empty without an error.
+
+| Where | What | The screen it feeds |
+|---|---|---|
+| **the steward TEAM's vault** | `community-context` for every people the team took up (who they are, aligned to the registry's people group by ROP3, bounded by the towns they live in as a `segment` specification); `identity` (the registry's people group, cited); `geo-feature` per town (a 3 km box, said to be the game's); twelve `dimension-assessment`s per people, levelled from the season's counters with the count that put each there; the `community-phase-assessment` + `community-phase-result` PAIR those dimensions derive under the toolkit's criteria (`field-phase.ts`); a `local-plan` and its six `work-item`s (the ladder: presence → five conversations → a baptism → a circle → a church → a daughter church); `focus-list`s; `activity` per act, `observation` per report and per thing the road brought; `formation-community` with its **health** (seekers, believers, baptised, leaders, groups started, the practices a season can know — dated, attributed, `acts2-gapp`) and `ekklesia-community` with its counts; `support-need` per partner gift | Community · Progress (Assess) · Research (Align, People groups, Geography) · Circles & Churches · Work · Plans · Now |
+| **the WORKSPACE's vault** | the `ws-*` pointers; a COPY of each people's context, phase pair, identity and places | Overview · People Communities · Progress · and Research / People groups / Geography when no people is pinned |
+| **a BODY's vault** | `body-profile`, `body-community`, and the observations about its people | Progress's counts "from the body's side" |
+
+**Two rulers, not one.** The season derives a phase on the registry's `fw-npl-phases`; the field app derives a
+Phases-of-Engagement level from dimension assessments under published criteria. The season writes the DIMENSIONS and
+the level the field app's own criteria then give — never its own number under the toolkit's name. They agree through
+the first five phases and part after (the registry's P6 is a third generation, the toolkit's Phase 6 a fourth).
+
+**A phase result keeps its id while the phase holds and is superseded when it moves** (`supersedes`, result to result,
+reason `field-change`); the season object remembers the last result written per people (`fieldPhases`) and only when
+the write landed. **An artifact's id is the field app's own rule** (`artifactId`: folder · the community's IRI tail ·
+FNV of `folder/name`), so a circle the season wrote and a person then edits in the field app is ONE artifact.
+
+Ids derive from the season and the event, so a day written twice is the same rows. `POST /fieldops/:id/estate?full=1`
+(the host) writes the WHOLE season again — how a season already played picks up a record kind the writer has since
+learned, with no model asked. The writer signs in as the demo person who custodies each vault
+(`/connect/demo-signin`) — a DEMO estate's property, said in the code; a real field would write through its own
+ceremony. At the reveal the founded bodies and readings go to
 `https://graph.global.church/g/gamenight/field-operations` in `gc-public` when the Worker holds `GRAPHDB_URL` and
 `GRAPHDB_BASIC`.
+
+`pnpm check:field-records` plays a season by the house's own policy (no agent, no model) and inspects every record it
+would write; with `--out` it leaves them as JSON, which is what the field app's own `validateFieldRecord` and
+`derivePhase` are run over (`~/engage`). `pnpm prune:field-records [--dry]` removes ONLY an artifact that is a second
+copy of a record (the older id rule) and the older, refused phase results.
 
 ## 7 · The page
 
