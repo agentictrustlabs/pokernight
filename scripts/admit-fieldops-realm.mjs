@@ -14,7 +14,7 @@
  * finished is not repeated by hand. Signs through the Home for each demo custodian (`persona-sign`); holds no key.
  */
 import { readFileSync } from 'node:fs';
-import { bytesToHex, keccak256, recoverMessageAddress, stringToBytes } from 'viem';
+import { bytesToHex, encodeAbiParameters, keccak256, recoverMessageAddress, stringToBytes } from 'viem';
 import { canonicalizeJson, jcsCanonicalize } from '@agenticprimitives/types';
 import { ROOT_AUTHORITY, buildCaveat, buildSessionDelegation, buildVaultRecordScopeCaveat, encodeAllowedMethodsTerms, encodeAllowedTargetsTerms, encodeTimestampTerms, encodeValueTerms, hashDelegation } from '@agenticprimitives/delegation';
 import { skillSelector } from '@agenticprimitives/a2a';
@@ -138,6 +138,11 @@ const SCOPES = [
   { server: 'demo-mcp', resources: ['vault:family:*', 'vault:field:*', 'vault:cardroom.*'], ops: ['read', 'write'] },
 ];
 const INTERACTIONS_SA = note.interactionsServiceSa || '0x39508624387fed3b9d6dd15ba86d3ace8a3f0a6a';
+const DELIVERY_SA = note.deliveryServiceSa || '0x0AF2455e3f76594E81d9042aD5FE22A5A35dc57f';
+// Spec 408 §2.1 session-audience sentinel (off-chain, judged in the vault): first 20 bytes of keccak256 of
+// `urn:smart-agent:session-audience`. A DEL-001 leaf that names no audience now reads as stale, so an org leaf
+// must present BOTH service agents (interactions + delivery, where content.* lives) or content writes 409.
+const SESSION_AUDIENCE_ENFORCER = '0x8176cd7441055a9022ff24c5447d42be161673b4';
 async function regrant(org) {
   const signer = await signerFor(org.custodian);
   const validUntil = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
@@ -145,8 +150,12 @@ async function regrant(org) {
   d.signature = await signer.sign(hashDelegation(d, CHAIN, CONTRACTS.delegationManager));
   const sk = await (await fetch(`${A2A}/agent/interactions-session-key`)).json();
   if (!sk?.ok || !sk.address) throw new Error(`no interactions-session key: ${JSON.stringify(sk).slice(0, 120)}`);
-  const { leaf, digest } = buildSessionDelegation({ delegator: lower(org.sa), sessionKeyAddress: sk.address, validUntil: Math.floor(Date.now() / 1000) + 12 * 3600, enforcers: { timestamp: CONTRACTS.timestampEnforcer, value: CONTRACTS.valueEnforcer }, chainId: CHAIN, delegationManager: CONTRACTS.delegationManager });
-  leaf.signature = await signer.sign(digest);
+  // THE ORG LEAF LIVES A YEAR AND NAMES BOTH SERVICE AGENTS. Hand-built (not buildSessionDelegation, which in
+  // alpha.24 mints a 12 h no-audience leaf the live estate refuses): an org never logs in to self-heal, and the
+  // session key must be allowed to present both the interactions grant and the write-only delivery grant where
+  // content.* (the invitation, the roster) lives — or content writes 409 "auth failed" while interactions reads pass.
+  const leaf = { delegator: lower(org.sa), delegate: lower(sk.address), authority: ROOT_AUTHORITY, caveats: [buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, validUntil)), buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)), buildCaveat(SESSION_AUDIENCE_ENFORCER, encodeAbiParameters([{ type: 'address[]' }], [[lower(INTERACTIONS_SA), lower(DELIVERY_SA)]]))], salt: randSalt(), signature: '0x' };
+  leaf.signature = await signer.sign(hashDelegation(leaf, CHAIN, CONTRACTS.delegationManager));
   const r = await (await fetch(`${A2A}/interactions/${lower(org.sa)}/grant`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ delegation: wireOut(d), sessionLeaf: { ...leaf, salt: leaf.salt.toString() } }) })).json().catch(() => ({}));
   if (r.ok !== true) throw new Error(`re-grant ${org.name}: ${JSON.stringify(r).slice(0, 160)}`);
 }
