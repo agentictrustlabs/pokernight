@@ -955,6 +955,22 @@ app.post('/fieldops/solo', async (c) => {
   return c.json((await res.json()) as unknown);
 });
 
+/**
+ * YOUR OWN SOLO SEASON, if you have one — a READ, so the Play card can offer "review the last season"
+ * or "resume" without the `/solo` POST (which starts a revealed season over). The id is derived from
+ * you exactly as `/solo` derives it; a season you never opened answers `{ stagingId, phase: null }`.
+ */
+app.get('/fieldops/mine', async (c) => {
+  const session = await resolveSession(c.env, sessionToken(c.req.raw));
+  if (!session) return c.json({ error: 'unauthenticated' }, 401);
+  const scenario = c.req.query('scenario') ?? FIELDOPS_DEFAULT;
+  if (!FIELDOPS_SCENARIOS[scenario]) return c.json({ error: `no such scenario: ${scenario}` }, 404);
+  const stagingId = await fieldOpsId([scenario, session.playerId]);
+  const res = await fieldops(c.env, stagingId).fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}`);
+  const j = (await res.json().catch(() => ({}))) as { staging?: { phase?: string; role?: string } | null };
+  return c.json({ stagingId, phase: j.staging?.phase ?? null, role: j.staging?.role ?? null });
+});
+
 /** SET ONE UP (host): the season exists, in casting, and its parts are open. */
 app.post('/clubs/:clubId/fieldops', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));

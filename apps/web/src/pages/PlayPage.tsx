@@ -233,12 +233,20 @@ function FieldOpsCard({ session }: { session: AppSession }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [mine, setMine] = useState<{ stagingId: string; phase: string | null } | null>(null);
   useEffect(() => {
     let alive = true;
     fieldOpsApi.scenarios().then((r) => alive && setScenarios(r.scenarios)).catch(() => alive && setScenarios([]));
     return () => { alive = false; };
   }, []);
   const chosen = scenarios?.[0] ?? null;
+  // A SEASON YOU ALREADY OPENED is yours to go back into — to watch it finish, or to review the reveal. Re-entering
+  // the staging page observes it; it is the `/solo` POST (the primary button) that would start a revealed one over.
+  useEffect(() => {
+    let alive = true;
+    if (chosen) fieldOpsApi.mine(chosen.id, session.token).then((r) => alive && setMine(r.phase ? r : null)).catch(() => {});
+    return () => { alive = false; };
+  }, [chosen?.id, session.token]);
   const floors = chosen ? chosen.communities.reduce<Record<number, number>>((m, c) => ({ ...m, [c.phase]: (m[c.phase] ?? 0) + 1 }), {}) : {};
   return (
     <section className="panel play-card play-fieldops">
@@ -255,6 +263,11 @@ function FieldOpsCard({ session }: { session: AppSession }) {
         </p>
         {chosen ? <p className="hint small">The registry's floor: {Object.entries(floors).sort().map(([p, n]) => `${n} at P${p}`).join(', ')}{chosen.registryReadAt ? ` (read ${chosen.registryReadAt.slice(0, 10)})` : ''}.</p> : null}
         <button type="button" className="primary" disabled={!chosen} onClick={() => setOpen(true)}>Set up the season…</button>
+        {mine ? (
+          <a className="small play-resume" href="#" onClick={(e) => { e.preventDefault(); goTo(fieldOpsHash(mine.stagingId)); }}>
+            {mine.phase === 'revealed' ? 'Review your last season →' : 'Resume your season →'}
+          </a>
+        ) : null}
       </div>
       <Drawer open={open} title={chosen ? chosen.name : 'Field Operations'} onClose={() => setOpen(false)}>
         {chosen ? (

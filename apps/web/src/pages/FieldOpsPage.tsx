@@ -57,10 +57,15 @@ export function FieldOpsPage({ stagingId, session, onSignOut }: { stagingId: str
     if (view.transcript.length) seenRef.current = Math.max(seenRef.current, view.transcript[view.transcript.length - 1]!.at);
     if (fresh.length) setPulses((ps) => [...ps.filter((p) => Date.now() - p.at < 2200), ...fresh.map((p) => ({ ...p, at: Date.now() }))]);
   }, [view?.transcript.length]);
-  const again = async () => {
+  // RESTART. `asWatch` opens the season over with NOBODY in a part — all sixteen agents play it and you look on
+  // (the owner's ask, 2026-10-03). Otherwise it keeps whatever part you had. Only your OWN solo season: the POST
+  // derives the staging from you, so it would miss a club night (which its host restarts its own way).
+  const canRestart = !!session && !!staging && staging.host === session.playerId && !staging.club;
+  const again = async (asWatch = false) => {
     if (!session || !view) return;
+    if (view.phase !== 'revealed' && !window.confirm(asWatch ? 'Restart this season with all agents? The current run is cleared.' : 'Restart this season? The current run is cleared.')) return;
     setBusy(true);
-    try { await fieldOpsApi.solo({ scenario: view.scenario, role: view.you?.role ?? (staging?.role === 'watch' ? 'watch' : undefined), restart: true }, session.token); } finally { setBusy(false); }
+    try { await fieldOpsApi.solo({ scenario: view.scenario, role: asWatch ? 'watch' : (view.you?.role ?? (staging?.role === 'watch' ? 'watch' : undefined)), restart: true }, session.token); } finally { setBusy(false); }
   };
   // THE PERSON IS HERE: their own pointer, key, wheel or touch, told to the season at most once a minute. A part's
   // acts already count; a watcher has none, and without this the sixteen agents would stop twenty minutes in.
@@ -88,6 +93,11 @@ export function FieldOpsPage({ stagingId, session, onSignOut }: { stagingId: str
         {isHost && view.phase !== 'revealed' ? (
           <button type="button" onClick={() => sock?.pause(!staging?.paused)}>{staging?.paused ? 'Resume the season' : 'Hold the season'}</button>
         ) : staging?.paused ? <span className="tag">held by your host</span> : null}
+        {canRestart ? (
+          <button type="button" disabled={busy} title="Start the season over with all sixteen agents — you look on" onClick={() => void again(true)}>
+            {busy ? 'Restarting…' : 'Restart · all agents'}
+          </button>
+        ) : null}
         <span className="spacer" />
         <a href={HOME_HASH}>← Play</a>
         <Identity session={session} onSignOut={onSignOut} />
@@ -103,7 +113,7 @@ export function FieldOpsPage({ stagingId, session, onSignOut }: { stagingId: str
           <Activity view={view} filter={filter} setFilter={setFilter} selectedTown={selectedTown} act={act} whisperTo={whisperTo} setWhisperTo={setWhisperTo} />
         </main>
         <aside className="mystery-side">
-          {view.reveal ? <Reveal view={view} staging={staging} agents={state.agents} onAgain={again} busy={busy} /> : null}
+          {view.reveal ? <Reveal view={view} staging={staging} agents={state.agents} onAgain={() => void again(false)} busy={busy} /> : null}
           <YourDay view={view} act={act} selectedTown={selectedTown} />
           <Teams view={view} onPerson={(r) => setWhisperTo((cur) => (cur === r ? null : r))} whisperTo={whisperTo} charters={staging?.charters ?? []} />
           <AgentReport view={view} agents={state.agents} />

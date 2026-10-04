@@ -667,6 +667,9 @@ export const fieldOpsApi = {
   scenarios: () => request<{ scenarios: FieldOpsScenarioSummary[] }>('/fieldops'),
   solo: (body: { scenario?: string; role?: string; restart?: boolean; pace?: 'short' | 'full' }, token: string) =>
     request<{ ok: boolean; staging: FieldOpsSummary }>('/fieldops/solo', { method: 'POST', body: JSON.stringify(body) }, token),
+  /** Your own solo season's id + phase, if you have one — a read, so the Play card can offer to review or resume it. */
+  mine: (scenario: string, token: string) =>
+    request<{ stagingId: string; phase: string | null; role: string | null }>(`/fieldops/mine?scenario=${encodeURIComponent(scenario)}`, {}, token),
   read: (stagingId: string, token: string) =>
     request<{ staging: FieldOpsSummary; view: unknown; cast: FieldOpsPart[]; agents: FieldOpsAgentRow[] }>(`/fieldops/${encodeURIComponent(stagingId)}`, {}, token),
   take: (stagingId: string, role: string | null, token: string) =>

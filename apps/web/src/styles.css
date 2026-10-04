@@ -800,12 +800,14 @@ label > select {
    paragraph and a button, and four of them fit across at 1100px wide; nothing to play is below the fold. */
 .play {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
   gap: 1rem;
-  /* Stretch, so two cards with blurbs of different lengths still put their buttons on one line. The
-     `flex: 1` on the blurb inside each card is what turns the extra height into space above the
-     button rather than below it. */
-  align-items: stretch;
+  /* EACH CARD IS ITS OWN HEIGHT (2026-10-03). Stretching them to a shared height turned the short
+     pitches (a two-line mystery, "deal me in") into tall empty bars with the button stranded at the
+     bottom, next to the one long card (the season's blurb + its floor line) — "long vertical bars
+     with buttons cut off". A ragged bottom edge is the right trade: the button sits under its own
+     words. Wider columns (270 vs 215) also let the rich blurbs wrap in a few lines, not fifteen. */
+  align-items: start;
 }
 /* THE TWO WAYS IN ARE FELT CARDS (2026-09-14): a lamp-lit band with the game's suit and its name, the
    pitch on paper below, and a brass "Deal me in" — the one place inside the room where the landing's
@@ -858,7 +860,6 @@ label > select {
 }
 .play-card .hint {
   margin: 0;
-  flex: 1; /* so two cards of unequal blurb still line their buttons up */
   font-size: 0.9rem;
 }
 .play-card .primary {
@@ -871,6 +872,11 @@ label > select {
 }
 .play-card .primary:hover:not(:disabled) {
   background: var(--cta-bg-hover);
+}
+/* "Review your last season →" — a quiet second line under the primary, for a game you already opened. */
+.play-resume {
+  align-self: flex-start;
+  margin-top: 0.1rem;
 }
 /* the night's choices, opened beside the page: the same stack the card used to carry */
 .drawer-body .mystery-part { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.8rem; }
