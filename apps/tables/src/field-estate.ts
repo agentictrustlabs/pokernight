@@ -175,6 +175,20 @@ export function recordsFor(estate: FieldEstate, state: FieldOpsState, scenario: 
   const isFloor = (b: Body) => b.foundedDay === 0 && !b.recognizedFrom;
   const writtenBodies = new Map(state.bodies.flatMap((b) => { const t = teamOfBody(b); return t ? [[b.id, t.id] as const] : []; }));
 
+  // WHAT THIS WRITE IS ABOUT. The first write of a season, and a full re-write, is everything; a day's write is the
+  // communities something HAPPENED among since the last one — a people nobody went near today has the same context,
+  // dimensions, phase, plan and work it had yesterday, and writing five hundred unchanged records at every day's end
+  // is two minutes of the Home's time for nothing. Bodies and rosters are still written whole (they are few).
+  const full = sinceDay <= 0;
+  const touched = new Set<string>();
+  for (const e of state.log) {
+    if (!('day' in e) || typeof e.day !== 'number' || e.day <= sinceDay) continue;
+    if (e.type === 'adopted') e.communities.forEach((c) => touched.add(c));
+    else if (e.type === 'trail') { const c = defOf(e.target) ? e.target : state.bodies.find((b) => b.id === e.target)?.community; if (c) touched.add(c); }
+    else if ('community' in e && e.community) touched.add(e.community);
+  }
+  const live = (id: string) => full || touched.has(id);
+
   // A place is written once into each vault that names it — the corridor's towns, and any town further off that a
   // people the team took up lives in or a body of its meets in.
   const placed = new Set<string>();
@@ -221,7 +235,7 @@ export function recordsFor(estate: FieldEstate, state: FieldOpsState, scenario: 
 
     // THE PLACES: every town of the team's corridor as a shape, so a circle's `placeId` and a community's bounds have
     // something on the map to stand on. The workspace keeps the same shapes for its own map.
-    for (const town of region.towns.filter((x) => x.corridor === t.corridor)) place(t.id, town.id);
+    if (full || t.foundedDay > sinceDay) for (const town of region.towns.filter((x) => x.corridor === t.corridor)) place(t.id, town.id);
 
     // THE TEAM'S OWN WORK — what is not about one people: who has not answered, who backs the team.
     const supports = (state.supports ?? []).filter((x) => x.team === t.id);
@@ -236,7 +250,7 @@ export function recordsFor(estate: FieldEstate, state: FieldOpsState, scenario: 
       into(team, t.id, { folder: FOLDER.support, record: { kind: 'support-need', id: `fo-${tag}-support-${slug(x.id)}`, title: `${titled(x.resource)} from ${partner?.name ?? x.partner} (${mark})`, updatedAt: now, envelope: envelope('L2', 'partner support'), supportKind: SUPPORT_KIND[x.resource], summary: `${partner?.name ?? x.partner} gave ${x.resource} to ${t.name} on day ${x.day} of the season. ${GAME_NOTE}`, communityId: null, neededBy: null, state: 'delivered', abstractedSummary: `A partner church gave ${x.resource} to a field team.` } });
     }
   }
-  for (const town of region.towns) workspace.push(placeRecord(town, mark, now));
+  if (full) for (const town of region.towns) workspace.push(placeRecord(town, mark, now));
 
   // THE COMMUNITIES THE WORKSPACE WORKS WITH — the ones a team took up, stewarded by that team (where the field app
   // looks for a community's circles). The workspace keeps the pointer; the TEAM holds the community's context — who
@@ -253,12 +267,16 @@ export function recordsFor(estate: FieldEstate, state: FieldOpsState, scenario: 
     const communityId = communityIri(id)!;
     const corridor = region.corridors.find((x) => x.id === def.corridor);
     const towns = def.towns.map(townOf).filter((x): x is TownDef => !!x);
-    for (const town of towns) place(t.id, town.id);
     const mine = state.bodies.filter((b) => b.community === id);
     const circles = mine.filter((b) => b.kind === 'circle' && b.lifecycle !== 'RecognizedAsChurch');
     const churches = mine.filter((b) => b.kind === 'church');
     const derived = phaseOf(def, c, state.bodies);
     const latest = c.readings[c.readings.length - 1];
+    const pressed = (state.trail ?? []).some((x) => x.kind === 'barrier' && x.target === id && x.until >= state.day) || circles.some((b) => b.lifecycle === 'Stalled');
+    (focusByTeam[t.id] ??= []).push({ subjectKind: 'community-context', subjectId: `community-${id}`, label: def.name, why: `P${derived.phase} on the registry's scale — ${derived.blockedBy ?? 'nothing stands in the way'}.`, weight: (pressed ? 100 : 0) + derived.phase * 10 + c.conversations });
+    // Nothing happened among them since the last write: what the vaults hold still stands, and so does the series.
+    if (!live(id)) { if (prior[id]) phases[id] = prior[id]; continue; }
+    for (const town of towns) place(t.id, town.id);
     workspace.push({ folder: FOLDER.wsCommunity, record: { kind: 'ws-community', id: `comm-${id}`, title: `${def.name} (${mark}${reg ? ' copy' : ', defined in play'})`, updatedAt: now, envelope: envelope('L2', 'workspace community'), workspace: estate.workspace.sa, communityId, steward: t.agent, status: 'active' } });
 
     // WHO THE PEOPLE ARE (the registry's identity, cited — never a phase) and the community's alignment to it.
@@ -381,11 +399,11 @@ export function recordsFor(estate: FieldEstate, state: FieldOpsState, scenario: 
       { subjectKind: 'local-plan', subjectId: planId, label: `Season plan — ${def.name}`, why: `Reviewed at the week's end (${weekEnd}).` },
     ];
     into(team, t.id, { folder: FOLDER.focus, record: { kind: 'focus-list', id: `fo-${tag}-focus-${id}`, title: `Focus — ${def.name} (${mark})`, updatedAt: now, envelope: envelope('L2', 'team focus'), communityId, assertedBy: agentOf(t.steward), assertedAt: asOf, entries: entries.map((e, i) => ({ ...e, rank: i + 1 })), note: `What ${t.name} holds in front of it among ${def.name}, from the season's records. ${GAME_NOTE}` } });
-    (focusByTeam[t.id] ??= []).push({ subjectKind: 'community-context', subjectId: `community-${id}`, label: def.name, why: `P${derived.phase} on the registry's scale — ${derived.blockedBy ?? 'nothing stands in the way'}.`, weight: (stalled || barrier ? 100 : 0) + derived.phase * 10 + c.conversations });
   }
   for (const t of teams) {
     const entries = (focusByTeam[t.id] ?? []).sort((a, b) => b.weight - a.weight).slice(0, 8);
-    if (entries.length) into(team, t.id, { folder: FOLDER.focus, record: { kind: 'focus-list', id: `fo-${tag}-focus-team`, title: `Focus — ${t.name} (${mark})`, updatedAt: now, envelope: envelope('L2', 'team focus'), communityId: null, assertedBy: agentOf(t.steward), assertedAt: asOf, entries: entries.map(({ weight: _w, ...e }, i) => ({ ...e, rank: i + 1 })), note: `The peoples ${t.name} has taken up, the ones under pressure and the furthest along first. ${GAME_NOTE}` } });
+    const moved = full || Object.entries(state.worked ?? {}).some(([cid, tid]) => tid === t.id && touched.has(cid));
+    if (entries.length && moved) into(team, t.id, { folder: FOLDER.focus, record: { kind: 'focus-list', id: `fo-${tag}-focus-team`, title: `Focus — ${t.name} (${mark})`, updatedAt: now, envelope: envelope('L2', 'team focus'), communityId: null, assertedBy: agentOf(t.steward), assertedAt: asOf, entries: entries.map(({ weight: _w, ...e }, i) => ({ ...e, rank: i + 1 })), note: `The peoples ${t.name} has taken up, the ones under pressure and the furthest along first. ${GAME_NOTE}` } });
   }
 
   const observationsOf: Record<string, FieldRecordOut[]> = {};

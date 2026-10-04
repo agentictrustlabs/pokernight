@@ -127,6 +127,19 @@ describe('the season as the field app reads it', () => {
     expect(moved.phases[id!]!.supersedes).toBe('fo-c0ffee00-phase-earlier');
   });
 
+  it('a day’s write is the peoples something happened among — the rest stands, and the series is carried', () => {
+    const day = recordsFor(estate, s, S, R, 'c0ffee00-0000-4000-8000-000000000000', s.day - 1, new Date(s.startedAt).toISOString(), {}, out.phases);
+    const count = (o: typeof out) => [...Object.values(o.team), ...Object.values(o.body), o.workspace].reduce((n, r) => n + r.length, 0);
+    expect(count(day)).toBeLessThan(count(out) / 2);
+    expect(day.phases).toEqual(out.phases);
+    const touched = new Set(s.log.flatMap((e) => ('day' in e && e.day > s.day - 1 && 'community' in e && e.community ? [e.community] : [])));
+    const written = new Set(Object.values(day.team).flatMap((records) => of(records, 'community-context').map((c) => String(c.id).replace('community-', ''))));
+    for (const id of touched) if (s.worked[id]) expect(written.has(id), id).toBe(true);
+    for (const id of written) expect(touched.has(id), id).toBe(true);
+    // No place is written again on an ordinary day except where something new stands.
+    expect(of(day.workspace, 'geo-feature')).toHaveLength(0);
+  });
+
   it('derives the artifact id the field app derives', () => {
     expect(artifactId('field/circles', 'x.json', 'https://graph.global.church/community/100207rop3-weld')).toMatch(/^field-circles-100207rop3-weld-[a-z0-9]+$/);
     expect(artifactId('field/team', 'profile.json')).toMatch(/^field-team-nosubject-[a-z0-9]+$/);

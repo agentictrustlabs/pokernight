@@ -160,6 +160,12 @@ reason `field-change`); the season object remembers the last result written per 
 the write landed. **An artifact's id is the field app's own rule** (`artifactId`: folder · the community's IRI tail ·
 FNV of `folder/name`), so a circle the season wrote and a person then edits in the field app is ONE artifact.
 
+**A day's write is the peoples something happened among.** The first write of a season and a full re-write are
+everything; an ordinary day's end writes the context, dimensions, phase, plan and work only of the communities the log
+touched since the last write (an act, a report, a reading, an adoption, something the road brought), carries every
+other people's phase series forward untouched, and re-writes the rosters and the bodies whole (they are few and their
+counts move). Five hundred unchanged records a day was two minutes of the Home's time for nothing.
+
 Ids derive from the season and the event, so a day written twice is the same rows. `POST /fieldops/:id/estate?full=1`
 (the host) writes the WHOLE season again — how a season already played picks up a record kind the writer has since
 learned, with no model asked. The writer signs in as the demo person who custodies each vault
