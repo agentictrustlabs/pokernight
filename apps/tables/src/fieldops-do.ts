@@ -21,6 +21,7 @@ import { admit, advance, directMessage, ensureGeneral, postLine, reparent, repro
 import { FIELDOPS_ACT_SKILL, FIELDOPS_DIRECT_SKILL, type SceneOutput } from '@pokernight/protocol';
 import { askFieldDirector, askPart } from './fieldops-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
+import { houseAuthorization } from './house-caller.js';
 import { fieldEstate, publishSeasonGraph, writeSeason, type EstateWriteReport } from './field-estate.js';
 import { fieldOpsCast, fieldOpsCastAgents, fieldOpsDirector, type Env } from './env.js';
 
@@ -73,14 +74,44 @@ const RECORDS_FIELD: Record<string, string> = {
  * counters merely record what ran (and that it was unproven). `FIELDOPS_REQUIRE_PROOF=1` flips it, per deployment.
  */
 const requireFieldProof = (env: Env): boolean => { const v = (env as { FIELDOPS_REQUIRE_PROOF?: string }).FIELDOPS_REQUIRE_PROOF ?? ''; return v === '1' || v.toLowerCase() === 'true'; };
+/** The executor skill id (`invokedIntent` in run.provenance) each capability's invoke carries — see the SKILL.md `invoke.intent`. */
+const CAP_INTENT: Record<string, string> = { 'field.record.save': 'field.records-save' };
 /**
- * Did the agent's run PROVE it performed `cap`? The reply carries the run's proof (docs/FIELD-RAILS.md §5): the
- * capability APPLIED as a tool step (not planner prose) and the executor's own receipt. Both, or it is not proven.
+ * Did the agent's run PROVE it performed `cap` (docs/FIELD-RAILS.md §5, Spec 426 W3)? The reply carries `runRef` and a
+ * `hasProvenance` pointer; the authoritative proof is the ExecutorInvocation in `run.provenance:<runRef>` — the executor
+ * skill (`invokedIntent`) applied as a tool step, with its receipt. A runtime that surfaces the applied set + receipt
+ * INLINE is trusted without the fetch; otherwise the host reads the provenance pointer (house-signed) and inspects it.
  */
-function provedField(proof: SceneOutput['proof'] | undefined, cap: string): boolean {
+async function verifyFieldProof(env: Env, proof: SceneOutput['proof'] | undefined, cap: string, intent: string): Promise<boolean> {
   if (!proof) return false;
-  const applied = (proof.applied ?? []).map((s) => s.toLowerCase());
-  return applied.includes(cap.toLowerCase()) && proof.receipt != null && Object.keys(proof.receipt).length > 0;
+  const inline = (proof.applied ?? []).map((s) => s.toLowerCase());
+  if (inline.includes(cap.toLowerCase()) && proof.receipt != null && Object.keys(proof.receipt).length > 0) return true;
+  const url = proof.hasProvenance;
+  if (!url || !/^https?:\/\//.test(url)) return false;
+  try {
+    const auth = await houseAuthorization(env, url, 'GET', '');
+    const r = await fetch(url, { headers: auth ? { authorization: auth } : {} });
+    if (!r.ok) return false;
+    return provenanceHasInvocation(await r.json().catch(() => null), intent);
+  } catch { return false; }
+}
+/** Spec 426 W3 — `run.provenance` holds an ExecutorInvocation per invoke step (`{ invokedExecutor, invokedIntent, receipt }`).
+ *  Proven = one whose `invokedIntent` is this intent AND that carries a receipt. The exact container key is checked across
+ *  the likely shapes until the live W3 output pins it. */
+function provenanceHasInvocation(prov: unknown, intent: string): boolean {
+  if (!prov || typeof prov !== 'object') return false;
+  const want = intent.toLowerCase();
+  const o = prov as Record<string, unknown>;
+  const pool: unknown[] = [];
+  for (const k of ['executorInvocations', 'invocations', 'entities', 'steps', 'activities', 'provenance']) {
+    const v = o[k]; if (Array.isArray(v)) pool.push(...v);
+  }
+  return pool.some((e) => {
+    if (!e || typeof e !== 'object') return false;
+    const x = e as Record<string, unknown>;
+    const ii = String(x.invokedIntent ?? x.intent ?? '').toLowerCase();
+    return ii === want && (x.receipt != null || x.hasReceipt === true);
+  });
 }
 /** A charter step that failed waits this long per failure before the next try. */
 const CHARTER_BACKOFF_MS = 15_000;
@@ -510,7 +541,7 @@ export class FieldOpsDO extends DurableObject<Env> {
             st.skills ??= {};
             const sk = (st.skills[cap] ??= { selected: 0, applied: 0, refused: 0 });
             sk.selected += 1;
-            const proved = provedField(out.output.proof, cap);
+            const proved = await verifyFieldProof(this.env, out.output.proof, cap, CAP_INTENT[cap] ?? cap);
             if (!proved && requireFieldProof(this.env)) {
               sk.refused += 1; st.refused += 1;
               const misses = (this.misses[role] ?? 0) + 1; this.misses[role] = misses;

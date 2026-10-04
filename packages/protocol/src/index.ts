@@ -1294,6 +1294,11 @@ export const SceneOutputSchema = z.object({
    */
   proof: z.object({
     runRef: z.string().max(200).optional(),
+    /** Spec 426 W3 — the POINTER to `run.provenance:<runRef>` the harness sets on the reply (a URL the host reads).
+     *  The host fetches it and looks for the ExecutorInvocation whose `invokedIntent` is the expected executor skill. */
+    hasProvenance: z.string().max(400).optional(),
+    /** Some runtimes surface the applied capabilities + receipt INLINE on the reply; when present the host trusts
+     *  it without the extra fetch. Otherwise the host resolves `hasProvenance`. */
     applied: z.array(z.string().max(96)).max(32).optional(),
     receipt: z.record(z.unknown()).optional(),
   }).optional(),
