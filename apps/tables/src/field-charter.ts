@@ -379,7 +379,7 @@ export async function linkAt(doors: EstateDoors, orgSigner: Signer, org: { sa: s
  * An org whose grant lacks a resource answers `record_scope_denied` to the Home's own ceremonies — the countersigned
  * credential's second copy, in the organization's vault, is what found this out.
  */
-export const STORAGE_V = 2;
+export const STORAGE_V = 3;
 const CORE_RW = [
   'vault:conversation.index', 'vault:conversation.topic:*', 'vault:message.body:topic:*',
   'vault:inbox.data', 'vault:directory.data', 'vault:relationships.data', 'vault:member.profile:*',
@@ -400,6 +400,10 @@ const interactionsScopes = () => [
   { server: MCP_SERVER_ID, resources: ['vault:archetype.assignment'], ops: ['read', 'write', 'delete'] },
   { server: MCP_SERVER_ID, resources: ['vault:message.body:dm:*'], ops: ['read'] },
   { server: MCP_SERVER_ID, resources: ['vault:org.invite:*'], ops: ['read'] },
+  // The WORKSPACE'S OWN POINTER to the organization that governs it, READ ONLY (fabric's list, 2026-10-04). The
+  // board gate admits a governing organization's members by reading it; a grant without this scope is denied the
+  // read and the workspace reads as "no governor" — members can read it and never open a topic on its board.
+  { server: MCP_SERVER_ID, resources: ['vault:workspace.governor'], ops: ['read'] },
   { server: MCP_SERVER_ID, resources: ['vault:contact:*'], ops: ['read', 'write'] },
   { server: MCP_SERVER_ID, resources: APP_READ, ops: ['read'] },
   { server: MCP_SERVER_ID, resources: APP_SEED, ops: ['read', 'write'] },

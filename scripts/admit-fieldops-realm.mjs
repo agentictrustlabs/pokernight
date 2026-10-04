@@ -133,6 +133,7 @@ const SCOPES = [
   { server: 'demo-mcp', resources: ['vault:archetype.assignment'], ops: ['read', 'write', 'delete'] },
   { server: 'demo-mcp', resources: ['vault:message.body:dm:*'], ops: ['read'] },
   { server: 'demo-mcp', resources: ['vault:org.invite:*'], ops: ['read'] },
+  { server: 'demo-mcp', resources: ['vault:workspace.governor'], ops: ['read'] }, // the workspace's pointer to its governor — read only (fabric, 2026-10-04)
   { server: 'demo-mcp', resources: ['vault:contact:*'], ops: ['read', 'write'] },
   { server: 'demo-mcp', resources: ['vault:uupg:attestation', 'vault:uupg:attestations', 'vault:uupg:assessed', 'vault:uupg:coalition', 'vault:uupg:segment-def', 'vault:uupg:org-profile', 'vault:uupg:strategy', 'vault:newcity:*', 'vault:family:*', 'vault:field:*'], ops: ['read'] },
   { server: 'demo-mcp', resources: ['vault:family:*', 'vault:field:*', 'vault:cardroom.*'], ops: ['read', 'write'] },
