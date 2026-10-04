@@ -88,6 +88,8 @@ export interface CharterProgress {
   custodianSteward?: boolean;
   /** The people's links hang under `spec.under`; older charters are repaired to this. */
   parented?: boolean;
+  /** The org's own `org.profile` was written into its vault (Settings → Profile); a charter that lacks it retries. */
+  profiled?: boolean;
   /** Which scope list the interactions grant was minted with (`STORAGE_V`); an older one is re-granted. */
   storageV?: number;
   /** THE THREE RECORDS, per party (keyed by SA): the organization's own membership record, the countersigned has-member
@@ -224,6 +226,29 @@ async function memberAccessWire(doors: EstateDoors, orgSigner: Signer, orgSa: st
   d.signature = await orgSigner.sign(hashDelegation(d, doors.chainId, CONTRACTS.delegationManager));
   return { ...d, salt: d.salt.toString() };
 }
+/**
+ * THE ORG'S OWN IDENTITY, in its OWN vault (`org.profile`, spec 322 W3) — what Settings → Profile reads and writes.
+ * Without it the name a person sees (the Settings header, the trust-graph node) is only the LABEL stamped on the
+ * relationship link (`related-orgs` displayName), and the Profile form is empty: the game authored a name nowhere
+ * the org itself records it. The ORG signs a one-shot write of its own profile (its custodian key — the same one
+ * `orgSigner` holds), delegate = that key, exactly as a steward's browser would `vaultWriteWithDelegation` it.
+ * Best-effort: a cosmetic identity write never blocks a charter (tracked by `profiled` so a later wake retries it).
+ */
+async function writeOrgProfile(doors: EstateDoors, orgSigner: Signer, orgSa: string, spec: CharterSpec): Promise<void> {
+  // The org, over a stewardship wire to its custodian — the same shape the Home's Settings → Profile writes with:
+  // the custodian's authenticated session, `requester` the steward SA, the wire proving the stewardship. (Proven live:
+  // both a fetched and an inline-minted wire are accepted; the record-scope caveat is for a MEMBER's read, not this.)
+  const wire = await stewardshipWire(doors, orgSigner, orgSa, orgSigner.sa);
+  const kind = spec.kind === 'team' ? 'team' : spec.kind;
+  const data = {
+    displayName: spec.name,
+    description: `A Field Operations GAME ${kind}, founded in play by ${spec.steward.name}.${spec.purpose ? ` ${spec.purpose}` : ''} Not a real field organization.`,
+  };
+  const r = await fetch(`${doors.home}/a2a/mcp/vault/set`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${orgSigner.homeSession}` }, body: JSON.stringify({ delegation: wire, requester: lower(orgSigner.sa), recordType: 'org.profile', data }) });
+  const j = await jsonOf(r);
+  if (!j.ok) throw new Error(`org.profile ${spec.name}: ${r.status} ${JSON.stringify(j).slice(0, 160)}`);
+}
+
 /** THE MEMBER'S OWN CONSENT: member → org, the shape the Home's join records (spec 321) — signed by the member's custodian. */
 async function membershipConsent(doors: EstateDoors, memberSigner: Signer, memberSa: string, orgSa: string) {
   const validUntil = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
@@ -473,7 +498,13 @@ export async function advance(doors: EstateDoors, spec: CharterSpec, p: CharterP
       const r = await deploy(doors, signer);
       return { ...p, step: 'vault', sa: r.sa, salt: r.salt, custodianEoa: signer.eoa, tries: 0, at: now, error: undefined };
     }
-    if (p.step === 'vault' && p.sa) { await bindVault(doors, signer, p.sa); return { ...p, step: 'link', tries: 0, at: now, error: undefined }; }
+    if (p.step === 'vault' && p.sa) {
+      await bindVault(doors, signer, p.sa);
+      // The org's own identity in its own vault — the one write a flaky vault must not block the charter on.
+      let profiled = p.profiled;
+      try { await writeOrgProfile(doors, signer, p.sa, spec); profiled = true; } catch (e) { console.warn(`[fieldops] ${spec.name}: org.profile not written yet: ${String(e)}`); }
+      return { ...p, step: 'link', profiled, tries: 0, at: now, error: undefined };
+    }
     if (p.step === 'link' && p.sa) {
       const org = { sa: p.sa, name: spec.name, purpose: purposeOf(spec.kind), kind: spec.kind };
       const linked = new Set(p.linked ?? []);
@@ -488,7 +519,13 @@ export async function advance(doors: EstateDoors, spec: CharterSpec, p: CharterP
       void workspaceCustodian;
       return { ...p, step: 'storage', linked: [...linked], custodianSteward: true, parented: true, tries: 0, at: now, error: undefined };
     }
-    if (p.step === 'storage' && p.sa) { await enableStorage(doors, signer, p.sa, (p.storageV ?? 0) !== STORAGE_V); return { ...p, step: 'membership', storageV: STORAGE_V, tries: 0, at: now, error: undefined }; }
+    if (p.step === 'storage' && p.sa) {
+      await enableStorage(doors, signer, p.sa, (p.storageV ?? 0) !== STORAGE_V);
+      // Second shot at the identity write, since the first (in `vault`) is best-effort and the vault may have 502'd.
+      let profiled = p.profiled;
+      if (!profiled) { try { await writeOrgProfile(doors, signer, p.sa, spec); profiled = true; } catch (e) { console.warn(`[fieldops] ${spec.name}: org.profile still not written: ${String(e)}`); } }
+      return { ...p, step: 'membership', storageV: STORAGE_V, profiled, tries: 0, at: now, error: undefined };
+    }
     if (p.step === 'membership' && p.sa) {
       const standing = { ...(p.standing ?? {}) };
       const org = { sa: p.sa, name: spec.name, custodian: spec.custodian };
@@ -511,6 +548,11 @@ export async function advance(doors: EstateDoors, spec: CharterSpec, p: CharterP
 export async function stewardCustodian(doors: EstateDoors, spec: CharterSpec, sa: string): Promise<void> {
   const signer = await signerFor(doors, spec.custodian);
   await linkAt(doors, signer, { sa, name: spec.name, purpose: purposeOf(spec.kind), kind: spec.kind }, { sa: signer.sa, name: spec.custodian, signer, relationship: 'steward', under: spec.under });
+}
+/** REPAIR a charter that landed before org.profile was written: give the org its own identity in its own vault. */
+export async function reprofile(doors: EstateDoors, spec: CharterSpec, sa: string): Promise<void> {
+  const signer = await signerFor(doors, spec.custodian);
+  await writeOrgProfile(doors, signer, sa, spec);
 }
 /** REPAIR an older charter whose people's links hang under themselves: re-link each under `spec.under` (the link is replaced). */
 export async function reparent(doors: EstateDoors, spec: CharterSpec, sa: string, workspaceCustodian: string): Promise<string[]> {

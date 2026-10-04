@@ -300,7 +300,14 @@
     "organization:deploy": true,
     "organization:vault": true,
     "organization:link:nathan": true,
-    "organization:storage": true
+    "organization:storage": true,
+    "organization:profile": true,
+    "workspace:profile": true,
+    "partners:christ-community-greeley:profile": true,
+    "partners:timberline-fort-collins:profile": true,
+    "partners:lifebridge-longmont:profile": true,
+    "partners:trinity-fort-morgan:profile": true,
+    "pair-424": true
   },
   "poolSlots": {
     "pool-circle-weld-team-1": {

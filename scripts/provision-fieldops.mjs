@@ -155,6 +155,20 @@ function signStewardshipBy(pk, orgSa, delegateSa) {
   const d = { delegator: orgSa, delegate: delegateSa, authority: ROOT_AUTHORITY, caveats: siteCaveats(Math.floor(Date.now() / 1000) + 365 * 24 * 3600), salt: randSalt(), signature: '0x' };
   return privateKeyToAccount(pk).signMessage({ message: { raw: hashDelegation(d, CHAIN, CONTRACTS.delegationManager) } }).then((signature) => ({ ...d, signature, salt: d.salt.toString() }));
 }
+/** THE AGENT'S OWN IDENTITY in its own vault (`org.profile`) — what Settings → Profile reads. Without it the name a
+ *  person sees is only the label on the relationship link, and the Profile form is empty. The org signs a write of
+ *  its own profile with its custodian key, exactly as a steward's browser would (`vaultWriteWithDelegation`). */
+async function writeOrgProfile(sa, custodian, pk, { name }) {
+  // The custodian's authenticated session + a stewardship wire org → custodian SA, requester the steward SA — the same
+  // write Settings → Profile makes. Proven live (an inline-minted wire is accepted; the record-scope caveat is for a
+  // MEMBER's read, not a steward's write). GAME_LINE is the description so the name is a vault fact, not a link label.
+  const token = await signIn(custodian);
+  const custSa = people[custodian].sa.toLowerCase();
+  const wire = await signStewardshipBy(pk, sa.toLowerCase(), custSa);
+  const r = await fetch(`${HOME}/a2a/mcp/vault/set`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ delegation: wire, requester: custSa, recordType: 'org.profile', data: { displayName: name, description: GAME_LINE } }) });
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) throw new Error(`org.profile ${name} ${r.status}: ${JSON.stringify(j).slice(0, 240)}`);
+}
 /** The ACCESS half: a person-signed link in their Home, carrying the custodian-signed stewardship stash. */
 async function linkAt(handle, org) {
   const person = people[handle];
@@ -200,6 +214,7 @@ async function charter(key, { name, custodian, kind, purpose, members = [], unde
   } else log(`  skip ${key}:deploy (${slot.sa})`);
   if (DRY) return slot;
   if (!done(`${key}:vault`)) { await activateVault(slot.sa, pk); mark(`${key}:vault`); log('     vault bound'); }
+  if (!done(`${key}:profile`) || argv.includes('--relink')) { await writeOrgProfile(slot.sa, custodian, pk, { name }); mark(`${key}:profile`); log('     org.profile written'); }
   for (const h of [custodian, ...members]) {
     // `--relink` redoes every link (a member seeded with a stewardship wire gets a membership one; the roster reads it).
     if (done(`${key}:link:${h}`) && !argv.includes('--relink')) continue;
