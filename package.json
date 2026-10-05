@@ -54,7 +54,8 @@
     "prune:field-records": "node scripts/prune-field-records.mjs",
     "walk:field-season": "node scripts/walk-field-season.cjs",
     "walk:field-ask": "node scripts/walk-field-ask.cjs",
-    "walk:field-town": "node scripts/walk-field-town.cjs"
+    "walk:field-town": "node scripts/walk-field-town.cjs",
+    "walk:field-org-steward": "node scripts/walk-field-org-steward.cjs"
   },
   "devDependencies": {
     "@agenticprimitives/a2a": "0.0.0-alpha.22",
