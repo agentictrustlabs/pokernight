@@ -48,10 +48,11 @@ const check = (what, ok, got) => { if (ok) { pass++; console.log(`  ✓ ${what}`
   await stage.waitFor({ timeout: 60_000 }); await page.waitForTimeout(2500);
 
   console.log('\n2 · the whole field');
+  const dayBefore = (await page.locator('.ft-page-day').innerText().catch(() => '')).trim();
   const head = (await page.getByTestId('field-town-panel').locator('h3, h2').first().innerText().catch(() => '')).replace(/\s+/g, ' ');
   check('the page says what it is looking at', /field/i.test(head) && /peoples/i.test(head), head);
-  const n = { buildings: await drawn('[data-id]'), people: await drawn('[data-person]'), circles: Number(await page.getByTestId('ft-tally-circles').innerText().catch(() => 'NaN')), churches: Number(await page.getByTestId('ft-tally-churches').innerText().catch(() => 'NaN')) };
-  check('the field is drawn: buildings, and the people working it', n.buildings > 40 && n.people > 0, n);
+  const n = { buildings: await drawn('[data-id]'), circles: Number(await page.getByTestId('ft-tally-circles').innerText().catch(() => 'NaN')), churches: Number(await page.getByTestId('ft-tally-churches').innerText().catch(() => 'NaN')) };
+  check('the field is drawn: every town, office, quarter and body as a building', n.buildings > 40, n);
   check('the tally counts the season’s circles and churches', Number.isFinite(n.circles) && Number.isFinite(n.churches) && n.circles + n.churches > 0, n);
   check('every circle and church counted is standing on the ground', (await drawn('.ft-circle')) >= n.circles && (await drawn('.ft-church')) >= n.churches, { circle: await drawn('.ft-circle'), church: await drawn('.ft-church') });
   check('from this far out it is the region', (await lod()) === 0, await lod()); await shot('1-field');
@@ -61,6 +62,8 @@ const check = (what, ok, got) => { if (ok) { pass++; console.log(`  ✓ ${what}`
   const placeName = (await place.innerText()).trim();
   await place.click(); await page.waitForTimeout(1600);
   check(`"${placeName}" brings the camera in`, (await lod()) >= 1, await lod()); await shot('2-corridor');
+  // People are figures, and a figure is nothing from region height: they are drawn once the camera is in.
+  check('and in close, the people working it are standing where they are', (await drawn('[data-person]')) > 0, await drawn('[data-person]'));
   const peoples = page.locator('[data-testid^="ft-people-"]');
   const who = (await peoples.allInnerTexts()).map((t) => t.trim());
   const pick = Math.max(0, who.findIndex((t) => /karen/i.test(t)));
@@ -107,6 +110,10 @@ const check = (what, ok, got) => { if (ok) { pass++; console.log(`  ✓ ${what}`
   for (const [d, t] of days) console.log(`    ${d} — ${t.slice(0, 150)}`);
 
   console.log('\n5 · and nobody was woken');
+  // A STILL READ MOVES NOTHING: read the season again after all that looking, and it is on the day it was on.
+  await page.getByRole('button', { name: /refresh/i }).click(); await page.waitForTimeout(2500);
+  const dayAfter = (await page.locator('.ft-page-day').innerText().catch(() => '')).trim();
+  check('the season is on the day it was on before anybody looked', dayBefore.length > 0 && dayAfter === dayBefore, { dayBefore, dayAfter });
   const seasonSockets = sockets.filter((u) => /fieldops/.test(u));
   check('no socket to a season was opened', seasonSockets.length === 0, seasonSockets);
   check('no page errors', errors.length === 0, errors);

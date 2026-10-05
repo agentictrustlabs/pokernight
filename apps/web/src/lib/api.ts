@@ -670,8 +670,9 @@ export const fieldOpsApi = {
   /** Your own solo season's id + phase, if you have one — a read, so the Play card can offer to review or resume it. */
   mine: (scenario: string, token: string) =>
     request<{ stagingId: string; phase: string | null; role: string | null }>(`/fieldops/mine?scenario=${encodeURIComponent(scenario)}`, {}, token),
-  read: (stagingId: string, token: string) =>
-    request<{ staging: FieldOpsSummary; view: unknown; cast: FieldOpsPart[]; agents: FieldOpsAgentRow[] }>(`/fieldops/${encodeURIComponent(stagingId)}`, {}, token),
+  /** `still`: a look that moves nothing — the season is not caught up and you are not marked as there. */
+  read: (stagingId: string, token: string, opts?: { still?: boolean }) =>
+    request<{ staging: FieldOpsSummary; view: unknown; cast: FieldOpsPart[]; agents: FieldOpsAgentRow[] }>(`/fieldops/${encodeURIComponent(stagingId)}${opts?.still ? '?still=1' : ''}`, {}, token),
   take: (stagingId: string, role: string | null, token: string) =>
     request<{ ok: boolean; cast: FieldOpsPart[] }>(`/fieldops/${encodeURIComponent(stagingId)}/cast`, { method: 'POST', body: JSON.stringify({ role }) }, token),
   curtain: (stagingId: string, token: string) =>

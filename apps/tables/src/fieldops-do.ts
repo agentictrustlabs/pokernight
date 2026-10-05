@@ -286,8 +286,14 @@ export class FieldOpsDO extends DurableObject<Env> {
     }
     if (request.method === 'GET' && url.pathname === '/view') {
       const playerId = url.searchParams.get('playerId') ?? '';
-      if (playerId) this.seenAt[playerId] = Date.now();
-      this.catchUp();
+      // A STILL READ LEAVES THE SEASON WHERE IT STANDS. An ordinary read is somebody arriving — it marks them seen
+      // and catches the clock up — and a season nobody is playing therefore moved a whole EMPTY day every time
+      // anybody so much as loaded the Play page or looked at the town: fourteen played days, then a row of days in
+      // which nobody did anything, on the way to a reveal nobody asked for. Looking at what a season built
+      // (`?still=1`: the town, the Play card's "do I have one?") is not arriving at it.
+      const still = url.searchParams.get('still') === '1';
+      if (playerId && !still) this.seenAt[playerId] = Date.now();
+      if (!still) this.catchUp();
       if (!this.state && !this.meta) return json({ error: 'no such season' }, 404);
       return json({ staging: this.summary(), view: this.state ? this.viewOf(playerId) : null, cast: this.castList(), agents: this.agentReport() });
     }

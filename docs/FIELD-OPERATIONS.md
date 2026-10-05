@@ -215,7 +215,11 @@ the town leads at the reveal until the person picks) and it has a page of its ow
   floor) to the last day; a building mounts on the day it first exists and that mount is the rise; `spotlight` names
   the town the day's most important thing happened in and "follow the work" flies there. NOTHING STANDING EVER MOVES:
   a lot is a function of the town and the thing's id, never of the day (`fieldTown.test.ts` holds it to that).
-- **LOOKING IS NOT ATTENDING.** The town's own page opens NO socket: it reads the view over HTTP once and on Refresh.
+- **LOOKING IS NOT ATTENDING.** The town's own page opens NO socket: it reads the view over HTTP once and on Refresh,
+  as a STILL read (`GET /fieldops/<id>?still=1`) that neither catches the season's clock up nor marks anybody present.
+  An ordinary read is somebody arriving and moves a season whose day has run out on by one; the Play card's
+  `/fieldops/mine` did that on every visit, so a season nobody was playing gained an empty day each time anybody
+  loaded Play. `mine` is a still read now too.
   A socket is a tab the season counts as somebody there, and that is what lets it ask sixteen agents for their day.
   `pnpm walk:field-town` walks the live page and its last check is that no socket to a season was opened.
 - SVG, not WebGL: the scene is a few hundred boxes that must stay crisp at any zoom, be pressable, and be readable by

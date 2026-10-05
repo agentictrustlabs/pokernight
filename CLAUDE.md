@@ -752,6 +752,9 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   STANDING EVER MOVES: a lot is a function of the town and the id, never of the day. THE TOWN'S OWN PAGE OPENS NO
   SOCKET — it reads over HTTP once and on Refresh — because a socket is attention and attention wakes sixteen agents;
   Play links to it for that reason, and `pnpm walk:field-town` ends by checking no season socket was opened.
+  AND THE READ IS STILL (`?still=1`): an ordinary `/view` catches the clock up, so a season nobody was playing gained an
+  EMPTY DAY every time anybody loaded Play (`/fieldops/mine`) or looked at the town — day 13 became 15 that way. A
+  still read ticks nothing and marks nobody present; `mine` and the town use it, and the walk checks the day held.
   **A SEASON'S RECORDS ARE WIPED, THE ESTATE IS KEPT** (2026-10-01, `pnpm reset:fieldops`): a season's records live in
   folders of their own (`field/activities|observations|circles|churches|body-communities|phase-results`), so a reset deletes
   those artifacts one at a time through the Home's library `delete` (sequential — the catalog is rewritten whole on each),

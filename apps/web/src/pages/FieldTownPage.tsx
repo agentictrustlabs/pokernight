@@ -4,7 +4,8 @@
  * The whole window for the scene, for a season that is running, paused or finished. IT OPENS NO SOCKET: a socket is
  * a tab the season counts as somebody attending, and attention is what lets it ask sixteen agents for their day.
  * Looking at what a season built is not attending it. So this page READS the view over HTTP when it opens and when
- * a person presses Refresh, and otherwise leaves the season exactly as it found it.
+ * a person presses Refresh — a STILL read (`?still=1`), which neither catches the season's clock up nor marks anybody
+ * as there — and leaves the season exactly as it found it.
  *
  * NO HOOK AFTER AN EARLY RETURN — every hook is above the first `return`.
  */
@@ -26,7 +27,7 @@ export function FieldTownPage({ stagingId, session, onSignOut }: { stagingId: st
     if (!token) return;
     setLoading(true); setError(null);
     try {
-      const r = await fieldOpsApi.read(stagingId, token);
+      const r = await fieldOpsApi.read(stagingId, token, { still: true });
       if (r.view) setView(r.view as FieldOpsView); else setError('This season has not opened yet.');
     } catch (e) { setError(e instanceof Error ? e.message : 'The season could not be read.'); }
     finally { setLoading(false); }

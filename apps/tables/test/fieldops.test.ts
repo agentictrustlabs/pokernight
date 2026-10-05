@@ -56,6 +56,20 @@ describe('a season of your own north of Denver', () => {
     expect(fresh.staging.seedCommit).not.toBe(first.staging.seedCommit);
   });
 
+  it('a STILL read answers the season as it stands — the look the town and the Play card take', async () => {
+    const me = await devSession('a-looker');
+    const { staging } = (await (await post('/fieldops/solo', me.token, { role: 'naomi', restart: true, pace: 'short' })).json()) as { staging: { stagingId: string } };
+    const get = async (q: string) => (await (await SELF.fetch(`http://tables.test/fieldops/${staging.stagingId}${q}`, { headers: { authorization: `Bearer ${me.token}` } })).json()) as { staging: { day: number; phase: string }; view: { day: number; transcript: unknown[] } | null };
+    const still = await get('?still=1');
+    expect(still.view?.day).toBe(1);
+    expect(still.staging.phase).toBe('day');
+    const again = await get('?still=1');
+    expect(again.view?.transcript.length).toBe(still.view?.transcript.length);
+    const mine = (await (await SELF.fetch('http://tables.test/fieldops/mine', { headers: { authorization: `Bearer ${me.token}` } })).json()) as { stagingId: string; phase: string | null };
+    expect(mine).toMatchObject({ stagingId: staging.stagingId, phase: 'day' });
+    expect((await SELF.fetch(`http://tables.test/fieldops/${staging.stagingId}?still=1`)).status).toBe(401);
+  });
+
   it('refuses a season to somebody not signed in, and an unknown scenario to somebody who is', async () => {
     expect((await SELF.fetch('http://tables.test/fieldops/solo', { method: 'POST' })).status).toBe(401);
     const me = await devSession('nobody');

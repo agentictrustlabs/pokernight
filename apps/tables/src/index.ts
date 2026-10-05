@@ -966,7 +966,7 @@ app.get('/fieldops/mine', async (c) => {
   const scenario = c.req.query('scenario') ?? FIELDOPS_DEFAULT;
   if (!FIELDOPS_SCENARIOS[scenario]) return c.json({ error: `no such scenario: ${scenario}` }, 404);
   const stagingId = await fieldOpsId([scenario, session.playerId]);
-  const res = await fieldops(c.env, stagingId).fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}`);
+  const res = await fieldops(c.env, stagingId).fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}&still=1`);
   const j = (await res.json().catch(() => ({}))) as { staging?: { phase?: string; role?: string } | null };
   return c.json({ stagingId, phase: j.staging?.phase ?? null, role: j.staging?.role ?? null });
 });
@@ -1043,7 +1043,9 @@ app.post('/fieldops/:stagingId/estate', async (c) => {
 app.get('/fieldops/:stagingId', async (c) => {
   const session = await resolveSession(c.env, sessionToken(c.req.raw));
   if (!session) return c.json({ error: 'unauthenticated' }, 401);
-  const res = await fieldops(c.env, c.req.param('stagingId') ?? '').fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}`);
+  // `?still=1` is a look that moves nothing (the town's page): no catch-up, no presence. See the object's `/view`.
+  const still = c.req.query('still') === '1' ? '&still=1' : '';
+  const res = await fieldops(c.env, c.req.param('stagingId') ?? '').fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}${still}`);
   return c.json((await res.json()) as unknown, res.ok ? 200 : 404);
 });
 
