@@ -36,7 +36,10 @@ const flat = async (page, sel = 'main') => (await page.locator(sel).first().inne
 
   await page.goto(`${SITE}/w/${WS}/t/${WELD}/communities`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('[data-testid="community-row"]', { timeout: 120000 });
-  const rows = await page.locator('[data-testid="community-row"]').count();
+  // THE FIRST ROW IS NOT THE LIST: the rows arrive as the team lens narrows, and counting the instant one exists
+  // reported 1 of 12 on a slow read. Counted once the number has stopped changing.
+  let rows = 0;
+  for (let i = 0, same = 0; i < 40 && same < 4; i++) { const n = await page.locator('[data-testid="community-row"]').count(); same = n === rows ? same + 1 : 0; rows = n; await page.waitForTimeout(500); }
   check('the peoples the workspace works with are listed', rows >= 10, rows);
   await page.locator('[data-testid="community-row"]').filter({ hasText: PEOPLE }).first().click();
   t = await until(/READING Phase \d/);
