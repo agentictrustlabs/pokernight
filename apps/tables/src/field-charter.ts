@@ -25,6 +25,7 @@
  * marked failed and the body stays a body with no agent — the season never waits on it.
  */
 import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
+import { fieldRoleOffer, type RoleOffer } from './field-roles.js';
 import {
   ROOT_AUTHORITY, buildCaveat, buildVaultKeyUseCaveat, buildVaultRecordScopeCaveat,
   encodeAllowedMethodsTerms, encodeAllowedTargetsTerms, encodeTimestampTerms, encodeValueTerms, hashDelegation,
@@ -39,10 +40,13 @@ export interface EstateDoors {
   a2a: string; mcp: string; origin: string;
   /** The Home's delivery and interactions service agents — the two planes an org's storage is granted to. */
   deliveryServiceSa: string; interactionsServiceSa: string;
+  /** The skills registry that composes a character's playbook from its sheet and the pack of each role it holds. */
+  registry: string;
 }
 export const DEFAULT_DOORS: Omit<EstateDoors, 'home' | 'clientId' | 'chainId'> = {
   a2a: 'https://a2a.faithnet.io', mcp: 'https://mcp.faithnet.io', origin: 'https://www.faithnet.me',
   deliveryServiceSa: '0x0AF2455e3f76594E81d9042aD5FE22A5A35dc57f', interactionsServiceSa: '0x39508624387fed3b9d6dd15ba86d3ace8a3f0a6a',
+  registry: 'https://skills-a2a-production.richardpedersen3.workers.dev',
 };
 const MCP_SERVER_ID = 'demo-mcp';
 /**
@@ -79,7 +83,7 @@ export interface CharterSpec {
 }
 export type CharterStep = 'deploy' | 'vault' | 'link' | 'storage' | 'membership' | 'done' | 'failed';
 /** What the Home holds for one party of an org: the membership record's key and the two-sided credential's digest. */
-export interface Standing { membership?: string; credential?: string; stewardship?: string; /** who, and the role the credential's terms name */ who?: string; role?: string; at: number }
+export interface Standing { membership?: string; credential?: string; stewardship?: string; /** who, and the role the credential's terms name */ who?: string; role?: string; /** the ROLE the organization's own record names (spec 427) — its slug and its name; absent for a plain member */ orgRole?: string; orgRoleName?: string; at: number }
 export interface CharterProgress {
   step: CharterStep;
   sa?: string;
@@ -322,7 +326,7 @@ async function sessionOf(doors: EstateDoors, p: Party): Promise<{ homeSession: s
  *   3. the member COUNTERSIGNS the credential — one copy in each vault, both signatures checked on chain.
  * Being a member authorizes nothing; the delegations do. The role is a word on the record.
  */
-export async function join(doors: EstateDoors, org: { sa: string; name: string; custodian: string }, member: Party, role: string): Promise<Standing> {
+export async function join(doors: EstateDoors, org: { sa: string; name: string; custodian: string }, member: Party, role: string, orgRole?: RoleOffer): Promise<Standing> {
   const orgSigner = await signerFor(doors, org.custodian);
   const memberSigner = await signerFor(doors, member.custodian);
   const session = await sessionOf(doors, member);
@@ -332,7 +336,10 @@ export async function join(doors: EstateDoors, org: { sa: string; name: string; 
   // credential records). It authorizes nothing: the member-access wire beside it is the access.
   const rosterRole = role === 'founder' || role === 'custodian' ? 'steward' : 'member';
   const access = await memberAccessWire(doors, orgSigner, org.sa, member.sa);
-  const inv = await jsonOf(await fetch(`${doors.home}/connect/org-invite/agent`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${orgSigner.homeSession}` }, body: JSON.stringify({ org: lower(org.sa), agent: lower(member.sa), memberAccessDelegation: access, role: rosterRole, relationshipOffer: offer }) }));
+  // THE ROLE RIDES THE INVITATION (spec 427): what this member does here is the organization's statement, stored with
+  // the invitation; the organization's own object stamps it onto the membership when the member joins. A word — the
+  // access is the wire beside it, and the pack the role offers is the member's own to equip.
+  const inv = await jsonOf(await fetch(`${doors.home}/connect/org-invite/agent`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${orgSigner.homeSession}` }, body: JSON.stringify({ org: lower(org.sa), agent: lower(member.sa), memberAccessDelegation: access, role: rosterRole, relationshipOffer: offer, ...(orgRole ? { orgRole } : {}) }) }));
   if (!inv.ok) throw new Error(`invite ${member.name} → ${org.name}: ${JSON.stringify(inv).slice(0, 160)}`);
   // The listing first, as the Home's own join does — a member's roster is made of these.
   await publishListing(doors, session.homeSession, memberSigner, member, org, access, rosterRole);
@@ -340,7 +347,9 @@ export async function join(doors: EstateDoors, org: { sa: string; name: string; 
   if (!joined.ok) throw new Error(`join ${member.name} → ${org.name}: ${JSON.stringify(joined).slice(0, 160)}`);
   if (joined.membershipRecorded !== true) console.warn(`[fieldops] ${member.name}'s membership of ${org.name} was not recorded in the organization's vault: ${String(joined.membershipError ?? 'unsaid')}`);
   const digest = await acceptCredential(doors, session.homeSession, offer, await memberSigner.sign(offer.digest));
-  return { membership: joined.membershipRecorded === true ? `org.membership:member:${lower(member.sa)}` : undefined, credential: digest, who: member.name, role, at: Date.now() };
+  const recorded = (joined.role ?? null) as { assignedRole?: string; roleName?: string } | null;
+  if (orgRole && recorded?.assignedRole !== orgRole.roleDefinitionId.split(':')[2]?.split('@')[0]) console.warn(`[fieldops] ${member.name} was invited to ${org.name} as ${orgRole.name}, and the organization recorded ${recorded?.assignedRole ?? 'no role'}`);
+  return { membership: joined.membershipRecorded === true ? `org.membership:member:${lower(member.sa)}` : undefined, credential: digest, who: member.name, role, ...(recorded?.assignedRole && recorded.assignedRole !== 'member' ? { orgRole: recorded.assignedRole, ...(recorded.roleName ? { orgRoleName: recorded.roleName } : {}) } : {}), at: Date.now() };
 }
 
 /**
@@ -545,7 +554,10 @@ export async function advance(doors: EstateDoors, spec: CharterSpec, p: CharterP
       // members are the characters on it, and a custodian is not one. Idempotent by SA.
       const steward: Party = { sa: spec.steward.sa, name: spec.steward.name, custodian: spec.custodian, persona: true };
       if (!standing[lower(steward.sa)]?.stewardship) { const d = await stewardOf(doors, org, steward); standing[lower(steward.sa)] = { ...(standing[lower(steward.sa)] ?? { at: now }), stewardship: d, at: now }; }
-      if (!standing[lower(steward.sa)]?.credential) standing[lower(steward.sa)] = { ...standing[lower(steward.sa)]!, ...(await join(doors, org, steward, 'founder')) };
+      // WHOEVER FOUNDS A TEAM LEADS IT (spec 427): the founder's membership names the role, from the governing
+      // organization's catalogue (`spec.under` is the hub a team hangs from). A circle or a church names none here.
+      const lead = spec.kind === 'team' ? fieldRoleOffer('team-lead', spec.under, 'team') : undefined;
+      if (!standing[lower(steward.sa)]?.credential) standing[lower(steward.sa)] = { ...standing[lower(steward.sa)]!, ...(await join(doors, org, steward, 'founder', lead)) };
       return { ...p, step: 'done', standing, tries: 0, at: now, error: undefined };
     }
     return p;
@@ -580,14 +592,14 @@ export async function reparent(doors: EstateDoors, spec: CharterSpec, sa: string
  * A MEMBER JOINS: the membership wire the custodian signs, recorded on the member persona's own link and on the
  * member's custodian's — the second half of the field app's invite, which the roster row never waited for.
  */
-export async function admit(doors: EstateDoors, teamCustodian: string, team: { sa: string; name: string; under: string }, member: { sa: string; name: string; custodian: string }, workspaceCustodian: string, already: Record<string, Standing> = {}): Promise<Record<string, Standing>> {
+export async function admit(doors: EstateDoors, teamCustodian: string, team: { sa: string; name: string; under: string }, member: { sa: string; name: string; custodian: string }, workspaceCustodian: string, already: Record<string, Standing> = {}, orgRole?: RoleOffer): Promise<Record<string, Standing>> {
   const orgSigner = await signerFor(doors, teamCustodian);
   const memberSigner = await signerFor(doors, member.custodian);
   const org = { sa: team.sa, name: team.name, purpose: purposeOf('team'), kind: 'team' };
   const out: Record<string, Standing> = {};
   // The CHARACTER joins, the Home's own way: invited, consenting, countersigned. Their custodian does not: a person is
   // not a member of a team because they custody somebody on it — they look at it as their character.
-  out[lower(member.sa)] = await join(doors, { sa: team.sa, name: team.name, custodian: teamCustodian }, { sa: member.sa, name: member.name, custodian: member.custodian, persona: true }, 'member');
+  out[lower(member.sa)] = await join(doors, { sa: team.sa, name: team.name, custodian: teamCustodian }, { sa: member.sa, name: member.name, custodian: member.custodian, persona: true }, 'member', orgRole);
   void orgSigner; void memberSigner; void org; void workspaceCustodian; void already;
   return out;
 }

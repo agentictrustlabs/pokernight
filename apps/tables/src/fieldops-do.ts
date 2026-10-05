@@ -23,6 +23,7 @@ import { askFieldDirector, askPart } from './fieldops-a2a.js';
 import { a2aTimeoutMs } from './a2a.js';
 import { houseAuthorization } from './house-caller.js';
 import { fieldEstate, publishSeasonGraph, writeSeason, type EstateWriteReport, type PhaseSeries } from './field-estate.js';
+import { equipCharacter, fieldRoleOffer, teamRoleFor, type HeldPack } from './field-roles.js';
 import { fieldOpsCast, fieldOpsCastAgents, fieldOpsDirector, type Env } from './env.js';
 
 interface Attachment { playerId: string; name: string }
@@ -693,6 +694,8 @@ export class FieldOpsDO extends DurableObject<Env> {
           const cur = this.state;
           if (cur) this.state = attachAgent(cur, c.ref, p.sa, c.spec.custodian);
           console.log(`[fieldops] ${c.spec.name} chartered at ${p.sa}, custodied by ${c.spec.custodian}`);
+          // Whoever founded a team leads it, and its agent is equipped for that — the sheet plus the lead's pack.
+          if ('team' in c.ref) void this.equip(estate, founder);
           await this.noteChartered({ sa: p.sa, kind: c.spec.kind, name: c.spec.name, custodian: c.spec.custodian, steward: c.spec.steward, viewers: [c.spec.custodian, estate.workspace.custodian, ...viewers], stagingId: this.meta?.stagingId ?? '' });
           this.save(); this.tellEverybody();
           void this.writeEstate(true);
@@ -733,6 +736,36 @@ export class FieldOpsDO extends DurableObject<Env> {
     } catch (e: unknown) { console.warn('[fieldops] chartering threw:', String(e)); }
     finally { this.driving = false; }
   }
+  private kindOf(role: RoleId) { const pair = this.state ? stagingOf(this.state.scenario) : null; return (pair && roleOf(pair.scenario, role)?.kind) ?? 'worker'; }
+  /**
+   * A CHARACTER'S PLAYBOOK IS ITS SHEET PLUS THE PACK OF EACH ROLE IT HOLDS (spec 427) — composed from its memberships
+   * as the season makes them, not pinned by a script. Called when a character founds a team or joins one. Its own
+   * session writes it (its custodian signs in as it); the team offers and cannot write. Best-effort and said: a
+   * registry that cannot compose leaves the character on the playbook it had.
+   */
+  private async equip(estate: NonNullable<Awaited<ReturnType<typeof fieldEstate>>>, role: RoleId): Promise<void> {
+    const s = this.state;
+    const persona = estate.workers[role];
+    if (!s || !persona) return;
+    const hub = estate.organization?.sa ?? estate.workspace.sa;
+    const held: HeldPack[] = [];
+    for (const t of s.teams ?? []) {
+      if (!t.agent || !t.members.includes(role)) continue;
+      const founder = t.steward === role;
+      // Only a membership the Home recorded: the founder's with the charter, a member's once admitted.
+      if (!founder && !this.admitted.includes(`team:${t.id}:${role}`)) continue;
+      const slug = teamRoleFor(this.kindOf(role), founder);
+      if (slug) held.push({ organization: t.agent, organizationName: `${t.name} (game)`, offer: fieldRoleOffer(slug, hub, 'team') });
+    }
+    if (!held.length) return;
+    try {
+      const pair = stagingOf(s.scenario);
+      const archetype = (pair && roleOf(pair.scenario, role)?.archetype) ?? `north-${role}`;
+      const session = await sessionOf(estate, { sa: persona.sa, name: this.nameOf(role), custodian: persona.custodian, persona: true });
+      const r = await equipCharacter({ home: estate.home, registry: estate.registry }, { sa: persona.sa, session: session.homeSession }, { context: 'field-operations', archetype }, held);
+      console.log(r.ok ? `[fieldops] ${this.nameOf(role)}'s agent ${r.unchanged ? 'already runs' : 'now runs'} ${archetype} + ${held.map((h) => h.offer.name).join(', ')} (${r.tools} tools)` : `[fieldops] ${this.nameOf(role)}'s agent was not equipped for ${held.map((h) => h.offer.name).join(', ')}: ${r.reason}`);
+    } catch (e: unknown) { console.warn(`[fieldops] ${this.nameOf(role)}'s agent was not equipped: ${String(e)}`); }
+  }
   /** The second half of an invite: a member who joined gets the membership wire the team's custodian signs. */
   private async admitJoined(estate: NonNullable<Awaited<ReturnType<typeof fieldEstate>>>): Promise<void> {
     const s = this.state;
@@ -747,11 +780,16 @@ export class FieldOpsDO extends DurableObject<Env> {
         const charter = this.charters[`team:${t.id}`];
         if (!charter || charter.progress.step !== 'done') continue; // the team's own ceremonies come first
         try {
-          const standing = await admit(estate, t.custodian, { sa: t.agent, name: `${t.name} (game)`, under: estate.workspace.sa }, { sa: persona.sa, name: this.nameOf(m), custodian: persona.custodian }, estate.workspace.custodian, charter.progress.standing ?? {});
+          // WHAT THIS PART DOES ON THE TEAM rides its invitation (spec 427): a worker works, a coach coaches. The
+          // role is the governing organization's definition, offered by the team; the join records it.
+          const slug = teamRoleFor(this.kindOf(m), false);
+          const offer = slug ? fieldRoleOffer(slug, estate.organization?.sa ?? estate.workspace.sa, 'team') : undefined;
+          const standing = await admit(estate, t.custodian, { sa: t.agent, name: `${t.name} (game)`, under: estate.workspace.sa }, { sa: persona.sa, name: this.nameOf(m), custodian: persona.custodian }, estate.workspace.custodian, charter.progress.standing ?? {}, offer);
           charter.progress = { ...charter.progress, standing: { ...(charter.progress.standing ?? {}), ...standing } };
           this.admitted = [...this.admitted, key]; this.save(); this.tellEverybody();
           const mine = standing[persona.sa.toLowerCase()];
-          console.log(`[fieldops] ${this.nameOf(m)} joined ${t.name}: membership ${mine?.membership ?? 'not recorded'}, credential ${mine?.credential?.slice(0, 10) ?? 'none'}`);
+          console.log(`[fieldops] ${this.nameOf(m)} joined ${t.name}${mine?.orgRoleName ? ` as ${mine.orgRoleName}` : ''}: membership ${mine?.membership ?? 'not recorded'}, credential ${mine?.credential?.slice(0, 10) ?? 'none'}`);
+          void this.equip(estate, m);
           void this.writeEstate(true);
         } catch (e: unknown) { console.warn(`[fieldops] ${this.nameOf(m)}'s membership of ${t.name} was not signed: ${String(e)}`); }
       }

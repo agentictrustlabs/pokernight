@@ -50,6 +50,7 @@ export function parseEstate(raw: string): FieldEstate | null {
       home: j.home ?? 'https://www.faithnet.me', clientId: j.clientId ?? 'field-app', chainId: j.chainId ?? 34348,
       a2a: j.a2a ?? DEFAULT_DOORS.a2a, mcp: j.mcp ?? DEFAULT_DOORS.mcp, origin: j.origin ?? DEFAULT_DOORS.origin,
       deliveryServiceSa: j.deliveryServiceSa ?? DEFAULT_DOORS.deliveryServiceSa, interactionsServiceSa: j.interactionsServiceSa ?? DEFAULT_DOORS.interactionsServiceSa,
+      registry: j.registry ?? DEFAULT_DOORS.registry,
       workspace: j.workspace as FieldEstate['workspace'], ...(j.organization?.sa ? { organization: j.organization } : {}), partners: j.partners ?? {}, workers: j.workers ?? {}, ...(j.mark ? { mark: j.mark } : {}),
     };
   } catch { return null; }

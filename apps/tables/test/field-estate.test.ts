@@ -12,7 +12,7 @@ import { dimensionsOf, poePhase } from '../src/field-phase.js';
 const SEED = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
 const addr = (n: number) => `0x${n.toString(16).padStart(40, '0')}`;
 const estate: FieldEstate = {
-  home: 'https://home.example', clientId: 'field-app', chainId: 34348, a2a: 'https://a2a.example', mcp: 'https://mcp.example', origin: 'https://games.example', deliveryServiceSa: addr(1), interactionsServiceSa: addr(2),
+  home: 'https://home.example', clientId: 'field-app', chainId: 34348, a2a: 'https://a2a.example', mcp: 'https://mcp.example', origin: 'https://games.example', deliveryServiceSa: addr(1), interactionsServiceSa: addr(2), registry: 'https://registry.example',
   workspace: { sa: addr(0x10), custodian: 'nathan', name: 'the game workspace' }, partners: {}, workers: Object.fromEntries(S.roles.map((r, i) => [r.id, { sa: addr(0x100 + i), custodian: 'elena' }])),
 };
 

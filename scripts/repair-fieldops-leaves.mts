@@ -30,6 +30,7 @@ const doors: EstateDoors = {
   home: note.home, clientId: note.clientId, chainId: Number(note.chainId),
   a2a: note.a2a, mcp: note.mcp, origin: note.origin,
   deliveryServiceSa: note.deliveryServiceSa, interactionsServiceSa: note.interactionsServiceSa,
+  registry: note.registry ?? 'https://skills-a2a-production.richardpedersen3.workers.dev',
 };
 
 /** Every realm org and who custodies it: the organization, the workspace, the partners (note) + chartered agents (KV). */
