@@ -50,8 +50,14 @@ const flat = async (page, sel = 'main') => (await page.locator(sel).first().inne
   await p2.goto(`${SITE}/w/${WS}/t/${BOULDER}/settings/teams`, { waitUntil: 'domcontentloaded' });
   await idle2();
   await p2.getByText(/Boulder.Longmont Team/).first().waitFor({ timeout: 120000 }).catch(() => {});
-  const manage = p2.locator('li, tr, div').filter({ hasText: /Boulder.Longmont Team/ }).getByRole('button', { name: /^Manage$/ }).last();
-  if (await manage.count()) { await manage.click().catch(() => {}); await idle2(); }
+  await p2.evaluate(() => {
+    for (const btn of [...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Manage')) {
+      let row = btn.parentElement;
+      while (row && !/Team \(game\)/.test(row.textContent)) row = row.parentElement;
+      if (row && /Boulder.Longmont/.test(row.textContent) && (row.textContent.match(/Team \(game\)/g) || []).length === 1) { btn.click(); return; }
+    }
+  });
+  await idle2();
   const table = p2.locator('[data-testid="team-roster-table"]').first();
   await table.waitFor({ timeout: 90000 }).catch(() => {});
   await p2.screenshot({ path: `${SHOT}/field-roles-settings.png` }).catch(() => {});

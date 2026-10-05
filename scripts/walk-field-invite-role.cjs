@@ -2,7 +2,7 @@
  * AN INVITATION THAT SAYS WHAT YOU WILL DO — the field app's invite, the Home's two ceremonies, and the role on the
  * membership at the end (the estate's spec 427), walked live in a browser.
  *
- *   node scripts/walk-field-invite-role.cjs [--invitee carol] [--role coach] [--shots <dir>] [--headed]
+ *   node scripts/walk-field-invite-role.cjs [--team] [--invitee carol] [--role coach] [--shots <dir>] [--headed]
  *
  * Nathan (the workspace's custodian) invites a demo person (Carol by default) into the workspace as a COACH from
  * Settings → Members. (Somebody who has ALREADY accepted an invitation here is shown no second join card — an existing
@@ -16,7 +16,7 @@
 const { chromium } = require('playwright');
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const SITE = 'https://field.faithnet.io'; const HOME = 'https://www.faithnet.me'; const A2A = 'https://a2a.faithnet.io';
-const WS = '0xF28BE6eF1b4EdB1313bcF89dd304a426F1537bB6'; const ORG = '0x8e32c713f44c7747d97a589522806a8e1dd810fb';
+const WS = '0xF28BE6eF1b4EdB1313bcF89dd304a426F1537bB6'; const ORG = '0x8e32c713f44c7747d97a589522806a8e1dd810fb'; const BOULDER = '0xF98D107B9e9D6dBDFd53d1C5C1B39e3E762f9903';
 const ROLE = arg('role', 'coach'); const WHO = arg('invitee', 'carol'); const Who = WHO[0].toUpperCase() + WHO.slice(1); const SHOT = arg('shots', require('os').tmpdir());
 const NAMES = { coach: 'Coach', coordinator: 'Coordinator', 'partner-liaison': 'Partner liaison', 'field-worker': 'Field worker' };
 let pass = 0; const issues = [];
@@ -54,7 +54,99 @@ async function enter(browser, testId) {
 }
 const idle = async (page, ms = 150000) => { const t0 = Date.now(); let quiet = 0; while (Date.now() - t0 < ms && quiet < 4) { const on = await page.locator('[data-testid="loading-bar"].on').count(); quiet = on ? 0 : quiet + 1; await page.waitForTimeout(500); } };
 
+/**
+ * THE TEAM VARIANT (`--team`): Nathan adds the invitee to the Boulder–Longmont team as a coach. A team is an
+ * organization and holds its own members, so the Home's invite ceremony ALSO invites into the team itself with the
+ * role, and the join records the membership ON THE TEAM — beside the governing organization's, which is unchanged.
+ * Checked on the team's own records, and by the new member reading the team's roster afterwards (the link the join
+ * leaves must still carry the wire they read the team with).
+ */
+async function teamWalk() {
+  const who = await signin(WHO); const sa = String(who.agent).toLowerCase();
+  const before = await object(BOULDER, 'org.membership.mine', { session: who.homeSession });
+  console.log(`${WHO} ${sa} — on the team before: ${before.membership ? `${before.membership.roleAssignment?.assignedRole}${before.ended ? ' (ended)' : ''}` : 'no membership record'}`);
+  const browser = await chromium.launch({ headless: !process.argv.includes('--headed') });
+  const errors = [];
+  console.log(`Nathan adds ${Who} to the Boulder–Longmont team, naming what they will do`);
+  const n = await enter(browser, 'connect-nathan'); n.page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
+  await n.page.goto(`${SITE}/w/${WS}/t/${BOULDER}/settings/teams`, { waitUntil: 'domcontentloaded' });
+  await idle(n.page);
+  await n.page.getByText(/Boulder.Longmont Team/).first().waitFor({ timeout: 120000 }).catch(() => {});
+  // The pane lists every team with its own "Manage": press the one in the row that names THIS team and no other.
+  const pressed = await n.page.evaluate(() => {
+    for (const btn of [...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Manage')) {
+      let row = btn.parentElement;
+      while (row && !/Team \(game\)/.test(row.textContent)) row = row.parentElement;
+      if (row && /Boulder.Longmont/.test(row.textContent) && (row.textContent.match(/Team \(game\)/g) || []).length === 1) { btn.click(); return true; }
+    }
+    return false;
+  });
+  check('the Boulder–Longmont team opens from the Teams pane', pressed, pressed);
+  await idle(n.page);
+  const pick = n.page.locator('[data-testid="team-member-pick"]');
+  await pick.waitFor({ timeout: 90000 });
+  const value = await pick.locator('option').evaluateAll((os, want) => (os.find((o) => o.value.toLowerCase() === want) || {}).value || '', sa);
+  check(`${Who} can be picked (an active member of the workspace, not yet on the team)`, !!value, await pick.locator('option').allInnerTexts());
+  if (!value) { await browser.close(); return finish(); }
+  await pick.selectOption(value);
+  await n.page.locator('[data-testid="team-member-org-role"]').selectOption(ROLE);
+  const access = await n.page.locator('[data-testid="team-member-role"]').inputValue();
+  check('choosing the role suggests the access it usually needs', access === 'member', access);
+  let sentRole = null; let offered = null;
+  n.page.on('request', (rq) => { if (/\/a2a$/.test(rq.url()) && rq.method() === 'POST') { try { const m = JSON.parse(rq.postData() || '{}').params?.message?.metadata; if (m?.skill === 'field.team-member-add') sentRole = m.orgRole ?? '(none)'; } catch {} } });
+  n.page.on('response', async (rs) => { if (/\/a2a$/.test(rs.url()) && rs.request().method() === 'POST') { try { const m = JSON.parse(rs.request().postData() || '{}').params?.message?.metadata; if (m?.skill === 'field.team-member-add') { const body = await rs.json(); offered = body.result?.roleOffer ?? `(none: ${JSON.stringify(body.error ?? body.result ?? body).slice(0, 260)})`; } } catch {} } });
+  const popupP = n.ctx.waitForEvent('page', { timeout: 90000 }).catch(() => null);
+  await n.page.locator('[data-testid="team-member-add"]').click();
+  const popup = await popupP;
+  check('the Home\'s invite ceremony opens', !!popup, 'no popup');
+  check('the app sends the role to its gateway', sentRole === ROLE, sentRole);
+  check('the gateway answers with a TEAM-scoped offer of the governing organization\'s definition', offered && offered.scope === 'team' && offered.roleDefinitionId === `roledef:${ORG}:${ROLE}@1`, offered);
+  const said = popup ? await ceremony(popup, 'nathan @ home') : [];
+  check('the ceremony invites onto the team itself, as the role', said.some((x) => new RegExp(`Inviting them onto .* as ${NAMES[ROLE]}`).test(x)), said);
+  check('the invite ceremony did not fail', !said.some((x) => x.startsWith('FAILED')), said);
+  await n.page.waitForTimeout(4000); await idle(n.page);
+  await n.page.screenshot({ path: `${SHOT}/field-invite-role-team-1.png` }).catch(() => {});
+
+  const claim = await object(BOULDER, 'invite.claim', { session: who.homeSession });
+  check('the TEAM\'s own invitation carries the role', claim.invite?.orgRole?.name === NAMES[ROLE] && claim.invite?.orgRole?.scope === 'team', claim.invite ? { status: claim.invite.status, orgRole: claim.invite.orgRole ?? null } : claim);
+
+  console.log(`${Who} accepts from the bell`);
+  const b = await enter(browser, `connect-${WHO}`); b.page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
+  // Invitations wait in Activity (the app's rail), each with its own Accept.
+  await b.page.goto(`${SITE}/w/${WS}/activity`, { waitUntil: 'domcontentloaded' });
+  await idle(b.page);
+  const card = b.page.locator(`[data-testid="invite-${BOULDER.toLowerCase()}"]`).first();
+  await card.waitFor({ timeout: 90000 }).catch(() => {});
+  const cardText = await flat(b.page, `[data-testid="invite-${BOULDER.toLowerCase()}"]`);
+  check(`${Who} is told what they are invited to do on the team`, new RegExp(`as ${NAMES[ROLE]}`).test(cardText), cardText.slice(0, 300) || (await flat(b.page, 'main')).slice(0, 300));
+  const joinPopupP = b.ctx.waitForEvent('page', { timeout: 90000 }).catch(() => null);
+  await card.getByRole('button', { name: /Accept/ }).first().click().catch(() => {});
+  const joinPopup = await joinPopupP;
+  check('the Home\'s join ceremony opens', !!joinPopup, 'no popup');
+  const joinSaid = joinPopup ? await ceremony(joinPopup, `${WHO} @ home`) : [];
+  check('the join records the membership on the team, as the role', joinSaid.some((x) => new RegExp(`Joining the team as ${NAMES[ROLE]}`).test(x)), joinSaid);
+  check('the join ceremony did not fail', !joinSaid.some((x) => x.startsWith('FAILED')), joinSaid);
+  await b.page.waitForTimeout(8000); await idle(b.page);
+  await b.page.screenshot({ path: `${SHOT}/field-invite-role-team-2.png` }).catch(() => {});
+
+  const mine = await object(BOULDER, 'org.membership.mine', { session: who.homeSession });
+  check(`the TEAM records ${Who}'s membership with the role`, mine.membership?.roleAssignment?.assignedRole === ROLE && mine.ended === false, mine.membership?.roleAssignment ?? mine);
+  check('the role is team-scoped and offers its pack', mine.offer?.scope === 'team' && (mine.offer?.skillPackRefs ?? []).some((p) => p.archetype === `role-${ROLE}`), mine.offer);
+  // And the new member can READ the team — the link the join left still carries the wire they read it with.
+  const read = await json(await fetch('https://field-a2a-faithnet.richardpedersen3.workers.dev/a2a', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${(await signin(WHO)).id_token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 'r', method: 'message/send', params: { message: { role: 'user', parts: [{ kind: 'text', text: 'read this team' }], metadata: { skill: 'field.team-read', team: BOULDER } } } }) }));
+  const row = (read.result?.members ?? []).find((m) => String(m.personRef).toLowerCase().endsWith(sa));
+  check(`${Who} reads the team's roster, and is on it as the role`, !!row && row.orgRole === ROLE, read.result ? (read.result.members ?? []).map((m) => `${m.display}:${m.orgRole ?? '-'}:${m.status}`) : read.error);
+  check('no page errors', errors.length === 0, errors);
+  await browser.close();
+  finish();
+}
+function finish() {
+  console.log(issues.length ? `\n${pass} passed, ${issues.length} FAILED:\n- ${issues.join('\n- ')}` : `\nall ${pass} checks passed`);
+  process.exit(issues.length ? 1 : 0);
+}
+
 (async () => {
+  if (process.argv.includes('--team')) return teamWalk();
   const bobId = await signin(WHO); const bob = String(bobId.agent).toLowerCase();
   const before = await object(ORG, 'org.membership.mine', { session: bobId.homeSession });
   console.log(`${WHO} ${bob} — at the organization before: ${before.membership ? `${before.membership.roleAssignment?.assignedRole}${before.ended ? ' (ended)' : ''}` : 'no membership record'}`);
