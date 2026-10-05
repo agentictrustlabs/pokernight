@@ -249,7 +249,10 @@ if (!DRY) {
   const t = now();
   const wsSa = m.workspace.sa;
   const wsRecords = [
-    { folder: 'field/workspace', record: { kind: 'ws-profile', id: 'profile', title: WORKSPACE_NAME, updatedAt: t, envelope: envelope('L1', 'workspace profile'), workspace: wsSa, focus: `GAME WORKSPACE for Field Operations at gamenight.faithnet.io. Seasons of field work among the public registry’s people communities north of Denver, played by real agents: the characters found the teams, take the communities up and begin the circles and churches, each a real agent chartered as their act. Every team, body and record here is a game’s; nothing in it is a real team, church or assessment. ${GAME_LINE}` } },
+    { folder: 'field/workspace', record: { kind: 'ws-profile', id: 'profile', title: WORKSPACE_NAME, updatedAt: t, envelope: envelope('L1', 'workspace profile'), workspace: wsSa,
+      // THE ORGANIZATION THAT GOVERNS IT, where the field app looks for it: without this the app refuses its own invite
+      // into the workspace ("no governing organization yet") although the Home has known the governor since the pairing.
+      ...(m.organization?.sa ? { governedBy: m.organization.sa.toLowerCase() } : {}), focus: `GAME WORKSPACE for Field Operations at gamenight.faithnet.io. Seasons of field work among the public registry’s people communities north of Denver, played by real agents: the characters found the teams, take the communities up and begin the circles and churches, each a real agent chartered as their act. Every team, body and record here is a game’s; nothing in it is a real team, church or assessment. ${GAME_LINE}` } },
     { folder: 'field/workspace-members', record: { kind: 'ws-membership', id: `mem-${people[CUSTODY.workspace].sa.toLowerCase()}`, title: 'custodian', updatedAt: t, envelope: envelope('L2', 'workspace roster'), workspace: wsSa, person: people[CUSTODY.workspace].sa.toLowerCase(), role: 'custodian', status: 'active', joinedAt: t } },
     // THE ROSTER IS THE ORGANIZATION'S, PROJECTED: the field app reads `ws-membership` rows from the workspace, but a
     // workspace has no members — these rows say who belongs to the organization that governs it: the CHARACTERS.
