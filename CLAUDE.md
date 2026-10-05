@@ -1066,8 +1066,14 @@ consuming app. Deployment addresses come from `@agenticprimitives/contracts/depl
 copy addresses into packages/*. The estate's Home (sign-in, agents, vaults, the coach services, club
 workspaces) is operated separately; what this card room needs of it is documented where it is used.
 
-**THE LIVE HOME IS `~/agenticprimitives/apps/demo-sso-next`, AND THAT MONOREPO IS THE ONLY ESTATE TREE (2026-10-02).**
-faithnet.me is served from `~/agenticprimitives` (the Home app `apps/demo-sso-next`, the A2A runtime `apps/demo-a2a`,
-and the shared `packages/*`). NEVER read or edit `~/ap-home`: it is a stale, separate checkout that does not deploy
-anywhere, and work done there is lost. Any estate change — the Home, the interactions runtime, the ontology, the
-context package — is made in `~/agenticprimitives` and nowhere else.
+**THE LIVE FAITHNET ESTATE TREE IS `~/ap-home` (github `agentictrustlabs/ap-home`, `master`) SINCE 2026-10-04.**
+The Home is `apps/home` (www.faithnet.me, Vercel project `faithnet-home`); the Workers are `apps/agent-runtime`
+(`demo-a2a-faithnet`), `apps/vault` (`demo-mcp-faithnet`), `apps/edge`, `apps/home-mcp` and `apps/rpc-gateway`, each
+deployed with `cd apps/<dir> && wrangler deploy --env faithnet`. `~/agenticprimitives` holds PACKAGES ONLY — no app is
+deployed from it, and `apps/demo-sso-next` / `apps/demo-a2a` no longer exist there; a package change reaches ap-home by
+an npm publish plus a version-pin bump. Estate ops scripts (`assign-org-archetype.mts`,
+`reissue-org-interactions-grant.mts`, `charter-cast`, `equip-cast-*`, …) run from `~/ap-home/scripts`. Any estate
+change — the Home, the runtime, the vault — is made in `~/ap-home`; a change to the ontology or a shared package is made
+in `~/agenticprimitives/packages` and published. NEVER read or edit `~/ap-home-old-extraction`: it is the stale
+September checkout that deploys nowhere, and work done there is lost. (Until 2026-10-04 the estate lived in
+`~/agenticprimitives/apps/*` and `~/ap-home` was the stale one — older notes that say so are out of date.)
