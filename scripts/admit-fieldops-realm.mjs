@@ -155,9 +155,14 @@ async function regrant(org) {
   // alpha.24 mints a 12 h no-audience leaf the live estate refuses): an org never logs in to self-heal, and the
   // session key must be allowed to present both the interactions grant and the write-only delivery grant where
   // content.* (the invitation, the roster) lives — or content writes 409 "auth failed" while interactions reads pass.
-  const leaf = { delegator: lower(org.sa), delegate: lower(sk.address), authority: ROOT_AUTHORITY, caveats: [buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, validUntil)), buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)), buildCaveat(SESSION_AUDIENCE_ENFORCER, encodeAbiParameters([{ type: 'address[]' }], [[lower(INTERACTIONS_SA), lower(DELIVERY_SA)]]))], salt: randSalt(), signature: '0x' };
-  leaf.signature = await signer.sign(hashDelegation(leaf, CHAIN, CONTRACTS.delegationManager));
-  const r = await (await fetch(`${A2A}/interactions/${lower(org.sa)}/grant`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ delegation: wireOut(d), sessionLeaf: { ...leaf, salt: leaf.salt.toString() } }) })).json().catch(() => ({}));
+  // A LADDER of yearly rungs, all signed now (the estate's route A): the runtime signs under whichever rung is live.
+  const leaves = [];
+  for (let i = 0; i < 3; i += 1) {
+    const leaf = { delegator: lower(org.sa), delegate: lower(sk.address), authority: ROOT_AUTHORITY, caveats: [buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, Math.floor(Date.now() / 1000) + (i + 1) * 365 * 24 * 3600)), buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)), buildCaveat(SESSION_AUDIENCE_ENFORCER, encodeAbiParameters([{ type: 'address[]' }], [[lower(INTERACTIONS_SA), lower(DELIVERY_SA)]]))], salt: randSalt(), signature: '0x' };
+    leaf.signature = await signer.sign(hashDelegation(leaf, CHAIN, CONTRACTS.delegationManager));
+    leaves.push({ ...leaf, salt: leaf.salt.toString() });
+  }
+  const r = await (await fetch(`${A2A}/interactions/${lower(org.sa)}/grant`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ delegation: wireOut(d), sessionLeaves: leaves }) })).json().catch(() => ({}));
   if (r.ok !== true) throw new Error(`re-grant ${org.name}: ${JSON.stringify(r).slice(0, 160)}`);
 }
 

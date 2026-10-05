@@ -55,6 +55,8 @@ const MCP_SERVER_ID = 'demo-mcp';
  * on chain), cross-checked against the live lib. Terms are `abi.encode(address[] delegates)`.
  */
 const SESSION_AUDIENCE_ENFORCER = '0x8176cd7441055a9022ff24c5447d42be161673b4' as Address;
+/** How many yearly session-leaf rungs an organization is granted at once (the Home's own default). */
+const LEAF_RUNGS = 3;
 
 export type CharterKind = 'team' | 'circle' | 'church';
 export interface CharterSpec {
@@ -379,7 +381,7 @@ export async function linkAt(doors: EstateDoors, orgSigner: Signer, org: { sa: s
  * An org whose grant lacks a resource answers `record_scope_denied` to the Home's own ceremonies — the countersigned
  * credential's second copy, in the organization's vault, is what found this out.
  */
-export const STORAGE_V = 3;
+export const STORAGE_V = 4;
 const CORE_RW = [
   'vault:conversation.index', 'vault:conversation.topic:*', 'vault:message.body:topic:*',
   'vault:inbox.data', 'vault:directory.data', 'vault:relationships.data', 'vault:member.profile:*',
@@ -446,14 +448,20 @@ export async function enableStorage(doors: EstateDoors, signer: Signer, sa: stri
     // lives, delegate = the delivery SA), and the session key must be allowed to present BOTH, or content reads
     // fail while interactions reads pass. Hand-built because alpha.24's `buildSessionDelegation` carries no
     // audience caveat; the shape (timestamp · value · audience) matches the live lib's.
-    const leaf = { delegator: org, delegate: lower(sk.address) as Address, authority: ROOT_AUTHORITY, caveats: [
-      buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, validUntil)),
-      buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)),
-      buildCaveat(SESSION_AUDIENCE_ENFORCER, encodeAbiParameters([{ type: 'address[]' }], [[lower(doors.interactionsServiceSa), lower(doors.deliveryServiceSa)] as Address[]])),
-    ], salt: randSalt(), signature: '0x' as Hex };
-    const digest = hashDelegation(leaf, doors.chainId, CONTRACTS.delegationManager);
-    leaf.signature = await signer.sign(digest);
-    const r = await jsonOf(await fetch(`${doors.a2a}/interactions/${org}/grant`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ delegation: { ...d, salt: d.salt.toString() }, sessionLeaf: { ...leaf, salt: leaf.salt.toString() } }) }));
+    // A LADDER, NOT ONE LEAF (the estate's route A, spec 423 §2.1): rung i is valid for (i+1) years, all signed now, so
+    // a live rung exists for LEAF_RUNGS years without the custodian returning — the runtime signs under whichever
+    // rung is live. One leaf was one year and then the same overnight darkness, a year late.
+    const leaves = [];
+    for (let i = 0; i < LEAF_RUNGS; i += 1) {
+      const leaf = { delegator: org, delegate: lower(sk.address) as Address, authority: ROOT_AUTHORITY, caveats: [
+        buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, Math.floor(Date.now() / 1000) + (i + 1) * 365 * 24 * 3600)),
+        buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)),
+        buildCaveat(SESSION_AUDIENCE_ENFORCER, encodeAbiParameters([{ type: 'address[]' }], [[lower(doors.interactionsServiceSa), lower(doors.deliveryServiceSa)] as Address[]])),
+      ], salt: randSalt(), signature: '0x' as Hex };
+      leaf.signature = await signer.sign(hashDelegation(leaf, doors.chainId, CONTRACTS.delegationManager));
+      leaves.push({ ...leaf, salt: leaf.salt.toString() });
+    }
+    const r = await jsonOf(await fetch(`${doors.a2a}/interactions/${org}/grant`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ delegation: { ...d, salt: d.salt.toString() }, sessionLeaves: leaves }) }));
     if (r.ok !== true) throw new Error(`interactions grant: ${JSON.stringify(r).slice(0, 200)}`);
   }
 }
