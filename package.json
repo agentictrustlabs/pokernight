@@ -50,6 +50,7 @@
     "cleanup:fieldops": "node scripts/cleanup-fieldops-homes.mjs",
     "check:field-records": "pnpm --filter pokernight-tables exec tsx scripts/check-field-records.mts",
     "roles:fieldops": "pnpm --filter pokernight-tables exec tsx scripts/roles-fieldops.mts",
+    "walk:field-roles": "node scripts/walk-field-roles.cjs",
     "prune:field-records": "node scripts/prune-field-records.mjs",
     "walk:field-season": "node scripts/walk-field-season.cjs",
     "walk:field-ask": "node scripts/walk-field-ask.cjs"

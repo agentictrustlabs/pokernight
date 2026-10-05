@@ -21,6 +21,7 @@ import type { Body, CommunityDef, FieldOpsEvent, FieldOpsState, PhaseN, Region, 
 import { DAYS_PER_WEEK, PHASE_NAMES, SOWING_CONVERSATIONS, phaseOf, roleOf } from '@pokernight/fieldops';
 import type { Env } from './env.js';
 import { DEFAULT_DOORS, type EstateDoors, type Standing } from './field-charter.js';
+import { teamRoleFor } from './field-roles.js';
 import { POE_FRAMEWORK, POE_FRAMEWORK_VERSION, dimensionsOf, poeLevelIri, poePhase } from './field-phase.js';
 
 export interface EstateAgent { sa: string; custodian: string; name?: string; label?: string }
@@ -218,16 +219,19 @@ export function recordsFor(estate: FieldEstate, state: FieldOpsState, scenario: 
     // OWN join put an organization membership record and a countersigned credential at the Home (the field domain's
     // rule — "active is a claim only the member's act verifies"); `invited` until then; a declined invitation is no row.
     const held = standing[t.id] ?? {};
-    const rosterRow = (sa: string, name: string, orgRole: string, invitedOnly: boolean) => {
+    // TWO VOCABULARIES ON A ROW, as the field app keeps them: `role` is the access the gates read, `orgRole` the
+    // FUNCTION everybody sees (spec 427) — whoever founded the team leads it, a worker works, a coach coaches.
+    const rosterRow = (sa: string, name: string, orgRole: string, invitedOnly: boolean, fn?: string | null) => {
       const h = held[sa.toLowerCase()];
       const active = !!h?.credential && !invitedOnly;
       return { folder: FOLDER.teamMembers, record: { kind: 'team-membership', id: `tm-${sa.toLowerCase()}`, title: name, updatedAt: now, envelope: envelope('L2', 'team roster'), team: t.agent, personRef: `eip155:${estate.chainId}:${sa.toLowerCase()}`, display: `${name} (${mark})`, role: orgRole, status: active ? 'active' : 'invited', joinedAt: dayIso(t.foundedDay),
         // aporg:OrganizationMembership (the organization's own record) and the ap:RelationshipCredential both parties signed.
-        ...(h?.membership ? { membershipRecord: h.membership } : {}), ...(h?.credential ? { credential: h.credential } : {}), ...(h?.stewardship ? { stewardship: h.stewardship } : {}) } };
+        ...(h?.membership ? { membershipRecord: h.membership } : {}), ...(h?.credential ? { credential: h.credential } : {}), ...(h?.stewardship ? { stewardship: h.stewardship } : {}), ...(fn ? { orgRole: fn } : {}) } };
     };
-    into(team, t.id, rosterRow(agentOf(t.steward), nameOf(t.steward), 'organization-steward', false));
-    for (const m of t.members) if (m !== t.steward) into(team, t.id, rosterRow(agentOf(m), nameOf(m), 'member', false));
-    for (const m of t.invited) into(team, t.id, rosterRow(agentOf(m), nameOf(m), 'member', true));
+    const kindOf = (r: string) => scenario.roles.find((x) => x.id === r)?.kind ?? 'worker';
+    into(team, t.id, rosterRow(agentOf(t.steward), nameOf(t.steward), 'organization-steward', false, teamRoleFor(kindOf(t.steward), true)));
+    for (const m of t.members) if (m !== t.steward) into(team, t.id, rosterRow(agentOf(m), nameOf(m), 'member', false, teamRoleFor(kindOf(m), false)));
+    for (const m of t.invited) into(team, t.id, rosterRow(agentOf(m), nameOf(m), 'member', true, teamRoleFor(kindOf(m), false)));
     // The people: the custodian stewards it at their Home and belongs to it (as the field app's creator does); the
     // workspace's custodian and each member's custodian belong to it. Their rows carry the names the ceremony used.
     for (const [sa, h] of Object.entries(held)) if (!Object.values(estate.workers).some((w) => w.sa.toLowerCase() === sa)) into(team, t.id, rosterRow(sa, h.who ?? sa, h.role === 'custodian' ? 'organization-steward' : 'member', false));
