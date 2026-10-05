@@ -59,6 +59,7 @@ export type Route =
   | { page: 'commission'; stagingId: string }
   /** A FIELD OPERATIONS season — real agents on a real map (docs/FIELD-OPERATIONS.md). */
   | { page: 'fieldops'; stagingId: string }
+  | { page: 'fieldtown'; stagingId: string }
   /**
    * An invitation link. It carries the CLUB as well as the token because the token alone does not
    * say which club to ask — a club is its own object, and a global index of every invitation in the
@@ -124,6 +125,10 @@ export function commissionHash(stagingId: string): string {
 export function fieldOpsHash(stagingId: string): string {
   return `#/fo/${encodeURIComponent(stagingId)}`;
 }
+/** The season as a town you can fly around — a read of what it built, on its own page. `#/fo/<staging>/town`. */
+export function fieldTownHash(stagingId: string): string {
+  return `#/fo/${encodeURIComponent(stagingId)}/town`;
+}
 
 export function clubHash(clubId: string): string {
   return `#/clubs/${encodeURIComponent(clubId)}`;
@@ -141,6 +146,9 @@ export function route(hash: string): Route {
   if (mystery?.[1]) return { page: 'mystery', stagingId: decodeURIComponent(mystery[1]) };
   const commission = /^\/gc\/([^/?#]+)/.exec(path);
   if (commission?.[1]) return { page: 'commission', stagingId: decodeURIComponent(commission[1]) };
+  // The town is checked BEFORE the season's own page: it is the longer path under the same id.
+  const fieldtown = /^\/fo\/([^/?#]+)\/town\/?$/.exec(path);
+  if (fieldtown?.[1]) return { page: 'fieldtown', stagingId: decodeURIComponent(fieldtown[1]) };
   const fieldops = /^\/fo\/([^/?#]+)/.exec(path);
   if (fieldops?.[1]) return { page: 'fieldops', stagingId: decodeURIComponent(fieldops[1]) };
   const join = /^\/join\/(0x[0-9a-fA-F]{40})(?:[/?#]|$)/.exec(path);

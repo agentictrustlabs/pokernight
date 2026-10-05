@@ -33,6 +33,7 @@ import { NewClubPage } from './pages/NewClubPage';
 import { MysteryPage } from './pages/MysteryPage';
 import { CommissionPage } from './pages/CommissionPage';
 import { FieldOpsPage } from './pages/FieldOpsPage';
+import { FieldTownPage } from './pages/FieldTownPage';
 import { SignUpPage } from './pages/SignUpPage';
 import { useHash } from './lib/hooks';
 import { CardDefs } from './components/Card';
@@ -599,6 +600,14 @@ export function App() {
     );
   }
   // A SEASON IS A PLACE TOO — the field on a map — and takes the whole window (docs/FIELD-OPERATIONS.md §7).
+  // …and the town it built: a READ of the season on its own page, which opens no socket and so wakes nothing.
+  if (r.page === 'fieldtown') {
+    return huddled(
+      <div className="app">
+        <FieldTownPage stagingId={r.stagingId} session={session} onSignOut={signOut} />
+      </div>
+    );
+  }
   if (r.page === 'fieldops') {
     return huddled(
       <div className="app">

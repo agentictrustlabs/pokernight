@@ -188,8 +188,42 @@ counters, what blocks the next phase), the road's weather, the ACTIVITY with fil
 from `may`, the pickers each needs, a decision when one is before you), THE TEAMS (who, where, what today), THE AGENTS
 (the tally), the partners, THE FIELD APP (what has been written, a link, the host's "write it out now"), and the reveal.
 
+### 7.1 · The town
+
+The same season as a TOWN you fly around (`lib/fieldTown.ts` the scene, `components/fieldops/FieldTown.tsx` the
+drawing and the camera, `FieldTownPanel.tsx` the controls). It is the second picture on the season's page (Map | Town;
+the town leads at the reveal until the person picks) and it has a page of its own, `#/fo/<staging>/town`
+(`pages/FieldTownPage.tsx`), which is the one Play links to.
+
+- **Every building is something the season has, where it has it.** A town is a square with its partner churches; a
+  team is an office in its home town and a house for each person on it; a People Community is a QUARTER in each town
+  it lives in, with a beacon whose lit storeys are its phase; a circle is a hall and a church a spired building in its
+  people's quarter, the church on the lot its circle stood on; a worker is a figure where they are standing that day.
+- **Some things are a place and some are an area, and the drawing says which.** A corridor is a dashed hull around its
+  towns and a quarter is a tinted block — areas; an office, a hall, a church are buildings on a lot. A circle sent out
+  of a church is joined to it by an arc.
+- **Colour is progress.** A quarter and its beacon take the PHASE colour (the ramp in the legend, P0 to P7), so a
+  people moving a phase is the ground changing colour. A church shows its baptisms as a pool that fills, its leaders
+  as figures at the door, its generation as pennants.
+- **The camera is real and the detail follows it.** Region, corridor, street (`lodOf`): far out a town is a model drawn
+  larger than life so the field reads at a glance; in close the houses, the windows and the names appear. "Go to" flies
+  to a corridor; a people or a team FILTER dims everything else and frames what is left; pressing a building or a
+  person opens what it is and what it has counted.
+- **THE SEASON IS REBUILT FOR ANY DAY FROM ITS OWN TRANSCRIPT** (`seasonAt`): teams by the day they were founded and
+  joined, bodies by the day they formed and were recognised, phases by the `phase` events, where everybody stood by
+  `moved`; the counts are the final ones with every later act taken back off. Replay walks day 0 (the registry's
+  floor) to the last day; a building mounts on the day it first exists and that mount is the rise; `spotlight` names
+  the town the day's most important thing happened in and "follow the work" flies there. NOTHING STANDING EVER MOVES:
+  a lot is a function of the town and the thing's id, never of the day (`fieldTown.test.ts` holds it to that).
+- **LOOKING IS NOT ATTENDING.** The town's own page opens NO socket: it reads the view over HTTP once and on Refresh.
+  A socket is a tab the season counts as somebody there, and that is what lets it ask sixteen agents for their day.
+  `pnpm walk:field-town` walks the live page and its last check is that no socket to a season was opened.
+- SVG, not WebGL: the scene is a few hundred boxes that must stay crisp at any zoom, be pressable, and be readable by
+  a test. The geometry is memoised and only its group's `transform` changes while the camera moves; labels are laid
+  out in screen space so they stay one size and do not collide.
+
 ## 8 · Commands
 
-`pnpm gen:fieldops` (registry → world → archetypes) · `pnpm provision:fieldops` · `pnpm reset:fieldops` (clean vaults for another season, keeping the estate) · `pnpm walk:fieldops`.
+`pnpm gen:fieldops` (registry → world → archetypes) · `pnpm provision:fieldops` · `pnpm reset:fieldops` (clean vaults for another season, keeping the estate) · `pnpm walk:fieldops` · `pnpm walk:field-town [--season <id>]` (the town on the live site; read-only).
 
 `pnpm cleanup:fieldops [--dry] [--all]` lets go of the game organizations that pile up on the demo users' Homes across seasons — it reads every character persona's and custodian's own links and removes each one that is not the current realm (the organization, the workspace, the partner churches) or, unless `--all`, the current season. The agents stay on chain; they are simply nobody's any more.

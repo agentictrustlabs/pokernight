@@ -18,10 +18,11 @@ import { PHASE_NAMES, PHASE_SHORT } from '@pokernight/fieldops';
 import type { AppSession } from '../lib/types';
 import { fieldOpsApi, type FieldOpsAgentRow, type FieldOpsSummary } from '../lib/api';
 import { FieldOpsSocket, type FieldOpsClientState } from '../lib/fieldOpsSocket';
-import { HOME_HASH } from '../lib/routes';
+import { HOME_HASH, fieldTownHash } from '../lib/routes';
 import { Face } from '../components/mystery/Face';
 import type { Look as MysteryLook } from '@pokernight/mystery';
 import { FieldMap, pulseOf, type MapPulse } from '../components/fieldops/FieldMap';
+import { FieldTownPanel } from '../components/fieldops/FieldTownPanel';
 import { Identity } from '../components/Identity';
 import { Brand } from '../components/Brand';
 
@@ -45,7 +46,12 @@ export function FieldOpsPage({ stagingId, session, onSignOut }: { stagingId: str
   const [selectedTown, setSelectedTown] = useState<string | null>(null);
   const [whisperTo, setWhisperTo] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'team' | 'town' | 'readings' | 'talk' | 'mine'>('all');
+  /** Which picture of the field the main column leads with. While the season runs it is the MAP, which is where
+   *  the day's work is done; at the reveal it is the TOWN, the whole season standing and replayable — until the
+   *  person picks one themselves, after which it is theirs. */
+  const [pickedPicture, setPicture] = useState<'map' | 'town' | null>(null);
   const view = state.view;
+  const picture: 'map' | 'town' = pickedPicture ?? (view?.phase === 'revealed' ? 'town' : 'map');
   const staging = state.staging;
   const isHost = !!session && !!staging && staging.host === session.playerId;
   // The map's pulses: every act since the page opened, kept for a couple of seconds each.
@@ -106,7 +112,16 @@ export function FieldOpsPage({ stagingId, session, onSignOut }: { stagingId: str
       <div className="page mystery-page gc-page fo-page">
         <main className="mystery-main">
           <section className="panel fo-map-wrap">
-            <FieldMap view={view} selected={selectedTown} onTown={(t) => setSelectedTown((cur) => (cur === t ? null : t))} onPerson={(r) => setWhisperTo((cur) => (cur === r ? null : r))} pulses={pulses} />
+            {/* TWO PICTURES OF ONE FIELD. The map says where everybody is; the town says what the season has built
+                there, and lets you fly in. The town is the picture at the reveal — the whole season, replayable. */}
+            <div className="fo-picture-tabs" role="tablist" aria-label="How to look at the field">
+              <button type="button" role="tab" aria-selected={picture === 'map'} className={picture === 'map' ? 'is-on' : ''} onClick={() => setPicture('map')}>Map</button>
+              <button type="button" role="tab" aria-selected={picture === 'town'} className={picture === 'town' ? 'is-on' : ''} onClick={() => setPicture('town')} data-testid="fo-picture-town">Town</button>
+              <a href={fieldTownHash(stagingId)} className="fo-picture-full">Open the town full screen ↗</a>
+            </div>
+            {picture === 'town'
+              ? <FieldTownPanel view={view} onOpenFull={() => { window.location.hash = fieldTownHash(stagingId); }} />
+              : <FieldMap view={view} selected={selectedTown} onTown={(t) => setSelectedTown((cur) => (cur === t ? null : t))} onPerson={(r) => setWhisperTo((cur) => (cur === r ? null : r))} pulses={pulses} />}
             <DayStrip view={view} />
           </section>
           <Board view={view} selectedTown={selectedTown} onTown={(t) => setSelectedTown((cur) => (cur === t ? null : t))} />

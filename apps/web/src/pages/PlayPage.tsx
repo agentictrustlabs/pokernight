@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AppSession, TableSummary } from '../lib/types';
 import { ApiError, api, commissionApi, fieldOpsApi, mysteryApi, type CommissionScenarioSummary, type FieldOpsScenarioSummary, type MysteryTitleSummary } from '../lib/api';
 import { gameLabel } from '../lib/games';
-import { commissionHash, fieldOpsHash, goTo, mysteryHash, TABLES_HASH } from '../lib/routes';
+import { commissionHash, fieldOpsHash, fieldTownHash, goTo, mysteryHash, TABLES_HASH } from '../lib/routes';
 import { seatsFree, withRoom } from '../lib/lobby';
 import { Drawer } from '../components/Drawer';
 
@@ -268,6 +268,8 @@ function FieldOpsCard({ session }: { session: AppSession }) {
             {mine.phase === 'revealed' ? 'Review your last season →' : 'Resume your season →'}
           </a>
         ) : null}
+        {/* The town is a READ of what the season built: it opens no socket, so looking at it wakes nobody's agent. */}
+        {mine ? <a className="small play-resume" href={fieldTownHash(mine.stagingId)} data-testid="play-field-town">See what it built, as a town →</a> : null}
       </div>
       <Drawer open={open} title={chosen ? chosen.name : 'Field Operations'} onClose={() => setOpen(false)}>
         {chosen ? (
