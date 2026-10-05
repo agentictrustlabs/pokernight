@@ -72,7 +72,15 @@ async function removeLink(personSa, bearer, o) {
 const keep = new Set([lower(note.organization.sa), lower(note.workspace.sa), ...Object.values(note.partners).map((p) => lower(p.sa))]);
 if (!ALL) {
   try {
-    const led = JSON.parse(execSync(`cd ${TABLES} && pnpm exec wrangler kv key get --binding CLUB_WIRES --env faithnet --remote fieldops-chartered 2>/dev/null`, { encoding: 'utf8' }) || '[]');
+    // READ LOUDLY, NEVER SILENTLY EMPTY. Wrangler can print before the value, and `JSON.parse` on that threw — which
+    // the catch below used to turn into "keeping only the realm": a cleanup that, unable to tell which agents are
+    // live, let go of the CURRENT season's teams and circles too (caught in a dry run, 2026-10-05). The value is
+    // taken from its first bracket, and a ledger that cannot be read STOPS the sweep.
+    const raw = execSync(`cd ${TABLES} && pnpm exec wrangler kv key get --binding CLUB_WIRES --env faithnet --remote fieldops-chartered 2>/dev/null`, { encoding: 'utf8' });
+    const at = raw.indexOf('[');
+    if (at < 0) throw new Error(`no ledger value in what wrangler printed: ${raw.trim().slice(0, 120) || '(nothing)'}`);
+    const led = JSON.parse(raw.slice(at));
+    if (!Array.isArray(led)) throw new Error('the ledger is not a list');
     // Keep ONLY the CURRENT season's agents — the latest stagingId. Every `--restart` chartered a
     // fresh set of teams/circles and left the previous set's agents linked to the demo people, which
     // is what bloated each person's related-orgs roster (and every field read that resolves it). The
@@ -86,7 +94,10 @@ if (!ALL) {
     const live = new Map(); for (const e of current) live.set(`${e.kind}|${e.name}`, e);
     for (const e of live.values()) keep.add(lower(e.sa));
     log(`keeping the realm and the current season's ${live.size} LIVE agents (of ${led.length} ledger entries; restart duplicates and older seasons let go)`);
-  } catch { log('could not read the season ledger; keeping only the realm'); }
+  } catch (e) {
+    console.error(`could not read the season ledger (${e instanceof Error ? e.message : e}).\nRefusing to sweep: without it the current season's agents cannot be told from stale ones. Pass --all to let go of everything but the realm on purpose.`);
+    process.exit(1);
+  }
 } else log('--all: cleaning the current season too; only the realm (org, workspace, partners) stays');
 
 // Everyone whose Home holds game links: every character persona, and every custodian person.
