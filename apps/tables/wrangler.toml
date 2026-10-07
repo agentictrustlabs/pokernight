@@ -118,6 +118,7 @@ COMMISSION_DIRECTOR = ""
 # FIELD OPERATIONS: the cast of a season (`role=agent@custodian`), who narrates, and the estate note (a secret in production).
 FIELDOPS_CAST = ""
 FIELDOPS_CAST_AGENTS = ""
+FIELDOPS_SEALED = ""
 FIELDOPS_DIRECTOR = ""
 FIELDOPS_ESTATE = ""
 MYSTERY_DIRECTOR = ""
@@ -410,5 +411,8 @@ COMMISSION_DIRECTOR = ""
 FIELDOPS_CAST = "naomi=naomi-elena.me@elena,yusuf=yusuf-dave.me@dave,carla=carla-carol.me@carol,farid=farid-bob.me@bob,grace=grace-alice.me@alice,tomas=tomas-nathan.me@nathan,olena=olena-david.me@david,mark=mark-bob.me@bob,hodan=hodan-elena.me@elena,luis=luis-dave.me@dave,priya=priya-alice.me@alice,sam=sam-nathan.me@nathan,dan=dan-carol.me@carol,kim=kim-david.me@david,jenna=jenna-alice.me@alice,walt=walt-bob.me@bob"
 FIELDOPS_CAST_NORTH_OF_DENVER = "naomi=naomi-elena.me@elena,yusuf=yusuf-dave.me@dave,carla=carla-carol.me@carol,farid=farid-bob.me@bob,grace=grace-alice.me@alice,tomas=tomas-nathan.me@nathan,olena=olena-david.me@david,mark=mark-bob.me@bob,hodan=hodan-elena.me@elena,luis=luis-dave.me@dave,priya=priya-alice.me@alice,sam=sam-nathan.me@nathan,dan=dan-carol.me@carol,kim=kim-david.me@david,jenna=jenna-alice.me@alice,walt=walt-bob.me@bob"
 FIELDOPS_CAST_AGENTS = ""
+# A season of this scenario is PLAYED ONCE: nothing opens it anew or starts it over (`FIELDOPS_SEALED`, env.ts). The
+# staging id is the one season anybody may look at, as a town.
+FIELDOPS_SEALED = "north-of-denver:6d76b03c-6930-4c94-9c39-dfc6782ce4f5"
 FIELDOPS_DIRECTOR = ""
 MYSTERY_DIRECTOR = "belvedere-house-svc.faithnet.ai"

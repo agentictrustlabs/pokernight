@@ -72,7 +72,7 @@ import { MISSION_REGISTRY_ID, missionRegistryProfile, orgOfEntryId, refOf, type 
 import { admitMission, missionRegistryConfigured, operatorAgentId, receiptFor, receiptHashOf, verifyOperatorReceipt, type MissionEnrolmentPayload } from './missions.js';
 import type { RegistrationReceiptV1 } from '@agenticprimitives/registry-kit';
 import { HOME_SESSION_TTL_MS, dropSessionRecord, mintHomeSessionToken, putSessionRecord, resolveSession } from './auth.js';
-import { a2aReviewTimeoutMs, a2aTimeoutMs, allowedOrigins, siteOrigin, type Env } from './env.js';
+import { a2aReviewTimeoutMs, a2aTimeoutMs, allowedOrigins, fieldOpsSealed, siteOrigin, type Env } from './env.js';
 import { OPERATOR_HEADER, checkOperator } from './operator.js';
 import {
   BUY_IN_TEMPLATE,
@@ -935,9 +935,15 @@ app.get('/fieldops', (c) => c.json({
       weeks: sc.weeks.length, days: sc.weeks.length * 7, cast: sc.roles.length, teams: sc.teams.map((t) => ({ id: t.id, name: t.name, corridor: t.corridor })),
       communities: (region?.communities ?? []).map((x) => ({ id: x.id, name: x.name, corridor: x.corridor, phase: x.registry.phase, resultDate: x.registry.resultDate, iri: x.iri })),
       roles: sc.roles.map((r) => ({ id: r.id, name: r.name, kind: r.kind, blurb: r.blurb, team: r.team ?? null, partner: r.partner ?? null })),
+      // Played once (`FIELDOPS_SEALED`): nothing opens it anew; `stagingId` is the one season anybody may look at.
+      sealed: fieldOpsSealed(c.env).get(sc.id) ?? null,
     };
   }),
 }));
+
+/** The refusal every door to a new season of a sealed scenario answers. */
+const sealedRefusal = (c: { json: (b: unknown, s: 409) => Response }, scenario: string, sealed: { stagingId: string | null }) =>
+  c.json({ error: `${FIELDOPS_SCENARIOS[scenario]?.name ?? scenario} is played once, and it is being played — nothing opens it anew or starts it over.`, code: 'sealed', sealed }, 409);
 
 /** YOUR OWN SEASON: one per person per scenario, made on the first ask and remade when you ask for another. */
 app.post('/fieldops/solo', async (c) => {
@@ -947,6 +953,14 @@ app.post('/fieldops/solo', async (c) => {
   const scenario = body.scenario ?? FIELDOPS_DEFAULT;
   if (!FIELDOPS_SCENARIOS[scenario]) return c.json({ error: `no such scenario: ${scenario}` }, 404);
   const stagingId = await fieldOpsId([scenario, session.playerId]);
+  // A SEALED SCENARIO: the season you have is the season you have — no restart, no other part, nothing opened anew.
+  const sealed = fieldOpsSealed(c.env).get(scenario);
+  if (sealed) {
+    const have = await fieldops(c.env, stagingId).fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}&still=1`);
+    const j = (await have.json().catch(() => ({}))) as { staging?: { stagingId?: string } | null; view?: unknown };
+    if (have.ok && j.staging?.stagingId) return c.json({ ok: true, staging: j.staging, sealed: true });
+    return sealedRefusal(c, scenario, sealed);
+  }
   const res = await fieldops(c.env, stagingId).fetch('https://staging/open', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ stagingId, owner: session.playerId, ownerName: session.name, scenario, role: body.role, restart: body.restart === true, pace: body.pace === 'short' ? 'short' : 'full' }),
@@ -968,7 +982,7 @@ app.get('/fieldops/mine', async (c) => {
   const stagingId = await fieldOpsId([scenario, session.playerId]);
   const res = await fieldops(c.env, stagingId).fetch(`https://staging/view?playerId=${encodeURIComponent(session.playerId)}&still=1`);
   const j = (await res.json().catch(() => ({}))) as { staging?: { phase?: string; role?: string } | null };
-  return c.json({ stagingId, phase: j.staging?.phase ?? null, role: j.staging?.role ?? null });
+  return c.json({ stagingId, phase: j.staging?.phase ?? null, role: j.staging?.role ?? null, sealed: fieldOpsSealed(c.env).has(scenario) });
 });
 
 /** SET ONE UP (host): the season exists, in casting, and its parts are open. */
@@ -981,6 +995,7 @@ app.post('/clubs/:clubId/fieldops', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { scenario?: string; night?: string; pace?: 'short' | 'full'; restart?: boolean };
   const scenario = body.scenario ?? FIELDOPS_DEFAULT;
   if (!FIELDOPS_SCENARIOS[scenario]) return c.json({ error: `no such scenario: ${scenario}` }, 404);
+  { const sealed = fieldOpsSealed(c.env).get(scenario); if (sealed) return sealedRefusal(c, scenario, sealed); }
   const stagingId = await fieldOpsId(['club', club, body.night ?? 'open', scenario]);
   const res = await fieldops(c.env, stagingId).fetch('https://staging/plan', {
     method: 'POST', headers: { 'content-type': 'application/json' },

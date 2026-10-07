@@ -648,11 +648,16 @@ export interface FieldOpsScenarioSummary {
   teams: Array<{ id: string; name: string; corridor: string }>;
   communities: Array<{ id: string; name: string; corridor: string; phase: number; resultDate: string | null; iri: string }>;
   roles: Array<{ id: string; name: string; kind: string; blurb: string; team: string | null; partner: string | null }>;
+  /** PLAYED ONCE: nothing opens a season of this scenario anew or starts it over; `stagingId` is the one season anybody
+   *  may look at, as a town. Null (or absent) means seasons of it open as usual. */
+  sealed?: { stagingId: string | null } | null;
 }
 export interface FieldOpsSummary {
   stagingId: string; scenario: string; region: string; role: string; day: number; week: number; phase: string;
   deadline: number | null; seedCommit: string; paused: boolean; startedAt: number; endedAt: number | null;
   club?: string; clubNight?: string; topic?: string; host: string; pace: 'short' | 'full'; director?: string;
+  /** The scenario is played once: no restart, no "another season". */
+  sealed?: boolean;
   ready: { taken: number; present: number; waitingFor: string[]; everybodyHere: boolean };
   /** What the season has written to the field app, and through which day. */
   estate: { ok: boolean; written: number; failures: string[]; at: number; throughDay: number } | null;
@@ -669,7 +674,7 @@ export const fieldOpsApi = {
     request<{ ok: boolean; staging: FieldOpsSummary }>('/fieldops/solo', { method: 'POST', body: JSON.stringify(body) }, token),
   /** Your own solo season's id + phase, if you have one — a read, so the Play card can offer to review or resume it. */
   mine: (scenario: string, token: string) =>
-    request<{ stagingId: string; phase: string | null; role: string | null }>(`/fieldops/mine?scenario=${encodeURIComponent(scenario)}`, {}, token),
+    request<{ stagingId: string; phase: string | null; role: string | null; sealed?: boolean }>(`/fieldops/mine?scenario=${encodeURIComponent(scenario)}`, {}, token),
   /** `still`: a look that moves nothing — the season is not caught up and you are not marked as there. */
   read: (stagingId: string, token: string, opts?: { still?: boolean }) =>
     request<{ staging: FieldOpsSummary; view: unknown; cast: FieldOpsPart[]; agents: FieldOpsAgentRow[] }>(`/fieldops/${encodeURIComponent(stagingId)}${opts?.still ? '?still=1' : ''}`, {}, token),

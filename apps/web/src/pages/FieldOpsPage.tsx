@@ -66,7 +66,8 @@ export function FieldOpsPage({ stagingId, session, onSignOut }: { stagingId: str
   // RESTART. `asWatch` opens the season over with NOBODY in a part — all sixteen agents play it and you look on
   // (the owner's ask, 2026-10-03). Otherwise it keeps whatever part you had. Only your OWN solo season: the POST
   // derives the staging from you, so it would miss a club night (which its host restarts its own way).
-  const canRestart = !!session && !!staging && staging.host === session.playerId && !staging.club;
+  // A SEALED season (played once — `staging.sealed`) is never started over, by anybody, from anywhere here.
+  const canRestart = !!session && !!staging && staging.host === session.playerId && !staging.club && !staging.sealed;
   const again = async (asWatch = false) => {
     if (!session || !view) return;
     if (view.phase !== 'revealed' && !window.confirm(asWatch ? 'Restart this season with all agents? The current run is cleared.' : 'Restart this season? The current run is cleared.')) return;
@@ -128,7 +129,7 @@ export function FieldOpsPage({ stagingId, session, onSignOut }: { stagingId: str
           <Activity view={view} filter={filter} setFilter={setFilter} selectedTown={selectedTown} act={act} whisperTo={whisperTo} setWhisperTo={setWhisperTo} />
         </main>
         <aside className="mystery-side">
-          {view.reveal ? <Reveal view={view} staging={staging} agents={state.agents} onAgain={() => void again(false)} busy={busy} /> : null}
+          {view.reveal ? <Reveal view={view} staging={staging} agents={state.agents} onAgain={staging?.sealed ? null : () => void again(false)} busy={busy} /> : null}
           <YourDay view={view} act={act} selectedTown={selectedTown} />
           <Teams view={view} onPerson={(r) => setWhisperTo((cur) => (cur === r ? null : r))} whisperTo={whisperTo} charters={staging?.charters ?? []} />
           <AgentReport view={view} agents={state.agents} />
@@ -591,7 +592,7 @@ function Estate({ staging, isHost, stagingId, token }: { staging: FieldOpsClient
 }
 
 /** THE REVEAL — the readiness, the score, the agents' tally. */
-function Reveal({ view, staging, agents, onAgain, busy }: { view: FieldOpsView; staging: FieldOpsClientState['staging']; agents: FieldOpsAgentRow[]; onAgain: () => void; busy: boolean }) {
+function Reveal({ view, staging, agents, onAgain, busy }: { view: FieldOpsView; staging: FieldOpsClientState['staging']; agents: FieldOpsAgentRow[]; onAgain: (() => void) | null; busy: boolean }) {
   const r = view.reveal!;
   const s = r.score;
   return (
@@ -608,7 +609,9 @@ function Reveal({ view, staging, agents, onAgain, busy }: { view: FieldOpsView; 
         <ul className="fo-score">{s.parts.map((p) => { const a = agents.find((x) => x.role === p.role); return <li key={p.role}><strong>{p.name}</strong> ({p.mind}): {p.acts} acts on {p.days} days{a ? ` · asked ${a.asked}, answered ${a.answered}, applied ${a.applied}, refused ${a.refused + a.unparsed}, missed ${a.missed}${a.byRules ? `, house played ${a.byRules}` : ''}` : ''}</li>; })}</ul>
       </details>
       {staging?.estate ? <p className="small">{staging.estate.ok ? `${staging.estate.written} records at the field app.` : `Field app: ${staging.estate.failures.join('; ')}`}</p> : null}
-      <button type="button" className="primary" disabled={busy} onClick={onAgain}>{busy ? 'Opening…' : 'Another season'}</button>
+      {onAgain
+        ? <button type="button" className="primary" disabled={busy} onClick={onAgain}>{busy ? 'Opening…' : 'Another season'}</button>
+        : <p className="hint small">This season was played once. What it built stands — see it as a town.</p>}
     </section>
   );
 }

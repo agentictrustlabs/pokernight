@@ -755,6 +755,16 @@ with diagrams a non-engineer can follow: `docs/ARCHITECTURE-ADVISER.md`.
   AND THE READ IS STILL (`?still=1`): an ordinary `/view` catches the clock up, so a season nobody was playing gained an
   EMPTY DAY every time anybody loaded Play (`/fieldops/mine`) or looked at the town — day 13 became 15 that way. A
   still read ticks nothing and marks nobody present; `mine` and the town use it, and the walk checks the day held.
+  **A SEASON NORTH OF DENVER IS PLAYED ONCE** (2026-10-06, the owner: nothing in the app may start it over and lose
+  what was played). Every season of a scenario writes into the SAME estate, and opening one over retires the last
+  one's agents and clears its run — so `FIELDOPS_SEALED` (`wrangler.toml` `[env.faithnet.vars]`,
+  `scenario[:stagingId],…`; `fieldOpsSealed` in `env.ts`) seals a scenario: `/fieldops/solo` answers the season a
+  person already has (no restart, no other part) and refuses one they do not (409 `sealed`), a club's set-up is
+  refused, `/fieldops` says `sealed` per scenario and the summary says `sealed` per season, and the client draws no
+  "Set up the season", no "Restart · all agents", no "Another season" and no club set-up for it — only Resume and the
+  town. The staging id in the var is the one season anybody signed in may look at. ON FAITHNET THIS MEANS
+  `pnpm walk:fieldops` and `pnpm watch:fieldops --restart` (both open with `restart: true`) are refused there until the
+  seal is lifted; the dev/test env is unsealed.
   **A SEASON'S RECORDS ARE WIPED, THE ESTATE IS KEPT** (2026-10-01, `pnpm reset:fieldops`): a season's records live in
   folders of their own (`field/activities|observations|circles|churches|body-communities|phase-results`), so a reset deletes
   those artifacts one at a time through the Home's library `delete` (sequential — the catalog is rewritten whole on each),

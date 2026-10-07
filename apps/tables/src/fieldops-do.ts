@@ -24,7 +24,7 @@ import { a2aTimeoutMs } from './a2a.js';
 import { houseAuthorization } from './house-caller.js';
 import { fieldEstate, publishSeasonGraph, writeSeason, type EstateWriteReport, type PhaseSeries } from './field-estate.js';
 import { equipCharacter, fieldRoleOffer, teamRoleFor, type HeldPack } from './field-roles.js';
-import { fieldOpsCast, fieldOpsCastAgents, fieldOpsDirector, type Env } from './env.js';
+import { fieldOpsCast, fieldOpsCastAgents, fieldOpsDirector, fieldOpsSealed, type Env } from './env.js';
 
 interface Attachment { playerId: string; name: string }
 interface Meta {
@@ -353,6 +353,8 @@ export class FieldOpsDO extends DurableObject<Env> {
       deadline: s?.deadline ?? null, seedCommit: s?.seedCommit ?? '', paused: this.paused, startedAt: s?.startedAt ?? 0, endedAt: s?.endedAt ?? null,
       ...(m.club ? { club: m.club } : {}), ...(m.night ? { clubNight: m.night } : {}), ...(m.topic ? { topic: m.topic } : {}),
       host: m.owner, pace: m.pace ?? 'full', ...(m.director ? { director: m.director } : {}),
+      // Played once (`FIELDOPS_SEALED`): the client draws no restart and no "another season" for it.
+      sealed: fieldOpsSealed(this.env).has(m.scenario),
       ready: this.readiness(),
       estate: m.estate ? { ...m.estate, throughDay: m.estateDay ?? 0 } : null,
       graph: m.graph ?? null,

@@ -98,6 +98,15 @@ export interface Env {
    *  baptize, train, support, report) is applied only when the agent's run proves it (the capture capability applied
    *  + an executor receipt). Off by default so the dump keeps working until the walk is green. */
   FIELDOPS_REQUIRE_PROOF?: string;
+  /**
+   * A SEALED SEASON IS PLAYED ONCE (the owner, 2026-10-06). Every season of a scenario writes into the SAME estate —
+   * the realm's workspace, the teams it charters, the circles and churches, the records at the field app — and
+   * opening a season over retires the last one's agents and clears its run. So a scenario named here cannot be opened
+   * anew or started over from any door: `/fieldops/solo` answers the season a person already has and refuses one they
+   * do not, a club cannot set one up, and the client draws no button for it. `scenario[:stagingId],…` — the staging
+   * id, when given, is the season everybody else may look at (the town). Empty means nothing is sealed.
+   */
+  FIELDOPS_SEALED?: string;
   /** JSON (`field-estate.ts` `FieldEstate`): the workspace, teams, partners, workers and body pool a season writes to. A secret; KV `CLUB_WIRES` under `fieldops-estate` is the other place it may live. */
   FIELDOPS_ESTATE?: string;
   /** The public registry, for publishing a season's founded bodies to the game's own graph at the reveal. Secrets; absent means not published. */
@@ -398,6 +407,15 @@ export function commissionCast(env: Env, scenarioId?: string): CastMember[] {
 export function fieldOpsCast(env: Env, scenarioId?: string): CastMember[] {
   const own = scenarioId ? (env as unknown as Record<string, string | undefined>)[`FIELDOPS_CAST_${scenarioId.toUpperCase().replace(/-/g, '_')}`] : undefined;
   return parseCast((own ?? '').trim() ? own : env.FIELDOPS_CAST);
+}
+/** The sealed scenarios — `scenario[:stagingId]` per entry — or an empty map. */
+export function fieldOpsSealed(env: Env): Map<string, { stagingId: string | null }> {
+  const out = new Map<string, { stagingId: string | null }>();
+  for (const entry of (env.FIELDOPS_SEALED ?? '').split(',')) {
+    const [scenario, staging] = entry.split(':').map((x) => x.trim());
+    if (scenario) out.set(scenario, { stagingId: staging && /^[0-9a-f-]{36}$/i.test(staging) ? staging : null });
+  }
+  return out;
 }
 export function fieldOpsCastAgents(env: Env): string[] {
   return (env.FIELDOPS_CAST_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);

@@ -156,6 +156,15 @@ export function MysteryNight({ clubId, session, host, game = 'mystery' }: { club
   }, [clubId, session.token, api]);
 
   useEffect(() => { void load(); const t = setInterval(() => void load(), 5000); return () => clearInterval(t); }, [load]);
+  // A SEALED SEASON (Field Operations, played once) is not a club's to set up either: the Worker would refuse it, and the
+  // host is told so instead of being offered a button that refuses.
+  const [sealed, setSealed] = useState(false);
+  useEffect(() => {
+    if (game !== 'fieldops') return;
+    let alive = true;
+    fieldOpsApi.scenarios().then((r) => alive && setSealed(!!r.scenarios[0]?.sealed)).catch(() => {});
+    return () => { alive = false; };
+  }, [game]);
 
   const mine = cast.find((c) => c.takenById === session.playerId);
   const casting = staging?.phase === 'casting';
@@ -170,7 +179,9 @@ export function MysteryNight({ clubId, session, host, game = 'mystery' }: { club
       <section className="panel mystery-plan">
         <Curtain status="" game={game} />
         {err ? <div className="form-error">{err}</div> : null}
-        {host ? (
+        {host && sealed ? (
+          <p className="hint" data-testid="night-sealed">This season is played once, and it is being played — a club cannot set one up.</p>
+        ) : host ? (
           <div className="row wrap">
             <select value={pace} onChange={(e) => setPace(e.target.value as 'short' | 'full')}>
               <option value="short">{api.shortLine}</option>

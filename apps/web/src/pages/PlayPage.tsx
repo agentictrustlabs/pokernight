@@ -25,11 +25,13 @@ import { Drawer } from '../components/Drawer';
 export function PlayPage({ session }: { session: AppSession }) {
   return (
     <div className="play">
+      {/* THE TABLES FIRST (the owner, 2026-10-06): hold'em, then canasta — the games most people came for — and the
+          nights after them. */}
+      <PracticeCard session={session} game="poker" />
+      <PracticeCard session={session} game="canasta" />
       <MysteryCard session={session} />
       <CommissionCard session={session} />
       <FieldOpsCard session={session} />
-      <PracticeCard session={session} game="canasta" />
-      <PracticeCard session={session} game="poker" />
       <Running session={session} />
       {/* NO MISSIONS HERE (2026-09-15). Somebody who has just come in came to play; the missions have a page
           of their own and a row in the rail, and a map on the front door for anybody still deciding. */}
@@ -240,6 +242,7 @@ function FieldOpsCard({ session }: { session: AppSession }) {
     return () => { alive = false; };
   }, []);
   const chosen = scenarios?.[0] ?? null;
+  const sealed = chosen?.sealed ?? null;
   // A SEASON YOU ALREADY OPENED is yours to go back into — to watch it finish, or to review the reveal. Re-entering
   // the staging page observes it; it is the `/solo` POST (the primary button) that would start a revealed one over.
   useEffect(() => {
@@ -262,16 +265,24 @@ function FieldOpsCard({ session }: { session: AppSession }) {
           {chosen ? chosen.blurb : scenarios === null ? 'A season of field work north of Denver, played by real agents toward Phase 7.' : 'No season is being offered here at the moment. Try again in a minute.'}
         </p>
         {chosen ? <p className="hint small">The registry's floor: {Object.entries(floors).sort().map(([p, n]) => `${n} at P${p}`).join(', ')}{chosen.registryReadAt ? ` (read ${chosen.registryReadAt.slice(0, 10)})` : ''}.</p> : null}
-        <button type="button" className="primary" disabled={!chosen} onClick={() => setOpen(true)}>Set up the season…</button>
+        {/* PLAYED ONCE. A sealed scenario has no set-up button and no drawer: every season of it writes into the same
+            estate, and opening one over retires the last one's agents and clears what was played. What is offered is
+            the season a person has, and the town of the one everybody may look at. */}
+        {sealed ? (
+          <p className="hint small" data-testid="play-field-sealed">This season is played once, and it is being played. Nothing here starts it over.</p>
+        ) : (
+          <button type="button" className="primary" disabled={!chosen} onClick={() => setOpen(true)}>Set up the season…</button>
+        )}
         {mine ? (
           <a className="small play-resume" href="#" onClick={(e) => { e.preventDefault(); goTo(fieldOpsHash(mine.stagingId)); }}>
             {mine.phase === 'revealed' ? 'Review your last season →' : 'Resume your season →'}
           </a>
         ) : null}
         {/* The town is a READ of what the season built: it opens no socket, so looking at it wakes nobody's agent. */}
-        {mine ? <a className="small play-resume" href={fieldTownHash(mine.stagingId)} data-testid="play-field-town">See what it built, as a town →</a> : null}
+        {mine ? <a className="small play-resume" href={fieldTownHash(mine.stagingId)} data-testid="play-field-town">See what it built, as a town →</a>
+          : sealed?.stagingId ? <a className="small play-resume" href={fieldTownHash(sealed.stagingId)} data-testid="play-field-town">See the season as a town →</a> : null}
       </div>
-      <Drawer open={open} title={chosen ? chosen.name : 'Field Operations'} onClose={() => setOpen(false)}>
+      <Drawer open={open && !sealed} title={chosen ? chosen.name : 'Field Operations'} onClose={() => setOpen(false)}>
         {chosen ? (
           <label className="mystery-part">
             How long you have
