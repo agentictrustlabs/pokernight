@@ -13,18 +13,18 @@
   },
   "dependencies": {
     "@agenticprimitives/connect-client": "1.0.0-alpha.14",
-    "@cloudflare/realtimekit-react": "0.1.0",
+    "@cloudflare/realtimekit-react": "2.0.2",
     "@cloudflare/realtimekit-virtual-background": "0.0.2",
+    "@pokernight/commission": "workspace:*",
     "@pokernight/engine": "workspace:*",
+    "@pokernight/fieldops": "workspace:*",
     "@pokernight/missions": "workspace:*",
     "@pokernight/mystery": "workspace:*",
     "@pokernight/protocol": "workspace:*",
     "leaflet": "1.9.4",
     "playcanvas": "2.22.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "@pokernight/commission": "workspace:*",
-    "@pokernight/fieldops": "workspace:*"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@pokernight/canasta": "workspace:*",
