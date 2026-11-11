@@ -213,7 +213,8 @@ const writeChallenge = (a: { person: string; orgAgent: string; contentHash: Hex;
 const siteCaveats = (validUntil: number) => [
   buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, validUntil)),
   buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)),
-  buildCaveat(CONTRACTS.allowedTargetsEnforcer, encodeAllowedTargetsTerms([CONTRACTS.agentRelationship, CONTRACTS.agentNameRegistry, CONTRACTS.permissionlessSubregistry].filter(Boolean) as `0x${string}`[])),
+  // Generation 4 has no legacy permissionlessSubregistry: the oversight targets are the Home's own two (spec 445).
+  buildCaveat(CONTRACTS.allowedTargetsEnforcer, encodeAllowedTargetsTerms([CONTRACTS.agentRelationship, CONTRACTS.agentNameRegistry] as `0x${string}`[])),
 ];
 /** STEWARDSHIP: org → steward, the shape the Home reads as "speaks for it" — governance targets, no record scope. */
 async function stewardshipWire(doors: EstateDoors, orgSigner: Signer, orgSa: string, stewardSa: string) {

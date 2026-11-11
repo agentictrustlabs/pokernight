@@ -25,7 +25,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPublicClient, encodeFunctionData, http, keccak256, toHex, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CONTRACTS } from './lib/faithchain-deployments.mts';
+import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
 import { urnToBytes32 } from '@agenticprimitives/registry-kit';
 import { createTreasuryClient, type AgentAccountSpec } from '@pokernight/treasury';
 import { MISSION_REGISTRY_ID } from '@pokernight/missions';

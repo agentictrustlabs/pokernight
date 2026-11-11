@@ -40,5 +40,86 @@
       "name": "Trinity Lutheran Church (game agent)"
     }
   },
-  "workers": {}
+  "workers": {
+    "naomi": {
+      "sa": "0x2859760bdde863f60d91e774d3227be61712778e",
+      "custodian": "elena",
+      "name": "naomi-elena.me"
+    },
+    "yusuf": {
+      "sa": "0x5896767518b09a4c204cf961829e34438c8cd5a2",
+      "custodian": "dave",
+      "name": "yusuf-dave.me"
+    },
+    "carla": {
+      "sa": "0xbb2ad238bd8ba2bcb5a091e8e39a339b07468ab0",
+      "custodian": "carol",
+      "name": "carla-carol.me"
+    },
+    "farid": {
+      "sa": "0xf9f73f11fb0a1007a1e129caa2fea88d41e65789",
+      "custodian": "bob",
+      "name": "farid-bob.me"
+    },
+    "grace": {
+      "sa": "0x2e01f7ab0bbd77f66986b33dd19d3b2d305ddbf0",
+      "custodian": "alice",
+      "name": "grace-alice-1.me"
+    },
+    "tomas": {
+      "sa": "0x497c58fcd3600328818ef31ef10a8a8c057b737c",
+      "custodian": "nathan",
+      "name": "tomas-nathan.me"
+    },
+    "olena": {
+      "sa": "0x5606dbc92cf31cffcc50036c19d13892cf58189f",
+      "custodian": "david",
+      "name": "olena-david.me"
+    },
+    "mark": {
+      "sa": "0xc938d25e856ba1d10ec52cc4b30d7c5ddfd75c59",
+      "custodian": "bob",
+      "name": "mark-bob.me"
+    },
+    "hodan": {
+      "sa": "0x56d5839d49f2ac2c447b025837399a49d99d7340",
+      "custodian": "elena",
+      "name": "hodan-elena.me"
+    },
+    "luis": {
+      "sa": "0xea8cd9b2793be3f23b4d989ff25dda91e464229f",
+      "custodian": "dave",
+      "name": "luis-dave.me"
+    },
+    "priya": {
+      "sa": "0x4fd2be8505c12daece52a1e98cf87ed960b195a6",
+      "custodian": "alice",
+      "name": "priya-alice.me"
+    },
+    "sam": {
+      "sa": "0x539c64f8b9096ce6681d1eb77a3661b8b1d7dd74",
+      "custodian": "nathan",
+      "name": "sam-nathan.me"
+    },
+    "dan": {
+      "sa": "0xce1d683b299e08009bf5144f0ada643dcecb379d",
+      "custodian": "carol",
+      "name": "dan-carol.me"
+    },
+    "kim": {
+      "sa": "0x0be4ffa9af05b68922db7be8932796a5706e1527",
+      "custodian": "david",
+      "name": "kim-david-1.me"
+    },
+    "jenna": {
+      "sa": "0x1dc1ab70892274f7a57970300cb33bad25ad5c06",
+      "custodian": "alice",
+      "name": "jenna-alice.me"
+    },
+    "walt": {
+      "sa": "0xbc79093f7e5fb83ad536807f98f9eac5bda51b22",
+      "custodian": "bob",
+      "name": "walt-bob.me"
+    }
+  }
 }

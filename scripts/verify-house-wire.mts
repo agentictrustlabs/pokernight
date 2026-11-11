@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { createPublicClient, http, type Address, type Hex } from 'viem';
 import { hashDelegation } from '@agenticprimitives/delegation';
 import { wireToDelegation, checkSessionWireShape } from '@agenticprimitives/a2a';
-import { CONTRACTS } from './lib/faithchain-deployments.mts';
+import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
 const wire = JSON.parse(readFileSync(process.argv[2]!, 'utf8'));
 const house = JSON.parse(readFileSync(new URL('../house.faithchain.json', import.meta.url), 'utf8'));
 const d = wireToDelegation(wire);

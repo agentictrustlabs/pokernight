@@ -30,7 +30,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPublicClient, http, keccak256, toHex, type Address, type Hex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { CONTRACTS } from './lib/faithchain-deployments.mts';
+import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
 import {
   createTreasuryClient,
   formatAmount,

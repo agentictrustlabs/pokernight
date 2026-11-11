@@ -389,12 +389,12 @@ HOUSE_DELEGATE = "0x989121B74c96dF8Cc82beebf4C46Ec0C6D6C09f3"
 #   the doctor    · Dr Halloran      halloran-carol.me   Carol Mbeki
 #   the chef      · Marek Novák      marek-dave.me       Dave Silva
 #   the journalist· Nadia Kowal      nadia-nathan.me     Nathan
-#   the guide     · Sofia Lindqvist  sofia-david.me      David
+#   the guide     · Sofia Lindqvist  sofia-david-1.me      David
 #   the widow     · Mme Perrin       perrin-alice.me     Alice Okoro
 #
 # Alice holds three people — her own, the heiress and the widow — which is the arrangement working rather
 # than an accident: a custodian may be several names, and only one of them is the one her Home opens as.
-MYSTERY_CAST = "concierge=emile-elena.me@elena,heiress=delphine-alice.me@alice,instructor=kai-bob.me@bob,doctor=halloran-carol.me@carol,chef=marek-dave.me@dave,journalist=nadia-nathan.me@nathan,guide=sofia-david.me@david,widow=perrin-alice.me@alice"
+MYSTERY_CAST = "concierge=emile-elena.me@elena,heiress=delphine-alice.me@alice,instructor=kai-bob.me@bob,doctor=halloran-carol.me@carol,chef=marek-dave.me@dave,journalist=nadia-nathan.me@nathan,guide=sofia-david-1.me@david,widow=perrin-alice.me@alice"
 # The positional list stays for a deployment whose stand-ins really are interchangeable. This one's are not.
 MYSTERY_CAST_AGENTS = ""
 # GREAT COMMISSION: the same three for a commission night — `role=agent@custodian` for the parts, and who narrates.
@@ -402,14 +402,14 @@ MYSTERY_CAST_AGENTS = ""
 # scenario arrived. `COMMISSION_CAST` is the fallback; a night that names its own wins.
 COMMISSION_CAST = "returnee=naw-elena.me@elena,household=abdi-dave.me@dave,agency=dale-carol.me@carol,funder=marguerite-bob.me@bob,researcher=ruth-alice.me@alice,convener=tom-nathan.me@nathan,welcomer=bonnie-david.me@david"
 COMMISSION_CAST_THURSDAY_IN_GREELEY = "returnee=naw-elena.me@elena,household=abdi-dave.me@dave,agency=dale-carol.me@carol,funder=marguerite-bob.me@bob,researcher=ruth-alice.me@alice,convener=tom-nathan.me@nathan,welcomer=bonnie-david.me@david"
-COMMISSION_CAST_FIRST_LIGHT = "returnee=ilse-elena.me@elena,household=teodor-dave.me@dave,agency=margit-carol.me@carol,funder=anselm-bob.me@bob,researcher=wren-alice.me@alice,convener=bram-nathan.me@nathan,welcomer=caspar-david.me@david"
-COMMISSION_CAST_SECOND_WINTER = "returnee=ilse-elena.me@elena,household=teodor-dave.me@dave,agency=margit-carol.me@carol,funder=anselm-bob.me@bob,researcher=wren-alice.me@alice,convener=bram-nathan.me@nathan,welcomer=caspar-david.me@david"
+COMMISSION_CAST_FIRST_LIGHT = "returnee=ilse-elena.me@elena,household=teodor-dave.me@dave,agency=margit-carol.me@carol,funder=anselm-bob.me@bob,researcher=wren-alice.me@alice,convener=bram-nathan.me@nathan,welcomer=caspar-david-1.me@david"
+COMMISSION_CAST_SECOND_WINTER = "returnee=ilse-elena.me@elena,household=teodor-dave.me@dave,agency=margit-carol.me@carol,funder=anselm-bob.me@bob,researcher=wren-alice.me@alice,convener=bram-nathan.me@nathan,welcomer=caspar-david-1.me@david"
 COMMISSION_CAST_AGENTS = ""
 COMMISSION_DIRECTOR = ""
 # FIELD OPERATIONS: sixteen parts, each a persona of a demo person (charter-cast.mts --cast demo/fieldops-cast.json). Empty until
 # chartered; the house plays every part until then. The estate note (`FIELDOPS_ESTATE`) is a secret, not a var.
-FIELDOPS_CAST = "naomi=naomi-elena.me@elena,yusuf=yusuf-dave.me@dave,carla=carla-carol.me@carol,farid=farid-bob.me@bob,grace=grace-alice.me@alice,tomas=tomas-nathan.me@nathan,olena=olena-david.me@david,mark=mark-bob.me@bob,hodan=hodan-elena.me@elena,luis=luis-dave.me@dave,priya=priya-alice.me@alice,sam=sam-nathan.me@nathan,dan=dan-carol.me@carol,kim=kim-david.me@david,jenna=jenna-alice.me@alice,walt=walt-bob.me@bob"
-FIELDOPS_CAST_NORTH_OF_DENVER = "naomi=naomi-elena.me@elena,yusuf=yusuf-dave.me@dave,carla=carla-carol.me@carol,farid=farid-bob.me@bob,grace=grace-alice.me@alice,tomas=tomas-nathan.me@nathan,olena=olena-david.me@david,mark=mark-bob.me@bob,hodan=hodan-elena.me@elena,luis=luis-dave.me@dave,priya=priya-alice.me@alice,sam=sam-nathan.me@nathan,dan=dan-carol.me@carol,kim=kim-david.me@david,jenna=jenna-alice.me@alice,walt=walt-bob.me@bob"
+FIELDOPS_CAST = "naomi=naomi-elena.me@elena,yusuf=yusuf-dave.me@dave,carla=carla-carol.me@carol,farid=farid-bob.me@bob,grace=grace-alice-1.me@alice,tomas=tomas-nathan.me@nathan,olena=olena-david.me@david,mark=mark-bob.me@bob,hodan=hodan-elena.me@elena,luis=luis-dave.me@dave,priya=priya-alice.me@alice,sam=sam-nathan.me@nathan,dan=dan-carol.me@carol,kim=kim-david-1.me@david,jenna=jenna-alice.me@alice,walt=walt-bob.me@bob"
+FIELDOPS_CAST_NORTH_OF_DENVER = "naomi=naomi-elena.me@elena,yusuf=yusuf-dave.me@dave,carla=carla-carol.me@carol,farid=farid-bob.me@bob,grace=grace-alice-1.me@alice,tomas=tomas-nathan.me@nathan,olena=olena-david.me@david,mark=mark-bob.me@bob,hodan=hodan-elena.me@elena,luis=luis-dave.me@dave,priya=priya-alice.me@alice,sam=sam-nathan.me@nathan,dan=dan-carol.me@carol,kim=kim-david-1.me@david,jenna=jenna-alice.me@alice,walt=walt-bob.me@bob"
 FIELDOPS_CAST_AGENTS = ""
 # A season of this scenario is PLAYED ONCE: nothing opens it anew or starts it over (`FIELDOPS_SEALED`, env.ts). The
 # staging id is the one season anybody may look at, as a town.

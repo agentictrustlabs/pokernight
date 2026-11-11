@@ -15,8 +15,8 @@ importers:
         specifier: 1.0.0-alpha.24
         version: 1.0.0-alpha.24(@agenticprimitives/connect-auth@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))
       '@agenticprimitives/contracts':
-        specifier: 1.0.0-alpha.24
-        version: 1.0.0-alpha.24(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))
+        specifier: 1.0.0-alpha.48
+        version: 1.0.0-alpha.48(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))
       '@agenticprimitives/delegation':
         specifier: 1.0.0-alpha.24
         version: 1.0.0-alpha.24(@agenticprimitives/agent-account@1.0.0-alpha.24(@agenticprimitives/connect-auth@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/audit@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24))(@agenticprimitives/connect-auth@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/key-custody@1.0.0-alpha.24(@agenticprimitives/audit@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24))(@agenticprimitives/connect-auth@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))
@@ -176,8 +176,8 @@ importers:
         specifier: 1.0.0-alpha.14
         version: 1.0.0-alpha.14
       '@agenticprimitives/contracts':
-        specifier: 1.0.0-alpha.24
-        version: 1.0.0-alpha.24(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))
+        specifier: 1.0.0-alpha.48
+        version: 1.0.0-alpha.48(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))
       '@agenticprimitives/delegation':
         specifier: 1.0.0-alpha.24
         version: 1.0.0-alpha.24(@agenticprimitives/agent-account@1.0.0-alpha.24(@agenticprimitives/connect-auth@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/audit@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24))(@agenticprimitives/connect-auth@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/key-custody@1.0.0-alpha.24(@agenticprimitives/audit@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24))(@agenticprimitives/connect-auth@1.0.0-alpha.24(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76)))(@agenticprimitives/types@1.0.0-alpha.24)(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))
@@ -572,8 +572,8 @@ packages:
   '@agenticprimitives/connect-client@1.0.0-alpha.14':
     resolution: {integrity: sha512-TFXB5Ktlbec752kCSmLdcpqjLyOvBvTWAU16NbKEwgchIuOLbMLzNCaR3I5g1eIrgA7F2gPHqt5PncnmM8+Uaw==}
 
-  '@agenticprimitives/contracts@1.0.0-alpha.24':
-    resolution: {integrity: sha512-swCDZXxfO036fCylSMgBDzY7PiYqKJ1tMiA9HDpvtjY+rPlTl8zGHtqPaCismjvLyk9IAl85wQgq+zsah6tGKA==}
+  '@agenticprimitives/contracts@1.0.0-alpha.48':
+    resolution: {integrity: sha512-RKtWvX/AkqKvssAmrFkt+WWs0v0A/Xl6hpjBbsK+Q3gG5CTPohdyUifwqUxa4nCxMToctb+3LXqJe3kn3K5/Mw==}
     peerDependencies:
       viem: ^2.52.2
 
@@ -2854,7 +2854,7 @@ snapshots:
       '@agenticprimitives/fedcm-rp': 1.0.0-alpha.8
       '@agenticprimitives/types': 1.0.0-alpha.24
 
-  '@agenticprimitives/contracts@1.0.0-alpha.24(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))':
+  '@agenticprimitives/contracts@1.0.0-alpha.48(viem@2.56.3(typescript@5.9.3)(zod@3.25.76))':
     dependencies:
       viem: 2.56.3(typescript@5.9.3)(zod@3.25.76)
 
