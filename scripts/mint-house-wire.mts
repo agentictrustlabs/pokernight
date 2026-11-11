@@ -33,7 +33,7 @@ import type { Address, Hex } from 'viem';
 import { ROOT_AUTHORITY, buildCaveat, encodeAllowedMethodsTerms, encodeTimestampTerms, hashDelegation, type Delegation } from '@agenticprimitives/delegation';
 import { delegationToWire, skillSelector } from '@agenticprimitives/a2a';
 import { STANDARD_SURFACE_SKILL } from '@agenticprimitives/a2a/standard';
-import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
+import { CONTRACTS } from './lib/faithchain-deployments.mts';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);

@@ -45,7 +45,7 @@ export interface EstateDoors {
 }
 export const DEFAULT_DOORS: Omit<EstateDoors, 'home' | 'clientId' | 'chainId'> = {
   a2a: 'https://a2a.faithnet.io', mcp: 'https://mcp.faithnet.io', origin: 'https://www.faithnet.me',
-  deliveryServiceSa: '0x0AF2455e3f76594E81d9042aD5FE22A5A35dc57f', interactionsServiceSa: '0x39508624387fed3b9d6dd15ba86d3ace8a3f0a6a',
+  deliveryServiceSa: '0xAE7ABD2B536d4B7bC9A530CBB81470810492957C', interactionsServiceSa: '0xAE7ABD2B536d4B7bC9A530CBB81470810492957C',
   registry: 'https://skills-a2a-production.richardpedersen3.workers.dev',
 };
 const MCP_SERVER_ID = 'demo-mcp';
@@ -213,7 +213,7 @@ const writeChallenge = (a: { person: string; orgAgent: string; contentHash: Hex;
 const siteCaveats = (validUntil: number) => [
   buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, validUntil)),
   buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)),
-  buildCaveat(CONTRACTS.allowedTargetsEnforcer, encodeAllowedTargetsTerms([CONTRACTS.agentRelationship, CONTRACTS.agentNameRegistry, CONTRACTS.permissionlessSubregistry])),
+  buildCaveat(CONTRACTS.allowedTargetsEnforcer, encodeAllowedTargetsTerms([CONTRACTS.agentRelationship, CONTRACTS.agentNameRegistry, CONTRACTS.permissionlessSubregistry].filter(Boolean) as `0x${string}`[])),
 ];
 /** STEWARDSHIP: org → steward, the shape the Home reads as "speaks for it" — governance targets, no record scope. */
 async function stewardshipWire(doors: EstateDoors, orgSigner: Signer, orgSa: string, stewardSa: string) {

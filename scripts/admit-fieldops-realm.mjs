@@ -138,8 +138,8 @@ const SCOPES = [
   { server: 'demo-mcp', resources: ['vault:uupg:attestation', 'vault:uupg:attestations', 'vault:uupg:assessed', 'vault:uupg:coalition', 'vault:uupg:segment-def', 'vault:uupg:org-profile', 'vault:uupg:strategy', 'vault:newcity:*', 'vault:family:*', 'vault:field:*'], ops: ['read'] },
   { server: 'demo-mcp', resources: ['vault:family:*', 'vault:field:*', 'vault:cardroom.*'], ops: ['read', 'write'] },
 ];
-const INTERACTIONS_SA = note.interactionsServiceSa || '0x39508624387fed3b9d6dd15ba86d3ace8a3f0a6a';
-const DELIVERY_SA = note.deliveryServiceSa || '0x0AF2455e3f76594E81d9042aD5FE22A5A35dc57f';
+const INTERACTIONS_SA = note.interactionsServiceSa || '0xAE7ABD2B536d4B7bC9A530CBB81470810492957C';
+const DELIVERY_SA = note.deliveryServiceSa || '0xAE7ABD2B536d4B7bC9A530CBB81470810492957C';
 // Spec 408 §2.1 session-audience sentinel (off-chain, judged in the vault): first 20 bytes of keccak256 of
 // `urn:smart-agent:session-audience`. A DEL-001 leaf that names no audience now reads as stale, so an org leaf
 // must present BOTH service agents (interactions + delivery, where content.* lives) or content writes 409.

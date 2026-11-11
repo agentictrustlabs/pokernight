@@ -29,7 +29,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPublicClient, http, keccak256, toHex, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
+import { CONTRACTS } from './lib/faithchain-deployments.mts';
 import { ROOT_AUTHORITY, hashDelegation, type Delegation } from '@agenticprimitives/delegation';
 import { createTable, sitDown, standUp } from '@pokernight/engine';
 import {

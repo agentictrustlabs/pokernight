@@ -252,7 +252,7 @@ COACH_SERVICES = "bob-coach.svc,carol-coach.svc"
 # service under the paired CLUB_ROSTER_SECRET (spec 378).
 HOME_A2A_ORIGIN = "https://a2a.faithnet.io"
 # Where `atl:capabilities` lives — what an agent ANSWERS, read beside its served card (a release is a snapshot).
-AGENT_PROFILE_RESOLVER = "0xB03F7C06ad3274F584AB72794406D639c02A45e1"
+AGENT_PROFILE_RESOLVER = "0xc86d67D5ef2ed185e26a5f97f63e506CdA4e45C1"
 CHAIN_ID = "34348"
 # rpc.faithnet.io requires a chain-rpc-gateway app token (RPC_TOKEN, a secret). The browser-safe a2a
 # relay below needs none and is what scripts/provision-house.mts uses; swap once RPC_TOKEN is set.
@@ -275,11 +275,11 @@ A2A_TIMEOUT_MS = "20000"
 # See the dev block above. Five minutes of silence before an abandoned seat may be cleared.
 SEAT_IDLE_MS = "300000"
 # The estate's UniversalSignatureValidator — a club's wire is checked against the club's own account with it.
-UNIVERSAL_SIGNATURE_VALIDATOR = "0xeDd56f500325D4701B9985A34e5Fa6EED6716137"
+UNIVERSAL_SIGNATURE_VALIDATOR = "0x0B4B34b21a4E396489344cDFEe1d15F3EDE7AE4E"
 # THE MISSION REGISTRY (docs/MISSION-REGISTRY.md): the operator agent the house custodies (house.faithchain.json)
 # and the estate's AgentRegistryBase. The operator's wire is the secret MISSIONS_REGISTRY_WIRE.
-MISSIONS_REGISTRY_SA = "0x1cfD1174167f4e946d016E86E7d58C5e601c74C0"
-AGENT_REGISTRY_BASE = "0x0Be172F1b5cfD1d084CEc2cF2Af0A0cE9023Deb1"
+MISSIONS_REGISTRY_SA = "0xD4aAc107CdCC2D363624041B3544Ec92d00A6613"
+AGENT_REGISTRY_BASE = "0xd6BD744c459F350FCf6A21B5CF8c4F43C92770dC"
 ALLOWED_ORIGINS = "https://gamenight.faithnet.io,https://poker.faithnet.io"
 # 1 chip = 1.000000 Sheqel for tables opened from now on. Tables opened before this line changed keep
 # the 0.01 chip they were created with — the rate is pinned per table, never re-read from here
@@ -311,24 +311,24 @@ ASSET_SYMBOL = "SHQ"
 # (keys: entryPoint, agentAccountFactory, delegationManager, paymentEnforcer, digestBindingEnforcer,
 # paymentReceiptRegistry). HOUSE_SA / HOUSE_DELEGATE come from the pokernight.treasury Smart Agent
 # provisioned as an operator prerequisite (DESIGN.md §10).
-ENTRY_POINT = "0xf7855250B3363AB7649B10957d8908A9AFcdD4B5"
-AGENT_ACCOUNT_FACTORY = "0x464eEe7518c3c97DA570592481329E0627E9a3B8"
-DELEGATION_MANAGER = "0x710cb1bF08C234Df397e0910331e0A29710EF4F7"
-PAYMENT_ENFORCER = "0x07fA0aE59FdE4B7ce8962d6fE7a1d648ec3DD5CE"
-DIGEST_BINDING_ENFORCER = "0xA3bb9BCC9b2F6F2419E1aBe5ED6Fd5399b9E68e1"
+ENTRY_POINT = "0x107060f796bdf2495C6Ce9074ED49fe785bfFE0b"
+AGENT_ACCOUNT_FACTORY = "0xAa0a4B69702145Eb5BBaA3ED3c66919aA1fa7C5c"
+DELEGATION_MANAGER = "0x3BBeCcC7a52E1CE04a3BF7E7404D3BCBF566C490"
+PAYMENT_ENFORCER = "0x17DD386Ecd2844494F96C8829685E4ffde0DF9fd"
+DIGEST_BINDING_ENFORCER = "0x67A707EeAf1bCF0d529ee66E648fD15Dee8bB69E"
 # The other three enforcers a payment mandate composes. All four are required to ASK a player to sign
 # a buy-in mandate: a mandate assembled out of three would be a wider authority than the consent
 # screen showed, so the route refuses by name rather than composing a partial one.
-TIMESTAMP_ENFORCER = "0x73A7B878168b7DE48677617179A8bE894f0Dfe96"
-ALLOWED_TARGETS_ENFORCER = "0x2156311097A936de1916a878bF53Bfd43c7b5715"
-ALLOWED_METHODS_ENFORCER = "0xdBb2E47793393C499efB0f3fcbf6Ca8669791a41"
+TIMESTAMP_ENFORCER = "0x5A11D8ff4E5Ef341c66C98dFD2441b5858d8e293"
+ALLOWED_TARGETS_ENFORCER = "0x8421F81d4F5f7f64F2e518d8b2a12ef4C1d11088"
+ALLOWED_METHODS_ENFORCER = "0x2d1C7730D29Ba8aEE1D02f59eF0BBE88b439560e"
 # Naming, for the OPTIONAL `<label>.treasury` a player may claim when they create a treasury. A
 # treasury is allowed to be nameless and that is the default — the Smart Agent address is its id.
-AGENT_NAME_REGISTRY = "0x60E949D52660A9D4143ecB0fdA56c0457f20aED9"
-TREASURY_SUBREGISTRY = "0xf1df2D9b779C62a8BF5707C799d8E6842382892B"
+AGENT_NAME_REGISTRY = "0x9BE6c96F198a7EDaE0Bb80c98A68EB76Cb85a4bC"
+TREASURY_SUBREGISTRY = "0x65d3De43693BC4F17069Eef59ce2b8210a5B12cd"
 # …and the resolver that answers "what address is `carol.me`?", so a host can put somebody on a club
 # roster by the name they know them by instead of by a forty-character hex string.
-AGENT_NAME_UNIVERSAL_RESOLVER = "0xF343054e046A4145ccae499ECB28197394eE0798"
+AGENT_NAME_UNIVERSAL_RESOLVER = "0x56B6FBe849356a1D89d024DcA8abf74BF828bF4f"
 # What a night's buy-in mandate may cover. These are the caps the player sees before signing and the
 # ones the on-chain PaymentEnforcer holds: at most 200 chips (200 Sheqels at the chip rate above) per
 # buy-in, five buy-ins, and twelve hours. A mandate is one night at a table, not a standing account.
@@ -345,20 +345,20 @@ AGENT_NAME_UNIVERSAL_RESOLVER = "0xF343054e046A4145ccae499ECB28197394eE0798"
 MANDATE_MAX_BUY_IN_CHIPS = "200"
 MANDATE_MAX_BUY_INS = "5"
 MANDATE_VALID_SECONDS = "43200"
-PAYMENT_RECEIPT_REGISTRY = "0x5FfDd6186C1bBc4628187B1c4C1fDaA39F870d43"
+PAYMENT_RECEIPT_REGISTRY = "0x40902F79b4E27fA76D4D6642454fE072de8b8565"
 # Paymaster that sponsors the house's UserOps. It is in DEV MODE on faithchain (accepts every op)
 # and holds a large EntryPoint deposit, so the house pays no gas of its own.
-SMART_AGENT_PAYMASTER = "0xbd93fEC6910ffD74F14709188b5a9B6C6965b2a7"
+SMART_AGENT_PAYMASTER = "0x79347E0FB5958Adc70C59F46808D32216e90d4e1"
 # The house's own on-chain identity, provisioned by `pnpm provision:house`
 # (scripts/provision-house.mts). Addresses also live in house.faithchain.json at the repo root;
 # both accounts are mode-0 AgentAccounts custodied by ONE EOA whose key is the
 # HOUSE_CUSTODIAN_KEY secret (see .dev.vars.example) — never a var, never in git.
 #   service  — the Poker Site acting as an agent (A2A identity, receipts, future delegate).
 #   treasury — the table bankroll. Buy-ins land here; cash-outs leave here.
-HOUSE_SERVICE_SA = "0x0347e808a0bB7a7a7086a29d853E799f351C04DD"
-HOUSE_TREASURY_SA = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
+HOUSE_SERVICE_SA = "0x31acE8b3B26Bff9C29d09C6347824642DA171784"
+HOUSE_TREASURY_SA = "0x989121B74c96dF8Cc82beebf4C46Ec0C6D6C09f3"
 # Legacy alias kept for src/settlement.ts; identical to HOUSE_TREASURY_SA.
-HOUSE_SA = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
+HOUSE_SA = "0x989121B74c96dF8Cc82beebf4C46Ec0C6D6C09f3"
 # Phase 3: the delegate address players' poker-buyin delegations are scoped to. Not provisioned yet.
 # The account that REDEEMS a buy-in mandate — and it must equal the mandate's delegate.
 # A `pull` payment mandate names the PAYEE as its delegate (the Home's onboarding.ts:889:
@@ -366,7 +366,7 @@ HOUSE_SA = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
 # the house TREASURY. So the treasury redeems its own incoming buy-in, which is coherent: the money
 # lands in the same account that spent the authority to collect it. Pointing this at the service
 # agent instead made every mandate fail its delegate check with nothing wrong on the player's side.
-HOUSE_DELEGATE = "0xf6F48aF1f645c70339b2FCF4CD36F5d6c5325671"
+HOUSE_DELEGATE = "0x989121B74c96dF8Cc82beebf4C46Ec0C6D6C09f3"
 
 # MYSTERY NIGHT (docs/MYSTERY-NIGHT.md §8). The parts nobody is playing are played by AGENTS — one each, at
 # their own Home, from the role archetype in their playbook — and the night is narrated by a director agent

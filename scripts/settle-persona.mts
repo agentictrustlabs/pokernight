@@ -28,7 +28,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPublicClient, http, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CONTRACTS } from '@agenticprimitives/contracts/deployments/faithchain';
+import { CONTRACTS } from './lib/faithchain-deployments.mts';
 import { createTable, sitDown, standUp } from '@pokernight/engine';
 import {
   buyInMandateDigest,

@@ -24,7 +24,7 @@ Game Night mission is a standing presence — where it is and what it does — t
 | | |
 | --- | --- |
 | Registry id | `urn:ap:registry:gamenight-missions` |
-| Contract | `AgentRegistryBase` on faithchain 34348 — `0x0Be172F1b5cfD1d084CEc2cF2Af0A0cE9023Deb1` (`@agenticprimitives/contracts/deployments/faithchain`) |
+| Contract | `AgentRegistryBase` on faithchain 34348 — `0xd6BD744c459F350FCf6A21B5CF8c4F43C92770dC` (`@agenticprimitives/contracts/deployments/faithchain`) |
 | Controller / operator | `missions.registry` — a registry-typed service agent the house custodies (`house.faithchain.json → missionsRegistrySa`), provisioned by `pnpm provision:missions-registry`, which also executes `createRegistry(registryId, policy = 0x0)` from it. Open registry: the subject registers itself (RB-01); admission is the off-chain pipeline below, not an on-chain hook, so the policy can grow without a redeploy. |
 | Entry id | `urn:ap:registry-entry:gamenight-missions/<org SA, lowercase>` — one entry per organization, ever |
 | Subject | the mission's org SA; `msg.sender == subjectAgent` on `registerEntry`, executed by the org's own account, signed by its steward at their Home |

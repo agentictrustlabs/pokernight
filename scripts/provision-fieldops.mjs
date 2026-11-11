@@ -60,7 +60,8 @@ const STATE_PATH = new URL('../fieldops-estate.faithnet.json', import.meta.url);
 const m = existsSync(STATE_PATH) ? JSON.parse(readFileSync(STATE_PATH, 'utf8')) : { v: 2, note: 'Field Operations estate on faithnet — scripts/provision-fieldops.mjs (DEV estate; the production path is the Home’s ceremony).', chainId: CHAIN, workspace: {}, partners: {}, steps: {} };
 m.teams ??= {}; m.pool ??= { circle: [], church: [] }; // what an older run chartered; retired by `reset:fieldops --retire-seeded`
 // The cast's personas and who custodies each — every custodian is on the workspace roster.
-const castNote = `${process.env.HOME}/agenticprimitives/demo/fieldops-cast.faithnet.json`;
+// The cast note lives with the estate's operator data (ap-home `demo/`, since the 2026-10-04 split); FIELDOPS_CAST_NOTE names it.
+const castNote = process.env.FIELDOPS_CAST_NOTE || `${process.env.HOME}/ap-home/demo/fieldops-cast.faithnet.json`;
 const CAST = existsSync(castNote) ? (JSON.parse(readFileSync(castNote, 'utf8')).cast ?? []) : [];
 const CUSTODIANS = [...new Set(CAST.map((c) => c.custodian))];
 const save = () => writeFileSync(STATE_PATH, `${JSON.stringify(m, null, 2)}\n`);
@@ -91,11 +92,13 @@ async function csrf(base) {
 const H = (c) => ({ 'content-type': 'application/json', origin: ORIGIN, cookie: c.cookie, 'x-csrf-token': c.token });
 const pkOf = (handle) => { const p = people[handle]; if (!p?.eoaPrivateKey || !p?.sa) throw new Error(`personas file lacks ${handle}`); return p.eoaPrivateKey; };
 
-async function signIn(handle) {
+async function signIn(handle, { home = false } = {}) {
   const r = await fetch(`${HOME}/connect/demo-signin`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_id: CLIENT_ID, handle }) });
   const j = await r.json().catch(() => ({}));
   if (!j.id_token) throw new Error(`demo-signin ${handle}: ${JSON.stringify(j).slice(0, 200)}`);
-  return j.id_token;
+  // The LIBRARY takes the custodian's own Home session: it refuses the field app's relying id_token as a writer
+  // (401 "home session required" on faithnet, 2026-11-11).
+  return home ? (j.homeSession ?? j.id_token) : j.id_token;
 }
 async function deployAgent(pk) {
   const salt = randSalt();
@@ -140,7 +143,7 @@ async function activateVault(owner, pk) {
 }
 const contentHashOf = (f) => keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'bytes32' }, { type: 'bytes32' }, { type: 'bytes32' }], [f.orgAgent, keccak256(toBytes(f.orgName)), keccak256(toBytes(f.purpose)), keccak256(toBytes(f.requestedBy))]));
 const writeChallenge = (a) => keccak256(encodeAbiParameters([{ type: 'bytes32' }, { type: 'address' }, { type: 'address' }, { type: 'bytes32' }, { type: 'bytes32' }, { type: 'uint256' }], [keccak256(toBytes('related-agents:write:v2')), a.person, a.orgAgent, a.contentHash, a.nonce, BigInt(a.expiry)]));
-const siteCaveats = (validUntil) => [buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, validUntil)), buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)), buildCaveat(CONTRACTS.allowedTargetsEnforcer, encodeAllowedTargetsTerms([CONTRACTS.agentRelationship, CONTRACTS.agentNameRegistry, CONTRACTS.permissionlessSubregistry]))];
+const siteCaveats = (validUntil) => [buildCaveat(CONTRACTS.timestampEnforcer, encodeTimestampTerms(0, validUntil)), buildCaveat(CONTRACTS.valueEnforcer, encodeValueTerms(0n)), buildCaveat(CONTRACTS.allowedTargetsEnforcer, encodeAllowedTargetsTerms([CONTRACTS.agentRelationship, CONTRACTS.agentNameRegistry, CONTRACTS.permissionlessSubregistry].filter(Boolean)))];
 /** MEMBERSHIP: org → member, a record-scope wire with NO targets — member access, never mistakable for stewardship. It is
  *  what the Home's roster and trust graph read a member from; a member link carrying a stewardship wire shows nobody. */
 function signMembershipBy(pk, orgSa, delegateSa) {
@@ -192,7 +195,7 @@ function enableStorage(sa, handle) {
 }
 function artifactId(folder, name) { let h = 0x811c9dc5; const key = `${folder}/${name}`; for (let i = 0; i < key.length; i += 1) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return `${folder.replace(/\W+/g, '-').slice(0, 32) || 'x'}-none-${h.toString(36)}`; }
 async function saveRecords(handle, org, records) {
-  const token = await signIn(handle);
+  const token = await signIn(handle, { home: true });
   const artifacts = records.map(({ folder, record }) => ({ id: artifactId(folder, `${record.id}.json`), folder, name: `${record.id}.json`, kind: 'json-ld', bytesB64: Buffer.from(JSON.stringify(record, null, 2), 'utf8').toString('base64') }));
   const r = await fetch(`${HOME}/connect/library`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ org, action: 'save-batch', artifacts }) });
   const j = await r.json().catch(() => ({}));
@@ -276,8 +279,8 @@ const note = {
   // THE DOORS the season's charters knock on, as the character's act: where agents deploy, where vaults bind, which
   // service agents an org's storage is granted to (engage's own values, read from its environment).
   a2a: A2A, mcp: MCP, origin: ORIGIN,
-  deliveryServiceSa: process.env.DELIVERY_SERVICE_SA || '0x0AF2455e3f76594E81d9042aD5FE22A5A35dc57f',
-  interactionsServiceSa: process.env.INTERACTIONS_SERVICE_SA || '0x39508624387fed3b9d6dd15ba86d3ace8a3f0a6a',
+  deliveryServiceSa: process.env.DELIVERY_SERVICE_SA || '0xAE7ABD2B536d4B7bC9A530CBB81470810492957C',
+  interactionsServiceSa: process.env.INTERACTIONS_SERVICE_SA || '0xAE7ABD2B536d4B7bC9A530CBB81470810492957C',
   organization: { sa: m.organization?.sa, custodian: CUSTODY.workspace, name: ORGANIZATION_NAME },
   workspace: { sa: m.workspace.sa, custodian: CUSTODY.workspace, name: WORKSPACE_NAME },
   partners: Object.fromEntries(REGION.partners.map((p) => [p.id, { sa: m.partners[p.id]?.sa, custodian: CUSTODY.corridors[p.corridor] ?? 'alice', name: `${p.name} (${MARK} agent)` }])),
@@ -296,7 +299,7 @@ log(`  cd apps/tables && pnpm exec wrangler kv key put --env faithnet --binding 
 // WORKSPACE_CONTENT_SCOPE, approved on chain as the workspace). After this a member of the org sees and reads the
 // governed workspace (spec 424 W1); the field runtime (W2) chains their org membership onto the grant.
 if (!DRY && m.organization?.sa && m.workspace?.sa && !m.steps['pair-424']) {
-  const AP_HOME = process.env.AP_HOME_DIR || `${process.env.HOME}/agenticprimitives`;
+  const AP_HOME = process.env.AP_HOME_DIR || `${process.env.HOME}/ap-home`;
   const ROOT = new URL('..', import.meta.url).pathname;
   const envp = { ...process.env, HOME_ORIGIN: HOME, HOME_URL: HOME };
   log('\n── spec 424: pairing the workspace with its org, and minting the member read grant ──');
